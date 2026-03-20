@@ -1,0 +1,32 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - unparam
+  settings:
+    errcheck:
+      exclude-functions:
+        - (io.Closer).Close
+        - (net.Conn).Close
+        - (net.Conn).SetWriteDeadline
+        - (net.Conn).SetReadDeadline
+        - (*net.TCPListener).SetDeadline
+  exclusions:
+    paths:
+      - sources
+    rules:
+      - linters:
+          - errcheck
+        path: _test\.go$
+      - linters:
+          - unparam
+        path: _test\.go$
+      - linters:
+          - staticcheck
+        text: "SA2002|ST1023|QF1011"
+        path: _test\.go$
+
+formatters:
+  enable:
+    - gofmt

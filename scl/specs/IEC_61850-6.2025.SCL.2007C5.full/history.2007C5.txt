@@ -1,0 +1,57 @@
+===============================================================
+REVISION HISTORY FOR THE SCL REVISION "2007C5" (Ed. 2.2)
+FROM February 2, 2024.
+BASED on SCL 2007C4 (released 2023-06-22).
+===============================================================
+  
+CBL 2024/02/02:
+  - CDV comment DE-53: 
+    - SCL_IED.xsd: new attribute Association.apRef is required
+  - CDV comment DE-29: 
+    - SCL_IED.xsd: add new optinal sub element "MinRequestedSCDFile" which is restriction of "tSclFileUUIDReference" to identify the SCD required to configure an IED
+  - CDV comment DE-49: 
+    - SCL_IED.xsd: remove "iedUuid" attribute in "IEDName" element for "GSEControl" and "SampledValueControl"
+  - Rollback the Tissue 1874 which may cause compatibility issue and needs to be addressed later: GOOSE MinTime / Max Time - Probable discrepancy between Part-6 and Part-8
+    - SCL_BaseTypes.xsd: update "tDurationInSec", "tDurationInMilliSec" and "tBitRateInMbPerSec" to replace base type "xs:decimal" with "xs:unsignedInt"
+  - CDV comment DE-33: 
+    - SCL_IED.xsd: add attribute group "agUuid" to "tDataSet"
+  - CDV comment DE-36: 
+    - SCL_IED.xsd: in "tClientServices" replace "McSecurity" by "GOOSEMcSecurity" and "SVMcSecurity"
+  - Update UUIDs definition:
+    - SCL.xsd: Add unicity constraint for UUID attributes in the file
+	- SCL_BaseTypes.xsd: rename attribute "uuid" in "tSclFileUUIDReference" to "fileUuid"
+    - SCL_IED.xsd: update "tServerAt" and "tKDC" to add "apUuid" attribute
+  - CDV comments FR-1 & BE-01: add defintion of Labels for named element which could be used in an HMI
+	- SCL_BaseTypes.xsd: add new type "tLabel" to avec define a label associated to a language and an ID, and "tLabels" which is a list of "Label"
+	- SCL_BaseTypes.xsd: update "tNaming" types to add new "Labels" subelement
+	- SCL_IED.xsd: add new "Labels" to "tIED", "tAccessPoint", "tLDevice", "tAnyLN", tDOI", "tSDI" and "tDAI"
+	- SCL_Substation.xsd: add new "Labels" to "tLNode"
+	- SCL_DataTypeTemplates.xsd: add new "Labels" to "tLNodeType", "tDO", "tDOType", "tSDO", "tDAType", 
+  - Update MinRequestedSCDFile count
+    - SCL_IED.xsd: add new optinal sub element "MinRequestedSCDFiles" which can contains a list of "MinRequestedSCLFile" with restriction of one fileUuid to support engineering done by multiple projects
+
+CBL 2024/03/12:
+	- SCL_BaseTypes.xsd: update tHeader to make "uuid" attribute mandatory
+	
+CBL 2024/03/12:
+	- SCL_DataTypeTemplates.xsd: update definition of "sAddr" attributes in "tAbstractAttribute" to add restriction to 255 characters
+	- SCL_IED.xsd: update definition of "sAddr" attributes in "tSDI" and "tDAI" to add restriction to 255 characters
+	- SCL_IED.xsd: rename new "ClientServices" attribute "acceptServerAssociation" to "acceptServerInitiatedAssociation"
+
+------------------------------
+- TISSUES INCLUSION OVERVIEW -
+------------------------------
+Open TISSUEs: 1777, 1817, 1849, 1881, 1893, 1894, 1898.
+
+Implemented Ed. 2.1 TISSUEs: 1672, 1674, 1675, 1708, 1734, 1768, 1885.
+
+TISSUEs not relevant for the SCL schema: 1590, 1669, 1683, 1729, 1740, 1745, 1771, 1774, 1786, 1787, 1808, 1813, 1816, 
+										 1818, 1823, 1831, 1832, 1833, 1834, 1839, 1843, 1854, 1886.
+
+TISSUEs not applicable: 1628, 1695, 1723, 1725, 1746, 1750, 1772, 1791, 1812, 1860, 1870, 1872.
+
+TISSUEs for Ed. 3: 1673, 1727, 1794, 1799, 1874, 1876, 1877.
+
+===============================================================
+EOF
+===============================================================

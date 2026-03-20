@@ -1,0 +1,25 @@
+# Binaries
+/bin/
+/dist/
+/basic-client
+/browse-tree
+/reports
+/files
+/scl-parse
+/sclgen
+/sclparse
+
+# Test / fuzz
+*.test
+*.out
+
+# Coverage
+coverage.*
+*.out
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store

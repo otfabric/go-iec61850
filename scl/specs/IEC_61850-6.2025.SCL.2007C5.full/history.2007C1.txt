@@ -1,0 +1,73 @@
+===============================================================
+REVISION HISTORY FOR THE SCL REVISION "2007C1" (Ed. 2.2)
+FROM June 07, 2018.
+BASED on SCL 2007B4 (released 2018-01-22).
+===============================================================
+  
+CBL 2022/10/05:
+  - integrate UUID concept
+    - Definition of the UUID type based on ISO/IEC 9834-8
+    - SCL_BaseSimpleTypes.xsd: add "tUUIDAttribute" to define a UUID
+    - SCL_BaseTypes.xsd: add "uuid" attribute in "tHeader" to identify SCL in Header element
+	- SCL_BaseTypes.xsd: add "tSclFileUUIDReference" type to identify an SCL file by the uuid set in his header and the version/revision of the file
+    - SCL_BaseTypes.xsd: add "tHeaderSclRef" type to identify SSD/SCD files
+	- SCL_BaseTypes.xsd: add reference to SSD/SCD files in Header element to reference files used to create an SCL file (new element "SourceFiles" of type "tHeaderSclRef" in "tHeader" and "tHitem")
+    - SCL_IED.xsd: add "tIEDSclRef" type to identify ICDD/IID files
+	- SCL_IED.xsd: add reference to ICD/IID files in IED element to reference files used to instanciate an IED in a System (new element "SourceFiles" of type "tIEDSclRef" in "tIED")
+  - Tissue 1672: Allow connection Server and ServerAt to the same SCL.Subnetwork
+    - SCL_IED.xsd: Add new IED Service "MultiAPPerSubNet" to indicates when the IED allows to connect multiple AP to same Subnetwork
+	- SCL_IED.xsd: Add optional "apRef" attribute to "tAssociation"
+  - Tissue 1674: Add TPAA security description
+	- SCL_IED.xsd: Add new service "Security" with the type "tSecurity" to describe supported TPAA security "ACSEAuthentication" and/or "E2ESecurity" to "tServices" and "tClientServices"
+
+CBL 2022/11/21:
+  - Tissue 1675: SCSM support capability - Harmonization with 62351-6
+    - SCL_IED.xsd: Add new service "SCSM" with the type "tSCSM" to describe supported SCSM "iec61850_8_1" and/or "iec61850_8_2" to "tServices"
+	- SCL_Enums.xsd: Add new type "tSubnetType" which is an union of predefined values 8-MMS and 8-XMPP and the free values as before
+	- SCL_Communication.xsd: Use new type "tSubnetType" for the attrbute "type" in "SubNetwork"
+
+CBL 2022/12/16:
+  - Tissue 1708: Presence of Sample Mode field not controllable through SmvOpts
+    - SCL_IED.xsd: Add new optional field "sampleMode" in "agSmvOpts"
+  - Tissue 1734: Improved schema validation
+    - SCL_Communication.xsd: update definition of types "tP_OSI-NSAP", "tP_OSI-TSEL", "tP_OSI-SSEL", "tP_OSI-PSEL" and "tP_OSI-AP-Title"
+  - Tissue 1768: Server associate-request has no SCL parameters
+    - SCL_IED.xsd: add new attribute "acceptServerAssociation" in "tClientServices"
+
+CBL 2023/01/05:
+  - Update CDC/FC list to support TR extensions only
+    - SCL_Enums.xsd: update "tCDCEnum" to make union of "tPredefinedCDC" and "tExtensionCDC"
+    - SCL_Enums.xsd: rename "tFCEnum" to "tPredefinedFC", and add "tExtensionFC" and "tFCEnum" which is union of "tPredefinedFC" and "tExtensionFC"
+  - Add possibility to add privates to ExtRef
+    - SCL_IED.xsd: update "tExtRef" to extend type "tBaseElement" which allows "Private"
+  - Add UUID usage for element identification
+    - SCL_BaseTypes.xsd: update "tNaming" type to add attribute "uuid"
+	- SCL_Substation.xsd: update "tTerminal" to add attribute "cNodeUuid"
+	- SCL_Substation.xsd: update "tLnode" to add attributes "uuid" and "lnUuid"
+    - SCL_IED.xsd: update "tIED" type to add attribute "uuid"
+    - SCL_IED.xsd: update "tLDevice" type to add attribute "uuid"
+    - SCL_IED.xsd: update "tAnyLN" type to add attribute "uuid"
+    - SCL_IED.xsd: update "tFCDA" type to add attribute "lnUuid"
+    - SCL_IED.xsd: update "tExtRef" type to add attributes "uuid", "lnUuid" and "srcCBUuid"
+    - SCL_IED.xsd: update "tControl" type to add attribute "uuid"
+    - SCL_IED.xsd: update "agLNRef" type to add attribute "lnUuid"
+    - SCL_IED.xsd: update "tControlWithIEDName" type to add in "IEDName" the attributes "iedUuid", "ldUuid" and "lnUuid"
+    - SCL_Communication.xsd: update "tConnectedAP" type to add attribute "iedUuid"
+    - SCL_Communication.xsd: update "tControlBlock" type to add attribute "cbUuid"
+
+------------------------------
+- TISSUES INCLUSION OVERVIEW -
+------------------------------
+Open: 1771, 1774, 1777, 1786, 1787, 1816, 1817, 1818, 1831, 1833, 1839, 1843, 1849, 1854.
+
+Implemented Ed. 2.1 Tissues: 1672, 1674, 1675, 1708, 1734, 1768.
+
+Tissues not relevant for the SCL schema: 1669, 1683, 1729, 1740, 1745, 1787, 1808, 1813, 1823, 1832, 1834.
+
+TISSUEs not applicable: 1628, 1695, 1723, 1725, 1746, 1750, 1772, 1791, 1812.
+
+TISSUEs for Ed. 3: 1673, 1727, 1794, 1799.
+
+===============================================================
+EOF
+===============================================================

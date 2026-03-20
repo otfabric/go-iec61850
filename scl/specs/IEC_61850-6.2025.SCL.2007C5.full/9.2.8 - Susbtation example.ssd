@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- edited with XMLSpy v2013 rel. 2 sp2 (x64) (http://www.altova.com) by Camille Bloch (SCHNEIDER ELECTRIC P&C) -->
+<SCL xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://www.iec.ch/61850/2003/SCL" xsi:schemaLocation="http://www.iec.ch/61850/2003/SCL SCL.xsd" version="2007" revision="C" release="5">
+	<Header id="SSD Example" uuid="b058aa0f-d8dc-43fd-b953-0e74f53e2b10"/>
+	<Substation name="Baden220_132" uuid="0285245f-377f-4ef9-9a87-c4586b3b0aa1">
+		<PowerTransformer name="T1" type="PTR" uuid="d3bb4b35-6089-430c-a467-af425560203b">
+			<LNode lnInst="1" lnClass="PDIF" ldInst="F1" uuid="23cf9275-b9c9-4029-beff-5c6368ad951f"/>
+			<LNode lnInst="1" lnClass="TCTR" ldInst="C1" uuid="0a2b7f4d-a037-4a83-a713-c3bd0c5e9750"/>
+			<TransformerWinding name="W1" type="PTW" uuid="1d9a31ae-a7d7-4538-9177-237e7dc040ac">
+				<Terminal connectivityNode="Baden220_132/D1/Q1/L1" substationName="Baden220_132" voltageLevelName="D1" bayName="Q1" cNodeName="L1" cNodeUuid="9839cb0b-b4fa-4daf-97f0-5fb7e3676f7d"/>
+			</TransformerWinding>
+			<TransformerWinding name="W2" type="PTW" uuid="319ad9d1-9589-4854-92d7-c06c4e7752ea">
+				<Terminal connectivityNode="Baden220_132/E1/Q2/L3" substationName="Baden220_132" voltageLevelName="E1" bayName="Q2" cNodeName="L3" cNodeUuid="a5fab2dd-47ca-4d56-8593-e8879f6f3181"/>
+			</TransformerWinding>
+		</PowerTransformer>
+		<VoltageLevel name="D1" nomFreq="50" numPhases="3" uuid="a9439310-f230-4821-8b42-95c32e31eefa">
+			<Voltage multiplier="k" unit="V">220</Voltage>
+			<Bay name="Q1" uuid="1236774a-ca34-473f-82cc-99cb3c20ec4b">
+				<LNode lnInst="1" lnClass="PDIS" ldInst="F1" uuid="d6f2de85-14af-40b5-9065-d916f34a8d46"/>
+				<ConductingEquipment name="I1" type="CTR" uuid="a7cd0457-3164-4ded-aedc-e7d974dc81f4">
+					<Terminal connectivityNode="Baden220_132/D1/Q1/L1" substationName="Baden220_132" voltageLevelName="D1" bayName="Q1" cNodeName="L1" cNodeUuid="9839cb0b-b4fa-4daf-97f0-5fb7e3676f7d"/>
+				</ConductingEquipment>
+				<ConnectivityNode name="L1" pathName="Baden220_132/D1/Q1/L1" uuid="9839cb0b-b4fa-4daf-97f0-5fb7e3676f7d"/>
+			</Bay>
+		</VoltageLevel>
+		<VoltageLevel name="E1" uuid="8cea2c61-9c6e-4b95-b61b-2f4138844ab6">
+			<Voltage multiplier="k" unit="V">132</Voltage>
+			<Bay name="Q2" uuid="aa3d78c2-1ff3-4780-b4fc-93262852ec9f">
+				<ConductingEquipment name="QA1" type="CBR" uuid="3304b072-8fd3-4047-b7a2-ec2503ad07bb">
+					<LNode lnInst="1" lnClass="CILO" ldInst="C1" uuid="3e159ac6-7a94-4754-8402-bf18802c36ab"/>
+					<Terminal connectivityNode="Baden220_132/E1/Q2/L1" substationName="Baden220_132" voltageLevelName="E1" bayName="Q2" cNodeName="L1" cNodeUuid="4feaf6f0-34d2-4134-8a17-6707facaf288"/>
+					<Terminal connectivityNode="Baden220_132/E1/Q2/L2" substationName="Baden220_132" voltageLevelName="E1" bayName="Q2" cNodeName="L2" cNodeUuid="507ee506-a73d-4f2a-8faf-6e7a0e1f2219"/>
+				</ConductingEquipment>
+				<ConductingEquipment name="QB1" type="DIS" uuid="27750627-fe77-4914-a7b4-65f2fd4b398b">
+					<LNode lnInst="2" lnClass="CSWI" ldInst="C1" uuid="69a616af-2809-4dea-ae3f-3f436f20143f"/>
+					<LNode lnInst="2" lnClass="CILO" ldInst="C1" uuid="469ff3a0-3896-41eb-895d-d71dad8bfcb8"/>
+					<Terminal connectivityNode="Baden220_132/E1/W1/B1" substationName="Baden220_132" voltageLevelName="E1" bayName="W1" cNodeName="B1" cNodeUuid="1fb7decb-5e26-435a-b6e7-113e6a942d3d"/>
+					<Terminal connectivityNode="Baden220_132/E1/Q2/L1" substationName="Baden220_132" voltageLevelName="E1" bayName="Q2" cNodeName="L1" cNodeUuid="4feaf6f0-34d2-4134-8a17-6707facaf288"/>
+				</ConductingEquipment>
+				<ConductingEquipment name="I1" type="CTR" uuid="458430ca-a64d-4e8b-9f93-6054a69e5deb">
+					<Terminal connectivityNode="Baden220_132/E1/Q2/L2" substationName="Baden220_132" voltageLevelName="E1" bayName="Q2" cNodeName="L2" cNodeUuid="507ee506-a73d-4f2a-8faf-6e7a0e1f2219"/>
+					<Terminal connectivityNode="Baden220_132/E1/Q2/L3" substationName="Baden220_132" voltageLevelName="E1" bayName="Q2" cNodeName="L3" cNodeUuid="a5fab2dd-47ca-4d56-8593-e8879f6f3181"/>
+				</ConductingEquipment>
+				<ConductingEquipment name="U1" type="VTR" uuid="9dade557-8264-41fb-97a5-3d75a29f55f4">
+					<Terminal connectivityNode="Baden220_132/E1/Q2/L3" substationName="Baden220_132" voltageLevelName="E1" bayName="Q2" cNodeName="L3" cNodeUuid="a5fab2dd-47ca-4d56-8593-e8879f6f3181"/>
+				</ConductingEquipment>
+				<ConnectivityNode name="L1" pathName="Baden220_132/E1/Q2/L1" uuid="4feaf6f0-34d2-4134-8a17-6707facaf288"/>
+				<ConnectivityNode name="L2" pathName="Baden220_132/E1/Q2/L2" uuid="507ee506-a73d-4f2a-8faf-6e7a0e1f2219"/>
+				<ConnectivityNode name="L3" pathName="Baden220_132/E1/Q2/L3" uuid="a5fab2dd-47ca-4d56-8593-e8879f6f3181"/>
+			</Bay>
+			<Bay name="W1">
+				<ConnectivityNode name="B1" pathName="Baden220_132/E1/W1/B1" uuid="1fb7decb-5e26-435a-b6e7-113e6a942d3d"/>
+			</Bay>
+		</VoltageLevel>
+	</Substation>
+</SCL>
