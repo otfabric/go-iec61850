@@ -9,8 +9,8 @@ Interop testing validates that the Go library correctly communicates with
 real-world IEC 61850 servers and clients, not just the co-developed `go-mms`
 loopback. Testing covers:
 
-1. **Client → C server** — connect the Go client to a libiec61850-based server
-2. **C client → Go server** — connect a libiec61850-based client to the Go server
+1. **Client -> C server** — connect the Go client to a libiec61850-based server
+2. **C client -> Go server** — connect a libiec61850-based client to the Go server
 3. **Protocol conformance** — verify MMS PDU compatibility at the wire level
 
 ## Prerequisites
@@ -22,12 +22,17 @@ loopback. Testing covers:
 
 | Test | Go role | Counterpart | Status |
 |------|---------|-------------|--------|
-| Browse model | Client | libiec61850 server | Planned |
-| Read single value | Client | libiec61850 server | Planned |
-| Write single value | Client | libiec61850 server | Planned |
-| Read dataset | Client | libiec61850 server | Planned |
+| Browse logical devices | Client | libiec61850 server | Implemented |
+| Browse logical nodes | Client | libiec61850 server | Implemented |
+| Read single value | Client | libiec61850 server | Implemented |
+| Write single value | Client | libiec61850 server | Implemented |
+| List datasets | Client | libiec61850 server | Implemented |
+| Read dataset | Client | libiec61850 server | Implemented |
+| List reports | Client | libiec61850 server | Implemented |
+| Get report control block | Client | libiec61850 server | Implemented |
+| List files | Client | libiec61850 server | Implemented |
+| Full tree browse | Client | libiec61850 server | Implemented |
 | Report subscription | Client | libiec61850 server | Planned |
-| File read | Client | libiec61850 server | Planned |
 | Server identify | Server | libiec61850 client | Planned |
 | Server read | Server | libiec61850 client | Planned |
 
@@ -67,11 +72,11 @@ kill %1
 
 ```
 interop/
-├── README.md          ← this file
-├── Dockerfile         ← libiec61850 test server (planned)
-├── testdata/
-│   └── test.scd       ← SCL config for the test server (planned)
-└── interop_test.go    ← Go interop tests (planned)
+├── README.md          <- this file
+├── interop_test.go    <- Go interop tests (10 tests implemented)
+├── Dockerfile         <- libiec61850 test server (planned)
+└── testdata/
+    └── test.scd       <- SCL config for the test server (planned)
 ```
 
 ## Environment variables

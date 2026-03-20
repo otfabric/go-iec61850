@@ -39,10 +39,10 @@ returns false for all levels, so log arguments are never evaluated.
 
 | Level | Usage |
 |-------|-------|
-| `Debug` | Detailed protocol flow: MMS requests/responses, cache hits/misses, report decoding steps |
-| `Info` | Lifecycle events: connection established, subscription created, server started |
-| `Warn` | Recoverable issues: report overflow (dropped), best-effort cleanup failures, unexpected server behavior |
-| `Error` | Failures that affect correctness: decode errors, registration failures |
+| `Debug` | Detailed protocol flow: MMS requests/responses, cache hits/misses, report decoding steps, browse tree construction, dataset reads, file operations |
+| `Info` | Lifecycle events: connection established, subscription created, server started, control operations completed, setting group changes |
+| `Warn` | Recoverable issues: report overflow (dropped), best-effort cleanup failures, unexpected server behavior, journal overflow |
+| `Error` | Failures that affect correctness: decode errors, registration failures, control rejections |
 
 ### Structured attributes
 
@@ -52,6 +52,8 @@ Log entries use structured key-value attributes for machine-parseable output:
 level=INFO msg="iec61850: report subscription created" rptID=rpt01 queueSize=64 overflow=drop_newest
 level=WARN msg="iec61850: report queue overflow" rptID=rpt01 dropped=1
 level=DEBUG msg="iec61850: browse cache hit" ld=LD1 cached_nodes=12
+level=INFO msg="iec61850: control operate" ref=LD1/XCBR1.Pos operation=operate
+level=DEBUG msg="iec61850: setting group change" ld=LD1 actSG=2
 ```
 
 ### Logger propagation
@@ -59,6 +61,31 @@ level=DEBUG msg="iec61850: browse cache hit" ld=LD1 cached_nodes=12
 The logger configured on `Client` or `Server` is also passed to the underlying
 `go-mms` layer (when not already configured), so MMS-level protocol events
 appear in the same log stream.
+
+### Covered subsystems
+
+Logging is integrated across all runtime subsystems:
+
+| Subsystem | Key log points |
+|-----------|----------------|
+| Client core | Connection lifecycle, request/response flow |
+| Browse/cache | Tree construction, cache hits/misses, logical device/node enumeration |
+| Read/write | Value reads, bulk reads, write operations |
+| Reports | Subscription setup, report decoding, RCB operations, queue overflow |
+| Control | Select, operate, cancel operations and outcomes |
+| Setting groups | Group selection, edit sessions, confirmation |
+| Datasets | Dataset listing, dataset reads |
+| Files | File listing, file reads |
+| Server | Server startup, connection handling, identify/status |
+| Report engine | RCB enable/disable, report generation, buffer management |
+| Journal engine | Entry creation, query results, overflow |
+
+## SCL diagnostics
+
+The SCL parser and validator use a structured diagnostic system rather than
+slog logging. Parse and validation issues are returned as `[]scl.Diagnostic`
+values with severity, code, path, and message fields. See `ERRORS.md` for
+details on diagnostic codes.
 
 ## Metrics
 

@@ -64,14 +64,41 @@ library at the current development stage.
 
 ## SCL limitations
 
-- **Subset of IEC 61850-6** — the SCL parser handles the most commonly used
-  elements. Some rarely used elements (e.g., `Private`, `Text`, `History`,
-  `Inputs`, `ClientLN`, `ExtRef`) are not parsed.
-- **No schema validation** — the parser performs structural XML parsing and
-  semantic validation, but does not validate against the official XSD schema.
+- **Supported schema versions** — the SCL parser supports IEC 61850-6 schema
+  versions 1.7, 2007B, 2007B4, and 2007C5. Other versions (e.g. 2007A) are
+  detected and rejected with a clear error.
+- **Normalized model coverage** — the normalized model covers IEDs, access
+  points, servers, logical devices, logical nodes (LN0 and regular LN),
+  data objects (DOI/DAI/SDI), datasets, report control blocks, GSE control
+  blocks, SMV control blocks, log control blocks, setting control,
+  substations (with voltage levels, bays, conducting equipment),
+  topology LNode references, communication (sub-networks, connected APs,
+  GSE/SMV addresses), and full data type templates (LNodeType, DOType,
+  DAType, EnumType). Private elements are preserved with full inner XML
+  content and vendor namespace metadata.
+- **Elements not in the normalized model** — some SCL elements are parsed
+  from XML by the raw types but are not mapped into the normalized model:
+  `Inputs`, `ClientLN`, `ExtRef`, `History`, `Text`, `Function`,
+  `SubFunction`, `PowerTransformer`, `GeneralEquipment`, `ConnectivityNode`.
+  These are accessible only via raw XML unmarshalling.
+- **No XSD schema validation** — the parser performs structural XML parsing
+  and comprehensive semantic validation (type templates, IED structure,
+  communication linkage, dataset references, control block references,
+  topology LNode resolution), but does not validate against the official
+  IEC XSD schema files.
 - **Round-trip fidelity** — `scl.Generate` preserves the model structure but
   may not reproduce the exact formatting, namespace prefixes, or ordering of
-  the original XML file.
+  the original XML file. GSE and SMV control blocks are not serialized by
+  `Generate`.
+- **Extension preservation** — vendor `Private` elements are preserved
+  losslessly (`Type`, `Source`, and full `InnerXML` content). Vendor
+  namespaces from the root element are captured in `DocumentMetadata`.
+  However, vendor-specific child elements outside of `Private` (using
+  custom XML namespaces) may be captured by `ExtraElements` in raw types
+  but are not individually surfaced in the normalized model.
+- **Content-based kind detection** — `DetectKind` classifies documents by
+  content (IED count, substation presence, communication bindings) but
+  cannot distinguish ICD from IID without application-level context.
 
 ## Value handling
 
