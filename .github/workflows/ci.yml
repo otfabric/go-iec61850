@@ -17,5 +17,4 @@ jobs:
     with:
       codecov-name: go-iec61850
       go-versions: '["1.24", "1.25", "1.26"]'
-      primary-go-version: "1.24"
     secrets: inherit
