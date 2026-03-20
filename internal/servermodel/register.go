@@ -609,6 +609,7 @@ func validateWriteSize(val *mms.Value, ts mms.TypeSpec) error {
 				return fmt.Errorf("bit string length %d != expected %d", bl, ts.Size)
 			}
 		}
+	default:
 	}
 	return nil
 }

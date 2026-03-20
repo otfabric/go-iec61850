@@ -1,18 +1,16 @@
 module github.com/otfabric/go-iec61850
 
-go 1.25.0
+go 1.24.0
 
 require (
-	github.com/otfabric/go-mms v0.1.1
+	github.com/otfabric/go-mms v0.1.2
 	github.com/spf13/cobra v1.10.2
-	golang.org/x/sync v0.20.0
+	golang.org/x/sync v0.19.0
 )
 
 require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/otfabric/go-cotp v0.1.2 // indirect
-	github.com/otfabric/go-tpkt v0.1.0 // indirect
+	github.com/otfabric/go-cotp v0.1.3 // indirect
+	github.com/otfabric/go-tpkt v0.1.1 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 )
-
-replace github.com/otfabric/go-mms => ../go-mms

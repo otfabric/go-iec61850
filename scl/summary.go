@@ -57,23 +57,23 @@ func Summarize(s *SCL) Summary {
 			for _, ld := range ap.Server.LDevices {
 				sum.LogicalDevices++
 				sum.PrivateCount += len(ld.Private)
-			if ld.LN0 != nil {
-				sum.LogicalNodes++
-				sum.LN0Count++
-				sum.DataSets += len(ld.LN0.DataSets)
-				sum.ReportControls += len(ld.LN0.Reports)
-				sum.GSEControls += len(ld.LN0.GSEControls)
-				sum.SMVControls += len(ld.LN0.SMVControls)
-				sum.LogControls += len(ld.LN0.Logs)
-				sum.PrivateCount += len(ld.LN0.Private)
-			}
-			for _, ln := range ld.LNs {
-				sum.LogicalNodes++
-				sum.DataSets += len(ln.DataSets)
-				sum.ReportControls += len(ln.Reports)
-				sum.LogControls += len(ln.Logs)
-				sum.PrivateCount += len(ln.Private)
-			}
+				if ld.LN0 != nil {
+					sum.LogicalNodes++
+					sum.LN0Count++
+					sum.DataSets += len(ld.LN0.DataSets)
+					sum.ReportControls += len(ld.LN0.Reports)
+					sum.GSEControls += len(ld.LN0.GSEControls)
+					sum.SMVControls += len(ld.LN0.SMVControls)
+					sum.LogControls += len(ld.LN0.Logs)
+					sum.PrivateCount += len(ld.LN0.Private)
+				}
+				for _, ln := range ld.LNs {
+					sum.LogicalNodes++
+					sum.DataSets += len(ln.DataSets)
+					sum.ReportControls += len(ln.Reports)
+					sum.LogControls += len(ln.Logs)
+					sum.PrivateCount += len(ln.Private)
+				}
 			}
 		}
 	}

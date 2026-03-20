@@ -60,7 +60,7 @@ func checkLNodes(idx *index.Index, parentPath string, lnodes []scl.LNode) []scl.
 			if target == nil {
 				diags = append(diags, scl.Diagnostic{
 					Severity: scl.DiagWarning, Code: "unresolved-topology-lnode",
-					Path:    lnPath,
+					Path: lnPath,
 					Message: fmt.Sprintf("LN %s%s%s not found in IED %q LD %q",
 						ln.Prefix, ln.LNClass, ln.LNInst, ln.IEDName, ln.LDInst),
 				})

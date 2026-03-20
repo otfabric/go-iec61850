@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/otfabric/go-iec61850/scl/internal/raw/v17"
-	"github.com/otfabric/go-iec61850/scl/internal/raw/v2007b"
-	"github.com/otfabric/go-iec61850/scl/internal/raw/v2007b4"
-	"github.com/otfabric/go-iec61850/scl/internal/raw/v2007c5"
+	v17 "github.com/otfabric/go-iec61850/scl/internal/raw/v17"
+	v2007b "github.com/otfabric/go-iec61850/scl/internal/raw/v2007b"
+	v2007b4 "github.com/otfabric/go-iec61850/scl/internal/raw/v2007b4"
+	v2007c5 "github.com/otfabric/go-iec61850/scl/internal/raw/v2007c5"
 )
 
 // ParseBytes parses raw SCL XML bytes and returns a [Result]

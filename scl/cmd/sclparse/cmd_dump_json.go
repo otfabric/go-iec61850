@@ -36,7 +36,7 @@ func init() {
 func runDumpJSON(_ *cobra.Command, args []string) error {
 	path := args[0]
 
-	result, err := scl.ParseFileWithOptions(path, scl.ParseOptions{})
+	result, err := scl.ParseFileOpts(path, scl.ParseOptions{})
 	if err != nil {
 		return exitErr(exitParseFail, "%v", err)
 	}

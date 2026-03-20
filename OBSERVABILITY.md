@@ -84,8 +84,8 @@ Logging is integrated across all runtime subsystems:
 
 The SCL parser and validator use a structured diagnostic system rather than
 slog logging. Parse and validation issues are returned as `[]scl.Diagnostic`
-values with severity, code, path, and message fields. See `ERRORS.md` for
-details on diagnostic codes.
+values with severity, code, path, and message fields. See the
+[Errors section in API.md](API.md#errors) for details on diagnostic codes.
 
 ## Metrics
 

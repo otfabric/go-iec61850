@@ -43,7 +43,7 @@ func init() {
 func runValidate(_ *cobra.Command, args []string) error {
 	path := args[0]
 
-	result, err := scl.ParseFileWithOptions(path, scl.ParseOptions{
+	result, err := scl.ParseFileOpts(path, scl.ParseOptions{
 		ValidateSemantic: true,
 		Strict:           validateStrict,
 	})

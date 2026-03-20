@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/otfabric/go-iec61850/scl/internal/genir"
-	"github.com/otfabric/go-iec61850/scl/internal/raw/v17"
-	"github.com/otfabric/go-iec61850/scl/internal/raw/v2007b4"
-	"github.com/otfabric/go-iec61850/scl/internal/raw/v2007c5"
+	v17 "github.com/otfabric/go-iec61850/scl/internal/raw/v17"
+	v2007b4 "github.com/otfabric/go-iec61850/scl/internal/raw/v2007b4"
+	v2007c5 "github.com/otfabric/go-iec61850/scl/internal/raw/v2007c5"
 )
 
 func repoRoot() string {

@@ -256,8 +256,7 @@ func (e *Emitter) emitInlineTypes(b *strings.Builder) {
 	var inlines []inlineEntry
 	seen := make(map[string]bool)
 
-	var collectFromElements func(elements []*Element) //nolint:staticcheck // recursive closure
-	collectFromElements = func(elements []*Element) {
+	collectFromElements := func(elements []*Element) {
 		for _, el := range elements {
 			name := el.Name
 			if el.Ref != "" {

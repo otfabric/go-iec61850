@@ -25,15 +25,15 @@ func init() {
 }
 
 type inspectResult struct {
-	Schema           string            `json:"schema"`
-	Kind             string            `json:"kind"`
-	DetectedKind     string            `json:"detectedKind"`
-	Confidence       string            `json:"confidence"`
-	Namespace        string            `json:"namespace"`
-	VendorNamespaces []string          `json:"vendorNamespaces,omitempty"`
-	Reasons          []string          `json:"reasons,omitempty"`
-	PrivateCount     int               `json:"privateCount"`
-	PrivateTypes     map[string]int    `json:"privateTypes,omitempty"`
+	Schema           string         `json:"schema"`
+	Kind             string         `json:"kind"`
+	DetectedKind     string         `json:"detectedKind"`
+	Confidence       string         `json:"confidence"`
+	Namespace        string         `json:"namespace"`
+	VendorNamespaces []string       `json:"vendorNamespaces,omitempty"`
+	Reasons          []string       `json:"reasons,omitempty"`
+	PrivateCount     int            `json:"privateCount"`
+	PrivateTypes     map[string]int `json:"privateTypes,omitempty"`
 }
 
 func runInspect(_ *cobra.Command, args []string) error {

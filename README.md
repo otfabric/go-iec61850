@@ -1,5 +1,12 @@
 # go-iec61850
 
+[![Go](https://img.shields.io/badge/Go-1.24%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Go Report Card](https://goreportcard.com/badge/github.com/otfabric/go-iec61850)](https://goreportcard.com/report/github.com/otfabric/go-iec61850)
+[![CI](https://github.com/otfabric/go-iec61850/actions/workflows/ci.yml/badge.svg)](https://github.com/otfabric/go-iec61850/actions/workflows/ci.yml)
+[![Codecov](https://codecov.io/github.com/otfabric/go-iec61850/graph/badge.svg)](https://app.codecov.io/github.com/otfabric/go-iec61850)
+[![Release](https://img.shields.io/github/v/release/otfabric/go-iec61850?label=release)](https://github.com/otfabric/go-iec61850/releases)
+
 A pure-Go IEC 61850 MMS client and server library built on top of
 [go-mms](https://github.com/otfabric/go-mms).
 
@@ -31,7 +38,7 @@ not raw MMS domains, item IDs, or alternate access selectors.
 go get github.com/otfabric/go-iec61850
 ```
 
-Requires Go 1.22 or later.
+Requires Go 1.24 or later.
 
 ## Quick start
 
@@ -255,9 +262,11 @@ The MMS wire format uses a different convention (domain = LD, item ID =
 | RP | Unbuffered reporting |
 | BR | Buffered reporting |
 
-## Known limitations
+## Documentation
 
-See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) for the full list.
+- [API.md](API.md) — complete public API reference (types, methods, errors)
+- [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) — known limitations and constraints
+- [OBSERVABILITY.md](OBSERVABILITY.md) — logging and observability
 
 ## License
 

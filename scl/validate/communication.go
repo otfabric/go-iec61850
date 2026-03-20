@@ -66,7 +66,7 @@ func Communication(s *scl.SCL, idx *index.Index) []scl.Diagnostic {
 					if !found {
 						diags = append(diags, scl.Diagnostic{
 							Severity: scl.DiagWarning, Code: "unresolved-gse-control",
-							Path:    gsePath,
+							Path: gsePath,
 							Message: fmt.Sprintf("cbName %q does not match any GSEControl in IED %q LD %q LLN0",
 								gse.CBName, cap.IEDName, gse.LDInst),
 						})
@@ -98,7 +98,7 @@ func Communication(s *scl.SCL, idx *index.Index) []scl.Diagnostic {
 					if !found {
 						diags = append(diags, scl.Diagnostic{
 							Severity: scl.DiagWarning, Code: "unresolved-smv-control",
-							Path:    smvPath,
+							Path: smvPath,
 							Message: fmt.Sprintf("cbName %q does not match any SampledValueControl in IED %q LD %q LLN0",
 								smv.CBName, cap.IEDName, smv.LDInst),
 						})

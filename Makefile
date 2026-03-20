@@ -28,8 +28,13 @@ test-race: ## Run tests with race detector
 vet: ## Run go vet
 	$(GO) vet $(PKGS)
 
-lint: ## Run golangci-lint (install: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
-	golangci-lint run $(PKGS)
+lint: ## Run staticcheck
+	@echo "Running staticcheck"
+	@staticcheck $(PKGS)
+
+lint-ci: ## Run golangci-lint
+	@echo "Running golangci-lint"
+	@golangci-lint run $(PKGS)
 
 fmt: ## Format all Go source files
 	@gofmt -w .
@@ -106,7 +111,7 @@ install: build ## Install commands to PREFIX/bin (default /usr/local/bin)
 		echo "  INSTALL $(PREFIX)/bin/$$cmd"; \
 	done
 
-check: fmt tidy vet lint test test-race coverage ## Run all pre-commit checks
+check: fmt tidy vet lint lint-ci test test-race coverage ## Run all pre-commit checks
 
 clean: coverage-clean ## Clean test cache, coverage, and dist artifacts
 	$(GO) clean -testcache

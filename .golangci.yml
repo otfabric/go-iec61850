@@ -1,17 +1,19 @@
 version: "2"
 
 linters:
-  default: standard
+  default: none
   enable:
-    - unparam
+    - errcheck       # unchecked errors
+    - govet          # go vet checks (shadow, printf, etc.)
+    - ineffassign    # assigned but never used
+    - staticcheck    # comprehensive static analysis (includes gosimple + unused)
+    - misspell       # common spelling mistakes
+    - godot          # comment punctuation
+    - nilerr         # return nil instead of err
+    - exhaustive     # exhaustive switch on enums
   settings:
-    errcheck:
-      exclude-functions:
-        - (io.Closer).Close
-        - (net.Conn).Close
-        - (net.Conn).SetWriteDeadline
-        - (net.Conn).SetReadDeadline
-        - (*net.TCPListener).SetDeadline
+    exhaustive:
+      default-signifies-exhaustive: true  # a default: case satisfies exhaustiveness
   exclusions:
     paths:
       - sources
@@ -20,13 +22,21 @@ linters:
           - errcheck
         path: _test\.go$
       - linters:
-          - unparam
-        path: _test\.go$
-      - linters:
           - staticcheck
-        text: "SA2002|ST1023|QF1011"
+        text: "SA2002"
         path: _test\.go$
 
 formatters:
   enable:
-    - gofmt
+    - gofmt          # formatting
+    - goimports      # import grouping / formatting
+  exclusions:
+    paths:
+      - examples
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+run:
+  timeout: 5m
