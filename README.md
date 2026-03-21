@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/otfabric/go-iec61850)](https://goreportcard.com/report/github.com/otfabric/go-iec61850)
 [![CI](https://github.com/otfabric/go-iec61850/actions/workflows/ci.yml/badge.svg)](https://github.com/otfabric/go-iec61850/actions/workflows/ci.yml)
-[![Codecov](https://codecov.io/github.com/otfabric/go-iec61850/graph/badge.svg)](https://app.codecov.io/github.com/otfabric/go-iec61850)
+[![Codecov](https://codecov.io/github/otfabric/go-iec61850/graph/badge.svg?token=kHYc1ncB8d)](https://codecov.io/github/otfabric/go-iec61850)
 [![Release](https://img.shields.io/github/v/release/otfabric/go-iec61850?label=release)](https://github.com/otfabric/go-iec61850/releases)
 
 A pure-Go IEC 61850 MMS client and server library built on top of
