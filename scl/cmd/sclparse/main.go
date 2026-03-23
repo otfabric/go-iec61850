@@ -41,7 +41,6 @@ var rootCmd = &cobra.Command{
 
 It can detect schema versions, print element summaries, run semantic
 validation, and emit the normalized data model as JSON.`,
-	Version:       version,
 	SilenceErrors: true,
 	SilenceUsage:  true,
 }
@@ -60,7 +59,7 @@ func init() {
 	rootCmd.AddCommand(listConnectedAPCmd)
 	rootCmd.AddCommand(listTypesCmd)
 	rootCmd.AddCommand(inspectCmd)
-	rootCmd.SetVersionTemplate(versionTemplate("sclparse"))
+	rootCmd.AddCommand(versionCmd)
 	rootCmd.CompletionOptions.HiddenDefaultCmd = false
 }
 

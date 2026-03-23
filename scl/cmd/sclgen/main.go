@@ -48,7 +48,6 @@ var rootCmd = &cobra.Command{
 Example:
   sclgen generate -spec-root ./scl/specs -out ./scl/internal/raw
   sclgen check    -spec-root ./scl/specs -out ./scl/internal/raw`,
-	Version:       version,
 	SilenceErrors: true,
 	SilenceUsage:  true,
 }
@@ -75,7 +74,6 @@ Example:
 }
 
 func init() {
-	rootCmd.SetVersionTemplate(versionTemplate("sclgen"))
 	rootCmd.CompletionOptions.HiddenDefaultCmd = false
 
 	for _, cmd := range []*cobra.Command{generateCmd, checkCmd} {
@@ -91,6 +89,7 @@ func init() {
 
 	rootCmd.AddCommand(generateCmd)
 	rootCmd.AddCommand(checkCmd)
+	rootCmd.AddCommand(versionCmd)
 }
 
 func main() {

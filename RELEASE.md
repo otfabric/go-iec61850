@@ -1,14 +1,23 @@
 # go-iec61850 Releases
 
+## v0.1.3
+
+**Changed**: CI/release pipeline, SCL tooling, and documentation overhaul.
+
+- Add GitHub Actions CI (`ci.yml`) and release (`release.yml`) workflows for package and binary releases.
+- `sclgen` and `sclparse` binaries now embed full build metadata via ldflags (`version`, `tag`, `commit`, `buildDate`) and expose it through a dedicated `version` subcommand.
+- Makefile build targets derive version from git tags instead of `version.txt` files.
+- SCL model: add topology `LNode` references on `Substation`, `VoltageLevel`, and `Bay`; lossless `Private.InnerXML` capture.
+- SCL validation: add topology LNode resolution, GOOSE/SMV `cbName` linkage checks; deprecate `scl.Validate()` in favour of `scl/validate.All()`.
+- SCL CLI: add `list-goose`, `list-smv`, `list-connected-ap`, `list-types`, and `inspect` commands; deprecate `ParseWithOptions`/`ParseFileWithOptions`.
+- Add content-based `DetectKind` for document classification.
+- New `API.md` (merged from `ERRORS.md`); updated `KNOWN_LIMITATIONS.md`, `OBSERVABILITY.md`, `interop/README.md`.
+
+---
+
 ## v0.1.2
 
-**Changed**: Dependency upgrades, CI/release v2 workflows, and git-based binary versioning.
-
-- Bump go-mms to v0.1.4, go-cotp to v0.1.4, go-tpkt to v0.1.2.
-- Upgrade CI workflow to `go-ci.yml@v2`.
-- Split release workflow into `go-package-release.yml@v2` + `go-binary-release.yml@v2`, producing cross-platform `sclgen` and `sclparse` binaries with ldflags (version, tag, commit, buildDate).
-- Replace `version.txt`-based versioning with `git describe` in Makefile; all build targets now inject the same 4 ldflags as CI.
-- `sclgen --version` and `sclparse --version` now show version, tag, commit, and build date.
+**Changed**: Increase go-mms dependency to v0.1.4 and upstep ci and release flows (both package and binary)
 
 ---
 
