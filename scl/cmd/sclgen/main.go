@@ -26,7 +26,12 @@ var allVersions = []versionSpec{
 	{"IEC_61850-6.2025.SCL.2007C5.full", "v2007c5", "2007C5"},
 }
 
-var version = "dev"
+var (
+	version   = "dev"
+	tag       = ""
+	commit    = ""
+	buildDate = ""
+)
 
 var (
 	specRoot string
@@ -70,7 +75,7 @@ Example:
 }
 
 func init() {
-	rootCmd.SetVersionTemplate("sclgen {{.Version}}\n")
+	rootCmd.SetVersionTemplate(versionTemplate("sclgen"))
 	rootCmd.CompletionOptions.HiddenDefaultCmd = false
 
 	for _, cmd := range []*cobra.Command{generateCmd, checkCmd} {

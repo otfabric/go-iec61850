@@ -11,6 +11,12 @@ PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 win
 
 PREFIX   ?= /usr/local
 
+VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+TAG        ?= $(shell git describe --tags --exact-match 2>/dev/null || echo "")
+COMMIT     ?= $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "")
+BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS    := -s -w -X main.version=$(VERSION) -X main.tag=$(TAG) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
+
 .PHONY: help test test-race test-verbose vet lint fmt fuzz bench tidy check clean coverage coverage-html coverage-clean scl-generate scl-check-generate build build-all release-all install ai-print-all ai-print-test ai-print ai-diff ai-digest ai-context
 
 help: ## Show available targets
@@ -68,33 +74,30 @@ scl-check-generate: ## Verify generated SCL code is up to date
 build: ## Build all commands for the current platform
 	@mkdir -p bin
 	@for cmd in $(CMDS); do \
-		ver=$$(cat scl/cmd/$$cmd/version.txt); \
-		echo "  BUILD $$cmd v$$ver -> bin/$$cmd"; \
-		$(GO) build -ldflags '-s -w -X main.version='"$$ver" -o bin/$$cmd ./scl/cmd/$$cmd || exit 1; \
+		echo "  BUILD $$cmd $(VERSION) -> bin/$$cmd"; \
+		$(GO) build -ldflags '$(LDFLAGS)' -o bin/$$cmd ./scl/cmd/$$cmd || exit 1; \
 	done
 
 build-all: ## Cross-compile all commands for all platforms
 	@mkdir -p $(DIST)
 	@for cmd in $(CMDS); do \
-		ver=$$(cat scl/cmd/$$cmd/version.txt); \
 		for target in $(PLATFORMS); do \
 			os=$${target%/*}; arch=$${target#*/}; \
 			ext=""; [ "$$os" = "windows" ] && ext=".exe"; \
 			out=$(DIST)/$$cmd-$$os-$$arch$$ext; \
-			echo "  BUILD $$cmd v$$ver $$target -> $$out"; \
-			GOOS=$$os GOARCH=$$arch $(GO) build -ldflags '-s -w -X main.version='"$$ver" -o $$out ./scl/cmd/$$cmd || exit 1; \
+			echo "  BUILD $$cmd $(VERSION) $$target -> $$out"; \
+			GOOS=$$os GOARCH=$$arch $(GO) build -ldflags '$(LDFLAGS)' -o $$out ./scl/cmd/$$cmd || exit 1; \
 		done; \
 	done
 	@echo "Built $$(ls $(DIST)/ | wc -l | tr -d ' ') binaries in $(DIST)/"
 
 release-all: build-all ## Package release archives (tar.gz + zip) for all commands
 	@for cmd in $(CMDS); do \
-		ver=$$(cat scl/cmd/$$cmd/version.txt); \
 		for target in $(PLATFORMS); do \
 			os=$${target%/*}; arch=$${target#*/}; \
 			ext=""; [ "$$os" = "windows" ] && ext=".exe"; \
 			bin=$$cmd-$$os-$$arch$$ext; \
-			name=$$cmd-$$ver-$$os-$$arch; \
+			name=$$cmd-$(VERSION)-$$os-$$arch; \
 			if [ "$$os" = "windows" ]; then \
 				(cd $(DIST) && cp $$bin $$cmd.exe && zip -q $$name.zip $$cmd.exe && rm $$cmd.exe); \
 				echo "  ZIP  $(DIST)/$$name.zip"; \

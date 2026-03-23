@@ -9,7 +9,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var version = "dev"
+var (
+	version   = "dev"
+	tag       = ""
+	commit    = ""
+	buildDate = ""
+)
 
 const (
 	exitOK         = 0
@@ -55,7 +60,7 @@ func init() {
 	rootCmd.AddCommand(listConnectedAPCmd)
 	rootCmd.AddCommand(listTypesCmd)
 	rootCmd.AddCommand(inspectCmd)
-	rootCmd.SetVersionTemplate("sclparse {{.Version}}\n")
+	rootCmd.SetVersionTemplate(versionTemplate("sclparse"))
 	rootCmd.CompletionOptions.HiddenDefaultCmd = false
 }
 
