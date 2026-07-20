@@ -294,3 +294,87 @@ func TestGoServer_Neg_InvalidDataSet(t *testing.T) {
 		t.Errorf("go server: association broken after invalid dataset read: %v", err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Phase C1 — go-iec61850 server negative tests (additional)
+// ---------------------------------------------------------------------------
+
+// TestGoServer_Neg_URCBDoubleReserve verifies that the go-iec61850 server
+// rejects a second URCB reservation attempt while the first is still held.
+// Client A's reservation must remain intact after the rejection.
+func TestGoServer_Neg_URCBDoubleReserve(t *testing.T) {
+	const srvUrcbLD = "InteropLD"
+	const srvUrcbID = "LLN0$RP$urcb01"
+
+	srv := startGoIEDServerWithReports(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	c1 := dialIED(t, ctx, fmt.Sprintf("127.0.0.1:%d", srv.port))
+	defer c1.Close(ctx)
+	c2 := dialIED(t, ctx, fmt.Sprintf("127.0.0.1:%d", srv.port))
+	defer c2.Close(ctx)
+
+	// Client A reserves successfully.
+	if err := c1.ReserveURCB(ctx, srvUrcbLD, srvUrcbID); err != nil {
+		t.Fatalf("client A ReserveURCB: %v", err)
+	}
+
+	// Client B reservation must fail.
+	err := c2.ReserveURCB(ctx, srvUrcbLD, srvUrcbID)
+	if err == nil {
+		t.Error("expected error reserving already-reserved URCB from second client, got nil")
+	} else {
+		t.Logf("go server correctly rejected double-reserve: %v", err)
+	}
+
+	// Client A's reservation must still be intact.
+	rcb, readErr := c1.GetReportControlBlock(ctx, srvUrcbLD, srvUrcbID)
+	if readErr != nil {
+		t.Fatalf("GetReportControlBlock after double-reserve attempt: %v", readErr)
+	}
+	if !rcb.Resv {
+		t.Error("go server: client A reservation was lost after client B double-reserve rejection")
+	}
+
+	// Release so the server is left in a clean state.
+	if releaseErr := c1.SetReportControlBlock(ctx, srvUrcbLD, srvUrcbID, iec61850.RCBUpdate{
+		Fields: iec61850.RCBFieldResv,
+		Resv:   false,
+	}); releaseErr != nil {
+		t.Logf("release URCB reservation: %v (non-fatal)", releaseErr)
+	}
+}
+
+// TestGoServer_Neg_WriteWrongType writes a visible-string value to a boolean
+// attribute and verifies the go-iec61850 server rejects the type mismatch while
+// keeping the association alive.
+func TestGoServer_Neg_WriteWrongType(t *testing.T) {
+	srv := startGoIEDServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	c := dialIED(t, ctx, fmt.Sprintf("127.0.0.1:%d", srv.port))
+	defer c.Close(ctx)
+
+	// SPS1.stVal[ST] expects a boolean; write a visible string instead.
+	ref, _ := iec61850.ParseRef("InteropLD/GGIO1.SPS1.stVal[ST]")
+	err := c.Write(ctx, ref, mms.NewVisibleString("not-a-boolean"))
+	if err == nil {
+		t.Error("expected data-access error writing wrong type to boolean attribute, got nil")
+	} else {
+		t.Logf("go server correctly rejected wrong-type write: %v", err)
+	}
+
+	// Association must survive and value must be unchanged.
+	raw, readErr := c.ReadRaw(ctx, ref)
+	if readErr != nil {
+		t.Fatalf("read after rejected write failed: %v", readErr)
+	}
+	b, ok := raw.Bool()
+	if !ok {
+		t.Fatalf("expected boolean after rejected write, got type %s", raw.Type())
+	}
+	if b != fixVal.SPS1StVal {
+		t.Errorf("SPS1.stVal after rejected write: want %v (unchanged), got %v", fixVal.SPS1StVal, b)
+	}
+}

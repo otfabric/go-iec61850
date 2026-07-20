@@ -6,12 +6,14 @@
   Access pt : AP1
   LD        : InteropLD
     LN0  — LLN0 (Mod: INC, Beh: INS)
-    GGIO1 — SPS1 (SPS — boolean status), SPCSO1 (SPC — direct),
-             SPCSO2 (SPC — SBO normal, ctlModel=2),
+    GGIO1 — SPS1 (SPS — boolean status), DPS1 (DPS — double-point status),
+             SPCSO1 (SPC — direct), SPCSO2 (SPC — SBO normal, ctlModel=2),
              SPCSO3 (SPC — SBO enhanced/SBOw, ctlModel=4)
     MMXU1 — TotW (MV — measured active power)
+    MMTR1 — TotVAh (BCR — binary counter reading)
   Dataset   : LLN0.dsInterop (SPS1.stVal[ST], Mod.stVal[ST])
   Report    : LLN0.urcb01 (unbuffered, triggers on data change / GI)
+             LLN0.brcb01 (buffered, triggers on data change / GI)
 
   Initial values are defined in values.json and applied at server startup.
   Encoding norms — see PLAN.md.
@@ -61,6 +63,17 @@
                       period="false" gi="true"/>
               <OptFields seqNum="true" timeStamp="true" reasonCode="true"/>
             </ReportControl>
+            <ReportControl name="brcb01"
+                           rptID="interop_brcb01"
+                           datSet="dsInterop"
+                           confRev="1"
+                           buffered="true"
+                           bufTime="0">
+              <TrgOps dchg="true" qchg="false" dupd="false"
+                      period="false" gi="true"/>
+              <OptFields seqNum="true" timeStamp="true" reasonCode="true"
+                         entryID="true" bufOvfl="true"/>
+            </ReportControl>
           </LN0>
 
           <LN prefix="" lnClass="GGIO" inst="1" lnType="GGIO1_Type"
@@ -77,6 +90,8 @@
           </LN>
           <LN prefix="" lnClass="MMXU" inst="1" lnType="MMXU1_Type"
               desc="Measurement unit"/>
+          <LN prefix="" lnClass="MMTR" inst="1" lnType="MMTR1_Type"
+              desc="Energy meter"/>
 
         </LDevice>
       </Server>
@@ -96,6 +111,7 @@
 
     <LNodeType id="GGIO1_Type" lnClass="GGIO" desc="Generic IO">
       <DO name="SPS1"   type="SPS_Type"/>
+      <DO name="DPS1"   type="DPS_Type"/>
       <DO name="SPCSO1" type="SPC_Type"/>
       <DO name="SPCSO2" type="SPC_Type"/>
       <DO name="SPCSO3" type="SPC_Type"/>
@@ -103,6 +119,10 @@
 
     <LNodeType id="MMXU1_Type" lnClass="MMXU" desc="Measurement unit">
       <DO name="TotW" type="MV_Type"/>
+    </LNodeType>
+
+    <LNodeType id="MMTR1_Type" lnClass="MMTR" desc="Energy metering">
+      <DO name="TotVAh" type="BCR_Type"/>
     </LNodeType>
 
     <!-- ================================================================== -->
@@ -151,6 +171,20 @@
       <DA name="mag" fc="MX" bType="Struct" type="AnalogueValue" dchg="true"/>
       <DA name="q"   fc="MX" bType="Quality"  qchg="true"/>
       <DA name="t"   fc="MX" bType="Timestamp"/>
+    </DOType>
+
+    <!-- DPS: Double-point status (GGIO1.DPS1) -->
+    <DOType id="DPS_Type" cdc="DPS" desc="Double point status">
+      <DA name="stVal" fc="ST" bType="Dbpos"    dchg="true" qchg="false"/>
+      <DA name="q"     fc="ST" bType="Quality"  qchg="true"/>
+      <DA name="t"     fc="ST" bType="Timestamp"/>
+    </DOType>
+
+    <!-- BCR: Binary counter reading (MMTR1.TotVAh) -->
+    <DOType id="BCR_Type" cdc="BCR" desc="Binary counter reading">
+      <DA name="actVal" fc="ST" bType="INT32U"  dchg="true"/>
+      <DA name="q"      fc="ST" bType="Quality"/>
+      <DA name="t"      fc="ST" bType="Timestamp"/>
     </DOType>
 
     <!-- ================================================================== -->

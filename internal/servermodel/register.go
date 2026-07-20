@@ -884,9 +884,19 @@ func registerRCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, rpt *Re
 				return subTS.DefaultValue(), nil
 			},
 			Write: func(ctx context.Context, val *mms.Value) error {
+				prev := vs.Get(subSK)
 				vs.Set(subSK, val)
-				if handled, err := vs.callInterceptor(ctx, subSK, val); handled || err != nil {
+				if handled, err := vs.callInterceptor(ctx, subSK, val); err != nil {
+					// Restore previous value so the store stays consistent
+					// when an access-control rejection overrides a write.
+					if prev != nil {
+						vs.Set(subSK, prev)
+					} else {
+						vs.Set(subSK, subTS.DefaultValue())
+					}
 					return err
+				} else if handled {
+					return nil
 				}
 				return nil
 			},
