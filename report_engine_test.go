@@ -125,8 +125,8 @@ func TestReportEngine_EnableDisable(t *testing.T) {
 	if rt.rptID != "rpt_brcb01" {
 		t.Errorf("rptID = %q, want rpt_brcb01", rt.rptID)
 	}
-	if rt.datSet != "dsTest" {
-		t.Errorf("datSet = %q, want dsTest", rt.datSet)
+	if rt.datSet != "LD1/LLN0$dsTest" {
+		t.Errorf("datSet = %q, want LD1/LLN0$dsTest", rt.datSet)
 	}
 	if len(rt.memberKeys) != 1 {
 		t.Errorf("memberKeys = %d, want 1", len(rt.memberKeys))

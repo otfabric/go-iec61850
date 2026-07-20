@@ -17,13 +17,16 @@ COMMIT     ?= $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "")
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS    := -s -w -X main.version=$(VERSION) -X main.tag=$(TAG) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
 
-.PHONY: help test test-race test-verbose vet lint fmt fuzz bench tidy check clean coverage coverage-html coverage-clean scl-generate scl-check-generate build build-all release-all install ai-print-all ai-print-test ai-print ai-diff ai-digest ai-context
+.PHONY: help test test-race test-verbose vet lint fmt fuzz bench tidy check clean coverage coverage-html coverage-clean interop scl-generate scl-check-generate build build-all release-all install ai-print-all ai-print-test ai-print ai-diff ai-digest ai-context
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "}; /^[a-zA-Z0-9_.-]+:.*## / {printf "%-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 test: ## Run unit tests
 	$(GO) test $(PKGS)
+
+interop: ## Run interoperability tests against mms-interop adapter images (-tags=interop).
+	$(GO) test -tags=interop -v -timeout 300s ./interop/...
 
 test-verbose: ## Run unit tests with verbose output
 	$(GO) test -v $(PKGS)

@@ -63,7 +63,7 @@ func (c *Client) GetSettingGroupInfo(ctx context.Context, ld string) (*SettingGr
 	}
 
 	result, err := c.mmsClient.Read(ctx, mms.ReadRequest{
-		DomainID: mms.DomainID(ld),
+		DomainID: c.ldDomain(ld),
 		ItemID:   mms.ItemID(sgcbItemID),
 	})
 	if err != nil {
@@ -116,10 +116,10 @@ func decodeSGCB(v *mms.Value) (*SettingGroupInfo, error) {
 }
 
 // sgcbObjectName returns an MMS domain-specific ObjectName for the SGCB.
-func sgcbObjectName(ld string) mms.ObjectName {
+func sgcbObjectName(domain mms.DomainID) mms.ObjectName {
 	return mms.ObjectName{
 		Scope:  mms.ObjectScopeDomain,
-		Domain: mms.DomainID(ld),
+		Domain: domain,
 		ItemID: mms.ItemID(sgcbItemID),
 	}
 }
@@ -141,7 +141,7 @@ func (c *Client) SelectActiveSG(ctx context.Context, ld string, sg uint8) error 
 		return fmt.Errorf("iec61850: select active SG: %w: setting group must be >= 1", ErrInvalidArgument)
 	}
 
-	err := c.mmsClient.WriteComponent(ctx, sgcbObjectName(ld), "ActSG", mms.NewUnsigned(uint64(sg)))
+	err := c.mmsClient.WriteComponent(ctx, sgcbObjectName(c.ldDomain(ld)), "ActSG", mms.NewUnsigned(uint64(sg)))
 	if err != nil {
 		return fmt.Errorf("iec61850: select active SG %s group %d: %w", ld, sg, err)
 	}
@@ -171,7 +171,7 @@ func (c *Client) SelectEditSG(ctx context.Context, ld string, sg uint8) error {
 		return fmt.Errorf("iec61850: select edit SG: %w: setting group must be >= 1", ErrInvalidArgument)
 	}
 
-	err := c.mmsClient.WriteComponent(ctx, sgcbObjectName(ld), "EditSG", mms.NewUnsigned(uint64(sg)))
+	err := c.mmsClient.WriteComponent(ctx, sgcbObjectName(c.ldDomain(ld)), "EditSG", mms.NewUnsigned(uint64(sg)))
 	if err != nil {
 		return fmt.Errorf("iec61850: select edit SG %s group %d: %w", ld, sg, err)
 	}
@@ -194,7 +194,7 @@ func (c *Client) ConfirmEditSG(ctx context.Context, ld string) error {
 		return fmt.Errorf("iec61850: confirm edit SG: %w: empty logical device name", ErrInvalidArgument)
 	}
 
-	err := c.mmsClient.WriteComponent(ctx, sgcbObjectName(ld), "CnfEdit", mms.NewBoolean(true))
+	err := c.mmsClient.WriteComponent(ctx, sgcbObjectName(c.ldDomain(ld)), "CnfEdit", mms.NewBoolean(true))
 	if err != nil {
 		return fmt.Errorf("iec61850: confirm edit SG %s: %w", ld, err)
 	}

@@ -262,8 +262,15 @@ The MMS wire format uses a different convention (domain = LD, item ID =
 | RP | Unbuffered reporting |
 | BR | Buffered reporting |
 
+## Interoperability
+
+Client and server behaviour is tested bidirectionally against pinned libiec61850 and iec61850bean adapters through the independently versioned [mms-interop](https://github.com/otfabric/mms-interop) infrastructure. Tests in `interop/` run behind `-tags=interop`.
+
+See [INTEROP.md](INTEROP.md) for the compatibility matrix and `make interop` for how to run.
+
 ## Documentation
 
+- [INTEROP.md](INTEROP.md) — interoperability tests and IEC 61850 compatibility matrix
 - [API.md](API.md) — complete public API reference (types, methods, errors)
 - [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) — known limitations and constraints
 - [OBSERVABILITY.md](OBSERVABILITY.md) — logging and observability

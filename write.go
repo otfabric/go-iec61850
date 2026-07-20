@@ -30,7 +30,7 @@ func (c *Client) Write(ctx context.Context, ref Ref, value *mms.Value) error {
 		return fmt.Errorf("iec61850: write %s: %w: nil value", ref.String(), ErrInvalidArgument)
 	}
 
-	domainID, itemID, err := ref.ToMMS()
+	domainID, itemID, err := c.refToMMS(ref)
 	if err != nil {
 		return err
 	}

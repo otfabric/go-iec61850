@@ -57,7 +57,7 @@ func (c *Client) ListJournals(ctx context.Context, ld string) ([]string, error) 
 	names, err := c.mmsClient.GetNameListAll(ctx, mms.NameListRequest{
 		ObjectClass: mms.ObjectClassJournal,
 		Scope:       mms.ObjectScopeDomain,
-		DomainID:    mms.DomainID(ld),
+		DomainID:    c.ldDomain(ld),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("iec61850: list journals for %q: %w", ld, err)

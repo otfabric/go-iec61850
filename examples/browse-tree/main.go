@@ -28,7 +28,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("dial: %v", err)
 	}
-	defer client.Close(context.Background())
+	defer client.Close(context.Background()) //nolint:errcheck
 
 	tree, err := client.TreeWithOptions(ctx, iec61850.TreeOptions{
 		MaxDepth:   5,

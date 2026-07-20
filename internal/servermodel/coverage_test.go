@@ -178,7 +178,7 @@ func TestParseInitialValue(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			v, err := parseInitialValue(tc.btype, tc.val)
+			v, err := parseInitialValue(tc.btype, tc.val, nil)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("parseInitialValue(%q, %q) error = %v, wantErr %v", tc.btype, tc.val, err, tc.wantErr)
 			}

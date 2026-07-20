@@ -101,7 +101,7 @@ func (c *Client) Select(ctx context.Context, ref Ref) (string, error) {
 	}
 
 	sboRef := controlSubRef(ref, "SBO")
-	domainID, itemID, err := sboRef.ToMMS()
+	domainID, itemID, err := c.refToMMS(sboRef)
 	if err != nil {
 		return "", &ControlError{Ref: ref.String(), Operation: "select", Wrapped: err}
 	}
@@ -352,7 +352,7 @@ func controlSubRef(ref Ref, subAttr string) Ref {
 
 // writeControlValue writes an MMS structure to a control sub-attribute.
 func (c *Client) writeControlValue(ctx context.Context, ref Ref, value *mms.Value) error {
-	domainID, itemID, err := ref.ToMMS()
+	domainID, itemID, err := c.refToMMS(ref)
 	if err != nil {
 		return err
 	}

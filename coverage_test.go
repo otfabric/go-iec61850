@@ -303,10 +303,36 @@ func TestWriteInterceptor_RCBDispatch(t *testing.T) {
 	}
 }
 
-func TestWriteInterceptor_NonRCB_PassThrough(t *testing.T) {
+func TestWriteInterceptor_NonRCB_ReportsEnabled(t *testing.T) {
+	// With the report engine active, the interceptor handles regular DA writes
+	// to send dchg notifications. It must return (true, nil) so the DA Write
+	// handler knows notification was dispatched, and must not return any error.
 	model := testReportSCL()
 	srv := newTestServer(t, model)
 	srv.EnableReports()
+
+	ctx := context.Background()
+	// Simulate what the DA Write handler does: store the value first, then
+	// call the interceptor for notification.
+	storeKey := "LD1/LLN0$ST$Mod$stVal"
+	srv.store.Set(storeKey, mms.NewInteger(1))
+	handled, err := srv.store.CallInterceptorForTest(ctx, storeKey, mms.NewInteger(1))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// When reports are enabled the interceptor claims the notification
+	// (returns handled=true) so the DA Write handler can return immediately.
+	if !handled {
+		t.Fatal("interceptor should handle DA writes when reports are enabled")
+	}
+}
+
+func TestWriteInterceptor_NonRCB_ReportsDisabled(t *testing.T) {
+	// Without the report engine, the interceptor leaves regular DA writes
+	// to the normal store path (returns handled=false).
+	model := testReportSCL()
+	srv := newTestServer(t, model)
+	// Note: EnableReports() is intentionally NOT called.
 
 	ctx := context.Background()
 	handled, err := srv.store.CallInterceptorForTest(ctx, "LD1/LLN0$ST$Mod$stVal", mms.NewInteger(1))
@@ -314,6 +340,6 @@ func TestWriteInterceptor_NonRCB_PassThrough(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if handled {
-		t.Fatal("non-RCB keys should not be handled by interceptor")
+		t.Fatal("non-RCB keys should not be handled when reports are disabled")
 	}
 }

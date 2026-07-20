@@ -153,7 +153,7 @@ go-iec61850/
 │       ├── model.go
 │       └── model_test.go
 │
-├── _examples/
+├── examples/
 │   ├── basic-client/
 │   ├── browse-tree/
 │   ├── reports/

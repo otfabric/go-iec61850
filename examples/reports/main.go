@@ -29,7 +29,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("dial: %v", err)
 	}
-	defer client.Close(context.Background())
+	defer client.Close(context.Background()) //nolint:errcheck
 
 	devices, err := client.ListLogicalDevices(ctx)
 	if err != nil {
@@ -79,7 +79,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("subscribe: %v", err)
 	}
-	defer sub.Close()
+	defer sub.Close() //nolint:errcheck
 
 	fmt.Println("Waiting for reports (Ctrl-C to stop)...")
 	for {

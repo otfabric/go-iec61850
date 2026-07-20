@@ -40,7 +40,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("dial: %v", err)
 	}
-	defer client.Close(context.Background())
+	defer client.Close(context.Background()) //nolint:errcheck
 
 	if controlDO == "" {
 		fmt.Println("No control DO specified. Browsing for controllable objects...")

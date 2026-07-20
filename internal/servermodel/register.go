@@ -145,10 +145,28 @@ func (vs *ValueStore) Set(key string, v *mms.Value) {
 	vs.mu.Unlock()
 }
 
-// SetWriteInterceptor installs a callback that is invoked by RCB
-// and SGCB write handlers before committing to the store. This
-// allows higher layers (e.g. [ReportEngine], [SettingGroupEngine])
-// to intercept and validate writes from MMS clients.
+// SetWriteInterceptor installs a callback that serves two distinct roles
+// depending on the attribute kind being written:
+//
+// Pre-commit dispatcher (RCB / SGCB subfields)
+//
+// For RCB subfields the handler stores the value first and then calls the
+// interceptor; for SGCB subfields the interceptor is called first and the
+// handler stores only when the interceptor returns handled=false.  Returning
+// (true, err) from the interceptor causes the Write function to return err
+// immediately, which can be used to reject the MMS write before it completes.
+//
+// Post-write notification hook (regular data attributes)
+//
+// For normal DAs the Write function validates the write, stores the new value
+// via [ValueStore.Set], and only then calls the interceptor.  In this role
+// the interceptor cannot prevent the write — the value is already in the store
+// before the call.  It is used purely for notification (e.g. to trigger
+// report-engine dchg evaluation after a client writes a dataset member).
+//
+// Because of this split role, do NOT assume that every MMS client write flows
+// through the interceptor before reaching the store.  Regular DA writes are
+// already committed when the interceptor runs.
 //
 // The interceptor is checked at call time, so it may be set after
 // [RegisterModel] returns.
@@ -206,10 +224,10 @@ func RegisterModel(srv *mms.Server, m *Model, vs *ValueStore) (*ValueStore, erro
 }
 
 func registerLN(srv *mms.Server, vs *ValueStore, ldName string, ln *LogicalNode) error {
-	for _, obj := range ln.DataObjects {
-		if err := registerDO(srv, vs, ldName, ln.Name, nil, &obj); err != nil {
-			return err
-		}
+	// Register the full variable hierarchy (LN, FC-group, DO, compound DA levels)
+	// before leaf DAs so the ordering in GetNameList matches libiec61850.
+	if err := registerLNHierarchy(srv, vs, ldName, ln); err != nil {
+		return err
 	}
 
 	for _, ds := range ln.DataSets {
@@ -233,21 +251,415 @@ func registerLN(srv *mms.Server, vs *ValueStore, ldName string, ln *LogicalNode)
 	return nil
 }
 
-func registerDO(srv *mms.Server, vs *ValueStore, ldName, lnName string, parentPath []string, obj *DataObject) error {
-	for _, child := range obj.Children {
-		childPath := append(append([]string(nil), parentPath...), obj.Name)
-		if err := registerDO(srv, vs, ldName, lnName, childPath, &child); err != nil {
-			return err
+// registerLNHierarchy registers the full IEC 61850-8-1 variable name hierarchy
+// for a LogicalNode. It emits variables in the order expected by libiec61850:
+// LN bare name → FC-group → DO-level → compound DA intermediates → leaf DAs.
+//
+// This allows clients like iec61850bean to use GetNameList(namedVariable) to
+// discover LN names (items without '$'), and then call GetVariableAccessAttributes
+// on each LN name to obtain the complete nested model tree.
+func registerLNHierarchy(srv *mms.Server, vs *ValueStore, ldName string, ln *LogicalNode) error {
+	// ---- Phase 1: collect DO→FC→elem mappings ----
+	type elemEntry struct {
+		ts   mms.TypeSpec
+		read func(context.Context) (*mms.Value, error)
+	}
+	// fcDOs[fc][doName] = structure of DAs for that (FC, DO) pair
+	fcDOs := map[string]map[string]elemEntry{}
+	fcOrder := []string{}
+	doOrders := map[string][]string{} // fc → ordered DO names
+
+	for i := range ln.DataObjects {
+		obj := &ln.DataObjects[i]
+		doFCs := collectFCsInDO(obj)
+		for _, fc := range doFCs {
+			elems, reads, err := buildDOElemsForFC(vs, ldName, ln.Name, nil, obj, fc)
+			if err != nil {
+				return fmt.Errorf("LD %s LN %s DO %s FC %s: %w", ldName, ln.Name, obj.Name, fc, err)
+			}
+			if len(elems) == 0 {
+				continue
+			}
+			if fcDOs[fc] == nil {
+				fcDOs[fc] = map[string]elemEntry{}
+				fcOrder = append(fcOrder, fc)
+				doOrders[fc] = nil
+			}
+			doTS := mms.TypeSpec{Type: mms.ValueTypeStructure, Elements: elems}
+			doReads := reads
+			doRead := makeStructRead(doReads)
+			fcDOs[fc][obj.Name] = elemEntry{ts: doTS, read: doRead}
+			doOrders[fc] = append(doOrders[fc], obj.Name)
 		}
 	}
 
+	// ---- Phase 2: register LN variable (bare name, no $) ----
+	lnElems := make([]mms.TypeSpecElement, 0, len(fcOrder))
+	lnReads := make([]func(context.Context) (*mms.Value, error), 0, len(fcOrder))
+
+	for _, fc := range fcOrder {
+		doMap := fcDOs[fc]
+		doNames := doOrders[fc]
+
+		fcElems := make([]mms.TypeSpecElement, 0, len(doNames))
+		fcReads := make([]func(context.Context) (*mms.Value, error), 0, len(doNames))
+
+		for _, doName := range doNames {
+			entry := doMap[doName]
+			fcElems = append(fcElems, mms.TypeSpecElement{Name: doName, Type: entry.ts})
+			fcReads = append(fcReads, entry.read)
+		}
+
+		fcTS := mms.TypeSpec{Type: mms.ValueTypeStructure, Elements: fcElems}
+		fcRead := makeStructRead(fcReads)
+
+		lnElems = append(lnElems, mms.TypeSpecElement{Name: fc, Type: fcTS})
+		lnReads = append(lnReads, fcRead)
+
+		// Register FC-group variable: "lnName$FC"
+		fcItemID := ln.Name + "$" + fc
+		if err := srv.RegisterVariable(mms.Variable{
+			Name: mms.ObjectName{
+				Scope:  mms.ObjectScopeDomain,
+				Domain: mms.DomainID(ldName),
+				ItemID: mms.ItemID(fcItemID),
+			},
+			TypeSpec: fcTS,
+			Read:     fcRead,
+		}); err != nil {
+			return fmt.Errorf("register FC group %s: %w", fcItemID, err)
+		}
+
+		// Register DO-level variables: "lnName$FC$DOname"
+		for _, doName := range doNames {
+			entry := doMap[doName]
+			doItemID := ln.Name + "$" + fc + "$" + doName
+			doRead := entry.read
+			if err := srv.RegisterVariable(mms.Variable{
+				Name: mms.ObjectName{
+					Scope:  mms.ObjectScopeDomain,
+					Domain: mms.DomainID(ldName),
+					ItemID: mms.ItemID(doItemID),
+				},
+				TypeSpec: entry.ts,
+				Read:     doRead,
+			}); err != nil {
+				return fmt.Errorf("register DO %s: %w", doItemID, err)
+			}
+		}
+
+		// Register compound DA intermediates and leaf DAs
+		for i := range ln.DataObjects {
+			obj := &ln.DataObjects[i]
+			if err := registerDOWithFC(srv, vs, ldName, ln.Name, nil, obj, fc); err != nil {
+				return err
+			}
+		}
+	}
+
+	// ---- Phase 2b: add RP/BR FC groups from Reports into the LN TypeSpec ----
+	// IEC 61850-8-1 requires the LN variable to expose its URCB/BRCB blocks under
+	// "RP" and "BR" FC groups. Clients like iec61850bean discover RCBs by calling
+	// GetVariableAccessAttributes on the bare LN name and parsing the structure.
+	type rcbGroupEntry struct {
+		ts   mms.TypeSpec
+		read func(context.Context) (*mms.Value, error)
+	}
+	rcbGroups := map[string][]rcbGroupEntry{} // "RP" or "BR" → list of RCB entries
+	rcbGroupOrder := map[string][]string{}    // "RP"/"BR" → ordered RCB names
+
+	for i := range ln.Reports {
+		rpt := &ln.Reports[i]
+		prefix := "RP"
+		if rpt.Buffered {
+			prefix = "BR"
+		}
+		rptID := rpt.RptID
+		if rptID == "" {
+			rptID = ldName + "/" + ln.Name + "$" + prefix + "$" + rpt.Name
+		}
+		fields := buildRCBFields(rpt, rptID, ldName, ln.Name)
+		rcbElems := make([]mms.TypeSpecElement, len(fields))
+		rcbFieldReads := make([]func(context.Context) (*mms.Value, error), len(fields))
+		for j, f := range fields {
+			rcbElems[j] = mms.TypeSpecElement{Name: f.suffix, Type: f.typeSpec}
+			// Read from the value store using the same key as registerRCB.
+			subItemID := ln.Name + "$" + prefix + "$" + rpt.Name + "$" + f.suffix
+			subSK := StoreKey(ldName, subItemID)
+			subTS := f.typeSpec
+			rcbFieldReads[j] = func(_ context.Context) (*mms.Value, error) {
+				v := vs.Get(subSK)
+				if v != nil {
+					return v, nil
+				}
+				return subTS.DefaultValue(), nil
+			}
+		}
+		rcbTS := mms.TypeSpec{Type: mms.ValueTypeStructure, Elements: rcbElems}
+		rcbRead := makeStructRead(rcbFieldReads)
+		rcbGroups[prefix] = append(rcbGroups[prefix], rcbGroupEntry{ts: rcbTS, read: rcbRead})
+		rcbGroupOrder[prefix] = append(rcbGroupOrder[prefix], rpt.Name)
+	}
+
+	// Append RP then BR groups to the LN elements (in a deterministic order).
+	for _, prefix := range []string{"RP", "BR"} {
+		entries := rcbGroups[prefix]
+		names := rcbGroupOrder[prefix]
+		if len(entries) == 0 {
+			continue
+		}
+		rcbFCElems := make([]mms.TypeSpecElement, len(entries))
+		rcbFCReads := make([]func(context.Context) (*mms.Value, error), len(entries))
+		for i, e := range entries {
+			rcbFCElems[i] = mms.TypeSpecElement{Name: names[i], Type: e.ts}
+			rcbFCReads[i] = e.read
+		}
+		rcbFCTS := mms.TypeSpec{Type: mms.ValueTypeStructure, Elements: rcbFCElems}
+		rcbFCRead := makeStructRead(rcbFCReads)
+		lnElems = append(lnElems, mms.TypeSpecElement{Name: prefix, Type: rcbFCTS})
+		lnReads = append(lnReads, rcbFCRead)
+
+		// Register the FC-group variable "lnName$RP" or "lnName$BR"
+		// so GetNameList also exposes it as a named variable.
+		fcItemID := ln.Name + "$" + prefix
+		if err := srv.RegisterVariable(mms.Variable{
+			Name: mms.ObjectName{
+				Scope:  mms.ObjectScopeDomain,
+				Domain: mms.DomainID(ldName),
+				ItemID: mms.ItemID(fcItemID),
+			},
+			TypeSpec: rcbFCTS,
+			Read:     rcbFCRead,
+		}); err != nil {
+			return fmt.Errorf("register RCB FC group %s: %w", fcItemID, err)
+		}
+	}
+
+	// Register LN variable (bare name)
+	lnTS := mms.TypeSpec{Type: mms.ValueTypeStructure, Elements: lnElems}
+	lnRead := makeStructRead(lnReads)
+	if err := srv.RegisterVariable(mms.Variable{
+		Name: mms.ObjectName{
+			Scope:  mms.ObjectScopeDomain,
+			Domain: mms.DomainID(ldName),
+			ItemID: mms.ItemID(ln.Name),
+		},
+		TypeSpec: lnTS,
+		Read:     lnRead,
+	}); err != nil {
+		return fmt.Errorf("register LN %s: %w", ln.Name, err)
+	}
+
+	return nil
+}
+
+// makeStructRead returns a read function that reads all child values and
+// returns them as a single MMS structure value.
+func makeStructRead(reads []func(context.Context) (*mms.Value, error)) func(context.Context) (*mms.Value, error) {
+	return func(ctx context.Context) (*mms.Value, error) {
+		vals := make([]*mms.Value, len(reads))
+		for i, fn := range reads {
+			v, err := fn(ctx)
+			if err != nil {
+				return nil, err
+			}
+			vals[i] = v
+		}
+		return mms.NewStructure(vals), nil
+	}
+}
+
+// collectFCsInDO returns the unique FCs present in a DataObject (recursively),
+// preserving first-seen order.
+func collectFCsInDO(obj *DataObject) []string {
+	seen := map[string]bool{}
+	order := []string{}
+	collectFCsInDOHelper(obj, seen, &order)
+	return order
+}
+
+func collectFCsInDOHelper(obj *DataObject, seen map[string]bool, order *[]string) {
 	for _, attr := range obj.Attributes {
-		attrPath := append(append([]string(nil), parentPath...), obj.Name)
-		if err := registerDA(srv, vs, ldName, lnName, attrPath, &attr); err != nil {
+		if !seen[attr.FC] {
+			seen[attr.FC] = true
+			*order = append(*order, attr.FC)
+		}
+	}
+	for i := range obj.Children {
+		collectFCsInDOHelper(&obj.Children[i], seen, order)
+	}
+}
+
+// buildDOElemsForFC builds TypeSpecElements and read functions for all DAs
+// (and compound DA structures) of obj that have the given FC.
+// parentPath is the path of ancestor DO names (nil for top-level DOs).
+func buildDOElemsForFC(vs *ValueStore, ldName, lnName string, parentPath []string, obj *DataObject, fc string) ([]mms.TypeSpecElement, []func(context.Context) (*mms.Value, error), error) {
+	attrPath := append(append([]string(nil), parentPath...), obj.Name)
+
+	var elems []mms.TypeSpecElement
+	var reads []func(context.Context) (*mms.Value, error)
+
+	// Direct DAs with this FC
+	for i := range obj.Attributes {
+		attr := &obj.Attributes[i]
+		effectiveFC := attr.FC
+		if effectiveFC == "" {
+			effectiveFC = fc
+		}
+		if effectiveFC != fc {
+			continue
+		}
+		elem, read, err := buildAttrElemAndRead(vs, ldName, lnName, attrPath, attr)
+		if err != nil {
+			return nil, nil, err
+		}
+		elems = append(elems, elem)
+		reads = append(reads, read)
+	}
+
+	// Sub-DOs
+	for i := range obj.Children {
+		child := &obj.Children[i]
+		childElems, childReads, err := buildDOElemsForFC(vs, ldName, lnName, attrPath, child, fc)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(childElems) > 0 {
+			childTS := mms.TypeSpec{Type: mms.ValueTypeStructure, Elements: childElems}
+			childReadFns := childReads
+			childRead := makeStructRead(childReadFns)
+			elems = append(elems, mms.TypeSpecElement{Name: child.Name, Type: childTS})
+			reads = append(reads, childRead)
+		}
+	}
+
+	return elems, reads, nil
+}
+
+// buildAttrElemAndRead builds a TypeSpecElement and read function for a
+// DataAttribute (leaf or compound).
+func buildAttrElemAndRead(vs *ValueStore, ldName, lnName string, path []string, attr *DataAttribute) (mms.TypeSpecElement, func(context.Context) (*mms.Value, error), error) {
+	if len(attr.Children) == 0 {
+		ts, ok := btypeToMMS[attr.BType]
+		if !ok {
+			return mms.TypeSpecElement{}, nil, fmt.Errorf("unsupported BType %q for %s/%s", attr.BType, ldName, lnName)
+		}
+		fullPath := append(append([]string(nil), path...), attr.Name)
+		itemID := lnName + "$" + attr.FC + "$" + strings.Join(fullPath, "$")
+		sk := StoreKey(ldName, itemID)
+		ts0 := ts
+		read := func(_ context.Context) (*mms.Value, error) {
+			if v := vs.Get(sk); v != nil {
+				return v, nil
+			}
+			return ts0.DefaultValue(), nil
+		}
+		return mms.TypeSpecElement{Name: attr.Name, Type: ts}, read, nil
+	}
+
+	childPath := append(append([]string(nil), path...), attr.Name)
+	childElems := make([]mms.TypeSpecElement, 0, len(attr.Children))
+	childReads := make([]func(context.Context) (*mms.Value, error), 0, len(attr.Children))
+
+	for i := range attr.Children {
+		child := &attr.Children[i]
+		eff := *child
+		if eff.FC == "" {
+			eff.FC = attr.FC
+		}
+		elem, read, err := buildAttrElemAndRead(vs, ldName, lnName, childPath, &eff)
+		if err != nil {
+			return mms.TypeSpecElement{}, nil, err
+		}
+		childElems = append(childElems, elem)
+		childReads = append(childReads, read)
+	}
+
+	ts := mms.TypeSpec{Type: mms.ValueTypeStructure, Elements: childElems}
+	childReadFns := childReads
+	read := makeStructRead(childReadFns)
+	return mms.TypeSpecElement{Name: attr.Name, Type: ts}, read, nil
+}
+
+// registerDOWithFC registers compound DA intermediates and leaf DAs for a
+// DataObject restricted to a single FC. This mirrors registerDO but only
+// emits items whose FC matches the given constraint.
+func registerDOWithFC(srv *mms.Server, vs *ValueStore, ldName, lnName string, parentPath []string, obj *DataObject, fc string) error {
+	attrPath := append(append([]string(nil), parentPath...), obj.Name)
+
+	// Sub-DOs first
+	for i := range obj.Children {
+		if err := registerDOWithFC(srv, vs, ldName, lnName, attrPath, &obj.Children[i], fc); err != nil {
 			return err
 		}
 	}
 
+	// Attributes with this FC
+	for i := range obj.Attributes {
+		attr := &obj.Attributes[i]
+		effectiveFC := attr.FC
+		if effectiveFC == "" {
+			effectiveFC = fc
+		}
+		if effectiveFC != fc {
+			continue
+		}
+		if err := registerDAWithFC(srv, vs, ldName, lnName, attrPath, attr); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// registerDAWithFC registers a DataAttribute (and its intermediate compound
+// levels) with the MMS server. For compound DAs (with children) it first
+// registers the compound variable, then recurses for the children.
+func registerDAWithFC(srv *mms.Server, vs *ValueStore, ldName, lnName string, path []string, attr *DataAttribute) error {
+	if len(attr.Children) == 0 {
+		// Leaf DA — use the existing registerDA helper.
+		return registerDA(srv, vs, ldName, lnName, path, attr)
+	}
+
+	// Compound DA: register the compound variable first.
+	childPath := append(append([]string(nil), path...), attr.Name)
+	elem, read, err := buildAttrElemAndRead(vs, ldName, lnName, path, attr)
+	if err != nil {
+		return err
+	}
+	fullPath := append(append([]string(nil), path...), attr.Name)
+	itemID := lnName + "$" + attr.FC + "$" + strings.Join(fullPath, "$")
+	storeKey := StoreKey(ldName, itemID)
+	if err := srv.RegisterVariable(mms.Variable{
+		Name: mms.ObjectName{
+			Scope:  mms.ObjectScopeDomain,
+			Domain: mms.DomainID(ldName),
+			ItemID: mms.ItemID(itemID),
+		},
+		TypeSpec: elem.Type,
+		Read:     read,
+		Write: func(ctx context.Context, val *mms.Value) error {
+			// Store the compound value so the interceptor can read it if needed.
+			vs.Set(storeKey, val)
+			if handled, err := vs.callInterceptor(ctx, storeKey, val); handled || err != nil {
+				return err
+			}
+			return nil
+		},
+	}); err != nil {
+		return fmt.Errorf("register compound DA %s: %w", itemID, err)
+	}
+
+	// Then recurse for children.
+	for i := range attr.Children {
+		child := &attr.Children[i]
+		eff := *child
+		if eff.FC == "" {
+			eff.FC = attr.FC
+		}
+		if err := registerDAWithFC(srv, vs, ldName, lnName, childPath, &eff); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -276,7 +688,7 @@ func registerDA(srv *mms.Server, vs *ValueStore, ldName, lnName string, path []s
 	storeKey := StoreKey(ldName, itemID)
 
 	if attr.InitialValue != "" {
-		iv, err := parseInitialValue(attr.BType, attr.InitialValue)
+		iv, err := parseInitialValue(attr.BType, attr.InitialValue, attr.EnumNames)
 		if err != nil {
 			return fmt.Errorf("initial value for %s/%s: %w", ldName, itemID, err)
 		}
@@ -312,7 +724,7 @@ func registerDA(srv *mms.Server, vs *ValueStore, ldName, lnName string, path []s
 			}
 			return ts.DefaultValue(), nil
 		},
-		Write: func(_ context.Context, val *mms.Value) error {
+		Write: func(ctx context.Context, val *mms.Value) error {
 			if val == nil {
 				return fmt.Errorf("nil value for %s", storeKey)
 			}
@@ -324,6 +736,13 @@ func registerDA(srv *mms.Server, vs *ValueStore, ldName, lnName string, path []s
 				return fmt.Errorf("write validation for %s: %w", storeKey, err)
 			}
 			vs.Set(storeKey, val)
+			// Notify any installed interceptor (e.g. the ReportEngine) that
+			// a client has successfully written this data attribute. The
+			// value is already in the store at this point so interceptors
+			// read the new value when building reports.
+			if handled, err := vs.callInterceptor(ctx, storeKey, val); handled || err != nil {
+				return err
+			}
 			return nil
 		},
 	}
@@ -369,6 +788,48 @@ type rcbField struct {
 	initial  *mms.Value
 }
 
+// buildRCBFields returns the ordered list of rcbField descriptors for a
+// URCB (Buffered=false) or BRCB (Buffered=true).  Used both by
+// registerRCB (to register MMS variables) and by registerLNHierarchy (to
+// include the RCB TypeSpec in the LN-level variable so that clients like
+// iec61850bean can discover RCBs via GetVariableAccessAttributes on the LN).
+func buildRCBFields(rpt *ReportDef, rptID, ldName, lnName string) []rcbField {
+	// Per IEC 61850-8-1, the DatSet attribute in an RCB must be a
+	// domain-qualified reference of the form "domain/LNName$dsName".
+	// If the SCL only supplies the local dataset name, qualify it here.
+	datSet := rpt.DatSet
+	if datSet != "" && !strings.Contains(datSet, "/") {
+		datSet = ldName + "/" + lnName + "$" + datSet
+	}
+	fields := []rcbField{
+		{"RptID", mms.TypeSpec{Type: mms.ValueTypeVisibleString, Size: 129}, mms.NewVisibleString(rptID)},
+		{"RptEna", mms.TypeSpec{Type: mms.ValueTypeBoolean}, mms.NewBoolean(false)},
+	}
+	if !rpt.Buffered {
+		fields = append(fields, rcbField{
+			"Resv", mms.TypeSpec{Type: mms.ValueTypeBoolean}, mms.NewBoolean(false),
+		})
+	}
+	fields = append(fields,
+		rcbField{"DatSet", mms.TypeSpec{Type: mms.ValueTypeVisibleString, Size: 129}, mms.NewVisibleString(datSet)},
+		rcbField{"ConfRev", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 32}, mms.NewUnsigned(uint64(rpt.ConfRev))},
+		rcbField{"OptFlds", mms.TypeSpec{Type: mms.ValueTypeBitString, Size: 10}, encodeOptFieldsDef(rpt.OptFlds)},
+		rcbField{"BufTm", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 32}, mms.NewUnsigned(uint64(rpt.BufTime))},
+		rcbField{"SqNum", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 32}, mms.NewUnsigned(0)},
+		rcbField{"TrgOps", mms.TypeSpec{Type: mms.ValueTypeBitString, Size: 6}, encodeTrgOpsDef(rpt.TrgOps)},
+		rcbField{"IntgPd", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 32}, mms.NewUnsigned(uint64(rpt.IntgPd))},
+		rcbField{"GI", mms.TypeSpec{Type: mms.ValueTypeBoolean}, mms.NewBoolean(false)},
+	)
+	if rpt.Buffered {
+		fields = append(fields,
+			rcbField{"PurgeBuf", mms.TypeSpec{Type: mms.ValueTypeBoolean}, mms.NewBoolean(false)},
+			rcbField{"EntryID", mms.TypeSpec{Type: mms.ValueTypeOctetString, Size: 8}, mms.NewOctetString(make([]byte, 8))},
+			rcbField{"TimeOfEntry", mms.TypeSpec{Type: mms.ValueTypeBinaryTime}, mms.NewBinaryTime(0)},
+		)
+	}
+	return fields
+}
+
 // registerRCB registers an RCB structure variable and its individual
 // subfield variables with the MMS server.
 //
@@ -394,30 +855,7 @@ func registerRCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, rpt *Re
 		rptID = ldName + "/" + rcbItemID
 	}
 
-	fields := []rcbField{
-		{"RptID", mms.TypeSpec{Type: mms.ValueTypeVisibleString, Size: 129}, mms.NewVisibleString(rptID)},
-		{"RptEna", mms.TypeSpec{Type: mms.ValueTypeBoolean}, mms.NewBoolean(false)},
-		{"DatSet", mms.TypeSpec{Type: mms.ValueTypeVisibleString, Size: 129}, mms.NewVisibleString(rpt.DatSet)},
-		{"ConfRev", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 32}, mms.NewUnsigned(uint64(rpt.ConfRev))},
-		{"OptFlds", mms.TypeSpec{Type: mms.ValueTypeBitString, Size: 10}, encodeOptFieldsDef(rpt.OptFlds)},
-		{"BufTm", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 32}, mms.NewUnsigned(uint64(rpt.BufTime))},
-		{"SqNum", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 32}, mms.NewUnsigned(0)},
-		{"TrgOps", mms.TypeSpec{Type: mms.ValueTypeBitString, Size: 6}, encodeTrgOpsDef(rpt.TrgOps)},
-		{"IntgPd", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 32}, mms.NewUnsigned(uint64(rpt.IntgPd))},
-		{"GI", mms.TypeSpec{Type: mms.ValueTypeBoolean}, mms.NewBoolean(false)},
-	}
-
-	if !rpt.Buffered {
-		fields = append(fields, rcbField{
-			"Resv", mms.TypeSpec{Type: mms.ValueTypeBoolean}, mms.NewBoolean(false),
-		})
-	} else {
-		fields = append(fields,
-			rcbField{"PurgeBuf", mms.TypeSpec{Type: mms.ValueTypeBoolean}, mms.NewBoolean(false)},
-			rcbField{"EntryID", mms.TypeSpec{Type: mms.ValueTypeOctetString, Size: 8}, mms.NewOctetString(make([]byte, 8))},
-			rcbField{"TimeOfEntry", mms.TypeSpec{Type: mms.ValueTypeBinaryTime}, mms.NewBinaryTime(0)},
-		)
-	}
+	fields := buildRCBFields(rpt, rptID, ldName, lnName)
 
 	structElems := make([]mms.TypeSpecElement, len(fields))
 	for i, f := range fields {
@@ -617,7 +1055,11 @@ func validateWriteSize(val *mms.Value, ts mms.TypeSpec) error {
 // parseInitialValue converts an SCL InitialValue string to an [mms.Value]
 // for the given basic type. Returns an error for unsupported or invalid
 // conversions rather than silently discarding the value.
-func parseInitialValue(btype, val string) (*mms.Value, error) {
+//
+// enumNames, when non-nil, maps SCL enumeration value names to their
+// ordinals and is used to resolve Enum values specified as strings
+// (e.g. "direct-with-normal-security") instead of ordinals.
+func parseInitialValue(btype, val string, enumNames map[string]int) (*mms.Value, error) {
 	switch btype {
 	case "BOOLEAN":
 		switch strings.ToLower(val) {
@@ -637,14 +1079,17 @@ func parseInitialValue(btype, val string) (*mms.Value, error) {
 		return mms.NewInteger(i), nil
 
 	case "Enum":
-		// Enum values are stored as plain integers without validation
-		// against the referenced EnumType. A full validation pass in
-		// FromSCL would require threading the EnumType index here.
-		i, err := strconv.ParseInt(val, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("invalid integer value %q for %s: %w", val, btype, err)
+		// Accept numeric ordinal strings ("1") or SCL enum value names
+		// ("direct-with-normal-security"). Name lookup requires enumNames.
+		if i, err := strconv.ParseInt(val, 10, 64); err == nil {
+			return mms.NewInteger(i), nil
 		}
-		return mms.NewInteger(i), nil
+		if enumNames != nil {
+			if ord, ok := enumNames[val]; ok {
+				return mms.NewInteger(int64(ord)), nil
+			}
+		}
+		return nil, fmt.Errorf("invalid integer value %q for %s: not a valid ordinal or enum name", val, btype)
 
 	case "INT8U", "INT16U", "INT32U":
 		u, err := strconv.ParseUint(val, 10, 64)
@@ -783,6 +1228,10 @@ func hexNibble(c byte) (byte, error) {
 
 // encodeOptFieldsDef converts an [OptFieldsDef] to an MMS BitString value
 // matching the IEC 61850 OptFlds encoding.
+//
+// IEC 61850 OptFlds BIT STRING (10 bits): bit 0 is reserved; bits 1-9 carry
+// the actual flags in this order: seqNum, timeStamp, reasonCode, dataSet,
+// dataRef, bufOvfl, entryID, confRev, segmentation.
 func encodeOptFieldsDef(o OptFieldsDef) *mms.Value {
 	data := make([]byte, 2)
 	setOptBit := func(bit int, v bool) {
@@ -792,14 +1241,14 @@ func encodeOptFieldsDef(o OptFieldsDef) *mms.Value {
 			data[byteIdx] |= 1 << bitInByte
 		}
 	}
-	setOptBit(0, o.SeqNum)
-	setOptBit(1, o.TimeStamp)
-	setOptBit(2, o.ReasonCode)
-	setOptBit(3, o.DataSet)
-	setOptBit(4, o.DataRef)
-	setOptBit(5, o.BufOvfl)
-	setOptBit(6, o.EntryID)
-	setOptBit(7, o.ConfigRef)
+	setOptBit(1, o.SeqNum)
+	setOptBit(2, o.TimeStamp)
+	setOptBit(3, o.ReasonCode)
+	setOptBit(4, o.DataSet)
+	setOptBit(5, o.DataRef)
+	setOptBit(6, o.BufOvfl)
+	setOptBit(7, o.EntryID)
+	setOptBit(8, o.ConfigRef)
 	return mms.NewBitStringWithLength(data, 10)
 }
 

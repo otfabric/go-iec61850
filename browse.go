@@ -369,7 +369,7 @@ func (c *Client) GetVariableType(ctx context.Context, ref Ref) (*mms.TypeSpec, e
 
 	name := mms.ObjectName{
 		Scope:  mms.ObjectScopeDomain,
-		Domain: mms.DomainID(ref.LD),
+		Domain: c.ldDomain(ref.LD),
 		ItemID: itemID,
 	}
 

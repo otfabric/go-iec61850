@@ -201,8 +201,8 @@ func TestBRCB_ClientServerRoundTrip(t *testing.T) {
 	if rcb.RptEna {
 		t.Error("RptEna should be false initially")
 	}
-	if rcb.DatSet != "dsTest" {
-		t.Errorf("DatSet = %q, want dsTest", rcb.DatSet)
+	if rcb.DatSet != "LD1/LLN0$dsTest" {
+		t.Errorf("DatSet = %q, want LD1/LLN0$dsTest", rcb.DatSet)
 	}
 	if rcb.ConfRev != 1 {
 		t.Errorf("ConfRev = %d, want 1", rcb.ConfRev)

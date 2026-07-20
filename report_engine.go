@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -309,6 +310,9 @@ func (re *ReportEngine) enableRCB(_ context.Context, rt *rcbRuntime, conn *mms.S
 	rt.enableConn = conn
 	rt.bufOvfl = false
 
+	re.logger.Debug("iec61850: enableRCB", "rcb", rt.rcbItemID, "hasConn", conn != nil,
+		"datSet", rt.datSet, "memberKeys", rt.memberKeys)
+
 	// Invariant: store.Set calls here bypass the write interceptor.
 	// They go directly to ValueStore.Set, not through MMS write
 	// callbacks. This is safe and intentional — do not route these
@@ -423,6 +427,8 @@ func (re *ReportEngine) NotifyValueChanged(ctx context.Context, storeKey string)
 
 	re.mu.RLock()
 	defer re.mu.RUnlock()
+
+	re.logger.Debug("iec61850: NotifyValueChanged", "storeKey", storeKey, "rcbs", len(re.rcbs))
 
 	for _, rt := range re.rcbs {
 		rt.mu.Lock()
@@ -606,30 +612,60 @@ func (re *ReportEngine) sendReport(ctx context.Context, rt *rcbRuntime, seqNum u
 	})
 
 	req := &mms.InformationReportRequest{
-		Variables: []mms.ObjectName{{
-			Scope:  mms.ObjectScopeDomain,
-			Domain: mms.DomainID(rt.ldName),
-			ItemID: mms.ItemID(rt.rcbItemID),
-		}},
+		// IEC 61850-8-1 / libiec61850 compatibility: IEC 61850 reports must
+		// use VMD-specific variableListName "RPT" (not domain-specific).
+		// libiec61850 client ignores domain-specific InformationReports
+		// and only processes VMD-specific ones with name "RPT".
+		// The go-iec61850 client matches by RptID in the values list,
+		// so both clients receive correctly regardless of the list name.
+		ListName: &mms.ObjectName{
+			Scope:  mms.ObjectScopeVMD,
+			ItemID: "RPT",
+		},
 		Values: reportValues,
 	}
 
 	// Connection-aware delivery: URCBs send only to the enabling
 	// connection; BRCBs broadcast to all.
+	//
+	// Delivery is done in a background goroutine so the report is sent
+	// AFTER the current confirmed-service response (e.g. the Write response
+	// that triggered dchg). Sending the UnconfirmedPDU inside the Write
+	// handler — before the Write ConfirmedResponse — causes some clients
+	// (e.g. libiec61850) to receive the report while still waiting for the
+	// write confirmation, which can cause the report to be discarded.
 	if !buffered && enableConn != nil {
-		if err := enableConn.SendInformationReport(ctx, req); err != nil {
-			re.logger.Debug("iec61850: report send failed",
-				"rcb", rt.rcbItemID, "error", err)
-		}
+		re.wg.Add(1)
+		go func() {
+			defer re.wg.Done()
+			// Small yield to let the current confirmed response be sent first.
+			time.Sleep(100 * time.Millisecond)
+			re.logger.Info("iec61850: sending URCB report", "rcb", rt.rcbItemID)
+
+			if err := enableConn.SendInformationReport(context.Background(), req); err != nil {
+				re.logger.Warn("iec61850: URCB report send to enableConn failed",
+					"rcb", rt.rcbItemID, "error", err)
+				fmt.Fprintf(os.Stderr, "[DBG] send failed: %v\n", err)
+			} else {
+				re.logger.Info("iec61850: URCB report sent", "rcb", rt.rcbItemID)
+				fmt.Fprintf(os.Stderr, "[DBG] send OK nValues=%d\n", len(req.Values))
+			}
+		}()
 		return
 	}
 
 	conns := re.mmsSrv.Connections()
 	for _, conn := range conns {
-		if err := conn.SendInformationReport(ctx, req); err != nil {
-			re.logger.Debug("iec61850: report send failed",
-				"rcb", rt.rcbItemID, "error", err)
-		}
+		c := conn
+		re.wg.Add(1)
+		go func() {
+			defer re.wg.Done()
+			time.Sleep(100 * time.Millisecond)
+			if err := c.SendInformationReport(context.Background(), req); err != nil {
+				re.logger.Debug("iec61850: report send failed",
+					"rcb", rt.rcbItemID, "error", err)
+			}
+		}()
 	}
 }
 
@@ -685,7 +721,7 @@ func encodeReportValuesEx(p reportParams) []*mms.Value {
 	}
 
 	if p.optFlds.Has(OptFldTimeStamp) {
-		result = append(result, mms.NewUTCTime(time.Now().UTC()))
+		result = append(result, mms.NewBinaryTime(time.Now().UTC().UnixMilli()))
 	}
 
 	if p.optFlds.Has(OptFldDataSet) {
@@ -708,9 +744,11 @@ func encodeReportValuesEx(p reportParams) []*mms.Value {
 		result = append(result, mms.NewUnsigned(uint64(p.confRev)))
 	}
 
-	// SubSeqNum + MoreSegments (always present, non-segmented)
-	result = append(result, mms.NewUnsigned(0))
-	result = append(result, mms.NewBoolean(false))
+	// SubSeqNum + MoreSegments (only present when segmentation is enabled).
+	if p.optFlds.Has(OptFldSegmentation) {
+		result = append(result, mms.NewUnsigned(0))
+		result = append(result, mms.NewBoolean(false))
+	}
 
 	inclusionBits := encodeInclusion(p.inclusion)
 	result = append(result, inclusionBits)

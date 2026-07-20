@@ -23,6 +23,18 @@ type DialOptions struct {
 	// Cache controls the client-side caching strategy for model
 	// discovery results. The default ([CacheNone]) disables caching.
 	Cache CacheStrategy
+
+	// IEDName, when non-empty, is the IED identifier prefix used by
+	// the target server to form MMS domain names.
+	//
+	// Compliant IEC 61850-8-1 servers form MMS domain names by
+	// concatenating the IED name and the LD instance name (e.g.
+	// IEDName="InteropIED" + LDInst="InteropLD" →
+	// domain="InteropIEDInteropLD"). When IEDName is set, the
+	// client automatically strips the prefix when reporting logical
+	// device names and prepends it when making MMS requests, so
+	// callers can always use the bare LD instance name.
+	IEDName string
 }
 
 // ClientOptions configures an IEC 61850 client created via [NewClient]
@@ -39,6 +51,10 @@ type ClientOptions struct {
 	// discovery results (logical devices, logical nodes, data
 	// objects, tree). The default ([CacheNone]) disables caching.
 	Cache CacheStrategy
+
+	// IEDName, when non-empty, is the IED identifier prefix used by
+	// the target server to form MMS domain names. See [DialOptions.IEDName].
+	IEDName string
 }
 
 // CacheStrategy controls client-side caching of IEC 61850 model

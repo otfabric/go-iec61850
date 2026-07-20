@@ -112,6 +112,12 @@ type DataAttribute struct {
 	// expansion. Nil for non-Enum types.
 	EnumValues []int
 
+	// EnumNames maps SCL enumeration value names to their ordinals for
+	// Enum-typed attributes. Enables DAI values specified as strings
+	// (e.g. "direct-with-normal-security") to be resolved to integers.
+	// Populated alongside EnumValues. Nil for non-Enum types.
+	EnumNames map[string]int
+
 	// InitialValue, when non-empty, is the initial value string
 	// from the SCL DAI Val element.
 	InitialValue string
