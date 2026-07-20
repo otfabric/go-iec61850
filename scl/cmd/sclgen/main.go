@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Command sclgen generates internal Go types from IEC 61850 SCL XSD schemas.
 // See SCL.md for the full specification.
 package main

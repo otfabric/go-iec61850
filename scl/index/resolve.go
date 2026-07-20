@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 package index
 
 import "github.com/otfabric/go-iec61850/scl"

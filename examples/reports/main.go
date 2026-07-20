@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Command reports demonstrates subscribing to an IEC 61850 buffered
 // report and printing incoming indications.
 package main

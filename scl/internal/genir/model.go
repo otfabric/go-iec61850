@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package genir provides the intermediate representation for the SCL
 // code generator. The IR is version-neutral and independent of Go
 // code emission.

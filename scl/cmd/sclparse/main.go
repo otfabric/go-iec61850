@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Command sclparse inspects, validates, and summarizes IEC 61850 SCL files.
 package main
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 package iec61850
 
 import "github.com/otfabric/go-mms"

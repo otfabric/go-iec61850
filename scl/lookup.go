@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 package scl
 
 // FindIED returns the IED with the given name, or nil if not found.

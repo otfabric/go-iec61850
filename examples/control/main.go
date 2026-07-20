@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Command control demonstrates IEC 61850 control operations:
 // reading the control model, performing direct-operate, and
 // select-before-operate workflows.

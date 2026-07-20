@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package sclindex is reserved for centralizing SCL DataTypeTemplates
 // lookup and cycle-detection logic that is currently duplicated across
 // the servermodel and (future) client-side model expansion packages.

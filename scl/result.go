@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 package scl
 
 // DocumentKind describes the type of an SCL document based on its

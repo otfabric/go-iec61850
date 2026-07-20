@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package validate provides semantic validation of a parsed SCL model.
 //
 // Validation is split into independent passes that each check a

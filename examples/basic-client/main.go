@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Command basic-client demonstrates connecting to an IEC 61850 server,
 // listing logical devices and nodes, and reading the first browsed
 // data attribute.

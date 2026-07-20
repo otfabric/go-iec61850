@@ -1,5 +1,15 @@
 # go-iec61850 Releases
 
+## v1.0.1
+
+**Added**: MIT `LICENSE` with copyright `Copyright (c) 2026 OT Fabric`.
+
+**Added**: `// SPDX-License-Identifier: MIT` headers on first-party Go sources (generated `scl/internal/raw` code left unchanged).
+
+**Changed**: README license section and badge block for public release — added pkg.go.dev, removed Go Report Card, and switched Codecov to a tokenless public badge URL.
+
+---
+
 ## v1.0.0
 
 **Changed**: Bump dependencies to stable releases (`go-mms v1.0.0`, `go-cotp v1.0.1`).

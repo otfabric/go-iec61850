@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package scl provides parsing and inspection of IEC 61850 SCL
 // (Substation Configuration Language) files.
 //

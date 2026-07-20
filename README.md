@@ -1,10 +1,10 @@
 # go-iec61850
 
 [![Go](https://img.shields.io/badge/Go-1.24%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![Go Reference](https://pkg.go.dev/badge/github.com/otfabric/go-iec61850.svg)](https://pkg.go.dev/github.com/otfabric/go-iec61850)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Go Report Card](https://goreportcard.com/badge/github.com/otfabric/go-iec61850)](https://goreportcard.com/report/github.com/otfabric/go-iec61850)
 [![CI](https://github.com/otfabric/go-iec61850/actions/workflows/ci.yml/badge.svg)](https://github.com/otfabric/go-iec61850/actions/workflows/ci.yml)
-[![Codecov](https://codecov.io/github/otfabric/go-iec61850/graph/badge.svg?token=kHYc1ncB8d)](https://codecov.io/github/otfabric/go-iec61850)
+[![Codecov](https://codecov.io/gh/otfabric/go-iec61850/graph/badge.svg)](https://codecov.io/gh/otfabric/go-iec61850)
 [![Release](https://img.shields.io/github/v/release/otfabric/go-iec61850?label=release)](https://github.com/otfabric/go-iec61850/releases)
 
 A pure-Go IEC 61850 MMS client and server library built on top of
@@ -277,4 +277,4 @@ See [INTEROP.md](INTEROP.md) for the compatibility matrix and `make interop` for
 
 ## License
 
-See [LICENSE](LICENSE).
+This project is licensed under the MIT License. See [LICENSE](./LICENSE).
