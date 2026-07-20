@@ -328,16 +328,23 @@ func buildOper(p OperateParams) *mms.Value {
 		origin = &Origin{OrCat: OrCatRemoteControl}
 	}
 
-	var operTm *mms.Value
-	if p.OperTm.IsZero() {
-		operTm = mms.NewUTCTime(time.Time{})
-	} else {
-		operTm = mms.NewUTCTime(p.OperTm)
+	// operTm is optional: only include it when a future activation time is
+	// requested. Many servers (libiec61850, iec61850bean) define OperSPC/DPC
+	// without operTm and will reject a 7-element structure with TypeInconsistent.
+	if !p.OperTm.IsZero() {
+		return mms.NewStructure([]*mms.Value{
+			p.CtlVal,
+			mms.NewUTCTime(p.OperTm),
+			origin.toMMS(),
+			mms.NewUnsigned(uint64(p.CtlNum)),
+			mms.NewUTCTime(time.Now().UTC()),
+			mms.NewBoolean(p.Test),
+			p.Check.toMMS(),
+		})
 	}
 
 	return mms.NewStructure([]*mms.Value{
 		p.CtlVal,
-		operTm,
 		origin.toMMS(),
 		mms.NewUnsigned(uint64(p.CtlNum)),
 		mms.NewUTCTime(time.Now().UTC()),
@@ -362,16 +369,19 @@ func buildCancel(p CancelParams) *mms.Value {
 		origin = &Origin{OrCat: OrCatRemoteControl}
 	}
 
-	var operTm *mms.Value
-	if p.OperTm.IsZero() {
-		operTm = mms.NewUTCTime(time.Time{})
-	} else {
-		operTm = mms.NewUTCTime(p.OperTm)
+	if !p.OperTm.IsZero() {
+		return mms.NewStructure([]*mms.Value{
+			p.CtlVal,
+			mms.NewUTCTime(p.OperTm),
+			origin.toMMS(),
+			mms.NewUnsigned(uint64(p.CtlNum)),
+			mms.NewUTCTime(time.Now().UTC()),
+			mms.NewBoolean(false),
+		})
 	}
 
 	return mms.NewStructure([]*mms.Value{
 		p.CtlVal,
-		operTm,
 		origin.toMMS(),
 		mms.NewUnsigned(uint64(p.CtlNum)),
 		mms.NewUTCTime(time.Now().UTC()),

@@ -257,8 +257,10 @@ func expandDA(name, fc, btype, typeRef, val string, datIdx map[string]*scl.DATyp
 	if btype == "Enum" && typeRef != "" && enumIdx != nil {
 		if et, ok := enumIdx[typeRef]; ok {
 			attr.EnumValues = make([]int, len(et.Vals))
+			attr.EnumNames = make(map[string]int, len(et.Vals))
 			for i, ev := range et.Vals {
 				attr.EnumValues[i] = ev.Ord
+				attr.EnumNames[ev.Value] = ev.Ord
 			}
 		}
 	}

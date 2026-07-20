@@ -174,6 +174,7 @@ func NewServer(model *servermodel.Model, opts ServerOptions) (*Server, error) {
 		s.HandleIdentify(*opts.Identity)
 	}
 	s.HandleStatus()
+	s.installWriteInterceptor()
 
 	logger.Info("iec61850: server created",
 		"logical_devices", len(model.LogicalDevices))
@@ -221,16 +222,22 @@ func (s *Server) ReportEngine() *ReportEngine {
 	return s.reportEngine
 }
 
-// installWriteInterceptor sets up the ValueStore write interceptor
-// that dispatches RCB and SGCB subfield writes to their respective
-// runtime engines. This must be called whenever an engine is
-// enabled or updated.
+// installWriteInterceptor sets up the ValueStore write interceptor used for
+// two distinct purposes (see [servermodel.ValueStore.SetWriteInterceptor]):
 //
-// No recursion hazard: the interceptor is only triggered by MMS
-// client Write callbacks (registered during model registration),
-// not by [ValueStore.Set]. When the runtime engines call
-// store.Set internally (e.g. syncSGCBToStore, report SqNum updates),
-// those writes bypass the interceptor and go directly to the store.
+//   - RCB / SGCB subfield writes: the interceptor is called as a dispatcher
+//     that can reject or reroute the write before (SGCB) or after (RCB) the
+//     value is committed.
+//
+//   - Regular DA writes: the interceptor is called as a post-write hook after
+//     the DA Write handler has already stored the new value.  Returning
+//     (true, nil) signals that report notification was dispatched; it does NOT
+//     roll back the store update.
+//
+// No recursion hazard: the interceptor is only triggered by MMS client Write
+// callbacks registered during model registration, not by [ValueStore.Set].
+// Runtime engines that call store.Set internally (e.g. SqNum updates, SGCB
+// sync) bypass the interceptor and write directly to the store.
 func (s *Server) installWriteInterceptor() {
 	s.store.SetWriteInterceptor(func(ctx context.Context, storeKey string, val *mms.Value) (bool, error) {
 		parts := strings.SplitN(storeKey, "/", 2)
@@ -242,7 +249,8 @@ func (s *Server) installWriteInterceptor() {
 
 		if s.reportEngine != nil {
 			if rcbItemID, subfield, ok := parseRCBStoreKey(itemID); ok {
-				err := s.reportEngine.HandleRCBWrite(ctx, ldName, rcbItemID, subfield, val)
+				sc := mms.ServerConnFromContext(ctx)
+				err := s.reportEngine.HandleRCBWrite(ctx, ldName, rcbItemID, subfield, val, sc)
 				return true, err
 			}
 		}
@@ -254,13 +262,62 @@ func (s *Server) installWriteInterceptor() {
 			}
 		}
 
+		// CO functional-constraint write — dispatch to the control handler.
+		// Store key format: "lnName$CO$doPath...$subAttr"
+		// e.g. "GGIO1$CO$SPCSO1$Oper" or "GGIO1$CO$SPCSO1$Oper$ctlVal"
+		if lnName, path, subAttr, ok := parseCOStoreKey(itemID); ok {
+			err := s.handleControlWrite(ctx, ldName, lnName, path, subAttr, val)
+			return true, err
+		}
+
+		// Regular data-attribute write by a connected MMS client.
+		// The DA Write handler has already stored the value via vs.Set
+		// before calling the interceptor, so only the notification is
+		// needed here. The engine compares prevValues with the new store
+		// contents to suppress reports for unchanged values.
+		if s.reportEngine != nil {
+			s.reportEngine.NotifyValueChanged(ctx, storeKey)
+			return true, nil
+		}
+
 		return false, nil
 	})
 }
 
+// parseCOStoreKey checks if an MMS item ID is a CO functional-constraint write.
+// CO item IDs follow the pattern "LNName$CO$path...$subAttr"
+// e.g. "GGIO1$CO$SPCSO1$Oper" or "GGIO1$CO$SPCSO1$Cancel".
+//
+// Returns (lnName, fullPath, subAttr, true) where fullPath includes the DO
+// name and all sub-path segments, and subAttr is the last segment (the control
+// service identifier: Oper, SBO, SBOw, or Cancel).
+func parseCOStoreKey(itemID string) (lnName string, path []string, subAttr string, ok bool) {
+	i := strings.Index(itemID, "$CO$")
+	if i < 0 {
+		return "", nil, "", false
+	}
+	lnName = itemID[:i]
+	after := itemID[i+4:] // everything after "$CO$"
+	if after == "" {
+		return "", nil, "", false
+	}
+	segs := strings.Split(after, "$")
+	if len(segs) < 2 {
+		return "", nil, "", false
+	}
+	// Require the last segment to be a recognised control service identifier.
+	last := segs[len(segs)-1]
+	switch last {
+	case "Oper", "SBO", "SBOw", "Cancel":
+		// OK
+	default:
+		// Sub-BDA write (e.g. Oper$ctlVal) — dispatch via parent Oper level.
+		return "", nil, "", false
+	}
+	return lnName, segs, last, true
+}
+
 // parseRCBStoreKey checks if an MMS item ID is an RCB subfield write.
-// RCB item IDs follow the pattern "LNName$RP$rcbName$subfield" or
-// "LNName$BR$rcbName$subfield".
 //
 // This is a heuristic string parser that relies on the $RP$ / $BR$
 // convention used by [servermodel.RegisterModel]. It works for all

@@ -298,7 +298,7 @@ func (c *Client) listReportCandidates(ctx context.Context, ld string) ([]string,
 	allNames, err := c.mmsClient.GetNameListAll(ctx, mms.NameListRequest{
 		ObjectClass: mms.ObjectClassNamedVariable,
 		Scope:       mms.ObjectScopeDomain,
-		DomainID:    mms.DomainID(ld),
+		DomainID:    c.ldDomain(ld),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("iec61850: list reports for %q: %w", ld, err)
@@ -385,7 +385,7 @@ func (c *Client) GetReportControlBlock(ctx context.Context, ld, rcbItemID string
 	}
 
 	result, err := c.mmsClient.Read(ctx, mms.ReadRequest{
-		DomainID: mms.DomainID(ld),
+		DomainID: c.ldDomain(ld),
 		ItemID:   mms.ItemID(rcbItemID),
 	})
 	if err != nil {
@@ -415,13 +415,11 @@ const (
 // decodeRCB decodes an MMS structure into a [ReportControlBlock].
 //
 // The decoder assumes fixed positional field ordering as defined by
-// IEC 61850-8-1 and the go-mms server implementation: RptID, RptEna,
-// DatSet, ConfRev, OptFlds, BufTm, SqNum, TrgOps, IntgPd, GI, then
-// Resv (URCB) or PurgeBuf/EntryID/TimeOfEntry (BRCB). If a vendor
-// or server deviates from this order or omits optional trailing fields,
-// decoding may silently produce incorrect results. A named-structure
-// decode path would be more resilient but requires go-mms to expose
-// field names in structure values.
+// IEC 61850-8-1:
+//   - URCB: RptID, RptEna, Resv, DatSet, ConfRev, OptFlds, BufTm, SqNum, TrgOps, IntgPd, GI
+//   - BRCB: RptID, RptEna, DatSet, ConfRev, OptFlds, BufTm, SqNum, TrgOps, IntgPd, GI, PurgeBuf, EntryID, TimeOfEntry
+//
+// Note that URCB places Resv at position 2 (after RptEna, before DatSet).
 func decodeRCB(ld, rcbItemID string, rcbType RCBType, v *mms.Value) (*ReportControlBlock, error) {
 	elems, ok := v.Structure()
 	if !ok {
@@ -500,6 +498,15 @@ func decodeRCB(ld, rcbItemID string, rcbType RCBType, v *mms.Value) (*ReportCont
 	if rcb.RptEna, err = mustBool("RptEna"); err != nil {
 		return nil, err
 	}
+	// IEC 61850-8-1: URCB has Resv immediately after RptEna (position 2),
+	// BRCB does not have Resv in this position.
+	if rcbType == RCBUnbuffered {
+		if val := get(); val != nil {
+			if b, ok := val.Bool(); ok {
+				rcb.Resv = b
+			}
+		}
+	}
 	if rcb.DatSet, err = mustString("DatSet"); err != nil {
 		return nil, err
 	}
@@ -546,14 +553,6 @@ func decodeRCB(ld, rcbItemID string, rcbType RCBType, v *mms.Value) (*ReportCont
 	if val := get(); val != nil {
 		if b, ok := val.Bool(); ok {
 			rcb.GI = b
-		}
-	}
-
-	if rcbType == RCBUnbuffered {
-		if val := get(); val != nil {
-			if b, ok := val.Bool(); ok {
-				rcb.Resv = b
-			}
 		}
 	}
 
@@ -609,11 +608,12 @@ func decodeOptFldsStrict(v *mms.Value) (OptFlds, error) {
 		return 0, fmt.Errorf("OptFlds BitString too short (%d bits, need 10)", bl)
 	}
 	var o uint16
-	for bit := 0; bit < 10; bit++ {
-		byteIdx := bit / 8
-		bitInByte := uint(7 - (bit % 8))
+	// IEC 61850: bit 0 is reserved; bits 1-9 map to internal bits 0-8.
+	for wireBit := 1; wireBit <= 9; wireBit++ {
+		byteIdx := wireBit / 8
+		bitInByte := uint(7 - (wireBit % 8))
 		if data[byteIdx]&(1<<bitInByte) != 0 {
-			o |= 1 << uint(bit)
+			o |= 1 << uint(wireBit-1)
 		}
 	}
 	return OptFlds(o), nil
@@ -655,12 +655,26 @@ func decodeTrgOpsStrict(v *mms.Value) (TrgOps, error) {
 }
 
 // encodeOptFlds encodes OptFlds to an MMS bit string value.
+//
+// IEC 61850 OptFlds BIT STRING (10 bits, big-endian):
+//
+//	bit 0: reserved (always 0)
+//	bit 1: sequence-number      → OptFldSeqNum      (internal bit 0)
+//	bit 2: report-time-stamp    → OptFldTimeStamp   (internal bit 1)
+//	bit 3: reason-for-inclusion → OptFldReasonCode  (internal bit 2)
+//	bit 4: data-set-name        → OptFldDataSet     (internal bit 3)
+//	bit 5: data-reference       → OptFldDataRef     (internal bit 4)
+//	bit 6: buffer-overflow      → OptFldBufOvfl     (internal bit 5)
+//	bit 7: entry-id             → OptFldEntryID     (internal bit 6)
+//	bit 8: conf-revision        → OptFldConfRev     (internal bit 7)
+//	bit 9: segmentation         → OptFldSegmentation (internal bit 8)
 func encodeOptFlds(o OptFlds) *mms.Value {
 	data := make([]byte, 2)
-	for bit := 0; bit < 10; bit++ {
-		if o&OptFlds(1<<uint(bit)) != 0 {
-			byteIdx := bit / 8
-			bitInByte := uint(7 - (bit % 8))
+	for internalBit := 0; internalBit < 9; internalBit++ {
+		if o&OptFlds(1<<uint(internalBit)) != 0 {
+			wireBit := internalBit + 1 // IEC 61850 bit 0 is reserved
+			byteIdx := wireBit / 8
+			bitInByte := uint(7 - (wireBit % 8))
 			data[byteIdx] |= 1 << bitInByte
 		}
 	}
@@ -797,7 +811,7 @@ func (c *Client) SetReportControlBlock(ctx context.Context, ld, rcbItemID string
 	for _, w := range writes {
 		attrItemID := rcbItemID + "$" + w.component
 		if _, err := c.mmsClient.Write(ctx, mms.WriteRequest{
-			DomainID: mms.DomainID(ld),
+			DomainID: c.ldDomain(ld),
 			ItemID:   mms.ItemID(attrItemID),
 			Value:    w.value,
 		}); err != nil {

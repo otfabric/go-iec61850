@@ -187,6 +187,7 @@ func setupRCBLoopback(t *testing.T) (*Client, *mms.Server, *sync.Mutex, map[stri
 	}{
 		{"RptID", mms.NewVisibleString("urcb01")},
 		{"RptEna", mms.NewBoolean(false)},
+		{"Resv", mms.NewBoolean(false)},
 		{"DatSet", mms.NewVisibleString("simpleIOGenericIO/LLN0$dataset1")},
 		{"ConfRev", mms.NewUnsigned(1)},
 		{"OptFlds", mms.NewBitStringWithLength([]byte{0, 0}, 10)},
@@ -195,7 +196,6 @@ func setupRCBLoopback(t *testing.T) (*Client, *mms.Server, *sync.Mutex, map[stri
 		{"TrgOps", mms.NewBitStringWithLength([]byte{0}, 6)},
 		{"IntgPd", mms.NewUnsigned(0)},
 		{"GI", mms.NewBoolean(false)},
-		{"Resv", mms.NewBoolean(false)},
 	}
 
 	registerAttrs := func(prefix string, attrs []struct {

@@ -93,8 +93,8 @@ func TestRegisterModel_RCBSubfields(t *testing.T) {
 	if !ok {
 		t.Fatal("expected VisibleString for DatSet")
 	}
-	if dsStr != "dsEvents" {
-		t.Errorf("DatSet = %q, want dsEvents", dsStr)
+	if dsStr != "LD1/LLN0$dsEvents" {
+		t.Errorf("DatSet = %q, want LD1/LLN0$dsEvents", dsStr)
 	}
 }
 
@@ -216,9 +216,11 @@ func TestRegisterModel_RCBOptFldsFromReportDef(t *testing.T) {
 	if !ok {
 		t.Fatal("expected BitString for OptFlds")
 	}
-	// The test SCL has SeqNum=true, TimeStamp=true → bits 0,1 should be set.
-	if len(data) < 1 || data[0]&0xC0 != 0xC0 {
-		t.Errorf("OptFlds data = %x, expected SeqNum+TimeStamp bits set (0xC0)", data)
+	// The test SCL has SeqNum=true, TimeStamp=true.
+	// Per IEC 61850, bit 0 is reserved; SeqNum=bit 1, TimeStamp=bit 2.
+	// In the first byte (MSB-first): bit 1 = 0x40, bit 2 = 0x20 → 0x60.
+	if len(data) < 1 || data[0]&0x60 != 0x60 {
+		t.Errorf("OptFlds data = %x, expected SeqNum+TimeStamp bits set (0x60)", data)
 	}
 
 	trgOpsVal := vs.Get(StoreKey("LD1", "LLN0$BR$brcbEvents01$TrgOps"))
@@ -320,7 +322,7 @@ func TestParseInitialBitString_RoundTrips(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			v, err := parseInitialValue(tc.btype, tc.val)
+			v, err := parseInitialValue(tc.btype, tc.val, nil)
 			if err != nil {
 				t.Fatalf("parseInitialValue(%q, %q): %v", tc.btype, tc.val, err)
 			}

@@ -73,7 +73,7 @@ func (c *Client) ListDataSets(ctx context.Context, ld string) ([]string, error) 
 	names, err := c.mmsClient.GetNameListAll(ctx, mms.NameListRequest{
 		ObjectClass: mms.ObjectClassNamedVariableList,
 		Scope:       mms.ObjectScopeDomain,
-		DomainID:    mms.DomainID(ld),
+		DomainID:    c.ldDomain(ld),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("iec61850: list data sets for %q: %w", ld, err)
@@ -109,7 +109,7 @@ func (c *Client) GetDataSet(ctx context.Context, ld, dsName string) (*DataSet, e
 
 	listName := mms.ObjectName{
 		Scope:  mms.ObjectScopeDomain,
-		Domain: mms.DomainID(ld),
+		Domain: c.ldDomain(ld),
 		ItemID: mms.ItemID(dsName),
 	}
 
@@ -160,7 +160,7 @@ func (c *Client) ReadDataSet(ctx context.Context, ld, dsName string) ([]DataSetV
 
 	listName := mms.ObjectName{
 		Scope:  mms.ObjectScopeDomain,
-		Domain: mms.DomainID(ld),
+		Domain: c.ldDomain(ld),
 		ItemID: mms.ItemID(dsName),
 	}
 
@@ -173,14 +173,17 @@ func (c *Client) ReadDataSet(ctx context.Context, ld, dsName string) ([]DataSetV
 		}
 	}
 
+	var memberVarNames []mms.ObjectName
 	if members == nil {
 		attrs, err := c.mmsClient.GetNamedVariableListAttributes(ctx, listName)
 		if err != nil {
 			return nil, fmt.Errorf("iec61850: read data set %s/%s: get attributes: %w", ld, dsName, err)
 		}
 		members = make([]DataSetMember, len(attrs.Variables))
+		memberVarNames = make([]mms.ObjectName, len(attrs.Variables))
 		for i, v := range attrs.Variables {
 			members[i] = variableSpecToMember(v)
+			memberVarNames[i] = v.Name
 		}
 		if c.cache != nil && c.cache.strategy == CacheLazy {
 			dsRef := ld + "/" + mmsItemIDToIECDSName(dsName)
@@ -190,9 +193,21 @@ func (c *Client) ReadDataSet(ctx context.Context, ld, dsName string) ([]DataSetV
 				Members:   members,
 			})
 		}
+	} else {
+		memberVarNames = make([]mms.ObjectName, len(members))
+		for i, m := range members {
+			memberVarNames[i] = mms.ObjectName{
+				Scope:  mms.ObjectScopeDomain,
+				Domain: mms.DomainID(m.DomainID),
+				ItemID: mms.ItemID(m.ItemID),
+			}
+		}
 	}
 
-	accessResults, err := c.mmsClient.ReadNamedVariableList(ctx, listName)
+	// Use ReadMultiple with expanded member variables rather than ReadNamedVariableList
+	// (variableListName form) to ensure compatibility with servers that do not support
+	// the variableListName CHOICE in the MMS Read PDU (e.g. iec61850bean).
+	accessResults, err := c.mmsClient.ReadMultiple(ctx, memberVarNames)
 	if err != nil {
 		return nil, fmt.Errorf("iec61850: read data set %s/%s: %w", ld, dsName, err)
 	}
@@ -206,7 +221,7 @@ func (c *Client) ReadDataSet(ctx context.Context, ld, dsName string) ([]DataSetV
 	for i, ar := range accessResults {
 		results[i].Member = members[i]
 		memberID := memberIdentity(results[i].Member, i)
-		if ar.ErrorCode != 0 {
+		if ar.ErrorCode != mms.DataAccessErrorNone {
 			results[i].Err = &DataAccessError{Ref: memberID, ErrorCode: int(ar.ErrorCode), Operation: "read-dataset"}
 		} else if ar.Value == nil {
 			results[i].Err = fmt.Errorf("iec61850: read data set member %s: missing value", memberID)
@@ -308,7 +323,7 @@ func (c *Client) CreateDataSet(ctx context.Context, ld, dsName string, members [
 			if err := ref.Validate(); err != nil {
 				return fmt.Errorf("iec61850: create data set: member[%d]: %w", i, err)
 			}
-			d, id, err := ref.ToMMS()
+			d, id, err := c.refToMMS(ref)
 			if err != nil {
 				return fmt.Errorf("iec61850: create data set: member[%d]: %w", i, err)
 			}
@@ -328,7 +343,7 @@ func (c *Client) CreateDataSet(ctx context.Context, ld, dsName string, members [
 	err := c.mmsClient.DefineNamedVariableList(ctx, mms.DefineNamedVariableListRequest{
 		ListName: mms.ObjectName{
 			Scope:  mms.ObjectScopeDomain,
-			Domain: mms.DomainID(ld),
+			Domain: c.ldDomain(ld),
 			ItemID: mms.ItemID(dsName),
 		},
 		Variables: vars,
@@ -364,7 +379,7 @@ func (c *Client) DeleteDataSet(ctx context.Context, ld, dsName string) error {
 	listNames := []mms.ObjectName{
 		{
 			Scope:  mms.ObjectScopeDomain,
-			Domain: mms.DomainID(ld),
+			Domain: c.ldDomain(ld),
 			ItemID: mms.ItemID(dsName),
 		},
 	}

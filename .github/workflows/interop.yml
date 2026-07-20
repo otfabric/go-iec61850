@@ -1,0 +1,53 @@
+name: Interop
+run-name: "Interop (${{ github.event_name }}) on ${{ github.ref_name }} by @${{ github.actor }}"
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  iec61850:
+    name: IEC 61850 interop
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run interop matrix
+        env:
+          LIBIEC61850_IMAGE: ghcr.io/otfabric/mms-interop-libiec61850@sha256:29bca666d5cc42b19ccd2feca51397bde67123366eb2be07984dc9cf91411a23
+          IEC61850BEAN_IMAGE: ghcr.io/otfabric/mms-interop-iec61850bean@sha256:404fb8ab1537947913f6c88b9862464d83a452773641cfbe5cfc87d2f1dc795b
+        run: make interop
+
+      - name: Collect Docker diagnostics
+        if: failure()
+        run: |
+          mkdir -p artifacts
+          docker ps -a > artifacts/docker-ps.txt || true
+          docker images --digests > artifacts/docker-images.txt || true
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-iec61850-interop-diagnostics
+          path: artifacts/
+          if-no-files-found: ignore

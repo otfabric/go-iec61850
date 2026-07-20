@@ -1545,11 +1545,11 @@ Turned the implementation into a release-ready repo with comprehensive documenta
 
 | Example | Description |
 |---------|-------------|
-| `_examples/basic-client/` | Connect, list LDs/LNs, read a value |
-| `_examples/browse-tree/` | Build and print model tree with FC annotations and lazy caching |
-| `_examples/reports/` | Subscribe to buffered reports with auto-enable, GI trigger, Ctrl-C handling |
-| `_examples/files/` | List files and download the first one |
-| `_examples/scl-parse/` | Parse an SCD file, print IED/LD summary, run validation, show flat rows/datasets/reports counts, print model tree |
+| `examples/basic-client/` | Connect, list LDs/LNs, read a value |
+| `examples/browse-tree/` | Build and print model tree with FC annotations and lazy caching |
+| `examples/reports/` | Subscribe to buffered reports with auto-enable, GI trigger, Ctrl-C handling |
+| `examples/files/` | List files and download the first one |
+| `examples/scl-parse/` | Parse an SCD file, print IED/LD summary, run validation, show flat rows/datasets/reports counts, print model tree |
 
 All examples compile successfully.
 
@@ -1599,11 +1599,11 @@ Systematic audit of the exported API surface:
 | `OBSERVABILITY.md` | Created |
 | `doc.go` | Updated (fixed stale ref, completed API groups) |
 | `report.go` | Updated (added doc comments for 31 constants) |
-| `_examples/basic-client/main.go` | Created |
-| `_examples/browse-tree/main.go` | Created |
-| `_examples/reports/main.go` | Created |
-| `_examples/files/main.go` | Created |
-| `_examples/scl-parse/main.go` | Created |
+| `examples/basic-client/main.go` | Created |
+| `examples/browse-tree/main.go` | Created |
+| `examples/reports/main.go` | Created |
+| `examples/files/main.go` | Created |
+| `examples/scl-parse/main.go` | Created |
 | `fuzz_test.go` | Created (4 fuzz targets) |
 | `scl/fuzz_test.go` | Created (1 fuzz target) |
 | `interop/README.md` | Created |
@@ -1777,7 +1777,7 @@ Replaced the empty `StrictnessOptions` struct with two concrete knobs:
 
 Replaced the hardcoded `LLN0.Mod.stVal[ST]` read with dynamic tree browsing: the example now calls `TreeWithOptions` with `IncludeFCs: true`, walks to the first leaf node, and reads that attribute. Works on any server model.
 
-**Files**: `_examples/basic-client/main.go`
+**Files**: `examples/basic-client/main.go`
 
 ### Files changed
 
@@ -1788,7 +1788,7 @@ Replaced the hardcoded `LLN0.Mod.stVal[ST]` read with dynamic tree browsing: the
 | `report.go` | Removed duplicate GI rollback; documented Reference; added `ListReportsVerified`; wired `VerifyReportCandidates` |
 | `dataset.go` | `ReadDataSet` populates cache on miss |
 | `options.go` | Added `RejectUnknownFC` and `VerifyReportCandidates` to `StrictnessOptions` |
-| `_examples/basic-client/main.go` | Dynamic leaf browsing instead of hardcoded ref |
+| `examples/basic-client/main.go` | Dynamic leaf browsing instead of hardcoded ref |
 
 ### Metrics
 
@@ -1878,7 +1878,7 @@ Added `StrictStructureValue()` and `StrictArrayValue()` that return `(*Value, er
 #### F14: Files example writes to local file
 Changed the files example from streaming to stdout (which could dump binary) to writing to a local file with a sanitized filename.
 
-**Files**: `_examples/files/main.go`
+**Files**: `examples/files/main.go`
 
 #### F15: ListChildren docs updated
 ListChildren doc now says "browse children" and explains the FC-merged view semantics (handled as part of F1).
@@ -1922,8 +1922,8 @@ Added server positioning to `doc.go` and the "Known limitations" section to `Ser
 | `doc.go` | Server positioning section |
 | `ref.go` | Length-limit guardrail rephrasing |
 | `internal/servermodel/register.go` | ValueStore aliasing docs |
-| `_examples/files/main.go` | Write to file, sanitize filename |
-| `_examples/basic-client/main.go` | (unchanged from Round 7) |
+| `examples/files/main.go` | Write to file, sanitize filename |
+| `examples/basic-client/main.go` | (unchanged from Round 7) |
 | `bulk_test.go` | 3 mixed-domain integration tests |
 | `browse_test.go` | 2 FC-collision browse tests |
 | `report_test.go` | 3 segmented-report adversarial tests |
@@ -2015,14 +2015,14 @@ All 40 feedback items implemented.
 - **F39**: `doc.go` SCL API group expanded to list `ParseFile`, `WriteCSV`, `PrintTree`, `ExportDataSets`, `ExportReports`.
 - **F40**: All network examples (`basic-client`, `browse-tree`, `files`, `reports`) now use `context.WithTimeout`.
 
-**Files**: `doc.go`, `_examples/basic-client/main.go`, `_examples/browse-tree/main.go`, `_examples/files/main.go`, `_examples/reports/main.go`
+**Files**: `doc.go`, `examples/basic-client/main.go`, `examples/browse-tree/main.go`, `examples/files/main.go`, `examples/reports/main.go`
 
 ### Examples (F3–F7)
 
 - **F3–F4**: `basic-client` `findFirstLeaf` returns `Ref` directly, skips `q`/`t` attributes, prefers single-FC leaves.
 - **F5–F7**: `files` example uses `O_CREATE|O_EXCL`, cleans up partial downloads, improved `sanitizeFilename`.
 
-**Files**: `_examples/basic-client/main.go`, `_examples/files/main.go`
+**Files**: `examples/basic-client/main.go`, `examples/files/main.go`
 
 ### Files changed
 
@@ -2048,10 +2048,10 @@ All 40 feedback items implemented.
 | `internal/servermodel/config.go` | F38 |
 | `internal/servermodel/model.go` | F36 |
 | `internal/servermodel/fromscl.go` | F35 |
-| `_examples/basic-client/main.go` | F3 F4 F40 |
-| `_examples/files/main.go` | F5 F6 F7 F40 |
-| `_examples/browse-tree/main.go` | F40 |
-| `_examples/reports/main.go` | F40 |
+| `examples/basic-client/main.go` | F3 F4 F40 |
+| `examples/files/main.go` | F5 F6 F7 F40 |
+| `examples/browse-tree/main.go` | F40 |
+| `examples/reports/main.go` | F40 |
 | `go.mod` | F14 |
 
 ### Metrics
@@ -2171,7 +2171,7 @@ warnings, example improvements, and documentation tightening.
 - **F20**: All examples use `defer client.Close(context.Background())` consistently.
 - **F21**: `findFirstLeaf` expanded skip list (ctlModel, ctlVal, operTm), doc clarified as best-effort heuristic.
 
-**Files**: `_examples/basic-client/main.go`, `_examples/browse-tree/main.go`, `_examples/reports/main.go`
+**Files**: `examples/basic-client/main.go`, `examples/browse-tree/main.go`, `examples/reports/main.go`
 
 ### Interop Testing (F36)
 
@@ -2252,7 +2252,7 @@ library manages CO paths (Oper, SBO, SBOw, Cancel) automatically.
 
 ### Example
 
-- `_examples/control/main.go`: demonstrates browsing for controllable objects, reading ctlModel, and performing direct-operate or SBO workflows.
+- `examples/control/main.go`: demonstrates browsing for controllable objects, reading ctlModel, and performing direct-operate or SBO workflows.
 
 ### Documentation updates
 
@@ -2273,7 +2273,7 @@ library manages CO paths (Oper, SBO, SBOw, Cancel) automatically.
 | `server.go` | controls map + controlMu added to Server |
 | `doc.go` | Controls API group |
 | `KNOWN_LIMITATIONS.md` | Updated control limitations |
-| `_examples/control/main.go` | Control example |
+| `examples/control/main.go` | Control example |
 
 ### Metrics
 
@@ -3226,3 +3226,294 @@ journal immutability, SCL validation, and API documentation.
 - **Race conditions**: 0
 
 ---
+
+## Phase 2D-b – iec61850bean Reporter → go-iec61850 Server (URCB)
+
+**Status**: Complete  
+**Date**: 2026-07-20
+
+### Summary
+
+Completed Phase 2D interop by fixing two server-side issues that prevented
+`iec61850bean` from receiving reports from the `go-iec61850` server:
+
+1. **LN TypeSpec missing RP/BR FC groups** (`registerLNHierarchy`): `iec61850bean`
+   discovers URCBs by calling `GetVariableAccessAttributes` on the bare LN name
+   and parsing the returned structure. The LN TypeSpec now includes RP/BR FC groups
+   (built from `buildRCBFields`) so that `DataDefinitionResParser` constructs `Urcb`
+   objects correctly during `retrieveModel()`.
+
+2. **DatSet stored as local name instead of domain-qualified reference**
+   (`buildRCBFields`): IEC 61850-8-1 requires the DatSet RCB attribute to use the
+   domain-qualified form `domain/LNName$dsName`. go-iec61850 was storing only the
+   local name (e.g. `"dsInterop"`), but `iec61850bean`'s `processReport` looks up
+   the DataSet by the stored value (after replacing `$` with `.`). The map key used
+   by `addDataSet` is `getReferenceStr().replace('$','.')`, which is the fully-
+   qualified form (e.g. `"InteropLD/LLN0.dsInterop"`). The stored DatSet is now
+   qualified at register time when the SCL supplies a bare local name.
+
+Also extended the interop test suite with Phase 2F (negative cases) and Phase 2G
+(dataset depth) tests, fixing two pre-existing assertion errors:
+- `TestLibIECServer_DS_GIReport` was incorrectly expecting GI semantics for a
+  dchg report; corrected to assert only the changed member is included.
+- `TestBeanClient_Neg_UnknownDO` was asserting the association survives an
+  unknown-DO read; updated to document that iec61850bean drops the connection
+  (known quirk).
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `internal/servermodel/register.go` | `buildRCBFields` now takes `ldName, lnName` and qualifies DatSet; `registerRCB` and `registerLNHierarchy` pass these params; LN TypeSpec includes RP/BR FC groups |
+| `internal/servermodel/register_test.go` | Updated DatSet assertion to expect fully-qualified form (`LD1/LLN0$dsEvents`) |
+| `report_engine_test.go` | Updated DatSet assertion to `LD1/LLN0$dsTest` |
+| `server_test.go` | Updated DatSet assertion to `LD1/LLN0$dsTest` |
+| `interop/dataset_depth_test.go` | Fixed `TestLibIECServer_DS_GIReport` assertion for dchg semantics |
+| `interop/iec61850bean_negative_test.go` | Fixed `TestBeanClient_Neg_UnknownDO` to document iec61850bean connection-drop behaviour |
+| `interop/iec61850bean_urcb_server_test.go` | New — Phase 2D-b: iec61850bean reporter → go-iec61850 server |
+| `interop/iec61850bean_urcb_client_test.go` | New — Phase 2D-a: go-iec61850 client → iec61850bean server URCB |
+| `interop/libiec61850_negative_test.go` | New — Phase 2F: libiec61850 negative cases |
+| `interop/iec61850bean_negative_test.go` | New — Phase 2F: iec61850bean negative cases |
+| `interop/dataset_depth_test.go` | New — Phase 2G: dataset depth tests |
+| `mms-interop/adapters/iec61850bean/…` | New `IedReporter.java` and `reporter` sub-command for iec61850bean adapter |
+
+### Metrics
+
+- **Tests**: 473 unit + full interop suite (all passing)
+- **Lint issues**: 0
+
+---
+
+## Phase 2E — Direct control interop (all four directions)
+
+**Status:** Complete
+
+**Date:** 2026-07-20
+
+### What was built
+
+Four direct-control (direct-with-normal-security) interoperability tests covering all combinations:
+
+| Test | Direction |
+|---|---|
+| `TestLibIECServer_Control_DirectOperate` | libiec61850 client → go-iec61850 server |
+| `TestLibIECClient_Control_DirectOperate` | go-iec61850 client → libiec61850 server |
+| `TestBeanServer_Control_DirectOperate`   | iec61850bean client → go-iec61850 server |
+| `TestBeanClient_Control_DirectOperate`   | go-iec61850 client → iec61850bean server |
+
+Each test:
+1. Reads `ctlModel` from the server and asserts it equals 1 (direct-with-normal-security).
+2. Issues an Operate with `ctlVal=true` (toggling the initial `false`).
+3. Reads back `stVal` and asserts it equals the commanded value.
+4. Confirms the association remains usable after the control sequence.
+
+### Key fixes
+
+| Component | Fix |
+|---|---|
+| `server.go` | `installWriteInterceptor()` must be called unconditionally in `NewServer`. Previously it was only called from `report_engine.go` and `setting_groups_server.go`, so servers without reports or setting groups never installed the interceptor, meaning CO writes never reached `handleControlWrite`. |
+| `control_types.go` | `buildOper`/`buildCancel` omit `operTm` when `OperTm.IsZero()`. Many servers (libiec61850, iec61850bean) define `OperSPC_Type` without `operTm` and return `TypeInconsistent` for a 7-element structure. |
+| `control_server.go` | `decodeControlRequest` Cancel case updated to apply the same operTm-optional index logic as Oper. |
+| `interop/testdata/interop.icd` | Added explicit `Oper`, `SBO`, `SBOw`, `Cancel` DAs to `SPC_Type` with the `OperSPC_Type`/`Originator_Type`/`OrCat` definitions so `libiec61850` can introspect the control model. |
+| `mms-interop/adapters/libiec61850/src/ied_server.c` | Added `spcso1_control_handler` and registered it via `IedServer_setControlHandler`. Without it libiec61850 accepts the Operate MMS write but does not propagate `ctlVal` to `stVal`. |
+| `mms-interop/adapters/iec61850bean/src/main/java/org/otfabric/interop/IedServer.java` | `ServerEventListener.write` callback now reflects `ctlVal` into `stVal` when a `BdaBoolean/CO` write to `ctlVal` is received. |
+| `mms-interop/adapters/iec61850bean/src/main/java/org/otfabric/interop/IedController.java` | Used new `JsonLines.successReadIntOp` / `successReadBoolOp` helpers so operation names match what Go tests expect (`"read-ctlmodel"`, `"read-stval"`). |
+| `mms-interop/adapters/libiec61850/src/ied_controller.c` | New adapter program for libiec61850-side control testing. |
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `server.go` | Added `s.installWriteInterceptor()` call in `NewServer` |
+| `control_types.go` | `buildOper`/`buildCancel` — omit `operTm` when zero |
+| `control_server.go` | `decodeControlRequest` Cancel — dynamic operTm detection |
+| `control_types_test.go` | Updated structure-element counts and indices |
+| `interop/control_test.go` | New — Phase 2E control tests |
+| `interop/harness_test.go` | Added `startIEDControllerAdapter`, `startIEC61850BeanControllerAdapter`, `startGoIEDServerWithControls`, `collectControllerResults`, `findControllerOp` |
+| `interop/testdata/interop.icd` | Added CO DAs to `SPC_Type` |
+| `mms-interop/adapters/libiec61850/src/ied_server.c` | SPCSO1 control handler |
+| `mms-interop/adapters/libiec61850/src/ied_controller.c` | New — libiec61850 control client adapter |
+| `mms-interop/adapters/libiec61850/src/CMakeLists.txt` | Added `libiec61850-ied-controller` target |
+| `mms-interop/adapters/libiec61850/Dockerfile` | Added `ied_controller.c` copy |
+| `mms-interop/adapters/iec61850bean/src/main/java/org/otfabric/interop/IedController.java` | New — iec61850bean control client adapter |
+| `mms-interop/adapters/iec61850bean/src/main/java/org/otfabric/interop/IedServer.java` | Write listener reflects ctlVal→stVal |
+| `mms-interop/adapters/iec61850bean/src/main/java/org/otfabric/interop/JsonLines.java` | Added `successReadIntOp`/`successReadBoolOp` helpers |
+| `mms-interop/adapters/iec61850bean/src/main/java/org/otfabric/interop/Main.java` | Added `controller` subcommand dispatch |
+| `mms-interop/adapters/iec61850bean/Dockerfile` | Added `iec61850bean-ied-controller` wrapper script |
+
+### Metrics
+
+- **Tests**: 477 unit + 87 interop (all passing)
+- **Lint issues**: 0
+
+---
+
+## Phase 2H — Report semantics expansion (GI and multi-member dchg)
+
+### Summary
+
+Implemented Phase 2H-a (General Interrogation) and Phase 2H-c (multiple data changes) from `INTEROP.md`.
+
+Four new tests in `interop/report_semantics_test.go`:
+
+| Test | Direction | Trigger | Assert |
+|------|-----------|---------|--------|
+| `TestLibIECClient_URCB_GIReport` | go client → libiec61850 server | TriggerGI | All members included, ReasonGI per entry |
+| `TestLibIECServer_URCB_GIReport` | go client → go server | TriggerGI | All members included, ReasonGI per entry |
+| `TestBeanServer_URCB_GIReport` | go client → iec61850bean server | TriggerGI | All members included |
+| `TestLibIECServer_URCB_MultiMemberDchg` | server-side SetValue × 2 | two dchg notifications | Both members arrive in separate reports with correct values |
+
+### Minor structural change
+
+`goIEDServer` gained an `srv *iec61850.Server` field so tests can call `SetValue` directly (bypassing MMS writes) to trigger server-side data change notifications without needing a writable remote attribute.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `interop/report_semantics_test.go` | New — Phase 2H-a GI and 2H-c multi-member dchg tests |
+| `interop/harness_test.go` | `goIEDServer.srv` field; all three `startGoIEDServer*` return it |
+
+### Metrics
+
+- **Tests**: unit tests unchanged + 4 new interop tests (all passing)
+- **Lint issues**: 0
+
+---
+
+## Phase 2I — SBO interop tests (select-before-operate, all four directions)
+
+**Status:** Complete
+
+**Date:** 2026-07-20
+
+### What was built
+
+Five SBO (select-before-operate, `ctlModel=2`, normal security) interoperability tests:
+
+| Test | Direction |
+|---|---|
+| `TestLibIECServer_Control_SBOOperate`   | libiec61850 ied-controller → go-iec61850 server |
+| `TestLibIECClient_Control_SBOOperate`   | go-iec61850 client → libiec61850 ied-server     |
+| `TestBeanServer_Control_SBOOperate`     | iec61850bean ied-controller → go-iec61850 server |
+| `TestBeanClient_Control_SBOOperate`     | go-iec61850 client → iec61850bean ied-server    |
+| `TestGoServer_SBO_OperateWithoutSelect` | go client → go server — operate rejected when no prior select |
+
+Each test:
+1. (Client directions) Reads `SBO[CO]` — the "select" step; asserts non-empty reference returned.
+2. Issues an Operate with `ctlVal=true`.
+3. Reads back `stVal` and asserts it equals `true`.
+
+### Key implementation work
+
+**go-mms: `SetVariableRead`**  
+Added `Server.SetVariableRead(domain, itemID, fn)` so the `go-iec61850` server layer can override the MMS read function for the `SBO` attribute at runtime, implementing the SBO grant/deny logic.
+
+**go-iec61850: SBO read handler**  
+`Server.RegisterControl` installs an `installSBONormalReadHandler` when `CtlModelSBONormal` is requested.  The handler atomically checks for an existing select, records the granting connection (`selectConn`), and returns the DO reference string (select granted) or an empty string (select denied).
+
+**`controlRegistration`** gained `selectConn *mms.ServerConn` alongside `selectOwner string` so SBO-normal ownership is tracked by connection identity rather than originator key.
+
+**`executeOperate`** checks both `selectConn` (SBO-normal path, read-based select) and `selectOwner` (SBO-enhanced path, write-based select) for correct ownership enforcement.
+
+**ICD / fixture: SPCSO2**  
+Added `SPCSO2` with `ctlModel=2` (SBO-with-normal-security) to `interop.icd` and `values.json` in both `go-iec61850/interop/testdata/` and `mms-interop/fixtures/iec61850/`.
+
+**libiec61850 adapters**  
+- `ied_server.c`: initialises `SPCSO2.stVal`/`ctlModel`; registers `spcso2_control_handler`.
+- `ied_controller.c`: added `--do SPCSO1|SPCSO2` flag; performs `ControlObjectClient_select()` before operate when `expected_ctlmodel == 2`.
+
+**iec61850bean adapters**  
+- `IedServer.java`: write handler uses the BDA's `toString()` reference path (parsed via regex `/GGIO1\.([^.]+)\.Oper\.ctlVal/`) to identify the parent DO for stVal updates — identity/parent-chain approaches failed because iec61850bean passes fresh per-request BDA copies to the write listener.  Also resolves SPCSO1 vs SPCSO2 dynamically; uses `Abort` instead of `Close` for go→bean connections (iec61850bean does not implement server-side MMS Conclude).
+- `IedController.java`: added `--do` flag; calls `client.getDataValues(sboData)` for SBO select before operate.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `interop/sbo_test.go` | New — Phase 2I SBO tests |
+| `interop/control_test.go` | `startIEDControllerAdapter` / `startIEC61850BeanControllerAdapter` now accept `doName`; `TestBeanClient_Control_DirectOperate` uses `Abort` + 15 s context |
+| `interop/harness_test.go` | `fixtureValues` SPCSO2 fields; `startGoIEDServerWithControls` registers SPCSO2; controller helpers accept `doName` |
+| `interop/testdata/interop.icd` | SPCSO2 added to GGIO1_Type with ctlModel=2 DAs |
+| `interop/testdata/values.json` | SPCSO2 stVal / ctlModel initial values |
+| `control_server.go` | `controlRegistration.selectConn`; `installSBONormalReadHandler`; `executeOperate` dual-path ownership; `executeCancel` clears both |
+| `go-mms/server.go` | `SetVariableRead` — override read function for an already-registered variable |
+| `mms-interop/fixtures/iec61850/interop.icd` | Synced with SPCSO2 additions |
+| `mms-interop/fixtures/iec61850/values.json` | Synced with SPCSO2 initial values |
+| `mms-interop/adapters/libiec61850/src/ied_server.c` | SPCSO2 init + control handler |
+| `mms-interop/adapters/libiec61850/src/ied_controller.c` | `--do` flag + SBO select path |
+| `mms-interop/adapters/iec61850bean/src/main/java/org/otfabric/interop/IedServer.java` | toString-based DO resolution for stVal updates; SPCSO2 init |
+| `mms-interop/adapters/iec61850bean/src/main/java/org/otfabric/interop/IedController.java` | `--do` flag + SBO select path |
+
+### Metrics
+
+- **Tests**: unit tests unchanged + 5 new interop SBO tests (all passing, under 5 s total)
+- **Lint issues**: 0
+
+## Phase 2J — SBOw (enhanced security) controls
+
+**Status:** Complete
+
+**Date:** 2026-07-20
+
+### What was built
+
+Six SBOw (select-before-operate, enhanced security, `ctlModel=4`) interoperability tests covering all meaningful directions plus two negative/rejection scenarios:
+
+| Test | Direction |
+|---|---|
+| `TestLibIECServer_Control_SBOwOperate`   | libiec61850 ied-controller → go-iec61850 server |
+| `TestLibIECClient_Control_SBOwOperate`   | go-iec61850 client → libiec61850 ied-server     |
+| `TestBeanServer_Control_SBOwOperate`     | iec61850bean ied-controller → go-iec61850 server |
+| `TestBeanClient_Control_SBOwOperate`     | _(skipped — iec61850bean gap)_                  |
+| `TestGoServer_SBOw_OperateWithoutSelect` | go client → go server — operate rejected before SBOw select |
+| `TestGoServer_SBOw_CancelClearsSelect`   | go client → go server — select, cancel, operate rejected   |
+
+### Key implementation work
+
+**ICD / fixture: SPCSO3**  
+Added `SPCSO3` with `ctlModel=4` (sbo-with-enhanced-security) to `interop.icd` and `values.json` in both `go-iec61850/interop/testdata/` and `mms-interop/fixtures/iec61850/`.
+
+**libiec61850 adapters**  
+- `ied_server.c`: initialises `SPCSO3.stVal`/`ctlModel`; registers `spcso3_control_handler`.
+- `ied_controller.c`: extended `DO_CONFIGS` with SPCSO3 (`expected_ctlmodel=4`); refactored `op_select_with_value` to perform both `selectWithValue` and `operate` on the **same** `ControlObjectClient` instance — this is required to ensure `ctlNum` consistency, since `ctlNum` is per-client object in `libiec61850`.
+
+**iec61850bean adapters**  
+- `IedServer.java`: extended `stValByDoName` map to include SPCSO3; updated write-listener regex to also match `SBOw` writes (`/GGIO1\.([^.]+)\.(Oper|SBOw)\.ctlVal/`); `stVal` is only updated on `Oper` writes, not `SBOw` (select does not change state); applied SPCSO3 initial values.
+- `IedController.java`: updated argument parsing to support SPCSO3; added `selectWithValue` helper that writes to `SBOw[CO]`; `run()` calls `selectWithValue` before `operate` when `isSBOEnhanced`.
+
+**go-iec61850: harness**  
+`harness_test.go`: added `SPCSO3StVal` / `SPCSO3CtlModel` to `fixtureValues`; updated `loadFixtureValues` and `setGoIEDInitialValues`; `startGoIEDServerWithControls` now registers `GGIO1.SPCSO3` with `CtlModelSBOEnhanced`.
+
+**ctlNum discipline**  
+IEC 61850 SBOw requires the same `ctlNum` in `SelectWithValue` and the subsequent `Operate`. Two issues were found and fixed:
+1. `libiec61850-ied-controller`: was creating separate `ControlObjectClient` objects for select and operate, resetting `ctlNum`. Fixed by using a single client object for both.
+2. go-iec61850 client tests: `nextCtlNum()` increments on each call, so `SelectWithValue` and `Operate` received different values. Fixed by using an explicit constant `ctlNum` in the test for both calls.
+
+**TestGoServer_SBOw_\* dial fix**  
+Tests that use the go-iec61850 client against the go-iec61850 server now use `iec61850.DialOptions{}` (no IEDName). The go server registers bare LD domain names (e.g. `InteropLD`); supplying `IEDName: "InteropIED"` caused the client to address domain `"InteropIEDInteropLD"`, which returned `ObjectUndefined` instead of the expected control-rejection errors.
+
+**Known gap: iec61850bean SBOw**  
+`iec61850bean` server does not expose `SBOw[CO]` as a writable MMS attribute; the go client receives `ObjectAccessUnsupported`. `TestBeanClient_Control_SBOwOperate` is intentionally skipped with an explanatory message.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `interop/sbow_test.go` | New — Phase 2J SBOw tests (6 tests) |
+| `interop/sbo_test.go` | `TestGoServer_SBO_OperateWithoutSelect`: use `DialOptions{}` for go→go |
+| `interop/harness_test.go` | SPCSO3 fields; register SPCSO3 in `startGoIEDServerWithControls` |
+| `interop/testdata/interop.icd` | SPCSO3 added to GGIO1_Type with ctlModel=4 DAs |
+| `interop/testdata/values.json` | SPCSO3 stVal / ctlModel initial values |
+| `mms-interop/fixtures/iec61850/interop.icd` | Synced with SPCSO3 additions |
+| `mms-interop/fixtures/iec61850/values.json` | Synced with SPCSO3 initial values |
+| `mms-interop/adapters/libiec61850/src/ied_server.c` | SPCSO3 init + control handler |
+| `mms-interop/adapters/libiec61850/src/ied_controller.c` | SPCSO3 in DO_CONFIGS; atomic select+operate in `op_select_with_value` |
+| `mms-interop/adapters/iec61850bean/src/main/java/org/otfabric/interop/IedServer.java` | SPCSO3 stValByDoName; SBOw-aware regex; SPCSO3 initial values |
+| `mms-interop/adapters/iec61850bean/src/main/java/org/otfabric/interop/IedController.java` | SPCSO3 support; `selectWithValue` helper |
+| `go-iec61850/INTEROP.md` | Matrix updated; Phase 2J documented |
+
+### Metrics
+
+- **Tests**: 6 new interop SBOw tests (5 pass, 1 intentionally skipped); full interop suite green (~79 s)
+- **Lint issues**: 0

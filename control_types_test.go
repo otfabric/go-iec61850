@@ -107,8 +107,9 @@ func TestBuildOper_Structure(t *testing.T) {
 	if !ok {
 		t.Fatal("expected structure")
 	}
-	if len(members) != 7 {
-		t.Fatalf("expected 7 members, got %d", len(members))
+	// Without OperTm: ctlVal, origin, ctlNum, T, Test, Check = 6 members.
+	if len(members) != 6 {
+		t.Fatalf("expected 6 members (no operTm), got %d", len(members))
 	}
 
 	ctlVal, ok := members[0].Bool()
@@ -116,12 +117,14 @@ func TestBuildOper_Structure(t *testing.T) {
 		t.Error("ctlVal should be true")
 	}
 
-	ctlNum, ok := members[3].Uint32()
+	// origin at index 1 (no operTm)
+	ctlNum, ok := members[2].Uint32()
 	if !ok || ctlNum != 42 {
 		t.Errorf("ctlNum = %d, want 42", ctlNum)
 	}
 
-	test, ok := members[5].Bool()
+	// Test at index 4 (ctlNum+2; T is at ctlNum+1)
+	test, ok := members[4].Bool()
 	if !ok || !test {
 		t.Error("Test should be true")
 	}
@@ -131,7 +134,8 @@ func TestBuildOper_DefaultOrigin(t *testing.T) {
 	params := OperateParams{CtlVal: BoolCtlVal(false)}
 	v := buildOper(params)
 	members, _ := v.Structure()
-	originMembers, ok := members[2].Structure()
+	// origin is at index 1 when there is no operTm
+	originMembers, ok := members[1].Structure()
 	if !ok || len(originMembers) < 2 {
 		t.Fatal("expected origin structure")
 	}
@@ -170,11 +174,12 @@ func TestBuildCancel_Structure(t *testing.T) {
 	if !ok {
 		t.Fatal("expected structure")
 	}
-	if len(members) != 6 {
-		t.Fatalf("expected 6 members, got %d", len(members))
+	// Without OperTm: ctlVal, origin, ctlNum, T, Test = 5 members.
+	if len(members) != 5 {
+		t.Fatalf("expected 5 members (no operTm), got %d", len(members))
 	}
 
-	testBit, ok := members[5].Bool()
+	testBit, ok := members[4].Bool()
 	if !ok || testBit {
 		t.Error("Cancel Test bit should be false")
 	}

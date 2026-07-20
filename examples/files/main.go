@@ -27,7 +27,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("dial: %v", err)
 	}
-	defer client.Close(context.Background())
+	defer client.Close(context.Background()) //nolint:errcheck
 
 	files, err := client.ListFiles(ctx, "")
 	if err != nil {
@@ -51,11 +51,11 @@ func main() {
 
 		entry, err := client.DownloadFile(ctx, name, f)
 		if err != nil {
-			f.Close()
-			os.Remove(localPath)
+			_ = f.Close()
+			_ = os.Remove(localPath)
 			log.Fatalf("download: %v", err)
 		}
-		f.Close()
+		_ = f.Close()
 		fmt.Printf("Downloaded %d bytes to %s\n", entry.Size, localPath)
 	}
 }

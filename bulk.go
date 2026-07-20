@@ -105,7 +105,7 @@ func (c *Client) ReadMultiple(ctx context.Context, refs []Ref) ([]ReadResult, er
 			return nil, fmt.Errorf("iec61850: read multiple: ref[%d]: %w: functional constraint required", i, ErrInvalidArgument)
 		}
 
-		domainID, itemID, err := ref.ToMMS()
+		domainID, itemID, err := c.refToMMS(ref)
 		if err != nil {
 			return nil, fmt.Errorf("iec61850: read multiple: ref[%d] %s: %w", i, ref.String(), err)
 		}
@@ -130,7 +130,7 @@ func (c *Client) ReadMultiple(ctx context.Context, refs []Ref) ([]ReadResult, er
 	for i, ref := range refs {
 		results[i].Ref = ref
 		ar := accessResults[i]
-		if ar.ErrorCode != 0 {
+		if ar.ErrorCode != mms.DataAccessErrorNone {
 			results[i].Err = &DataAccessError{Ref: ref.String(), ErrorCode: int(ar.ErrorCode), Operation: "read"}
 		} else if ar.Value == nil {
 			results[i].Err = fmt.Errorf("iec61850: read %s: missing value in successful access result", ref.String())
@@ -186,7 +186,7 @@ func (c *Client) WriteMultiple(ctx context.Context, requests []WriteRequest) ([]
 			return nil, fmt.Errorf("iec61850: write multiple: request[%d] %s: %w: nil value", i, req.Ref.String(), ErrInvalidArgument)
 		}
 
-		domainID, itemID, err := req.Ref.ToMMS()
+		domainID, itemID, err := c.refToMMS(req.Ref)
 		if err != nil {
 			return nil, fmt.Errorf("iec61850: write multiple: request[%d] %s: %w", i, req.Ref.String(), err)
 		}

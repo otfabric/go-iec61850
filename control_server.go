@@ -73,18 +73,17 @@ type ControlRequest struct {
 // controlRegistration holds a registered control handler and its
 // associated SBO state for a single controllable data object.
 //
-// SBO ownership is tracked by serialized originator identity
-// (OrCat:OrIdent), not by connection or session. This means two
-// clients sharing the same Origin bytes can interfere with each
-// other's SBO state. When the MMS layer exposes connection identity
-// in write callbacks, ownership should be bound to
-// (connection + origin) for stronger multi-client isolation.
+// For SBO enhanced (SBOw), ownership is tracked by serialized
+// originator identity (OrCat:OrIdent). For SBO normal, ownership is
+// tracked by the MMS ServerConn pointer, since the SBO select is a
+// Read request that carries no origin information.
 type controlRegistration struct {
 	handler  ControlHandler
 	ctlModel CtlModel
 
 	mu           sync.Mutex
-	selectOwner  string // "orCat:orIdent" — originator that holds the select
+	selectOwner  string          // "orCat:orIdent" — originator for SBOw enhanced
+	selectConn   *mms.ServerConn // connection identity for SBO normal
 	selectTime   time.Time
 	selectCtlNum uint8
 }
@@ -126,6 +125,13 @@ func (s *Server) RegisterControl(ldName, doRef string, ctlModel CtlModel, handle
 		ctlModel: ctlModel,
 	}
 	s.controls[key] = reg
+
+	// For SBO normal models, override the SBO[CO] variable's Read handler
+	// so that a client Read to SBO[CO] processes the select and returns
+	// the control reference string.
+	if ctlModel == CtlModelSBONormal {
+		s.installSBONormalReadHandler(ldName, doRef, reg)
+	}
 
 	s.logger.Debug("iec61850: control registered",
 		"ld", ldName, "do", doRef, "ctlModel", ctlModel)
@@ -172,45 +178,110 @@ func (s *Server) handleControlWrite(ctx context.Context, ldName, lnName string, 
 func (s *Server) executeOperate(ctx context.Context, reg *controlRegistration, req ControlRequest) error {
 	if reg.ctlModel.IsSBO() {
 		reg.mu.Lock()
-		ownerKey := fmt.Sprintf("%d:%x", req.Origin.OrCat, req.Origin.OrIdent)
-		currentOwner := reg.selectOwner
-		selectTime := reg.selectTime
-		selectCtlNum := reg.selectCtlNum
 
-		if currentOwner == "" || time.Since(selectTime) > DefaultSelectTimeout {
-			reg.mu.Unlock()
-			s.logger.Warn("iec61850: operate denied: no active select", "ref", req.Ref)
-			return &ControlError{
-				Ref:       req.Ref,
-				Operation: "operate",
-				AddCause:  AddCauseSelectFailed,
-				Wrapped:   ErrOperateFailed,
+		if reg.ctlModel == CtlModelSBONormal {
+			// SBO normal: check for active select granted via either the
+			// Read handler (selectConn) or the Write-to-SBO path (selectOwner).
+			sc := mms.ServerConnFromContext(ctx)
+			conn := reg.selectConn
+			owner := reg.selectOwner
+			selectTime := reg.selectTime
+
+			if conn == nil && owner == "" {
+				// No select active.
+				reg.mu.Unlock()
+				s.logger.Warn("iec61850: operate denied: no active SBO select", "ref", req.Ref)
+				return &ControlError{
+					Ref:       req.Ref,
+					Operation: "operate",
+					AddCause:  AddCauseSelectFailed,
+					Wrapped:   ErrOperateFailed,
+				}
 			}
-		}
-		if currentOwner != ownerKey {
-			reg.mu.Unlock()
-			s.logger.Warn("iec61850: operate denied: owner mismatch",
-				"ref", req.Ref, "selectOwner", currentOwner, "operateOwner", ownerKey)
-			return &ControlError{
-				Ref:       req.Ref,
-				Operation: "operate",
-				AddCause:  AddCauseSelectFailed,
-				Wrapped:   ErrOperateFailed,
+			if time.Since(selectTime) > DefaultSelectTimeout {
+				reg.selectConn = nil
+				reg.selectOwner = ""
+				reg.mu.Unlock()
+				s.logger.Warn("iec61850: operate denied: SBO select timed out", "ref", req.Ref)
+				return &ControlError{
+					Ref:       req.Ref,
+					Operation: "operate",
+					AddCause:  AddCauseSelectFailed,
+					Wrapped:   ErrOperateFailed,
+				}
 			}
-		}
-		if reg.ctlModel.IsEnhanced() && selectCtlNum != req.CtlNum {
-			reg.mu.Unlock()
-			s.logger.Warn("iec61850: operate denied: ctlNum mismatch",
-				"ref", req.Ref, "selectCtlNum", selectCtlNum, "operateCtlNum", req.CtlNum)
-			return &ControlError{
-				Ref:       req.Ref,
-				Operation: "operate",
-				AddCause:  AddCauseSelectFailed,
-				Wrapped:   ErrOperateFailed,
+			// Ownership check: if select was via Read, enforce connection identity;
+			// if via Write, enforce origin identity.
+			if conn != nil && sc != nil && conn != sc {
+				reg.mu.Unlock()
+				s.logger.Warn("iec61850: operate denied: SBO connection mismatch", "ref", req.Ref)
+				return &ControlError{
+					Ref:       req.Ref,
+					Operation: "operate",
+					AddCause:  AddCauseSelectFailed,
+					Wrapped:   ErrOperateFailed,
+				}
 			}
+			if conn == nil && owner != "" {
+				// Write-path select: enforce origin identity.
+				ownerKey := fmt.Sprintf("%d:%x", req.Origin.OrCat, req.Origin.OrIdent)
+				if owner != ownerKey {
+					reg.mu.Unlock()
+					s.logger.Warn("iec61850: operate denied: SBO origin mismatch",
+						"ref", req.Ref, "selectOwner", owner, "operateOwner", ownerKey)
+					return &ControlError{
+						Ref:       req.Ref,
+						Operation: "operate",
+						AddCause:  AddCauseSelectFailed,
+						Wrapped:   ErrOperateFailed,
+					}
+				}
+			}
+			reg.selectConn = nil
+			reg.selectOwner = ""
+			reg.mu.Unlock()
+		} else {
+			// SBO enhanced: ownership is by origin identity.
+			ownerKey := fmt.Sprintf("%d:%x", req.Origin.OrCat, req.Origin.OrIdent)
+			currentOwner := reg.selectOwner
+			selectTime := reg.selectTime
+			selectCtlNum := reg.selectCtlNum
+
+			if currentOwner == "" || time.Since(selectTime) > DefaultSelectTimeout {
+				reg.mu.Unlock()
+				s.logger.Warn("iec61850: operate denied: no active select", "ref", req.Ref)
+				return &ControlError{
+					Ref:       req.Ref,
+					Operation: "operate",
+					AddCause:  AddCauseSelectFailed,
+					Wrapped:   ErrOperateFailed,
+				}
+			}
+			if currentOwner != ownerKey {
+				reg.mu.Unlock()
+				s.logger.Warn("iec61850: operate denied: owner mismatch",
+					"ref", req.Ref, "selectOwner", currentOwner, "operateOwner", ownerKey)
+				return &ControlError{
+					Ref:       req.Ref,
+					Operation: "operate",
+					AddCause:  AddCauseSelectFailed,
+					Wrapped:   ErrOperateFailed,
+				}
+			}
+			if reg.ctlModel.IsEnhanced() && selectCtlNum != req.CtlNum {
+				reg.mu.Unlock()
+				s.logger.Warn("iec61850: operate denied: ctlNum mismatch",
+					"ref", req.Ref, "selectCtlNum", selectCtlNum, "operateCtlNum", req.CtlNum)
+				return &ControlError{
+					Ref:       req.Ref,
+					Operation: "operate",
+					AddCause:  AddCauseSelectFailed,
+					Wrapped:   ErrOperateFailed,
+				}
+			}
+			reg.selectOwner = ""
+			reg.mu.Unlock()
 		}
-		reg.selectOwner = ""
-		reg.mu.Unlock()
 	}
 
 	if reg.handler.OnOperate != nil {
@@ -279,6 +350,7 @@ func (s *Server) executeCancel(ctx context.Context, reg *controlRegistration, re
 
 	reg.mu.Lock()
 	reg.selectOwner = ""
+	reg.selectConn = nil
 	reg.mu.Unlock()
 
 	return nil
@@ -286,14 +358,22 @@ func (s *Server) executeCancel(ctx context.Context, reg *controlRegistration, re
 
 // decodeControlRequest decodes an MMS structure into a ControlRequest.
 func decodeControlRequest(ref, operation string, val *mms.Value) (ControlRequest, error) {
-	members, ok := val.Structure()
-	if !ok {
-		return ControlRequest{}, fmt.Errorf("expected structure, got %s", val.Type())
-	}
-
 	req := ControlRequest{
 		Ref:       ref,
 		Operation: operation,
+	}
+
+	// SBO normal: the client writes a VisibleString (the select reference)
+	// to the SBO attribute. There is no structure to decode; the CtlVal
+	// carries the raw value for context if needed.
+	if operation == "SBO" {
+		req.CtlVal = val
+		return req, nil
+	}
+
+	members, ok := val.Structure()
+	if !ok {
+		return ControlRequest{}, fmt.Errorf("expected structure, got %s", val.Type())
 	}
 
 	switch operation {
@@ -302,26 +382,49 @@ func decodeControlRequest(ref, operation string, val *mms.Value) (ControlRequest
 		if operation == "SBOw" {
 			req.Operation = "select"
 		}
-		if len(members) < 7 {
-			return req, fmt.Errorf("oper structure: need >=7 members, got %d", len(members))
+		if len(members) < 5 {
+			return req, fmt.Errorf("oper structure: need >=5 members, got %d", len(members))
 		}
 		req.CtlVal = members[0]
-		if originMembers, ok := members[2].Structure(); ok && len(originMembers) >= 2 {
-			if cat, ok := originMembers[0].Int32(); ok {
-				req.Origin.OrCat = OrCat(cat)
+
+		// Determine whether operTm (BinaryTime or UTCTime) is present at index 1.
+		// If members[1] is a structure → it is origin (no operTm); origin is at index 1.
+		// If members[1] is a time value → it is operTm; origin is at index 2.
+		originIdx := 1
+		if _, isStruct := members[1].Structure(); !isStruct {
+			// members[1] is operTm — skip it
+			originIdx = 2
+		}
+		if originIdx < len(members) {
+			if originMembers, ok := members[originIdx].Structure(); ok && len(originMembers) >= 2 {
+				if cat, ok := originMembers[0].Int32(); ok {
+					req.Origin.OrCat = OrCat(cat)
+				}
+				if ident, ok := originMembers[1].OctetString(); ok {
+					req.Origin.OrIdent = ident
+				}
 			}
-			if ident, ok := originMembers[1].OctetString(); ok {
-				req.Origin.OrIdent = ident
+		}
+		// ctlNum is at originIdx+1 (when present in model)
+		ctlNumIdx := originIdx + 1
+		if ctlNumIdx < len(members) {
+			if n, ok := members[ctlNumIdx].Uint32(); ok {
+				req.CtlNum = uint8(n)
 			}
 		}
-		if n, ok := members[3].Uint32(); ok {
-			req.CtlNum = uint8(n)
+		// T (timestamp) is at ctlNumIdx+1 — skip it.
+		// Test is at ctlNumIdx+2, Check at ctlNumIdx+3.
+		testIdx := ctlNumIdx + 2
+		checkIdx := testIdx + 1
+		if testIdx < len(members) {
+			if b, ok := members[testIdx].Bool(); ok {
+				req.Test = b
+			}
 		}
-		if b, ok := members[5].Bool(); ok {
-			req.Test = b
-		}
-		if bits, ok := members[6].BitString(); ok && len(bits) > 0 {
-			req.Check = CheckConditions(bits[0] >> 6)
+		if checkIdx < len(members) {
+			if bits, ok := members[checkIdx].BitString(); ok && len(bits) > 0 {
+				req.Check = CheckConditions(bits[0] >> 6)
+			}
 		}
 
 	case "Cancel":
@@ -329,23 +432,83 @@ func decodeControlRequest(ref, operation string, val *mms.Value) (ControlRequest
 			return req, fmt.Errorf("Cancel structure: need >=5 members, got %d", len(members))
 		}
 		req.CtlVal = members[0]
-		if originMembers, ok := members[2].Structure(); ok && len(originMembers) >= 2 {
-			if cat, ok := originMembers[0].Int32(); ok {
-				req.Origin.OrCat = OrCat(cat)
-			}
-			if ident, ok := originMembers[1].OctetString(); ok {
-				req.Origin.OrIdent = ident
+		// Same operTm-optional logic as Oper: if members[1] is a structure it is
+		// origin (no operTm); if it is a time value, operTm is present.
+		originIdx := 1
+		if _, isStruct := members[1].Structure(); !isStruct {
+			originIdx = 2
+		}
+		if originIdx < len(members) {
+			if originMembers, ok := members[originIdx].Structure(); ok && len(originMembers) >= 2 {
+				if cat, ok := originMembers[0].Int32(); ok {
+					req.Origin.OrCat = OrCat(cat)
+				}
+				if ident, ok := originMembers[1].OctetString(); ok {
+					req.Origin.OrIdent = ident
+				}
 			}
 		}
-		if n, ok := members[3].Uint32(); ok {
-			req.CtlNum = uint8(n)
+		ctlNumIdx := originIdx + 1
+		if ctlNumIdx < len(members) {
+			if n, ok := members[ctlNumIdx].Uint32(); ok {
+				req.CtlNum = uint8(n)
+			}
 		}
 
 	case "SBO":
-		req.CtlVal = val
+		// Unreachable: SBO is handled before the Structure check above.
 	}
 
 	return req, nil
+}
+
+// installSBONormalReadHandler overrides the Read function of the SBO[CO]
+// variable for a SBO-normal controllable data object. When a client reads
+// SBO[CO], this handler processes the select request: it grants the select
+// to the requesting MMS connection if the control is not already held, and
+// returns the control reference string. An empty string is returned when the
+// select is denied (already selected by another connection).
+//
+// IEC 61850-7-2 §20.3: for ctlModel=2 (sbo-with-normal-security), the
+// client selects by reading the SBO attribute; the server responds with the
+// control object reference on success or an empty string on denial.
+func (s *Server) installSBONormalReadHandler(ldName, doRef string, reg *controlRegistration) {
+	if s.mms == nil {
+		return // unit-test stub servers have no underlying MMS server
+	}
+	// Build the MMS itemID for the SBO leaf: LNName$CO$DOName$SBO
+	// doRef is "GGIO1.SPCSO1" → lnName="GGIO1", doPath=["SPCSO1"]
+	dot := strings.Index(doRef, ".")
+	if dot < 0 {
+		s.logger.Warn("iec61850: installSBOReadHandler: invalid doRef", "doRef", doRef)
+		return
+	}
+	lnName := doRef[:dot]
+	doPath := strings.ReplaceAll(doRef[dot+1:], ".", "$")
+	sboItemID := lnName + "$CO$" + doPath + "$SBO"
+	ctlRef := ldName + "/" + doRef
+
+	readFn := func(ctx context.Context) (*mms.Value, error) {
+		sc := mms.ServerConnFromContext(ctx)
+		reg.mu.Lock()
+		defer reg.mu.Unlock()
+
+		now := time.Now()
+		// Deny if already selected by a different active connection.
+		if reg.selectConn != nil && reg.selectConn != sc && now.Sub(reg.selectTime) <= DefaultSelectTimeout {
+			return mms.NewVisibleString(""), nil
+		}
+		// Grant select to this connection.
+		reg.selectConn = sc
+		reg.selectTime = now
+		s.logger.Debug("iec61850: SBO normal select granted", "ref", ctlRef)
+		return mms.NewVisibleString(ctlRef), nil
+	}
+
+	if err := s.mms.SetVariableRead(ldName, sboItemID, readFn); err != nil {
+		s.logger.Warn("iec61850: installSBOReadHandler: variable not found",
+			"domain", ldName, "itemID", sboItemID, "err", err)
+	}
 }
 
 // pathWithoutSuffix returns a new slice with the last element removed
