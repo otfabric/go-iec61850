@@ -221,6 +221,16 @@ func (re *ReportEngine) HandleRCBWrite(ctx context.Context, ldName, rcbItemID, s
 			return re.enableRCB(ctx, rt, sc)
 		}
 		rt.disable()
+		// BRCB: clear the server-written EntryID from the store so that a
+		// subsequent re-enable without a client-written EntryID results in a
+		// full replay rather than accidentally filtering entries by the stale
+		// value last written when the entry was buffered.
+		if rt.buffered {
+			skFn := func(suffix string) string {
+				return servermodel.StoreKey(rt.ldName, rt.rcbItemID+"$"+suffix)
+			}
+			re.store.Set(skFn("EntryID"), mms.NewOctetString(make([]byte, 8)))
+		}
 		return nil
 
 	case "GI":
@@ -362,8 +372,21 @@ func (re *ReportEngine) enableRCB(_ context.Context, rt *rcbRuntime, conn *mms.S
 	// BRCB: replay buffered entries to the enabling connection so the
 	// client receives entries it missed while disconnected.
 	if rt.buffered && conn != nil && len(rt.bufQueue) > 0 {
-		entries := make([]*bufferedEntry, len(rt.bufQueue))
-		copy(entries, rt.bufQueue)
+		// Read the resume EntryID that was (optionally) written by the client
+		// before enabling. If non-zero, only entries after that point are sent.
+		var resumeID uint64
+		if v := re.store.Get(sk("EntryID")); v != nil {
+			if bs, ok := v.OctetString(); ok {
+				resumeID = decodeEntryID(bs)
+			}
+		}
+		entries := filterEntriesAfter(rt.bufQueue, resumeID)
+		if len(entries) == 0 {
+			// Nothing to replay; skip starting the goroutine.
+			goto startIntegrity
+		}
+		replayEntries := make([]*bufferedEntry, len(entries))
+		copy(replayEntries, entries)
 		rptID := rt.rptID
 		optFlds := rt.optFlds
 		confRev := rt.confRev
@@ -372,9 +395,11 @@ func (re *ReportEngine) enableRCB(_ context.Context, rt *rcbRuntime, conn *mms.S
 		re.wg.Add(1)
 		go func() {
 			defer re.wg.Done()
-			re.replayBRCBEntries(rcbItemID, rptID, optFlds, confRev, datSet, entries, conn)
+			re.replayBRCBEntries(rcbItemID, rptID, optFlds, confRev, datSet, replayEntries, conn)
 		}()
 	}
+
+startIntegrity:
 
 	// Start integrity timer if configured.
 	if rt.intgPd > 0 && rt.trgOps.Has(TrgOpIntegrity) {
@@ -930,10 +955,67 @@ func encodeReasonCode(r ReasonCode) *mms.Value {
 }
 
 // encodeEntryID encodes a uint64 as an 8-byte big-endian entry ID.
+//
+// Entry IDs are monotonically increasing counters, starting at 1 for the
+// first buffered entry after server startup. The server never generates
+// ID 0; a stored EntryID of all-zero bytes is therefore the neutral value
+// that means "no resume point — replay the full buffer."
+//
+// The 8-byte big-endian encoding matches the IEC 61850-7-2 OctetString8
+// format expected for the EntryID attribute.
+//
+// Entry IDs are purely in-memory and reset to 1 on server restart. They
+// are NOT persistent across process restarts and are NOT stable across
+// server reboots. Clients should not cache EntryIDs across reconnects to
+// a different server process.
+//
+// Calling PurgeBuf=true invalidates all existing EntryIDs; subsequent
+// re-enables start replay from entry 1.
 func encodeEntryID(id uint64) []byte {
 	b := make([]byte, 8)
 	binary.BigEndian.PutUint64(b, id)
 	return b
+}
+
+// decodeEntryID decodes an 8-byte big-endian entry ID into a uint64.
+// Returns 0 for nil or short slices (treated as "no resume point").
+func decodeEntryID(b []byte) uint64 {
+	if len(b) < 8 {
+		return 0
+	}
+	return binary.BigEndian.Uint64(b[:8])
+}
+
+// filterEntriesAfter returns only the subset of entries whose entryID
+// is strictly greater than resumeID. When resumeID is 0, all entries
+// are returned (no filtering).
+//
+// Resume semantics:
+//   - The supplied EntryID is treated as EXCLUSIVE. The caller receives
+//     entries that were produced AFTER the entry with the given ID.
+//   - An unknown or future EntryID (greater than any buffered ID) yields
+//     an empty result — the client effectively says "I have everything up
+//     to a point beyond the current buffer."
+//   - A zero EntryID means "I have nothing; replay the full buffer."
+//   - These semantics follow the IEC 61850-7-2 description where the
+//     client writes the EntryID of the last received entry before
+//     enabling the BRCB, so the server skips that entry and all earlier
+//     entries in the replay.
+//   - When the server-side buffer has overflowed (entries were dropped)
+//     since the supplied EntryID, some entries that would have followed
+//     it may no longer be present. The BufOvfl flag in the next report
+//     will be set to notify the client of the gap.
+func filterEntriesAfter(entries []*bufferedEntry, resumeID uint64) []*bufferedEntry {
+	if resumeID == 0 {
+		return entries
+	}
+	var result []*bufferedEntry
+	for _, e := range entries {
+		if decodeEntryID(e.entryID) > resumeID {
+			result = append(result, e)
+		}
+	}
+	return result
 }
 
 // valuesEqual performs a recursive equality check between two MMS
