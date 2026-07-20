@@ -11,28 +11,20 @@ linters:
     - godot          # comment punctuation
     - nilerr         # return nil instead of err
     - exhaustive     # exhaustive switch on enums
+    - unparam        # unused function parameters
+    - gocritic       # unused writes to struct fields (unusedWrite tag) and other diagnostics
   settings:
     exhaustive:
-      default-signifies-exhaustive: true  # a default: case satisfies exhaustiveness
-  exclusions:
-    paths:
-      - sources
-    rules:
-      - linters:
-          - errcheck
-        path: _test\.go$
-      - linters:
-          - staticcheck
-        text: "SA2002"
-        path: _test\.go$
+      default-signifies-exhaustive: true
+    gocritic:
+      disabled-checks:
+        - ifElseChain     # style preference; if/else if/else is acceptable
+        - exitAfterDefer  # Example_ doc functions intentionally use defer+log.Fatal to show cleanup pattern
 
 formatters:
   enable:
     - gofmt          # formatting
     - goimports      # import grouping / formatting
-  exclusions:
-    paths:
-      - examples
 
 issues:
   max-issues-per-linter: 0

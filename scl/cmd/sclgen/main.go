@@ -182,12 +182,13 @@ func runCheck(_ *cobra.Command, _ []string) {
 		if err != nil {
 			log.Fatalf("create temp dir: %v", err)
 		}
-		defer func() { _ = os.RemoveAll(tmpDir) }()
 
 		emitter := genir.NewEmitter(resolved, tmpDir, vs.Version)
 		if err := emitter.Emit(); err != nil {
+			_ = os.RemoveAll(tmpDir)
 			log.Fatalf("emit %s: %v", vs.Label, err)
 		}
+		defer func() { _ = os.RemoveAll(tmpDir) }()
 
 		if err := compareDir(tmpDir, pkgDir); err != nil {
 			log.Printf("CHECK FAILED for %s: %v", vs.Label, err)

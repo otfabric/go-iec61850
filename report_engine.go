@@ -699,7 +699,7 @@ func (re *ReportEngine) integrityLoop(rt *rcbRuntime, tickC <-chan time.Time, st
 // sendReport builds and delivers an IEC 61850 InformationReport.
 // For URCBs, the report is sent only to the connection that enabled
 // the RCB. For BRCBs, the report is broadcast to all connections.
-func (re *ReportEngine) sendReport(ctx context.Context, rt *rcbRuntime, seqNum uint32, inclusion []bool, reasons []ReasonCode, values []*mms.Value) {
+func (re *ReportEngine) sendReport(_ context.Context, rt *rcbRuntime, seqNum uint32, inclusion []bool, reasons []ReasonCode, values []*mms.Value) {
 	rt.mu.Lock()
 	rptID := rt.rptID
 	optFlds := rt.optFlds

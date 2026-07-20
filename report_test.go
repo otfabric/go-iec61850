@@ -143,7 +143,7 @@ func TestTrgOps_Roundtrip(t *testing.T) {
 
 // --- RCB loopback tests ---
 
-func setupRCBLoopback(t *testing.T) (*Client, *mms.Server, *sync.Mutex, map[string]*mms.Value) {
+func setupRCBLoopback(t *testing.T) (*Client, *sync.Mutex, map[string]*mms.Value) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -291,11 +291,11 @@ func setupRCBLoopback(t *testing.T) (*Client, *mms.Server, *sync.Mutex, map[stri
 		_ = client.Close(ctx)
 	})
 
-	return client, srv, mu, store
+	return client, mu, store
 }
 
 func TestListReports(t *testing.T) {
-	client, _, _, _ := setupRCBLoopback(t)
+	client, _, _ := setupRCBLoopback(t)
 	ctx := context.Background()
 
 	rcbs, err := client.ListReports(ctx, "simpleIOGenericIO")
@@ -325,7 +325,7 @@ func TestListReports(t *testing.T) {
 }
 
 func TestListReports_EmptyLD(t *testing.T) {
-	client, _, _, _ := setupRCBLoopback(t)
+	client, _, _ := setupRCBLoopback(t)
 	ctx := context.Background()
 
 	_, err := client.ListReports(ctx, "")
@@ -335,7 +335,7 @@ func TestListReports_EmptyLD(t *testing.T) {
 }
 
 func TestGetReportControlBlock_BRCB(t *testing.T) {
-	client, _, _, _ := setupRCBLoopback(t)
+	client, _, _ := setupRCBLoopback(t)
 	ctx := context.Background()
 
 	rcb, err := client.GetReportControlBlock(ctx, "simpleIOGenericIO", "LLN0$BR$brcb01")
@@ -364,7 +364,7 @@ func TestGetReportControlBlock_BRCB(t *testing.T) {
 }
 
 func TestGetReportControlBlock_URCB(t *testing.T) {
-	client, _, _, _ := setupRCBLoopback(t)
+	client, _, _ := setupRCBLoopback(t)
 	ctx := context.Background()
 
 	rcb, err := client.GetReportControlBlock(ctx, "simpleIOGenericIO", "LLN0$RP$urcb01")
@@ -381,7 +381,7 @@ func TestGetReportControlBlock_URCB(t *testing.T) {
 }
 
 func TestListReports_ClosedClient(t *testing.T) {
-	client, _, _, _ := setupRCBLoopback(t)
+	client, _, _ := setupRCBLoopback(t)
 	ctx := context.Background()
 
 	_ = client.Close(ctx)
@@ -393,7 +393,7 @@ func TestListReports_ClosedClient(t *testing.T) {
 }
 
 func TestGetReportControlBlock_ClosedClient(t *testing.T) {
-	client, _, _, _ := setupRCBLoopback(t)
+	client, _, _ := setupRCBLoopback(t)
 	ctx := context.Background()
 
 	_ = client.Close(ctx)
@@ -911,7 +911,7 @@ func TestClientClose_ShutsAllSubscriptions(t *testing.T) {
 }
 
 func TestSetReportControlBlock(t *testing.T) {
-	client, _, _, _ := setupRCBLoopback(t)
+	client, _, _ := setupRCBLoopback(t)
 	ctx := context.Background()
 
 	err := client.SetReportControlBlock(ctx, "simpleIOGenericIO", "LLN0$BR$brcb01", RCBUpdate{
@@ -925,7 +925,7 @@ func TestSetReportControlBlock(t *testing.T) {
 }
 
 func TestSetReportControlBlock_NoFields(t *testing.T) {
-	client, _, _, _ := setupRCBLoopback(t)
+	client, _, _ := setupRCBLoopback(t)
 	ctx := context.Background()
 
 	err := client.SetReportControlBlock(ctx, "simpleIOGenericIO", "LLN0$BR$brcb01", RCBUpdate{
@@ -937,7 +937,7 @@ func TestSetReportControlBlock_NoFields(t *testing.T) {
 }
 
 func TestSetReportControlBlock_ClosedClient(t *testing.T) {
-	client, _, _, _ := setupRCBLoopback(t)
+	client, _, _ := setupRCBLoopback(t)
 	ctx := context.Background()
 
 	_ = client.Close(ctx)
@@ -954,7 +954,7 @@ func TestSetReportControlBlock_ClosedClient(t *testing.T) {
 // --- TriggerGI tests ---
 
 func TestTriggerGI(t *testing.T) {
-	client, _, mu, store := setupRCBLoopback(t)
+	client, mu, store := setupRCBLoopback(t)
 	ctx := context.Background()
 
 	err := client.TriggerGI(ctx, "simpleIOGenericIO", "LLN0$BR$brcb01")
@@ -976,7 +976,7 @@ func TestTriggerGI(t *testing.T) {
 }
 
 func TestTriggerGI_ClosedClient(t *testing.T) {
-	client, _, _, _ := setupRCBLoopback(t)
+	client, _, _ := setupRCBLoopback(t)
 	ctx := context.Background()
 	_ = client.Close(ctx)
 
@@ -989,7 +989,7 @@ func TestTriggerGI_ClosedClient(t *testing.T) {
 // --- URCB reserve/release tests ---
 
 func TestReserveReleaseURCB(t *testing.T) {
-	client, _, mu, store := setupRCBLoopback(t)
+	client, mu, store := setupRCBLoopback(t)
 	ctx := context.Background()
 
 	err := client.ReserveURCB(ctx, "simpleIOGenericIO", "LLN0$RP$urcb01")
@@ -1471,7 +1471,7 @@ func TestSegmentedReport_InconsistentMetadata(t *testing.T) {
 // --- Lifecycle subscription tests ---
 
 func TestSubscribeReport_AutoEnable(t *testing.T) {
-	client, _, mu, store := setupRCBLoopback(t)
+	client, mu, store := setupRCBLoopback(t)
 	ctx := context.Background()
 
 	sub, err := client.SubscribeReport(ctx, "autoRpt", SubscribeReportOptions{
@@ -1499,7 +1499,7 @@ func TestSubscribeReport_AutoEnable(t *testing.T) {
 }
 
 func TestSubscribeReport_GIOnSubscribe(t *testing.T) {
-	client, _, mu, store := setupRCBLoopback(t)
+	client, mu, store := setupRCBLoopback(t)
 	ctx := context.Background()
 
 	sub, err := client.SubscribeReport(ctx, "giRpt", SubscribeReportOptions{
@@ -1528,7 +1528,7 @@ func TestSubscribeReport_GIOnSubscribe(t *testing.T) {
 }
 
 func TestSubscribeReport_ReserveAndEnable(t *testing.T) {
-	client, _, mu, store := setupRCBLoopback(t)
+	client, mu, store := setupRCBLoopback(t)
 	ctx := context.Background()
 
 	sub, err := client.SubscribeReport(ctx, "resvRpt", SubscribeReportOptions{
@@ -1566,7 +1566,7 @@ func TestSubscribeReport_ReserveAndEnable(t *testing.T) {
 }
 
 func TestSubscribeReport_CloseDisablesAndReleases(t *testing.T) {
-	client, _, mu, store := setupRCBLoopback(t)
+	client, mu, store := setupRCBLoopback(t)
 	ctx := context.Background()
 
 	sub, err := client.SubscribeReport(ctx, "cleanupRpt", SubscribeReportOptions{
@@ -1616,7 +1616,7 @@ func TestSubscribeReport_CloseDisablesAndReleases(t *testing.T) {
 }
 
 func TestSubscribeReport_AutoEnable_MissingLD(t *testing.T) {
-	client, _, _, _ := setupRCBLoopback(t)
+	client, _, _ := setupRCBLoopback(t)
 	ctx := context.Background()
 
 	_, err := client.SubscribeReport(ctx, "rpt", SubscribeReportOptions{
@@ -1628,7 +1628,7 @@ func TestSubscribeReport_AutoEnable_MissingLD(t *testing.T) {
 }
 
 func TestSubscribeReport_MultipleExactSameID(t *testing.T) {
-	client, _, _, _ := setupRCBLoopback(t)
+	client, _, _ := setupRCBLoopback(t)
 	ctx := context.Background()
 
 	sub1, err := client.SubscribeReport(ctx, "rptMulti", SubscribeReportOptions{QueueSize: 4})
@@ -1667,7 +1667,7 @@ func TestSubscribeReport_MultipleExactSameID(t *testing.T) {
 }
 
 func TestSubscribeReport_ExactAndGlobBothReceive(t *testing.T) {
-	client, _, _, _ := setupRCBLoopback(t)
+	client, _, _ := setupRCBLoopback(t)
 	ctx := context.Background()
 
 	subExact, err := client.SubscribeReport(ctx, "rptFan", SubscribeReportOptions{QueueSize: 4})
@@ -1703,7 +1703,7 @@ func TestSubscribeReport_ExactAndGlobBothReceive(t *testing.T) {
 }
 
 func TestOverflowBlock_CloseDoesNotPanic(t *testing.T) {
-	client, _, _, _ := setupRCBLoopback(t)
+	client, _, _ := setupRCBLoopback(t)
 	ctx := context.Background()
 
 	sub, err := client.SubscribeReport(ctx, "rptBlock", SubscribeReportOptions{

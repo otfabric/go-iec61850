@@ -23,13 +23,14 @@ func main() {
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
 
 	client, err := iec61850.Dial(ctx, addr, iec61850.DialOptions{})
 	if err != nil {
+		cancel()
 		log.Fatalf("dial: %v", err)
 	}
-	defer client.Close(context.Background()) //nolint:errcheck
+	defer cancel()
+	defer func() { _ = client.Close(context.Background()) }()
 
 	files, err := client.ListFiles(ctx, "")
 	if err != nil {

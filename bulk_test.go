@@ -162,7 +162,7 @@ func TestReadMultiple_ClosedClient(t *testing.T) {
 }
 
 func TestWriteMultiple(t *testing.T) {
-	client, _ := setupWritableLoopback(t)
+	client := setupWritableLoopback(t)
 	ctx := context.Background()
 
 	requests := []WriteRequest{
@@ -210,7 +210,7 @@ func TestWriteMultiple(t *testing.T) {
 }
 
 func TestWriteMultiple_Empty(t *testing.T) {
-	client, _ := setupWritableLoopback(t)
+	client := setupWritableLoopback(t)
 	ctx := context.Background()
 
 	results, err := client.WriteMultiple(ctx, nil)
@@ -223,7 +223,7 @@ func TestWriteMultiple_Empty(t *testing.T) {
 }
 
 func TestWriteMultiple_NilValue(t *testing.T) {
-	client, _ := setupWritableLoopback(t)
+	client := setupWritableLoopback(t)
 	ctx := context.Background()
 
 	requests := []WriteRequest{
@@ -239,7 +239,7 @@ func TestWriteMultiple_NilValue(t *testing.T) {
 }
 
 func TestWriteMultiple_ClosedClient(t *testing.T) {
-	client, _ := setupWritableLoopback(t)
+	client := setupWritableLoopback(t)
 	ctx := context.Background()
 
 	_ = client.Close(ctx)
@@ -259,7 +259,7 @@ func TestWriteMultiple_ClosedClient(t *testing.T) {
 // TestWriteMultiple_MixedFCs writes to different FCs in a single batch,
 // verifying that mixed-domain/FC writes are supported.
 func TestWriteMultiple_MixedFCs(t *testing.T) {
-	client, _ := setupWritableLoopback(t)
+	client := setupWritableLoopback(t)
 	ctx := context.Background()
 
 	requests := []WriteRequest{
@@ -311,7 +311,7 @@ func TestWriteMultiple_MixedFCs(t *testing.T) {
 // TestReadMultiple_MixedFCs reads attributes from different FCs in a
 // single batch, verifying mixed-FC reads are supported.
 func TestReadMultiple_MixedFCs(t *testing.T) {
-	client, _ := setupWritableLoopback(t)
+	client := setupWritableLoopback(t)
 	ctx := context.Background()
 
 	refs := []Ref{

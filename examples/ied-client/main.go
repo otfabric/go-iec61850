@@ -48,21 +48,17 @@ func main() {
 
 	// Honour SIGINT / Ctrl-C for graceful shutdown.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
-	// -----------------------------------------------------------------------
-	// 1. Connect and identify
-	// -----------------------------------------------------------------------
 
 	dialCtx, dialCancel := context.WithTimeout(ctx, 15*time.Second)
-	defer dialCancel()
-
 	client, err := iec61850.Dial(dialCtx, addr, iec61850.DialOptions{
 		Logger: logger,
 	})
+	dialCancel()
 	if err != nil {
+		stop()
 		log.Fatalf("dial %s: %v", addr, err)
 	}
+	defer stop()
 	defer func() {
 		if err := client.Close(context.Background()); err != nil {
 			logger.Warn("close", "err", err)

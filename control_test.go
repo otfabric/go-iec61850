@@ -714,6 +714,12 @@ func TestSelectTimeout_ConfigurableOverride(t *testing.T) {
 	if reg.selectTimeout == 0 || reg.selectTimeout == DefaultSelectTimeout {
 		t.Errorf("selectTimeout = %v, want 100ms", reg.selectTimeout)
 	}
+	if reg.handler.SelectTimeout != 100*time.Millisecond {
+		t.Errorf("handler.SelectTimeout = %v, want 100ms", reg.handler.SelectTimeout)
+	}
+	if reg.ctlModel != CtlModelSBONormal {
+		t.Errorf("ctlModel = %v, want CtlModelSBONormal", reg.ctlModel)
+	}
 }
 
 // TestIsConnActive_NilAndEmpty verifies the nil/empty guard paths of isConnActive.

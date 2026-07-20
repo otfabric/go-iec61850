@@ -36,13 +36,14 @@ func main() {
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 
 	client, err := iec61850.Dial(ctx, addr, iec61850.DialOptions{})
 	if err != nil {
+		cancel()
 		log.Fatalf("dial: %v", err)
 	}
-	defer client.Close(context.Background()) //nolint:errcheck
+	defer cancel()
+	defer func() { _ = client.Close(context.Background()) }()
 
 	if controlDO == "" {
 		fmt.Println("No control DO specified. Browsing for controllable objects...")

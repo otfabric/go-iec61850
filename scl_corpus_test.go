@@ -440,7 +440,7 @@ func TestSCLCorpus_MultiLN_Reports(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SubscribeReport: %v", err)
 	}
-	defer sub.Close()
+	defer func() { _ = sub.Close() }()
 
 	select {
 	case rpt := <-sub.Reports():

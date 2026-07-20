@@ -223,11 +223,12 @@ func (c *Client) ReadDataSet(ctx context.Context, ld, dsName string) ([]DataSetV
 	for i, ar := range accessResults {
 		results[i].Member = members[i]
 		memberID := memberIdentity(results[i].Member, i)
-		if ar.ErrorCode != mms.DataAccessErrorNone {
+		switch {
+		case ar.ErrorCode != mms.DataAccessErrorNone:
 			results[i].Err = &DataAccessError{Ref: memberID, ErrorCode: int(ar.ErrorCode), Operation: "read-dataset"}
-		} else if ar.Value == nil {
+		case ar.Value == nil:
 			results[i].Err = fmt.Errorf("iec61850: read data set member %s: missing value", memberID)
-		} else {
+		default:
 			results[i].Value = NewValue(ar.Value)
 		}
 	}

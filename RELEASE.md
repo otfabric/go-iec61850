@@ -1,5 +1,50 @@
 # go-iec61850 Releases
 
+## v1.0.4
+
+Documentation, lint hardening, and code-quality improvements. No API changes, no behavior changes.
+
+### Dependencies
+
+- Bumped `github.com/otfabric/go-mms` from **v1.0.3 → v1.0.4** (documentation and lint hardening; no API or behavior changes).
+- Bumped `github.com/otfabric/go-cotp` (indirect) from **v1.0.1 → v1.0.2**.
+
+### Documentation — error taxonomy covering all 20 sentinel values, 7 typed error structs
+  (`ReferenceError`, `DecodeError`, `ModelError`, `ReportError`, `SCLParseError`,
+  `DataAccessError`, `ControlError`), underlying MMS error passthrough, and `errors.Is` /
+  `errors.As` usage patterns.
+- Added link to `ERRORS.md` in `README.md` documentation table and repository file-tree section.
+
+### Linting and code quality
+
+- **`golangci-lint` exclusion-free** (except two documented gocritic disables):
+  - Removed blanket `errcheck` suppression for test files; all issues fixed in code.
+  - Removed dead `staticcheck SA2002` test-file exclusion (SA2002 does not occur in this repo).
+  - `ifElseChain` disabled: three-branch `if/else if/else` patterns are preferred over `switch`
+    for exclusive error-then-nil-then-value decisions.
+  - `exitAfterDefer` disabled: `Example_*` documentation functions intentionally show
+    `defer client.Close` followed by `log.Fatal` to model correct cleanup for users.
+- Fixed unchecked error returns across 10 test files:
+  - `c.Abort`, `sub.Close`, `defer sub.Close` → `_ = ...` or `defer func() { _ = ... }()`
+  - `srv.MMS().SetVariableRead(...)` → wrapped in `if err := ...; err != nil { t.Fatalf(...) }`
+  - `srv.RegisterControl(...)` in `example_test.go` → `_ = srv.RegisterControl(...)`
+- Converted `if/else if/else` chains in `bulk.go` and `dataset.go` to `switch` statements.
+- Fixed `exitAfterDefer` in all example programs (`basic-client`, `control`, `files`, `reports`,
+  `ied-client`, `ied-server`) and `scl/cmd/sclgen`: moved `defer cancel()` / `defer stop()` to
+  after the last potential fatal exit; explicit cleanup called before each `log.Fatal`.
+- Removed unused test helper return values:
+  - `setupRCBLoopback` dropped `*mms.Server` return (never used by any caller).
+  - `setupWritableLoopback` dropped `*writableVars` return (never used by any caller).
+  - `executeCmd` in `scl/cmd/sclparse` dropped `string` return (never used by any caller).
+- Added `unparam` and `gocritic` linters to `.golangci.yml`.
+- Added `vuln` target (`govulncheck`) to `Makefile` and wired it into `make check`.
+
+No API changes. No breaking changes.
+
+Import path remains `github.com/otfabric/go-iec61850`.
+
+---
+
 ## v1.0.3
 
 **Added**: Recovery, concurrency, resource-pressure, and decoder-robustness hardening.

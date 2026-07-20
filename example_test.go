@@ -22,15 +22,16 @@ import (
 // ExampleDial demonstrates connecting to a remote IED and reading a value.
 func ExampleDial() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 
 	client, err := Dial(ctx, "192.0.2.1:102", DialOptions{
 		IEDName: "IED1",
 	})
 	if err != nil {
+		cancel()
 		log.Fatal(err)
 	}
-	defer client.Close(ctx) //nolint:errcheck
+	defer cancel()
+	defer func() { _ = client.Close(ctx) }()
 
 	ref, err := ParseRef("LD1/GGIO1.Ind1.stVal[ST]")
 	if err != nil {
@@ -49,13 +50,14 @@ func ExampleDial() {
 // receiving data-change reports.
 func ExampleClient_SubscribeReport() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 
 	client, err := Dial(ctx, "192.0.2.1:102", DialOptions{})
 	if err != nil {
+		cancel()
 		log.Fatal(err)
 	}
-	defer client.Close(ctx) //nolint:errcheck
+	defer cancel()
+	defer func() { _ = client.Close(ctx) }()
 
 	sub, err := client.SubscribeReport(ctx, "urcb01", SubscribeReportOptions{
 		LD:             "LD1",
@@ -68,7 +70,7 @@ func ExampleClient_SubscribeReport() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer sub.Close()
+	defer func() { _ = sub.Close() }()
 
 	for rpt := range sub.Reports() {
 		for i, v := range rpt.Values {
@@ -89,7 +91,7 @@ func ExampleClient_Write() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer client.Close(ctx) //nolint:errcheck
+	defer func() { _ = client.Close(ctx) }()
 
 	ref, err := ParseRef("LD1/LLN0.Mod.stVal[ST]")
 	if err != nil {
@@ -110,7 +112,7 @@ func ExampleClient_GetReportControlBlock() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer client.Close(ctx) //nolint:errcheck
+	defer func() { _ = client.Close(ctx) }()
 
 	rcb, err := client.GetReportControlBlock(ctx, "LD1", "LLN0$RP$urcb01")
 	if err != nil {
@@ -145,7 +147,7 @@ func ExampleNewServer() {
 	defer re.Stop()
 
 	// Register a custom control handler.
-	srv.RegisterControl("LD1", "GGIO1.SPCSO1", CtlModelDirectNormal, ControlHandler{
+	_ = srv.RegisterControl("LD1", "GGIO1.SPCSO1", CtlModelDirectNormal, ControlHandler{
 		OnOperate: func(ctx context.Context, req ControlRequest) error {
 			val, _ := req.CtlVal.Bool()
 			log.Printf("operate: ctlVal=%v", val)
@@ -197,7 +199,7 @@ func ExampleServer_RegisterControl() {
 	}
 	defer srv.Close()
 
-	srv.RegisterControl("LD1", "GGIO1.SPCSO1", CtlModelDirectNormal, ControlHandler{
+	_ = srv.RegisterControl("LD1", "GGIO1.SPCSO1", CtlModelDirectNormal, ControlHandler{
 		OnOperate: func(ctx context.Context, req ControlRequest) error {
 			val, _ := req.CtlVal.Bool()
 			log.Printf("operate SPCSO1: %v", val)

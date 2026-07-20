@@ -200,7 +200,7 @@ func TestClientReconnect_URCBResubscription(t *testing.T) {
 		if err != nil {
 			t.Fatalf("SubscribeReport: %v", err)
 		}
-		sub.Close()
+		_ = sub.Close()
 	}
 
 	// First connection: subscribe then close.
