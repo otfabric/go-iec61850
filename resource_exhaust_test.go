@@ -118,7 +118,7 @@ func TestResourceExhaust_ReportBackpressure(t *testing.T) {
 	defer func() {
 		bgCancel()
 		time.Sleep(30 * time.Millisecond)
-		c.Abort(context.Background())
+		_ = c.Abort(context.Background())
 	}()
 
 	// Subscribe with a tiny queue (size=2) and DropNewest policy.
@@ -137,7 +137,7 @@ func TestResourceExhaust_ReportBackpressure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SubscribeReport: %v", err)
 	}
-	defer sub.Close()
+	defer func() { _ = sub.Close() }()
 
 	// Wait for the initial GI report.
 	select {
@@ -224,7 +224,7 @@ func TestResourceExhaust_ValueStoreUnderLoad(t *testing.T) {
 	defer func() {
 		bgCancel()
 		time.Sleep(30 * time.Millisecond)
-		c.Abort(context.Background())
+		_ = c.Abort(context.Background())
 	}()
 
 	ref, _ := ParseRef("LD1/LLN0.Mod.stVal[ST]")

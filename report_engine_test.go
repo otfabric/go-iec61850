@@ -726,3 +726,186 @@ func noopLogger() *slog.Logger {
 type discardWriter struct{}
 
 func (discardWriter) Write(p []byte) (int, error) { return len(p), nil }
+
+// ---------------------------------------------------------------------------
+// decodeEntryID
+// ---------------------------------------------------------------------------
+
+func TestDecodeEntryID_RoundTrip(t *testing.T) {
+	for _, id := range []uint64{0, 1, 0x0102030405060708, ^uint64(0)} {
+		got := decodeEntryID(encodeEntryID(id))
+		if got != id {
+			t.Errorf("id=%d: roundtrip got %d", id, got)
+		}
+	}
+}
+
+func TestDecodeEntryID_Short(t *testing.T) {
+	if got := decodeEntryID(nil); got != 0 {
+		t.Errorf("nil: want 0, got %d", got)
+	}
+	if got := decodeEntryID([]byte{1, 2, 3}); got != 0 {
+		t.Errorf("short slice: want 0, got %d", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// filterEntriesAfter
+// ---------------------------------------------------------------------------
+
+func makeEntries(ids ...uint64) []*bufferedEntry {
+	out := make([]*bufferedEntry, len(ids))
+	for i, id := range ids {
+		out[i] = &bufferedEntry{entryID: encodeEntryID(id)}
+	}
+	return out
+}
+
+func entryIDs(entries []*bufferedEntry) []uint64 {
+	out := make([]uint64, len(entries))
+	for i, e := range entries {
+		out[i] = decodeEntryID(e.entryID)
+	}
+	return out
+}
+
+func TestFilterEntriesAfter_ZeroReturnsAll(t *testing.T) {
+	entries := makeEntries(1, 2, 3)
+	got := filterEntriesAfter(entries, 0)
+	if len(got) != 3 {
+		t.Errorf("want 3, got %d: %v", len(got), entryIDs(got))
+	}
+}
+
+func TestFilterEntriesAfter_KnownID(t *testing.T) {
+	entries := makeEntries(1, 2, 3, 4, 5)
+	got := filterEntriesAfter(entries, 2)
+	want := []uint64{3, 4, 5}
+	if ids := entryIDs(got); !slicesEqual(ids, want) {
+		t.Errorf("want %v, got %v", want, ids)
+	}
+}
+
+func TestFilterEntriesAfter_FutureIDReturnsNone(t *testing.T) {
+	entries := makeEntries(1, 2, 3)
+	got := filterEntriesAfter(entries, 99)
+	if len(got) != 0 {
+		t.Errorf("want empty, got %d: %v", len(got), entryIDs(got))
+	}
+}
+
+func TestFilterEntriesAfter_NilEntries(t *testing.T) {
+	got := filterEntriesAfter(nil, 0)
+	if got != nil {
+		t.Errorf("want nil, got %v", got)
+	}
+}
+
+func slicesEqual(a, b []uint64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// ---------------------------------------------------------------------------
+// BRCB disable clears EntryID in store — re-enable replays full buffer
+// ---------------------------------------------------------------------------
+
+func TestReportEngine_BRCB_DisableClearsEntryID(t *testing.T) {
+	model := testReportSCL()
+	srv := newTestServer(t, model)
+	engine := srv.EnableReports()
+	defer engine.Stop()
+
+	ctx := context.Background()
+	storeKey := servermodel.StoreKey("LD1", "LLN0$ST$Mod$stVal")
+	entryIDKey := servermodel.StoreKey("LD1", "LLN0$BR$brcb01$EntryID")
+
+	// Enable BRCB and buffer one entry.
+	if err := engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "RptEna", mms.NewBoolean(true)); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	srv.SetValue(ctx, storeKey, mms.NewInteger(1))
+
+	// Verify server wrote a non-zero EntryID.
+	v := engine.store.Get(entryIDKey)
+	if v == nil {
+		t.Fatal("EntryID not set after buffering entry")
+	}
+	bs, _ := v.OctetString()
+	if decodeEntryID(bs) == 0 {
+		t.Fatal("EntryID should be non-zero after buffering entry")
+	}
+
+	// Disable — must clear the EntryID to zero.
+	if err := engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "RptEna", mms.NewBoolean(false)); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+
+	v = engine.store.Get(entryIDKey)
+	if v == nil {
+		t.Fatal("EntryID should still exist in store (as zero) after disable")
+	}
+	bs, _ = v.OctetString()
+	if got := decodeEntryID(bs); got != 0 {
+		t.Errorf("EntryID after disable = %d, want 0", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// BRCB re-enable with resume EntryID written by client — partial replay
+// ---------------------------------------------------------------------------
+
+func TestReportEngine_BRCB_ResumeID_FiltersBuf(t *testing.T) {
+	model := testReportSCL()
+	srv := newTestServer(t, model)
+	engine := srv.EnableReports()
+	defer engine.Stop()
+
+	ctx := context.Background()
+	storeKey := servermodel.StoreKey("LD1", "LLN0$ST$Mod$stVal")
+	entryIDKey := servermodel.StoreKey("LD1", "LLN0$BR$brcb01$EntryID")
+	rcb := engine.rcbs["LD1/LLN0$BR$brcb01"]
+
+	// Enable BRCB and buffer 3 entries.
+	if err := engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "RptEna", mms.NewBoolean(true)); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	for i := int64(1); i <= 3; i++ {
+		srv.SetValue(ctx, storeKey, mms.NewInteger(i))
+	}
+
+	rcb.mu.Lock()
+	qLen := len(rcb.bufQueue)
+	rcb.mu.Unlock()
+	if qLen != 3 {
+		t.Fatalf("want 3 buffered entries, got %d", qLen)
+	}
+
+	// Disable BRCB (clears EntryID to 0).
+	if err := engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "RptEna", mms.NewBoolean(false)); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+
+	// Client writes EntryID=2 (means "I have up to entry 2; replay from 3 onward").
+	engine.store.Set(entryIDKey, mms.NewOctetString(encodeEntryID(2)))
+
+	// Re-enable — filterEntriesAfter should return only entry 3.
+	if err := engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "RptEna", mms.NewBoolean(true)); err != nil {
+		t.Fatalf("re-enable: %v", err)
+	}
+
+	// The buffer itself is untouched; only the replay set is filtered.
+	rcb.mu.Lock()
+	qLen = len(rcb.bufQueue)
+	rcb.mu.Unlock()
+	if qLen != 3 {
+		t.Errorf("bufQueue should still hold 3 entries, got %d", qLen)
+	}
+}

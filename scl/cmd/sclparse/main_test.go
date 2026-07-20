@@ -22,9 +22,8 @@ func fixturePath(rel string) string {
 	return filepath.Join(repoRoot(), rel)
 }
 
-// executeCmd runs rootCmd with the given args and captures stdout.
-// Returns stdout content and any error from Execute.
-func executeCmd(args ...string) (string, error) {
+// executeCmd runs rootCmd with the given args, capturing stdout. Returns any error from Execute.
+func executeCmd(args ...string) error {
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)
 	rootCmd.SetErr(new(bytes.Buffer))
@@ -54,8 +53,7 @@ func executeCmd(args ...string) (string, error) {
 	listTypesJSON = false
 	inspectJSON = false
 
-	err := rootCmd.Execute()
-	return buf.String(), err
+	return rootCmd.Execute()
 }
 
 // --- detect ---
@@ -70,7 +68,7 @@ func TestDetect_ABB_CID(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	_, err := executeCmd("detect", path)
+	err := executeCmd("detect", path)
 
 	_ = w.Close()
 	os.Stdout = old
@@ -92,7 +90,7 @@ func TestDetect_JSON(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	_, err := executeCmd("detect", "--json", path)
+	err := executeCmd("detect", "--json", path)
 
 	_ = w.Close()
 	os.Stdout = old
@@ -120,7 +118,7 @@ func TestDetect_V17(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	_, err := executeCmd("detect", "--json", path)
+	err := executeCmd("detect", "--json", path)
 
 	_ = w.Close()
 	os.Stdout = old
@@ -150,7 +148,7 @@ func TestSummary_OfficialExample(t *testing.T) {
 	_, w, _ := os.Pipe()
 	os.Stdout = w
 
-	_, err := executeCmd("summary", path)
+	err := executeCmd("summary", path)
 
 	_ = w.Close()
 	os.Stdout = old
@@ -167,7 +165,7 @@ func TestSummary_JSON(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	_, err := executeCmd("summary", "--json", path)
+	err := executeCmd("summary", "--json", path)
 
 	_ = w.Close()
 	os.Stdout = old
@@ -203,7 +201,7 @@ func TestValidate_Valid(t *testing.T) {
 	_, w, _ := os.Pipe()
 	os.Stdout = w
 
-	_, err := executeCmd("validate", path)
+	err := executeCmd("validate", path)
 
 	_ = w.Close()
 	os.Stdout = old
@@ -222,7 +220,7 @@ func TestDumpJSON_Simple(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	_, err := executeCmd("dump-json", path)
+	err := executeCmd("dump-json", path)
 
 	_ = w.Close()
 	os.Stdout = old
@@ -251,7 +249,7 @@ func TestDumpJSON_WithMetadata(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	_, err := executeCmd("dump-json", "--include-metadata", path)
+	err := executeCmd("dump-json", "--include-metadata", path)
 
 	_ = w.Close()
 	os.Stdout = old
@@ -276,7 +274,7 @@ func TestDumpJSON_OutputFile(t *testing.T) {
 	path := fixturePath("scl/testdata/simple.scd")
 	out := filepath.Join(t.TempDir(), "out.json")
 
-	_, err := executeCmd("dump-json", "--output", out, path)
+	err := executeCmd("dump-json", "--output", out, path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -299,7 +297,7 @@ func TestListIEDs_Table(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	_, err := executeCmd("list-ieds", path)
+	err := executeCmd("list-ieds", path)
 
 	_ = w.Close()
 	os.Stdout = old
@@ -326,7 +324,7 @@ func TestListIEDs_JSON(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	_, err := executeCmd("list-ieds", "--json", path)
+	err := executeCmd("list-ieds", "--json", path)
 
 	_ = w.Close()
 	os.Stdout = old
@@ -356,7 +354,7 @@ func TestListDataSets_Table(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	_, err := executeCmd("list-datasets", path)
+	err := executeCmd("list-datasets", path)
 
 	_ = w.Close()
 	os.Stdout = old
@@ -382,7 +380,7 @@ func TestListReports_Table(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	_, err := executeCmd("list-reports", path)
+	err := executeCmd("list-reports", path)
 
 	_ = w.Close()
 	os.Stdout = old
@@ -411,7 +409,7 @@ func TestValidate_Broken(t *testing.T) {
 	_, w, _ := os.Pipe()
 	os.Stdout = w
 
-	_, err := executeCmd("validate", path)
+	err := executeCmd("validate", path)
 
 	_ = w.Close()
 	os.Stdout = old
@@ -440,7 +438,7 @@ func TestListGoose_Table(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	_, err := executeCmd("list-goose", path)
+	err := executeCmd("list-goose", path)
 
 	_ = w.Close()
 	os.Stdout = old
@@ -470,7 +468,7 @@ func TestListGoose_JSON(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	_, err := executeCmd("list-goose", "--json", path)
+	err := executeCmd("list-goose", "--json", path)
 
 	_ = w.Close()
 	os.Stdout = old
@@ -497,7 +495,7 @@ func TestListConnectedAP_Table(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	_, err := executeCmd("list-connected-ap", path)
+	err := executeCmd("list-connected-ap", path)
 
 	_ = w.Close()
 	os.Stdout = old
@@ -526,7 +524,7 @@ func TestListTypes_Table(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	_, err := executeCmd("list-types", path)
+	err := executeCmd("list-types", path)
 
 	_ = w.Close()
 	os.Stdout = old
@@ -555,7 +553,7 @@ func TestInspect_Simple(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	_, err := executeCmd("inspect", path)
+	err := executeCmd("inspect", path)
 
 	_ = w.Close()
 	os.Stdout = old
@@ -582,7 +580,7 @@ func TestInspect_JSON(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	_, err := executeCmd("inspect", "--json", path)
+	err := executeCmd("inspect", "--json", path)
 
 	_ = w.Close()
 	os.Stdout = old
@@ -603,7 +601,7 @@ func TestInspect_JSON(t *testing.T) {
 // --- usage ---
 
 func TestUsage_NoArgs(t *testing.T) {
-	_, err := executeCmd("detect")
+	err := executeCmd("detect")
 	if err == nil {
 		t.Fatal("expected error for missing args")
 	}

@@ -29,16 +29,17 @@ func main() {
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	client, err := iec61850.Dial(ctx, addr, iec61850.DialOptions{
 		Logger: logger,
 	})
 	if err != nil {
+		cancel()
 		log.Fatalf("dial: %v", err)
 	}
-	defer client.Close(context.Background()) //nolint:errcheck
+	defer cancel()
+	defer func() { _ = client.Close(context.Background()) }()
 
 	devices, err := client.ListLogicalDevices(ctx)
 	if err != nil {

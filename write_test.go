@@ -11,7 +11,7 @@ import (
 	"github.com/otfabric/go-mms"
 )
 
-func setupWritableLoopback(t *testing.T) (*Client, *writableVars) {
+func setupWritableLoopback(t *testing.T) *Client {
 	t.Helper()
 	ctx := context.Background()
 
@@ -90,7 +90,7 @@ func setupWritableLoopback(t *testing.T) (*Client, *writableVars) {
 		_ = client.Close(ctx)
 	})
 
-	return client, wv
+	return client
 }
 
 type writableVars struct {
@@ -99,7 +99,7 @@ type writableVars struct {
 }
 
 func TestWrite(t *testing.T) {
-	client, _ := setupWritableLoopback(t)
+	client := setupWritableLoopback(t)
 	ctx := context.Background()
 
 	ref := Ref{LD: "simpleIOGenericIO", LN: "LLN0", Path: []string{"Mod", "stVal"}, FC: FCST}
@@ -124,7 +124,7 @@ func TestWrite(t *testing.T) {
 }
 
 func TestWrite_Bool(t *testing.T) {
-	client, _ := setupWritableLoopback(t)
+	client := setupWritableLoopback(t)
 	ctx := context.Background()
 
 	ref := Ref{LD: "simpleIOGenericIO", LN: "GGIO1", Path: []string{"Ind1", "stVal"}, FC: FCST}
@@ -148,7 +148,7 @@ func TestWrite_Bool(t *testing.T) {
 }
 
 func TestWrite_NoFC(t *testing.T) {
-	client, _ := setupWritableLoopback(t)
+	client := setupWritableLoopback(t)
 	ctx := context.Background()
 
 	ref := Ref{LD: "simpleIOGenericIO", LN: "LLN0", Path: []string{"Mod", "stVal"}}
@@ -159,7 +159,7 @@ func TestWrite_NoFC(t *testing.T) {
 }
 
 func TestWrite_NotObject(t *testing.T) {
-	client, _ := setupWritableLoopback(t)
+	client := setupWritableLoopback(t)
 	ctx := context.Background()
 
 	ref := Ref{LD: "simpleIOGenericIO", LN: "LLN0", FC: FCST}
@@ -170,7 +170,7 @@ func TestWrite_NotObject(t *testing.T) {
 }
 
 func TestWrite_NilValue(t *testing.T) {
-	client, _ := setupWritableLoopback(t)
+	client := setupWritableLoopback(t)
 	ctx := context.Background()
 
 	ref := Ref{LD: "simpleIOGenericIO", LN: "LLN0", Path: []string{"Mod", "stVal"}, FC: FCST}
@@ -181,7 +181,7 @@ func TestWrite_NilValue(t *testing.T) {
 }
 
 func TestWrite_ClosedClient(t *testing.T) {
-	client, _ := setupWritableLoopback(t)
+	client := setupWritableLoopback(t)
 	ctx := context.Background()
 
 	_ = client.Close(ctx)

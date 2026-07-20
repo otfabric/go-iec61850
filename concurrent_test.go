@@ -36,14 +36,16 @@ func TestConcurrent_ContextCancelReleasesInflightReads(t *testing.T) {
 
 	// Intercept reads so they block until ctx is done.
 	reading := make(chan struct{}, 1)
-	srv.MMS().SetVariableRead("LD1", "LLN0$ST$Mod$stVal", func(ctx context.Context) (*mms.Value, error) {
+	if err := srv.MMS().SetVariableRead("LD1", "LLN0$ST$Mod$stVal", func(ctx context.Context) (*mms.Value, error) {
 		select {
 		case reading <- struct{}{}:
 		default:
 		}
 		<-ctx.Done()
 		return nil, ctx.Err()
-	}) //nolint:errcheck
+	}); err != nil {
+		t.Fatalf("SetVariableRead: %v", err)
+	}
 
 	ln, err := iso.Listen("127.0.0.1:0")
 	if err != nil {
@@ -102,7 +104,7 @@ func TestConcurrent_ContextCancelReleasesInflightReads(t *testing.T) {
 	bgCancel()
 	srv.Close()
 	time.Sleep(50 * time.Millisecond)
-	c.Abort(context.Background())
+	_ = c.Abort(context.Background())
 
 	if ctxErrCount == 0 {
 		t.Errorf("expected at least one context-cancelled error, got none (errors: %v)", errs)
@@ -146,7 +148,7 @@ func TestConcurrent_ReportsDuringOutstandingRequests(t *testing.T) {
 	defer func() {
 		bgCancel()
 		time.Sleep(30 * time.Millisecond)
-		c.Abort(context.Background())
+		_ = c.Abort(context.Background())
 	}()
 
 	// Subscribe to URCB with GI.
@@ -159,7 +161,7 @@ func TestConcurrent_ReportsDuringOutstandingRequests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SubscribeReport: %v", err)
 	}
-	defer sub.Close()
+	defer func() { _ = sub.Close() }()
 
 	// Wait for the initial GI report.
 	select {
@@ -259,7 +261,7 @@ func TestConcurrent_ManyWritesThenClose(t *testing.T) {
 
 	// Close while writes are flying.
 	time.Sleep(10 * time.Millisecond)
-	c.Abort(context.Background())
+	_ = c.Abort(context.Background())
 
 	done := make(chan struct{})
 	go func() { wg.Wait(); close(done) }()
@@ -289,10 +291,12 @@ func TestConcurrent_TimeoutDoesNotLeakGoroutines(t *testing.T) {
 	}
 
 	// Make reads block until their ctx is done.
-	srv.MMS().SetVariableRead("LD1", "LLN0$ST$Mod$stVal", func(ctx context.Context) (*mms.Value, error) {
+	if err := srv.MMS().SetVariableRead("LD1", "LLN0$ST$Mod$stVal", func(ctx context.Context) (*mms.Value, error) {
 		<-ctx.Done()
 		return nil, ctx.Err()
-	}) //nolint:errcheck
+	}); err != nil {
+		t.Fatalf("SetVariableRead: %v", err)
+	}
 
 	ln, err := iso.Listen("127.0.0.1:0")
 	if err != nil {
@@ -333,7 +337,7 @@ func TestConcurrent_TimeoutDoesNotLeakGoroutines(t *testing.T) {
 	bgCancel()
 	srv.Close()
 	time.Sleep(50 * time.Millisecond)
-	c.Abort(context.Background())
+	_ = c.Abort(context.Background())
 
 	const maxDelta = 3
 	if delta := after - before; delta > maxDelta {

@@ -23,15 +23,16 @@ func main() {
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
 
 	dialCtx, dialCancel := context.WithTimeout(ctx, 10*time.Second)
-	defer dialCancel()
 	client, err := iec61850.Dial(dialCtx, addr, iec61850.DialOptions{})
+	dialCancel()
 	if err != nil {
+		cancel()
 		log.Fatalf("dial: %v", err)
 	}
-	defer client.Close(context.Background()) //nolint:errcheck
+	defer cancel()
+	defer func() { _ = client.Close(context.Background()) }()
 
 	devices, err := client.ListLogicalDevices(ctx)
 	if err != nil {

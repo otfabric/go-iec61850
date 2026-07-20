@@ -100,7 +100,7 @@ func TestTimestamp_Roundtrip(t *testing.T) {
 }
 
 func TestTimeQuality_ZeroValue(t *testing.T) {
-	ts := Timestamp{Time: time.Now()}
+	ts := Timestamp{}
 	if ts.Quality.LeapSecondKnown {
 		t.Error("zero TimeQuality should have LeapSecondKnown=false")
 	}

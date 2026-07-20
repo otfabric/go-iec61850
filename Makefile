@@ -17,7 +17,7 @@ COMMIT     ?= $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "")
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS    := -s -w -X main.version=$(VERSION) -X main.tag=$(TAG) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
 
-.PHONY: help test test-race test-verbose vet lint fmt fuzz bench tidy check clean coverage coverage-html coverage-clean interop scl-generate scl-check-generate build build-all release-all install ai-print-all ai-print-test ai-print ai-diff ai-digest ai-context
+.PHONY: help test test-race test-verbose vet lint fmt fuzz bench tidy check clean coverage coverage-html coverage-clean interop scl-generate scl-check-generate build build-all release-all install ai-print-all ai-print-test ai-print ai-diff ai-digest ai-context vuln
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "}; /^[a-zA-Z0-9_.-]+:.*## / {printf "%-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -44,6 +44,10 @@ lint: ## Run staticcheck
 lint-ci: ## Run golangci-lint
 	@echo "Running golangci-lint"
 	@golangci-lint run $(PKGS)
+
+vuln: ## Run govulncheck
+	@echo "Running govulncheck"
+	@govulncheck $(PKGS)
 
 fmt: ## Format all Go source files
 	@echo "Running gofmt"
@@ -118,7 +122,7 @@ install: build ## Install commands to PREFIX/bin (default /usr/local/bin)
 		echo "  INSTALL $(PREFIX)/bin/$$cmd"; \
 	done
 
-check: fmt tidy vet lint lint-ci test test-race coverage ## Run all pre-commit checks
+check: fmt tidy vet lint lint-ci vuln test test-race coverage ## Run all pre-commit checks
 
 clean: coverage-clean ## Clean test cache, coverage, and dist artifacts
 	$(GO) clean -testcache

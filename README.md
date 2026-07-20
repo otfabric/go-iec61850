@@ -529,6 +529,7 @@ go-iec61850/
 │
 ├── INTEROP.md                  IEC 61850 interoperability compatibility matrix
 ├── API.md                      Complete public API reference
+├── ERRORS.md                   Error taxonomy, sentinel values, and usage patterns
 ├── KNOWN_LIMITATIONS.md        Known constraints and unsupported features
 ├── OBSERVABILITY.md            Logging and structured-log fields
 └── RELEASE.md                  Changelog
@@ -563,6 +564,7 @@ See [INTEROP.md](INTEROP.md) for the full compatibility matrix and
 | [scl/README.md](scl/README.md) | `scl` package, `sclparse`, and `sclgen` reference |
 | [INTEROP.md](INTEROP.md) | Interoperability tests and compatibility matrix |
 | [API.md](API.md) | Complete public API reference (types, methods, errors) |
+| [ERRORS.md](ERRORS.md) | Error taxonomy, sentinel values, typed errors, usage patterns |
 | [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) | Known limitations and constraints |
 | [OBSERVABILITY.md](OBSERVABILITY.md) | Logging and structured-log observability |
 

@@ -167,7 +167,6 @@ func main() {
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
 
 	store := srv.ValueStore()
 
@@ -193,6 +192,7 @@ func main() {
 			},
 		},
 	); err != nil {
+		stop()
 		log.Fatalf("register direct control: %v", err)
 	}
 
@@ -209,8 +209,10 @@ func main() {
 
 	ln, err := iso.Listen(addr)
 	if err != nil {
+		stop()
 		log.Fatalf("listen %s: %v", addr, err)
 	}
+	defer stop()
 	fmt.Printf("IEC 61850 server listening on %s\n", addr)
 
 	go func() {
