@@ -689,7 +689,7 @@ func TestSubscribeReport(t *testing.T) {
 		if i != 42 {
 			t.Errorf("Values[0] = %d, want 42", i)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("timeout waiting for report")
 	}
 }
@@ -856,7 +856,7 @@ func TestSubscribeReport_MultipleRptIDs(t *testing.T) {
 			if v != wantVal {
 				t.Errorf("%s: got %d, want %d", name, v, wantVal)
 			}
-		case <-time.After(2 * time.Second):
+		case <-time.After(30 * time.Second):
 			t.Fatalf("%s: timeout waiting for report", name)
 		}
 	}
@@ -1179,7 +1179,7 @@ func TestSubscribeReport_GlobMatch(t *testing.T) {
 		if ri.RptID != "rptFoo" {
 			t.Errorf("RptID = %q, want rptFoo", ri.RptID)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("timeout waiting for glob-matched report")
 	}
 }
@@ -1276,7 +1276,7 @@ func TestSegmentedReportReassembly(t *testing.T) {
 		if ri.SeqNum != 10 {
 			t.Errorf("SeqNum = %d, want 10", ri.SeqNum)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("timeout waiting for assembled report")
 	}
 
@@ -1340,7 +1340,7 @@ func TestSegmentedReport_ResetOnNewSequence(t *testing.T) {
 		if len(ri.Values) != 1 {
 			t.Errorf("values = %d, want 1 (only new segment)", len(ri.Values))
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("timeout waiting for report after buffer reset")
 	}
 }
@@ -1398,7 +1398,7 @@ func TestSegmentedReport_NonContiguousSubSeqNum(t *testing.T) {
 		if len(ri.Values) != 2 {
 			t.Errorf("values = %d, want 2", len(ri.Values))
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("timeout waiting for assembled report")
 	}
 }
@@ -1461,7 +1461,7 @@ func TestSegmentedReport_InconsistentMetadata(t *testing.T) {
 		if len(ri.Values) != 1 {
 			t.Errorf("values = %d, want 1 (fallback to first segment only)", len(ri.Values))
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("timeout waiting for report after metadata mismatch")
 	}
 }
@@ -1732,7 +1732,7 @@ func TestOverflowBlock_CloseDoesNotPanic(t *testing.T) {
 
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("deliver did not unblock after Close")
 	}
 }

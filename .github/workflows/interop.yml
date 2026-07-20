@@ -33,8 +33,8 @@ jobs:
 
       - name: Run interop matrix
         env:
-          LIBIEC61850_IMAGE: ghcr.io/otfabric/mms-interop-libiec61850@sha256:29bca666d5cc42b19ccd2feca51397bde67123366eb2be07984dc9cf91411a23
-          IEC61850BEAN_IMAGE: ghcr.io/otfabric/mms-interop-iec61850bean@sha256:404fb8ab1537947913f6c88b9862464d83a452773641cfbe5cfc87d2f1dc795b
+          LIBIEC61850_IMAGE: ghcr.io/otfabric/mms-interop-libiec61850@sha256:78bad3f28b6cc7174fe1b0f5b28b22a991f7d908ac234020654918238f3ec977
+          IEC61850BEAN_IMAGE: ghcr.io/otfabric/mms-interop-iec61850bean@sha256:5c88248173264e30540e5f2767c6c22aa83b271f267d1509f1593b6c70c0709f
         run: make interop
 
       - name: Collect Docker diagnostics
