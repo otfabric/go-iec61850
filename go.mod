@@ -3,7 +3,7 @@ module github.com/otfabric/go-iec61850
 go 1.24.0
 
 require (
-	github.com/otfabric/go-mms v1.0.1
+	github.com/otfabric/go-mms v1.0.2
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/sync v0.19.0
 )

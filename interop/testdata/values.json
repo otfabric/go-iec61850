@@ -12,7 +12,9 @@
     "InteropLD/GGIO1.SPCSO2.ctlModel": 2,
     "InteropLD/GGIO1.SPCSO3.stVal":   false,
     "InteropLD/GGIO1.SPCSO3.ctlModel": 4,
-    "InteropLD/MMXU1.TotW.mag.f":     1234.5
+    "InteropLD/MMXU1.TotW.mag.f":     1234.5,
+    "InteropLD/GGIO1.DPS1.stVal":     2,
+    "InteropLD/MMTR1.TotVAh.actVal":  42
   },
   "writable": [
     "InteropLD/GGIO1.SPCSO1",

@@ -148,6 +148,20 @@ func (re *ReportEngine) Stop() {
 	})
 }
 
+// isConnActive reports whether conn is still registered with the MMS server.
+// A nil conn is never considered active.
+func (re *ReportEngine) isConnActive(conn *mms.ServerConn) bool {
+	if conn == nil || re.mmsSrv == nil {
+		return false
+	}
+	for _, c := range re.mmsSrv.Connections() {
+		if c == conn {
+			return true
+		}
+	}
+	return false
+}
+
 func (re *ReportEngine) registerRCBRuntime(ldName, lnName string, rpt *servermodel.ReportDef) {
 	prefix := "RP"
 	if rpt.Buffered {
@@ -194,6 +208,16 @@ func (re *ReportEngine) HandleRCBWrite(ctx context.Context, ldName, rcbItemID, s
 			return fmt.Errorf("iec61850: RptEna: expected boolean")
 		}
 		if b {
+			// For URCB: enforce that only the reservation owner can enable.
+			if !rt.buffered {
+				rt.mu.Lock()
+				reserved := rt.reserved
+				reserveConn := rt.reserveConn
+				rt.mu.Unlock()
+				if reserved && reserveConn != nil && reserveConn != sc {
+					return &mms.DataAccessError{Code: mms.DataAccessErrorObjectAccessDenied}
+				}
+			}
 			return re.enableRCB(ctx, rt, sc)
 		}
 		rt.disable()
@@ -218,11 +242,25 @@ func (re *ReportEngine) HandleRCBWrite(ctx context.Context, ldName, rcbItemID, s
 			return fmt.Errorf("iec61850: Resv: expected boolean")
 		}
 		rt.mu.Lock()
-		rt.reserved = b
-		if !b {
+		defer rt.mu.Unlock()
+		if b {
+			// Reject if already reserved by a different active connection.
+			if rt.reserved && rt.reserveConn != nil && rt.reserveConn != sc {
+				if re.isConnActive(rt.reserveConn) {
+					return &mms.DataAccessError{Code: mms.DataAccessErrorObjectAccessDenied}
+				}
+				// Previous owner disconnected — take over the reservation.
+			}
+			rt.reserved = true
+			rt.reserveConn = sc
+		} else {
+			// Only the reservation owner may clear it.
+			if rt.reserved && rt.reserveConn != nil && sc != nil && rt.reserveConn != sc {
+				return &mms.DataAccessError{Code: mms.DataAccessErrorObjectAccessDenied}
+			}
+			rt.reserved = false
 			rt.reserveConn = nil
 		}
-		rt.mu.Unlock()
 		return nil
 
 	case "PurgeBuf":
@@ -321,6 +359,23 @@ func (re *ReportEngine) enableRCB(_ context.Context, rt *rcbRuntime, conn *mms.S
 	// through the interceptor path or recursion will occur.
 	re.store.Set(sk("RptEna"), mms.NewBoolean(true))
 
+	// BRCB: replay buffered entries to the enabling connection so the
+	// client receives entries it missed while disconnected.
+	if rt.buffered && conn != nil && len(rt.bufQueue) > 0 {
+		entries := make([]*bufferedEntry, len(rt.bufQueue))
+		copy(entries, rt.bufQueue)
+		rptID := rt.rptID
+		optFlds := rt.optFlds
+		confRev := rt.confRev
+		datSet := rt.datSet
+		rcbItemID := rt.rcbItemID
+		re.wg.Add(1)
+		go func() {
+			defer re.wg.Done()
+			re.replayBRCBEntries(rcbItemID, rptID, optFlds, confRev, datSet, entries, conn)
+		}()
+	}
+
 	// Start integrity timer if configured.
 	if rt.intgPd > 0 && rt.trgOps.Has(TrgOpIntegrity) {
 		rt.intgStop = make(chan struct{})
@@ -335,6 +390,70 @@ func (re *ReportEngine) enableRCB(_ context.Context, rt *rcbRuntime, conn *mms.S
 		"rcb", rt.rcbItemID, "rptID", rt.rptID, "datSet", rt.datSet)
 
 	return nil
+}
+
+// SetRCBBufMax sets the maximum buffer capacity for the named BRCB. Returns
+// false if the RCB is not found. Intended for testing; use with caution in
+// production code.
+func (re *ReportEngine) SetRCBBufMax(ldName, rcbItemID string, max int) bool {
+	key := ldName + "/" + rcbItemID
+	re.mu.RLock()
+	rt, ok := re.rcbs[key]
+	re.mu.RUnlock()
+	if !ok {
+		return false
+	}
+	rt.mu.Lock()
+	rt.bufMax = max
+	rt.mu.Unlock()
+	return true
+}
+
+// replayBRCBEntries delivers buffered BRCB entries to the given connection.
+// It is run in a background goroutine and stops early if delivery fails.
+func (re *ReportEngine) replayBRCBEntries(
+	rcbItemID, rptID string,
+	optFlds OptFlds, confRev uint32, datSet string,
+	entries []*bufferedEntry,
+	conn *mms.ServerConn,
+) {
+	re.logger.Debug("iec61850: replaying BRCB entries",
+		"rcb", rcbItemID, "count", len(entries))
+
+	// Small delay so the client's RptEna write response arrives before the
+	// replayed reports, giving the client time to register its subscription
+	// channel before the first replayed report is delivered.
+	time.Sleep(150 * time.Millisecond)
+
+	for i, entry := range entries {
+		reportValues := encodeReportValuesEx(reportParams{
+			rptID:     rptID,
+			optFlds:   optFlds,
+			seqNum:    uint32(i + 1),
+			confRev:   confRev,
+			datSet:    datSet,
+			entryID:   entry.entryID,
+			inclusion: entry.inclusion,
+			reasons:   entry.reasons,
+			values:    entry.values,
+		})
+
+		req := &mms.InformationReportRequest{
+			ListName: &mms.ObjectName{
+				Scope:  mms.ObjectScopeVMD,
+				ItemID: "RPT",
+			},
+			Values: reportValues,
+		}
+
+		if err := conn.SendInformationReport(context.Background(), req); err != nil {
+			re.logger.Debug("iec61850: BRCB replay send failed",
+				"rcb", rcbItemID, "entry", i, "error", err)
+			return
+		}
+	}
+
+	re.logger.Debug("iec61850: BRCB replay complete", "rcb", rcbItemID, "entries", len(entries))
 }
 
 // disable stops the RCB and clears runtime state.

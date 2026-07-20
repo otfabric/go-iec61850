@@ -29,6 +29,108 @@ import (
 )
 
 // ---------------------------------------------------------------------------
+// Phase D1 (remaining) — partial-failure, nested-member, nested-DO reads
+// ---------------------------------------------------------------------------
+
+// TestGoServer_DS_WritePartialFail sends a WriteMultiple that includes one
+// valid write and one type-mismatched write.  The server must return success
+// for the first request and a DataAccessError for the second; the first
+// write must be durable (readable back).
+func TestGoServer_DS_WritePartialFail(t *testing.T) {
+	srv := startGoIEDServer(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	c := dialIED(t, ctx, fmt.Sprintf("127.0.0.1:%d", srv.port))
+	defer c.Close(ctx)
+
+	stRef, _ := iec61850.ParseRef("InteropLD/GGIO1.SPS1.stVal[ST]")
+	cfRef, _ := iec61850.ParseRef("InteropLD/LLN0.Mod.stVal[ST]")
+
+	// stRef: write boolean true (correct type).
+	// cfRef: write a boolean value to an INT32 attribute (type mismatch → error).
+	results, err := c.WriteMultiple(ctx, []iec61850.WriteRequest{
+		{Ref: stRef, Value: mms.NewBoolean(true)},
+		{Ref: cfRef, Value: mms.NewBoolean(true)}, // wrong type
+	})
+	if err != nil {
+		t.Fatalf("WriteMultiple: unexpected transport error: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("WriteMultiple: expected 2 results, got %d", len(results))
+	}
+
+	// First result must succeed.
+	if !results[0].Success {
+		t.Errorf("result[0] (SPS1.stVal): want success, got error: %v", results[0].Err)
+	}
+
+	// Second result must be a per-item error.
+	if results[1].Success {
+		t.Errorf("result[1] (Mod.stVal with wrong type): want error, got success")
+	} else {
+		t.Logf("result[1] correctly failed: %v", results[1].Err)
+	}
+
+	// The first write must be durable.
+	got, err := c.ReadRaw(ctx, stRef)
+	if err != nil {
+		t.Fatalf("ReadRaw after partial write: %v", err)
+	}
+	if b, ok := got.Bool(); !ok || b != true {
+		t.Errorf("SPS1.stVal after partial write: want true, got %v (ok=%v)", got, ok)
+	}
+}
+
+// TestGoServer_DS_NestedDORead reads the complete TotW DO from MMXU1 as a
+// structured MMS value (no daName → the full FC group is returned).
+func TestGoServer_DS_NestedDORead(t *testing.T) {
+	srv := startGoIEDServer(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	c := dialIED(t, ctx, fmt.Sprintf("127.0.0.1:%d", srv.port))
+	defer c.Close(ctx)
+
+	// Read TotW.mag.f via its typed scalar path — verify float round-trip.
+	magRef, _ := iec61850.ParseRef("InteropLD/MMXU1.TotW.mag.f[MX]")
+	raw, err := c.ReadRaw(ctx, magRef)
+	if err != nil {
+		t.Fatalf("ReadRaw TotW.mag.f: %v", err)
+	}
+	fv, ok := raw.Float64()
+	if !ok {
+		t.Fatalf("TotW.mag.f: expected float64, got %s", raw.Type())
+	}
+	const eps = 0.01
+	if fv < fixVal.TotWMagF-eps || fv > fixVal.TotWMagF+eps {
+		t.Errorf("TotW.mag.f: want ~%g, got %g", fixVal.TotWMagF, fv)
+	}
+
+	// Read TotW.mag as a structured DO (Struct) and verify it contains the
+	// float f sub-attribute.
+	structRef, _ := iec61850.ParseRef("InteropLD/MMXU1.TotW.mag[MX]")
+	rawStruct, err := c.ReadRaw(ctx, structRef)
+	if err != nil {
+		t.Fatalf("ReadRaw TotW.mag (struct): %v", err)
+	}
+	elems, ok := rawStruct.Structure()
+	if !ok || len(elems) == 0 {
+		t.Fatalf("TotW.mag: expected Structure, got %s (value=%v)", rawStruct.Type(), rawStruct)
+	}
+	// The struct has one child: f (FLOAT32).
+	fvNested, ok := elems[0].Float64()
+	if !ok {
+		t.Fatalf("TotW.mag.Structure()[0]: expected float, got %s", elems[0].Type())
+	}
+	if fvNested < fixVal.TotWMagF-eps || fvNested > fixVal.TotWMagF+eps {
+		t.Errorf("TotW.mag struct f: want ~%g, got %g", fixVal.TotWMagF, fvNested)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Phase 2G-a — dataset member discovery
 // ---------------------------------------------------------------------------
 
