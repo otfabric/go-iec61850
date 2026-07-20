@@ -46,6 +46,7 @@ lint-ci: ## Run golangci-lint
 	@golangci-lint run $(PKGS)
 
 fmt: ## Format all Go source files
+	@echo "Running gofmt"
 	@gofmt -w .
 
 coverage: ## Run tests with coverage profile and text summary

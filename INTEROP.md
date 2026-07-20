@@ -161,6 +161,197 @@ Sub-topics are appended after a second underscore: `TestLibIECClient_URCB_DataCh
 
 ---
 
+## IEC 61850 edition service profile
+
+`go-iec61850` targets **IEC 61850 Edition 2** (2007B) as its primary conformance baseline. Edition 2.1 (2007B4) features are not guaranteed unless listed below.
+
+### Protocol profile
+
+| Layer | Implementation | Status |
+|-------|---------------|--------|
+| MMS (ISO 9506) | `go-mms` | ✓ |
+| COTP / ISO 8073 Class 0 | `go-cotp` | ✓ |
+| TPKT (RFC 1006) | `go-tpkt` | ✓ |
+| TCP | `net` stdlib | ✓ |
+| TLS (optional) | `crypto/tls` | ✓ |
+
+### IEC 61850-7-2 services
+
+| Service | Client | Server | Notes |
+|---------|:------:|:------:|-------|
+| Associate | ✓ | ✓ | ACSE/Presentation/Session layers |
+| Abort | ✓ | ✓ | |
+| Conclude | ✓ | ✓ | |
+| GetServerDirectory | ✓ | ✓ | |
+| GetLogicalDeviceDirectory | ✓ | ✓ | |
+| GetLogicalNodeDirectory | ✓ | ✓ | |
+| GetDataDirectory | ✓ | ✓ | |
+| GetDataDefinition | ✓ | ✓ | `GetVariableAccessAttributes` |
+| GetDataValues | ✓ | ✓ | single + multi-variable |
+| SetDataValues | ✓ | ✓ | single + multi-variable |
+| GetDataSetValues | ✓ | ✓ | |
+| GetDataSetDirectory | ✓ | ✓ | |
+| CreateDataSet | — | — | dynamic datasets deferred |
+| DeleteDataSet | — | — | |
+| GetRCBValues | ✓ | ✓ | URCB and BRCB |
+| SetRCBValues | ✓ | ✓ | URCB and BRCB |
+| GetSGCBValues | ✓ | ✓ | |
+| SetSGValues | ✓ | ✓ | |
+| ConfirmEditSGValues | ✓ | ✓ | |
+| GetEditSGValues | ✓ | ✓ | |
+| QueryLogByTime | ✓ | ✓ | |
+| QueryLogAfter | ✓ | ✓ | |
+| GetLogStatusValues | ✓ | — | |
+| GetFile | ✓ | ✓ | |
+| SetFile | — | ✓ | |
+| DeleteFile | — | — | |
+| GetFileAttributeValues | ✓ | ✓ | |
+| SendGSSEMessage | — | — | GOOSE out of scope |
+| SendMSVMessage | — | — | Sampled Values out of scope |
+| Select | ✓ | ✓ | SBO normal |
+| SelectWithValue | ✓ | ✓ | SBOw enhanced |
+| Cancel | ✓ | ✓ | |
+| Operate | ✓ | ✓ | direct and SBO/SBOw |
+| CommandTermination | — | — | |
+| TimeActivatedOperate | — | — | |
+
+### Common Data Classes (IEC 61850-7-3)
+
+| CDC | Description | Client-readable | Server-pub | Interop tested |
+|-----|-------------|:---------------:|:----------:|:--------------:|
+| SPS | Single-point status | ✓ | ✓ | ✓ |
+| DPS | Double-point status | ✓ | ✓ | ✓ |
+| INS | Integer status | ✓ | ✓ | ✓ |
+| ACT | Protection activation | ✓ | ✓ | ✓ |
+| SPC | Single-point controllable | ✓ | ✓ | ✓ |
+| DPC | Double-point controllable | ✓ | ✓ | ✓ |
+| MV  | Measured value | ✓ | ✓ | ✓ |
+| CMV | Complex measured value | ✓ | ✓ | — |
+| ENS | Enumerated status | ✓ | ✓ | — |
+| BCR | Binary counter reading | ✓ | ✓ | ✓ |
+| BSC | Binary step controllable | ✓ | ✓ | — |
+
+### Report features
+
+| Feature | URCB | BRCB | Notes |
+|---------|:----:|:----:|-------|
+| Data-change trigger (dchg) | ✓ | ✓ | |
+| Quality-change trigger (qchg) | ✓ | ✓ | |
+| Data-update trigger (dupd) | ✓ | ✓ | |
+| Integrity scan | ✓ | ✓ | configurable period |
+| General interrogation | ✓ | ✓ | |
+| OptFlds: SeqNum | ✓ | ✓ | |
+| OptFlds: TimeStamp | ✓ | ✓ | |
+| OptFlds: ReasonCode | ✓ | ✓ | |
+| OptFlds: DataRef | ✓ | ✓ | |
+| OptFlds: DataSet | ✓ | ✓ | |
+| OptFlds: EntryID | n/a | ✓ | |
+| OptFlds: ConfRev | ✓ | ✓ | |
+| OptFlds: BufOvfl | n/a | ✓ | |
+| EntryID-based resume | n/a | ✓ | client writes EntryID before enable |
+| Purge buffer | n/a | ✓ | |
+| Replay on re-enable | n/a | ✓ | |
+| Overflow policy (DropNewest) | ✓ | ✓ | configurable |
+| Connection-scoped reservation | ✓ | n/a | disconnect releases Resv |
+| Multi-segment reports | ✓ | ✓ | reassembled automatically |
+
+### Known limitations / deferred features
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| GOOSE | not implemented | out of scope |
+| Sampled Values | not implemented | out of scope |
+| Dynamic dataset creation | not implemented | deferred |
+| CommandTermination | not implemented | deferred |
+| TimeActivatedOperate | not implemented | deferred |
+| iec61850bean SBOw | known gap (upstream) | iec61850bean does not expose `SBOw[CO]` |
+| Edition 2.1 extensions | partial | not all 2007B4 features validated |
+
+---
+
+## BRCB EntryID resume — implementation contract
+
+This section documents the precise semantics of EntryID-based resume as implemented. Users relying on this feature should treat this as the authoritative specification rather than assuming universal IEC 61850 behavior.
+
+### What EntryID is
+
+- An EntryID is an 8-byte big-endian `OctetString` that uniquely identifies a buffered report entry on the server.
+- The server assigns monotonically increasing 64-bit counters, starting at 1 for the first entry after `EnableReports()` is called.
+- ID 0 (`0x0000000000000000`) is reserved as the neutral sentinel meaning "no resume point."
+
+### Exclusive boundary
+
+The supplied EntryID is treated as **exclusive**. A client that writes EntryID `N` before enabling the BRCB receives only entries with ID **strictly greater than** `N` — i.e., entries produced *after* the entry the client last received.
+
+This matches the IEC 61850-7-2 description where the client stores the EntryID of the last received entry.
+
+### Special cases
+
+| Client writes | Server behavior |
+|--------------|----------------|
+| All-zero bytes (`0x00…00`) | Full buffer replay — no filtering |
+| Valid EntryID present in buffer | Replay of entries after that ID |
+| EntryID beyond the highest buffered ID | Empty replay — client has already seen everything |
+| EntryID from before a `PurgeBuf` | Empty replay — IDs are invalidated by purge |
+| Partial write (< 8 bytes) | Treated as zero (no filtering) |
+
+### Buffer overflow interaction
+
+When the server-side BRCB buffer (`bufMax`, default 1000 entries) overflows, the oldest entry is dropped. If a client's resume point was before the dropped entries, the client will miss those intermediate entries. The first replayed or newly delivered report will have `BufOvfl=true` to signal the gap.
+
+### Stability
+
+- EntryIDs are **not persistent** across server process restarts. They reset to 1 on each `EnableReports()` call.
+- Clients must not cache EntryIDs across reconnects to a different server process or after a server restart.
+- `PurgeBuf=true` invalidates all previously issued EntryIDs. A subsequent enable with any non-zero EntryID will find nothing to replay.
+
+### Byte format
+
+```
+Byte 0 (MSB)  Byte 7 (LSB)
+[uint64, big-endian]
+```
+
+Example: EntryID 1 is `0x0000000000000001`.
+
+---
+
+## Report backpressure and loss policy
+
+This section defines what happens when the application cannot consume reports fast enough.
+
+### Client-side queue (SubscribeReportOptions.QueueSize)
+
+Each subscription has an in-process Go channel with a configurable capacity (default: 64). The `OverflowPolicy` field controls what happens when this channel is full:
+
+| Policy | Behavior | Notes |
+|--------|----------|-------|
+| `OverflowDropNewest` (default) | Incoming report is discarded | SeqNum gaps indicate loss |
+| `OverflowDropOldest` | Oldest buffered report is discarded to make room | Provides fresher data |
+| `OverflowBlock` | Dispatcher blocks until channel has space | Zero application-layer loss; may stall all report delivery |
+| `OverflowCallback` | `OnOverflow` callback is invoked instead of delivery | Custom loss handling |
+
+**Important:** The server is unaware of client-side queue overflow. No error is returned to the server; no reconnect occurs. The application is responsible for consuming reports promptly or choosing an appropriate policy.
+
+### URCB loss (unbuffered reports)
+
+URCB provides best-effort delivery. Application queue overflow silently discards reports. This is the expected and specified behavior for unbuffered reporting — no gap indicator is sent because the server does not know the client missed a report.
+
+### BRCB server-side buffer overflow
+
+The server-side BRCB buffer (default: 1000 entries, configurable via `SetRCBBufMax`) is separate from the client-side application queue. When the server buffer fills:
+
+1. The oldest entry is dropped (drop-oldest policy).
+2. `bufOvfl` is set to `true`.
+3. The next delivered report will have `BufOvfl=true` set (when `OptFldBufOvfl` is enabled).
+4. The client can detect the gap from `BufOvfl` and decide whether to re-read the dataset via GI.
+
+### Confirmed services vs. report delivery
+
+Report delivery (InformationReports) and confirmed services (Read, Write, SetRCBValues) use the same MMS connection but are dispatched independently. A full application-side report queue does not block confirmed services unless `OverflowBlock` is in use.
+
+---
+
 ## Roadmap
 
 Phases are driven by `go-iec61850` implementation priorities. Adapter infrastructure is requested from `mms-interop` only when a required command or fixture capability is absent.

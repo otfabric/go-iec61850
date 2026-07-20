@@ -1167,6 +1167,38 @@ func (c *Client) ReleaseURCB(ctx context.Context, ld, rcbItemID string) error {
 
 // OverflowPolicy controls what happens when a subscription's report
 // channel is full.
+//
+// # URCB vs BRCB loss semantics
+//
+// For URCB (unbuffered) reports, report loss at the application queue
+// level is expected and accepted — the server makes no durability promise.
+// When [OverflowDropNewest] or [OverflowDropOldest] is used, lost reports
+// are silently discarded and the client will not observe a gap indicator.
+// This matches the standard URCB contract: reports are best-effort.
+//
+// For BRCB (buffered) reports, application queue overflow is a different
+// concern from the server-side BRCB buffer overflow:
+//
+//   - Server-side BRCB buffer overflow occurs when the in-memory buffer
+//     (default: 1000 entries) fills up before any client enables the BRCB.
+//     The server drops the oldest entry and sets BufOvfl=true in the next
+//     delivered report so the client knows a gap exists.
+//
+//   - Client-side application queue overflow (this type) occurs when the
+//     client's in-process channel (QueueSize) fills up while reports are
+//     being delivered. The chosen OverflowPolicy applies here; the server
+//     is unaware of this loss. For BRCB use cases that require no loss,
+//     set QueueSize large enough and consume reports promptly, or use
+//     [OverflowBlock].
+//
+// # Choosing a policy
+//
+//   - [OverflowDropNewest]: default. Safe for all uses. Report loss is
+//     visible in SeqNum gaps.
+//   - [OverflowDropOldest]: prefer fresher data; older values are discarded.
+//   - [OverflowBlock]: zero-loss delivery. Blocks report dispatch for all
+//     subscriptions on this connection if the channel is full.
+//   - [OverflowCallback]: custom handling (e.g., metrics, reconnect trigger).
 type OverflowPolicy int
 
 const (
