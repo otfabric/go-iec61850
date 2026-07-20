@@ -14,6 +14,21 @@ import (
 	"github.com/otfabric/go-iec61850/internal/servermodel"
 )
 
+// callControlHandler invokes fn, recovering from any panic and converting it
+// to an error so that a misbehaving application callback cannot crash the server.
+func callControlHandler(fn func(context.Context, ControlRequest) error, ctx context.Context, req ControlRequest) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = &ControlError{
+				Ref:       req.Ref,
+				Operation: req.Operation,
+				Wrapped:   fmt.Errorf("panic in ControlHandler callback: %v", r),
+			}
+		}
+	}()
+	return fn(ctx, req)
+}
+
 // ControlHandler defines the server-side callbacks for a controllable
 // data object. Implement the methods relevant to the control model;
 // unset (nil) handlers use default accept/reject behavior.
@@ -21,6 +36,12 @@ import (
 // All handler methods receive a context from the MMS layer and a
 // [ControlRequest] describing the command.
 type ControlHandler struct {
+	// SelectTimeout overrides [DefaultSelectTimeout] for this control
+	// object. The select reservation expires this long after a
+	// successful Select or SelectWithValue. A zero value means use
+	// [DefaultSelectTimeout].
+	SelectTimeout time.Duration
+
 	// OnSelect is called when a client issues a Select (SBO) or
 	// SelectWithValue (SBOw) request. Return nil to accept the
 	// select, or an error (preferably wrapping [ErrSelectFailed]
@@ -76,18 +97,22 @@ type ControlRequest struct {
 // associated SBO state for a single controllable data object.
 //
 // For SBO enhanced (SBOw), ownership is tracked by serialized
-// originator identity (OrCat:OrIdent). For SBO normal, ownership is
-// tracked by the MMS ServerConn pointer, since the SBO select is a
-// Read request that carries no origin information.
+// originator identity (OrCat:OrIdent) AND by connection pointer so
+// that two clients with the same origin identity can be distinguished.
+// For SBO normal, ownership is tracked solely by the MMS ServerConn
+// pointer, since the SBO select is a Read request that carries no
+// origin information.
 type controlRegistration struct {
-	handler  ControlHandler
-	ctlModel CtlModel
+	handler       ControlHandler
+	ctlModel      CtlModel
+	selectTimeout time.Duration // effective per-control timeout
 
 	mu           sync.Mutex
 	selectOwner  string          // "orCat:orIdent" — originator for SBOw enhanced
-	selectConn   *mms.ServerConn // connection identity for SBO normal
+	selectConn   *mms.ServerConn // connection identity for SBO normal (and SBOw contention)
 	selectTime   time.Time
 	selectCtlNum uint8
+	selectCtlVal *mms.Value // SBOw: ctlVal from SelectWithValue, checked on Operate
 }
 
 // DefaultSelectTimeout is the default SBO select timeout applied when
@@ -123,8 +148,12 @@ func (s *Server) RegisterControl(ldName, doRef string, ctlModel CtlModel, handle
 	}
 
 	reg := &controlRegistration{
-		handler:  handler,
-		ctlModel: ctlModel,
+		handler:       handler,
+		ctlModel:      ctlModel,
+		selectTimeout: handler.SelectTimeout,
+	}
+	if reg.selectTimeout <= 0 {
+		reg.selectTimeout = DefaultSelectTimeout
 	}
 	s.controls[key] = reg
 
@@ -200,7 +229,7 @@ func (s *Server) executeOperate(ctx context.Context, reg *controlRegistration, r
 					Wrapped:   ErrOperateFailed,
 				}
 			}
-			if time.Since(selectTime) > DefaultSelectTimeout {
+			if time.Since(selectTime) > reg.selectTimeout {
 				reg.selectConn = nil
 				reg.selectOwner = ""
 				reg.mu.Unlock()
@@ -243,13 +272,16 @@ func (s *Server) executeOperate(ctx context.Context, reg *controlRegistration, r
 			reg.selectOwner = ""
 			reg.mu.Unlock()
 		} else {
-			// SBO enhanced: ownership is by origin identity.
+			// SBO enhanced: ownership is by origin identity AND connection.
+			sc := mms.ServerConnFromContext(ctx)
 			ownerKey := fmt.Sprintf("%d:%x", req.Origin.OrCat, req.Origin.OrIdent)
 			currentOwner := reg.selectOwner
+			currentConn := reg.selectConn
 			selectTime := reg.selectTime
 			selectCtlNum := reg.selectCtlNum
+			selectCtlVal := reg.selectCtlVal
 
-			if currentOwner == "" || time.Since(selectTime) > DefaultSelectTimeout {
+			if currentOwner == "" || time.Since(selectTime) > reg.selectTimeout {
 				reg.mu.Unlock()
 				s.logger.Warn("iec61850: operate denied: no active select", "ref", req.Ref)
 				return &ControlError{
@@ -270,6 +302,17 @@ func (s *Server) executeOperate(ctx context.Context, reg *controlRegistration, r
 					Wrapped:   ErrOperateFailed,
 				}
 			}
+			// Enforce connection identity when both owners share the same origin.
+			if currentConn != nil && sc != nil && currentConn != sc {
+				reg.mu.Unlock()
+				s.logger.Warn("iec61850: operate denied: SBOw connection mismatch", "ref", req.Ref)
+				return &ControlError{
+					Ref:       req.Ref,
+					Operation: "operate",
+					AddCause:  AddCauseSelectFailed,
+					Wrapped:   ErrOperateFailed,
+				}
+			}
 			if reg.ctlModel.IsEnhanced() && selectCtlNum != req.CtlNum {
 				reg.mu.Unlock()
 				s.logger.Warn("iec61850: operate denied: ctlNum mismatch",
@@ -281,13 +324,27 @@ func (s *Server) executeOperate(ctx context.Context, reg *controlRegistration, r
 					Wrapped:   ErrOperateFailed,
 				}
 			}
+			// Enforce ctlVal match between SelectWithValue and Operate.
+			if reg.ctlModel.IsEnhanced() && selectCtlVal != nil && !mmsValuesEqual(selectCtlVal, req.CtlVal) {
+				reg.mu.Unlock()
+				s.logger.Warn("iec61850: operate denied: ctlVal mismatch",
+					"ref", req.Ref)
+				return &ControlError{
+					Ref:       req.Ref,
+					Operation: "operate",
+					AddCause:  AddCauseParameterChange,
+					Wrapped:   ErrOperateFailed,
+				}
+			}
 			reg.selectOwner = ""
+			reg.selectConn = nil
+			reg.selectCtlVal = nil
 			reg.mu.Unlock()
 		}
 	}
 
 	if reg.handler.OnOperate != nil {
-		if err := reg.handler.OnOperate(ctx, req); err != nil {
+		if err := callControlHandler(reg.handler.OnOperate, ctx, req); err != nil {
 			return err
 		}
 		return nil
@@ -318,15 +375,38 @@ func (s *Server) executeSelect(ctx context.Context, reg *controlRegistration, re
 	}
 
 	if reg.handler.OnSelect != nil {
-		if err := reg.handler.OnSelect(ctx, req); err != nil {
+		if err := callControlHandler(reg.handler.OnSelect, ctx, req); err != nil {
 			return err
 		}
 	}
 
+	sc := mms.ServerConnFromContext(ctx)
+	ownerKey := fmt.Sprintf("%d:%x", req.Origin.OrCat, req.Origin.OrIdent)
+
 	reg.mu.Lock()
-	reg.selectOwner = fmt.Sprintf("%d:%x", req.Origin.OrCat, req.Origin.OrIdent)
+	// Check for existing active select by a different connection.
+	// For SBOw, two clients sharing the same origin key are distinguished
+	// by connection pointer. If the existing owner is still connected and it's
+	// not the same connection, deny the select.
+	if reg.selectConn != nil && reg.selectConn != sc {
+		if s.isConnActive(reg.selectConn) && time.Since(reg.selectTime) <= reg.selectTimeout {
+			reg.mu.Unlock()
+			s.logger.Warn("iec61850: select denied: existing active selection by another connection",
+				"ref", req.Ref)
+			return &ControlError{
+				Ref:       req.Ref,
+				Operation: "select",
+				AddCause:  AddCauseSelectFailed,
+				Wrapped:   ErrSelectFailed,
+			}
+		}
+		// Previous owner disconnected or timed out — allow the new select.
+	}
+	reg.selectOwner = ownerKey
+	reg.selectConn = sc
 	reg.selectTime = time.Now()
 	reg.selectCtlNum = req.CtlNum
+	reg.selectCtlVal = req.CtlVal
 	reg.mu.Unlock()
 
 	return nil
@@ -344,8 +424,52 @@ func (s *Server) executeSelectWithValue(ctx context.Context, reg *controlRegistr
 }
 
 func (s *Server) executeCancel(ctx context.Context, reg *controlRegistration, req ControlRequest) error {
+	sc := mms.ServerConnFromContext(ctx)
+	ownerKey := fmt.Sprintf("%d:%x", req.Origin.OrCat, req.Origin.OrIdent)
+
+	reg.mu.Lock()
+	// Enforce ownership: only the connection that holds the selection may cancel it.
+	// For SBO normal: conn identity; for SBOw: origin + connection identity.
+	if reg.ctlModel == CtlModelSBONormal {
+		if reg.selectConn != nil && reg.selectConn != sc {
+			reg.mu.Unlock()
+			s.logger.Warn("iec61850: cancel denied: not the selection owner (SBO normal)",
+				"ref", req.Ref)
+			return &ControlError{
+				Ref:       req.Ref,
+				Operation: "cancel",
+				AddCause:  AddCauseSelectFailed,
+				Wrapped:   ErrSelectFailed,
+			}
+		}
+	} else if reg.ctlModel.IsEnhanced() {
+		if reg.selectOwner != "" && reg.selectOwner != ownerKey {
+			reg.mu.Unlock()
+			s.logger.Warn("iec61850: cancel denied: origin mismatch (SBOw)",
+				"ref", req.Ref, "owner", reg.selectOwner, "cancel", ownerKey)
+			return &ControlError{
+				Ref:       req.Ref,
+				Operation: "cancel",
+				AddCause:  AddCauseSelectFailed,
+				Wrapped:   ErrSelectFailed,
+			}
+		}
+		if reg.selectConn != nil && sc != nil && reg.selectConn != sc {
+			reg.mu.Unlock()
+			s.logger.Warn("iec61850: cancel denied: connection mismatch (SBOw)",
+				"ref", req.Ref)
+			return &ControlError{
+				Ref:       req.Ref,
+				Operation: "cancel",
+				AddCause:  AddCauseSelectFailed,
+				Wrapped:   ErrSelectFailed,
+			}
+		}
+	}
+	reg.mu.Unlock()
+
 	if reg.handler.OnCancel != nil {
-		if err := reg.handler.OnCancel(ctx, req); err != nil {
+		if err := callControlHandler(reg.handler.OnCancel, ctx, req); err != nil {
 			return err
 		}
 	}
@@ -353,6 +477,7 @@ func (s *Server) executeCancel(ctx context.Context, reg *controlRegistration, re
 	reg.mu.Lock()
 	reg.selectOwner = ""
 	reg.selectConn = nil
+	reg.selectCtlVal = nil
 	reg.mu.Unlock()
 
 	return nil
@@ -497,8 +622,13 @@ func (s *Server) installSBONormalReadHandler(ldName, doRef string, reg *controlR
 
 		now := time.Now()
 		// Deny if already selected by a different active connection.
-		if reg.selectConn != nil && reg.selectConn != sc && now.Sub(reg.selectTime) <= DefaultSelectTimeout {
-			return mms.NewVisibleString(""), nil
+		if reg.selectConn != nil && reg.selectConn != sc {
+			if s.isConnActive(reg.selectConn) && now.Sub(reg.selectTime) <= reg.selectTimeout {
+				return mms.NewVisibleString(""), nil
+			}
+			// Previous owner disconnected or timed out — release the selection.
+			reg.selectConn = nil
+			reg.selectOwner = ""
 		}
 		// Grant select to this connection.
 		reg.selectConn = sc
@@ -562,4 +692,26 @@ func (s *Server) controlStoreKey(ref string) string {
 	doPath := strings.ReplaceAll(dotParts[1], ".", "$")
 	itemID := lnName + "$ST$" + doPath + "$stVal"
 	return servermodel.StoreKey(ldName, itemID)
+}
+
+// isConnActive reports whether conn is still in the set of active MMS connections.
+func (s *Server) isConnActive(conn *mms.ServerConn) bool {
+	if conn == nil || s.mms == nil {
+		return false
+	}
+	for _, c := range s.mms.Connections() {
+		if c == conn {
+			return true
+		}
+	}
+	return false
+}
+
+// mmsValuesEqual returns true if a and b are both non-nil and encode to
+// the same canonical string. Used for ctlVal matching in SBOw.
+func mmsValuesEqual(a, b *mms.Value) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.String() == b.String()
 }

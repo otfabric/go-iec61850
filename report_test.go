@@ -1813,3 +1813,69 @@ func TestDecodeRCB_OptFldsTrgOpsStrict(t *testing.T) {
 		}
 	})
 }
+
+// TestReportEngineIsConnActive covers nil-input and empty-server paths.
+func TestReportEngineIsConnActive(t *testing.T) {
+	re := &ReportEngine{}
+
+	// nil conn: short-circuit before checking the server.
+	if re.isConnActive(nil) {
+		t.Error("nil conn: want false")
+	}
+
+	// nil mmsSrv with a non-nil conn pointer.
+	var sc mms.ServerConn
+	if re.isConnActive(&sc) {
+		t.Error("nil mmsSrv: want false")
+	}
+
+	// Non-nil server with no active connections — loop runs, returns false.
+	re.mmsSrv = mms.NewServer(mms.ServerOptions{})
+	if re.isConnActive(&sc) {
+		t.Error("conn not in empty server connection list: want false")
+	}
+}
+
+// TestSetRCBBufMax exercises the found and not-found code paths.
+func TestSetRCBBufMax(t *testing.T) {
+	rt := &rcbRuntime{rcbItemID: "LLN0$BR$brcb01", bufMax: 1000}
+	re := &ReportEngine{
+		rcbs: map[string]*rcbRuntime{
+			"LD1/LLN0$BR$brcb01": rt,
+		},
+	}
+
+	// Existing key — should return true and update the capacity.
+	if !re.SetRCBBufMax("LD1", "LLN0$BR$brcb01", 5) {
+		t.Error("SetRCBBufMax returned false for existing key")
+	}
+	rt.mu.Lock()
+	got := rt.bufMax
+	rt.mu.Unlock()
+	if got != 5 {
+		t.Errorf("bufMax = %d, want 5", got)
+	}
+
+	// Non-existing key — should return false.
+	if re.SetRCBBufMax("LD1", "LLN0$BR$nonexistent", 10) {
+		t.Error("SetRCBBufMax returned true for non-existing key")
+	}
+}
+
+// TestReplayBRCBEntries_Empty verifies that replayBRCBEntries with zero
+// buffered entries completes without panic after the fixed 150 ms delay.
+func TestReplayBRCBEntries_Empty(t *testing.T) {
+	re := &ReportEngine{logger: discardLogger()}
+	var sc mms.ServerConn
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		re.replayBRCBEntries("LLN0$BR$brcb01", "rptID", OptFlds(0), 1, "LD1/dsInterop", nil, &sc)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("replayBRCBEntries with empty entries did not complete in time")
+	}
+}

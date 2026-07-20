@@ -1675,7 +1675,14 @@ func (s *ReportSubscription) deliver(ri *ReportIndication, logger interface{ War
 		case s.ch <- ri:
 		default:
 			if s.onOverflow != nil {
-				s.onOverflow(ri)
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							logger.Warn("iec61850: OnOverflow callback panicked", "panic", r, "rptID", ri.RptID)
+						}
+					}()
+					s.onOverflow(ri)
+				}()
 			} else {
 				logger.Warn("iec61850: report dropped (queue full, no callback)", "rptID", ri.RptID)
 			}

@@ -83,6 +83,9 @@ type fixtureValues struct {
 	SPCSO3StVal    bool
 	SPCSO3CtlModel int64
 	TotWMagF       float64
+	// Phase C3: DPS and BCR CDCs
+	DPS1StVal int64  // Dbpos integer (0=intermediate,1=off,2=on,3=bad-state)
+	BCRActVal uint64 // BCR actVal (INT32U)
 }
 
 var fixVal *fixtureValues
@@ -215,6 +218,16 @@ func loadFixtureValues(fixtureDir string) (*fixtureValues, error) {
 	if fv.TotWMagF, err = getFloat("InteropLD/MMXU1.TotW.mag.f"); err != nil {
 		return nil, err
 	}
+
+	if f, err = getFloat("InteropLD/GGIO1.DPS1.stVal"); err != nil {
+		return nil, err
+	}
+	fv.DPS1StVal = int64(f)
+
+	if f, err = getFloat("InteropLD/MMTR1.TotVAh.actVal"); err != nil {
+		return nil, err
+	}
+	fv.BCRActVal = uint64(f)
 
 	return fv, nil
 }
@@ -516,7 +529,7 @@ func startIEDServer(t *testing.T) *iedServerHandle {
 			stop()
 			t.Fatal("IED server exited before emitting readiness event")
 		}
-		validateIEDAdapterMeta(t, m, "iec61850-v1", "libiec61850")
+		validateIEDAdapterMeta(t, m, "iec61850-v2", "libiec61850")
 		t.Cleanup(stop)
 		return &iedServerHandle{addr: m.addr, iedName: m.iedName}
 	case <-startCtx.Done():
@@ -775,7 +788,7 @@ func startIEC61850BeanServer(t *testing.T) *iedServerHandle {
 			stop()
 			t.Fatal("iec61850bean IED server exited before emitting readiness event")
 		}
-		validateIEDAdapterMeta(t, m, "iec61850-v1", "iec61850bean")
+		validateIEDAdapterMeta(t, m, "iec61850-v2", "iec61850bean")
 		t.Cleanup(stop)
 		return &iedServerHandle{addr: m.addr, iedName: m.iedName}
 	case <-startCtx.Done():
@@ -1039,6 +1052,14 @@ func setGoIEDInitialValues(t *testing.T, srv *iec61850.Server) {
 	set("InteropLD/GGIO1$ST$SPCSO3$stVal", mms.NewBoolean(fixVal.SPCSO3StVal))
 	set("InteropLD/GGIO1$CF$SPCSO3$ctlModel", mms.NewInteger(fixVal.SPCSO3CtlModel))
 	set("InteropLD/MMXU1$MX$TotW$mag$f", mms.NewFloat(fixVal.TotWMagF))
+
+	// Phase C3: DPS and BCR CDCs.
+	// DPS1.stVal: Dbpos is a 2-bit BitString (MSB-first).
+	// Integer value → 2-bit pattern: val << 6 gives the high byte.
+	// e.g. 2 (on=binary "10") → 0x80 with bit-length 2.
+	dpsByte := byte(fixVal.DPS1StVal&0x3) << 6
+	set("InteropLD/GGIO1$ST$DPS1$stVal", mms.NewBitStringWithLength([]byte{dpsByte}, 2))
+	set("InteropLD/MMTR1$ST$TotVAh$actVal", mms.NewUnsigned(fixVal.BCRActVal))
 }
 
 // ---------------------------------------------------------------------------
@@ -1383,6 +1404,87 @@ func startGoIEDServerWithControls(t *testing.T) *goIEDServer {
 	t.Cleanup(func() {
 		cancel()
 		srv.Close()
+	})
+
+	return &goIEDServer{port: port, srv: srv}
+}
+
+// startGoIEDServerWithShortSBOTimeout starts the same server as
+// startGoIEDServerWithControls, but registers SPCSO2 (SBO normal) with a
+// short SelectTimeout so that select-expiry tests run fast.
+func startGoIEDServerWithShortSBOTimeout(t *testing.T, timeout time.Duration) *goIEDServer {
+	t.Helper()
+
+	sclData, err := scl.ParseFile(icdPath(t))
+	if err != nil {
+		t.Fatalf("scl.ParseFile: %v", err)
+	}
+
+	model, err := iec61850.NewServerModelFromSCL(sclData, "InteropIED", "")
+	if err != nil {
+		t.Fatalf("NewServerModelFromSCL: %v", err)
+	}
+
+	srv, err := iec61850.NewServer(model, iec61850.ServerOptions{})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+
+	setGoIEDInitialValues(t, srv)
+	vs := srv.ValueStore()
+
+	if err := srv.RegisterControl("InteropLD", "GGIO1.SPCSO1",
+		iec61850.CtlModelDirectNormal,
+		iec61850.ControlHandler{
+			OnOperate: func(_ context.Context, req iec61850.ControlRequest) error {
+				if b, ok := req.CtlVal.Bool(); ok {
+					vs.Set("InteropLD/GGIO1$ST$SPCSO1$stVal", mms.NewBoolean(b))
+				}
+				return nil
+			},
+		}); err != nil {
+		t.Fatalf("RegisterControl SPCSO1: %v", err)
+	}
+
+	if err := srv.RegisterControl("InteropLD", "GGIO1.SPCSO2",
+		iec61850.CtlModelSBONormal,
+		iec61850.ControlHandler{
+			SelectTimeout: timeout,
+			OnOperate: func(_ context.Context, req iec61850.ControlRequest) error {
+				if b, ok := req.CtlVal.Bool(); ok {
+					vs.Set(sbo2StValKey, mms.NewBoolean(b))
+				}
+				return nil
+			},
+		}); err != nil {
+		t.Fatalf("RegisterControl SPCSO2: %v", err)
+	}
+
+	if err := srv.RegisterControl("InteropLD", "GGIO1.SPCSO3",
+		iec61850.CtlModelSBOEnhanced,
+		iec61850.ControlHandler{
+			OnOperate: func(_ context.Context, req iec61850.ControlRequest) error {
+				if b, ok := req.CtlVal.Bool(); ok {
+					vs.Set(sbow3StValKey, mms.NewBoolean(b))
+				}
+				return nil
+			},
+		}); err != nil {
+		t.Fatalf("RegisterControl SPCSO3: %v", err)
+	}
+
+	ln, err := iso.Listen("0.0.0.0:0")
+	if err != nil {
+		t.Fatalf("iso.Listen: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { _ = srv.ListenAndServe(ctx, ln) }()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	t.Cleanup(func() {
+		cancel()
+		_ = ln.Close()
 	})
 
 	return &goIEDServer{port: port, srv: srv}
