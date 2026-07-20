@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/otfabric/go-mms"
@@ -40,6 +41,11 @@ type Client struct {
 
 	mmsClient  *mms.Client
 	ownsClient bool // true when created via Dial (we close the MMS client)
+
+	// iedName is the IED name prefix used by the server to form MMS
+	// domain names (from DialOptions.IEDName). When non-empty,
+	// ldDomain prepends it and fetchLDs strips it.
+	iedName string
 
 	reportOnce sync.Once
 	reportMu   sync.RWMutex
@@ -78,6 +84,7 @@ func Dial(ctx context.Context, addr string, opts DialOptions) (*Client, error) {
 		Logger:     opts.Logger,
 		Strictness: opts.Strictness,
 		Cache:      opts.Cache,
+		IEDName:    opts.IEDName,
 	}
 	var cache *modelCache
 	if copts.Cache != CacheNone {
@@ -90,6 +97,7 @@ func Dial(ctx context.Context, addr string, opts DialOptions) (*Client, error) {
 		ownsClient: true,
 		opts:       copts,
 		cache:      cache,
+		iedName:    opts.IEDName,
 	}
 
 	logger.Info("iec61850: connected", "addr", addr)
@@ -125,6 +133,7 @@ func NewClient(mmsClient *mms.Client, opts ClientOptions) (*Client, error) {
 		ownsClient: false,
 		opts:       opts,
 		cache:      cache,
+		iedName:    opts.IEDName,
 	}, nil
 }
 
@@ -264,4 +273,37 @@ func (c *Client) closeAllSubscriptions() {
 // Most users should not need this method.
 func (c *Client) MMS() *mms.Client {
 	return c.mmsClient
+}
+
+// ldDomain returns the MMS domain name for a logical device. When the
+// client is configured with an IED name, it prepends it to ld; otherwise
+// it returns ld unchanged.
+func (c *Client) ldDomain(ld string) mms.DomainID {
+	if c.iedName != "" {
+		return mms.DomainID(c.iedName + ld)
+	}
+	return mms.DomainID(ld)
+}
+
+// refToMMS converts a Ref to an MMS domain and item ID, applying the
+// IED name prefix to the domain when configured.
+func (c *Client) refToMMS(ref Ref) (mms.DomainID, mms.ItemID, error) {
+	domain, itemID, err := ref.ToMMS()
+	if err != nil {
+		return "", "", err
+	}
+	if c.iedName != "" {
+		domain = mms.DomainID(c.iedName + string(domain))
+	}
+	return domain, itemID, nil
+}
+
+// stripIEDPrefix removes the IED name prefix from a MMS domain name,
+// returning the bare LD instance name. If iedName is empty or the
+// domain does not have that prefix, the domain is returned unchanged.
+func (c *Client) stripIEDPrefix(domain string) string {
+	if c.iedName != "" && strings.HasPrefix(domain, c.iedName) {
+		return domain[len(c.iedName):]
+	}
+	return domain
 }

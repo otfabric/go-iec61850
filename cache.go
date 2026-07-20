@@ -265,7 +265,9 @@ func (c *Client) doFetchItems(ctx context.Context, ld string) ([]string, error) 
 }
 
 // fetchLDs fetches logical devices from the server (bypasses cache).
-// Results are pre-sorted by name.
+// Results are pre-sorted by name. When the client is configured with an
+// IED name, the prefix is stripped from each MMS domain name so callers
+// always see bare LD instance names.
 func (c *Client) fetchLDs(ctx context.Context) ([]LogicalDevice, error) {
 	names, err := c.mmsClient.GetNameListAll(ctx, mms.NameListRequest{
 		ObjectClass: mms.ObjectClassDomain,
@@ -279,18 +281,20 @@ func (c *Client) fetchLDs(ctx context.Context) ([]LogicalDevice, error) {
 
 	devices := make([]LogicalDevice, len(names))
 	for i, name := range names {
-		devices[i] = LogicalDevice{Name: name}
+		devices[i] = LogicalDevice{Name: c.stripIEDPrefix(name)}
 	}
 	return devices, nil
 }
 
 // fetchItems fetches MMS item IDs for an LD from the server (bypasses
-// cache).
+// cache). The ld parameter is the bare LD instance name; when the client
+// is configured with an IED name, the MMS domain used in the request is
+// iedName+ld.
 func (c *Client) fetchItems(ctx context.Context, ld string) ([]string, error) {
 	items, err := c.mmsClient.GetNameListAll(ctx, mms.NameListRequest{
 		ObjectClass: mms.ObjectClassNamedVariable,
 		Scope:       mms.ObjectScopeDomain,
-		DomainID:    mms.DomainID(ld),
+		DomainID:    c.ldDomain(ld),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("iec61850: list variables in %q: %w", ld, err)

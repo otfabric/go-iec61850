@@ -25,11 +25,10 @@ func (t *chanTransport) Send(_ context.Context, data []byte) error {
 		t.mu.Unlock()
 		return errors.New("transport closed")
 	}
-	t.mu.Unlock()
-
 	cp := make([]byte, len(data))
 	copy(cp, data)
 	t.send <- cp
+	t.mu.Unlock()
 	return nil
 }
 

@@ -48,7 +48,7 @@ func (c *Client) ReadRaw(ctx context.Context, ref Ref) (*mms.Value, error) {
 		return nil, &ReferenceError{Input: ref.String(), Reason: "functional constraint required for read"}
 	}
 
-	domainID, itemID, err := ref.ToMMS()
+	domainID, itemID, err := c.refToMMS(ref)
 	if err != nil {
 		return nil, err
 	}

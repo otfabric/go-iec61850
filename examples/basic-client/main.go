@@ -36,7 +36,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("dial: %v", err)
 	}
-	defer client.Close(context.Background())
+	defer client.Close(context.Background()) //nolint:errcheck
 
 	devices, err := client.ListLogicalDevices(ctx)
 	if err != nil {
