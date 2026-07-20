@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package mapping provides internal helpers for translating between
 // MMS named variables and IEC 61850 model structure.
 package mapping

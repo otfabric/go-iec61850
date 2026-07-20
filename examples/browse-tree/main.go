@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Command browse-tree demonstrates building and printing the IEC 61850
 // model tree from a server, optionally with FC annotations.
 package main

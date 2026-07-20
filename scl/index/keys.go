@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package index provides a shared, indexed view of a parsed SCL model.
 //
 // An [Index] is built once from a normalized [scl.SCL] document and

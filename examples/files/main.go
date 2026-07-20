@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Command files demonstrates listing and reading files from an
 // IEC 61850 server.
 package main

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package servermodel defines the IEC 61850 server-side data model.
 //
 // These types describe the logical structure of an IEC 61850 MMS

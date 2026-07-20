@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package iec61850 provides a pure-Go IEC 61850 MMS client library
 // built on top of [github.com/otfabric/go-mms].
 //
