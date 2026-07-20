@@ -1,5 +1,73 @@
 # go-iec61850 Releases
 
+## v1.0.3
+
+**Added**: Recovery, concurrency, resource-pressure, and decoder-robustness hardening.
+
+### Recovery & lifecycle (`reconnect_test.go`)
+- `TestClientReconnect_AfterServerRestart` — reconnect after server shutdown; new-port server model.
+- `TestClientReconnect_MultipleSequential` — 5 sequential connect/close cycles without resource leak.
+- `TestClientReconnect_URCBResubscription` — URCB re-established after reconnect on same server.
+- `TestClient_NoGoroutineLeakOnConnectDisconnect` — 10 cycles; goroutine delta ≤ 3.
+- `TestServer_Close_StopsReportEngine` — post-close connections refused immediately.
+- `TestClientReconnect_ReadAfterServerClose` — reads return errors (not hang) after server gone.
+
+### BRCB EntryID resume (`interop/brcb_resume_test.go`, `report_engine.go`)
+- Implemented `decodeEntryID` and `filterEntriesAfter` helpers.
+- `enableRCB` reads the client's pre-written EntryID and filters buffer replay to entries strictly after that point.
+- Policy: exclusive boundary — ID N means replay entries > N; zero means full replay; future ID means no replay.
+- EntryIDs are 8-byte big-endian, monotonically increasing from 1, non-persistent across server restarts.
+- `PurgeBuf=true` invalidates all previously issued EntryIDs.
+- Three interop tests: `Resume`, `ZeroResume` (full buffer), `ResumeFromFuture` (no replay).
+
+### Bug fix: BRCB replay skipped after unconditional re-enable (`report_engine.go`)
+- **Root cause**: when a BRCB generated a buffered entry it wrote `EntryID` to the value store. On re-enable, `enableRCB` read that server-written value as the resume filter, excluding the only buffered entry — so no replay was delivered.
+- **Fix**: `EntryID` in the store is reset to all-zero bytes when `RptEna=false` is written. A subsequent re-enable with no client-written EntryID decodes to `resumeID=0`, which means full replay. Tests that explicitly write an EntryID before re-enabling are unaffected — they overwrite the cleared value before `RptEna=true`.
+- Covered by `TestGoServer_BRCB_Replay` (was timing out, now passes).
+
+### Concurrent request hardening (`concurrent_test.go`)
+- Context cancellation releases all in-flight confirmed requests.
+- Asynchronous report delivery does not stall or corrupt concurrent read responses.
+- Aborting the client while 20 writes are in flight — all goroutines exit cleanly.
+- Timed-out requests do not accumulate goroutines (delta ≤ 3 after 10 timeouts).
+
+### Resource pressure tests (`resource_exhaust_test.go`)
+- 50 sequential connections and 20 concurrent connections without descriptor leak.
+- Report flood (30 GIs, queue-size=2) — reads succeed throughout; `OverflowDropNewest` drops silently.
+- 10×200 concurrent `SetValue` with 100 simultaneous client reads — zero read errors.
+
+### SCL corpus expansion (`scl_corpus_test.go`)
+- Multi-LN model (LLN0 + 3×GGIO + MMXU with AnalogueValue DAType/BDA).
+- Multi-LD model (4 logical devices).
+- SDO chain (DPC with Oper sub-object).
+- Enum DAs (ENS with custom enum type).
+- Multi-LN URCB report with cross-LN dataset members.
+
+### Report decoder robustness (additional fuzz targets in `fuzz_test.go`)
+- `FuzzDecodeReportIndication` — arbitrary value arrays (4 seeds: minimal, empty, all-zeros, all-ones).
+- `FuzzDecodeOptFlds` — arbitrary bit-string bytes for the OptFlds decoder.
+- `FuzzDecodeTrgOps` — arbitrary bit-string bytes for the TrgOps decoder.
+- `FuzzDecodeReportIndication_NilValues` — selective nil entries via fuzz-driven bit masks.
+
+### API documentation (`example_test.go`)
+- Added `Example*` functions for `Dial`, `SubscribeReport`, `Write`, `GetReportControlBlock`, `NewServer`, `SetValue`, `RegisterControl`, and `ParseRef`.
+
+### Service profile (`INTEROP.md`)
+- IEC 61850-7-2 service table (client + server columns).
+- CDC conformance table with interop-tested column.
+- Full report features table (URCB/BRCB, all OptFlds).
+- New `BRCB EntryID resume` section with explicit exclusive-boundary contract, byte format, stability guarantees, overflow interaction, and purge invalidation.
+- New `Report backpressure and loss policy` section documenting URCB vs. BRCB queue loss semantics.
+- Known limitations and deferred features table.
+
+### Scheduled fuzz workflow (`.github/workflows/fuzz.yml`)
+- Nightly 5-minute fuzz run per target, with `workflow_dispatch` override.
+- Failing corpus entries uploaded as artifacts (30-day retention).
+
+**Race detector**: `go test -race ./...` passes cleanly in both `go-iec61850` and `go-mms`.
+
+---
+
 ## v1.0.2
 
 **Fixed**: SBO/SBOw control server — connection-scoped ownership and ctlVal matching.

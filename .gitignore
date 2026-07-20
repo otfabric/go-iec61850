@@ -8,6 +8,8 @@
 /scl-parse
 /sclgen
 /sclparse
+/ied-client
+/ied-server
 
 # Test / fuzz
 *.test

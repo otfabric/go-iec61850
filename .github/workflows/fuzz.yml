@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: MIT
+#
+# Scheduled fuzzing workflow.
+#
+# Runs nightly to explore new inputs beyond the committed seed corpus.
+# Each target gets 5 minutes of fuzzing. Failures create a new issue or
+# notify via the CI failure; the failing corpus entry is uploaded as an
+# artifact for local reproduction.
+#
+# Manually triggerable via workflow_dispatch for on-demand deeper runs.
+
+name: fuzz
+
+on:
+  schedule:
+    # 02:00 UTC nightly
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: "Fuzz duration per target (e.g. 5m, 30m, 2h)"
+        required: false
+        default: "5m"
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - FuzzParseRef
+          - FuzzParseFC
+          - FuzzDecodeQuality
+          - FuzzNewValue
+          - FuzzDecodeReportIndication
+          - FuzzDecodeOptFlds
+          - FuzzDecodeTrgOps
+          - FuzzDecodeReportIndication_NilValues
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Fuzz ${{ matrix.target }}
+        env:
+          FUZZ_TIME: ${{ github.event.inputs.fuzztime || '5m' }}
+        run: |
+          FUZZ_SECS=$(echo "${FUZZ_TIME}" | sed 's/h/*3600/;s/m/*60/;s/s//' | bc)
+          TIMEOUT_SECS=$((FUZZ_SECS + 120))
+          go test -run=^$ \
+            -fuzz=^${{ matrix.target }}$ \
+            -fuzztime=${FUZZ_TIME} \
+            -timeout=${TIMEOUT_SECS}s \
+            github.com/otfabric/go-iec61850
+
+      - name: Upload failing corpus entry
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-failure-${{ matrix.target }}-${{ github.run_id }}
+          path: testdata/fuzz/${{ matrix.target }}/
+          if-no-files-found: ignore
+          retention-days: 30
