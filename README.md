@@ -250,8 +250,8 @@ func main() {
 | `ListDataSets` | List all datasets in an LD |
 | `GetDataSet` | Get dataset definition and member list |
 | `ReadDataSet` | Read all dataset member values |
-| `CreateDataSet` | Create a dynamic named variable list |
-| `DeleteDataSet` | Delete a dynamic named variable list |
+| `CreateDataSet` | Create a dynamic named variable list (client only; server-side dynamic dataset creation is not yet implemented) |
+| `DeleteDataSet` | Delete a dynamic named variable list (client only; server-side dynamic dataset deletion is not yet implemented) |
 
 ### Reports (URCB / BRCB)
 
@@ -286,7 +286,7 @@ func main() {
 | `DownloadFile` | Stream file to an `io.Writer` |
 | `DeleteFile` | Delete a file |
 | `RenameFile` | Rename a file |
-| `ObtainFile` | Server-to-server file transfer (ObtainFile service) |
+| `ObtainFile` | Request server to copy a file from source to destination via its `FileProvider`; MMS segmented role-reversal not implemented |
 
 ### Journals
 
@@ -546,6 +546,10 @@ Tests live in `interop/` behind `-tags=interop` and cover:
 basic operations, URCB/BRCB reporting, CDC reads (SPS, DPS, MV, BCR),
 quality and timestamp semantics, datasets, direct/SBO/SBOw controls,
 multi-client concurrency, and negative/error cases.
+
+**Scope of interoperability evidence:** two independent software stacks have
+been tested. Interoperability with physical IEDs (protection relays, meters,
+bay controllers, RTUs) has not yet been formally established.
 
 See [INTEROP.md](INTEROP.md) for the full compatibility matrix and
 `make interop` to run the suite locally.
