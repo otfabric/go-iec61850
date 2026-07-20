@@ -21,13 +21,13 @@ import (
 //
 // # Stability
 //
-// The server API is experimental but functional. It supports variable
-// registration, control operations (select/operate/cancel), runtime
-// report delivery (data-change, quality-change, integrity, GI
-// triggers), setting groups (active/edit selection, confirmation,
-// handler callbacks), and journal services (runtime log entry
-// generation with in-memory storage). Breaking changes are possible
-// in future releases.
+// The server API is stable as of v1.0.0. It supports variable
+// registration, control operations (direct normal, SBO normal, and SBOw
+// enhanced security with connection-scoped ownership enforcement),
+// runtime report delivery (data-change, quality-change, integrity-period,
+// GI triggers, BRCB replay on re-enable), setting groups (active/edit
+// selection, confirmation, handler callbacks), and journal services
+// (runtime log entry generation with in-memory storage).
 //
 // # Known limitations
 //

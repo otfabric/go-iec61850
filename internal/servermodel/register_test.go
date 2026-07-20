@@ -3,6 +3,8 @@
 package servermodel
 
 import (
+	"context"
+	"fmt"
 	"testing"
 
 	"github.com/otfabric/go-mms"
@@ -355,4 +357,79 @@ func TestValueStore_Concurrent(t *testing.T) {
 		vs.Get("key")
 	}
 	<-done
+}
+
+// TestValueStore_WriteInterceptor_NotSet verifies that CallInterceptorForTest
+// returns (false, nil) when no interceptor has been installed.
+func TestValueStore_WriteInterceptor_NotSet(t *testing.T) {
+	vs := NewValueStore()
+	handled, err := vs.CallInterceptorForTest(context.Background(), "LD1/key", mms.NewBoolean(true))
+	if handled || err != nil {
+		t.Errorf("no interceptor: got (handled=%v, err=%v), want (false, nil)", handled, err)
+	}
+}
+
+// TestValueStore_WriteInterceptor_Handled verifies that an interceptor
+// returning (true, nil) is correctly forwarded.
+func TestValueStore_WriteInterceptor_Handled(t *testing.T) {
+	vs := NewValueStore()
+	vs.SetWriteInterceptor(func(_ context.Context, key string, val *mms.Value) (bool, error) {
+		return true, nil
+	})
+	handled, err := vs.CallInterceptorForTest(context.Background(), "LD1/key", mms.NewBoolean(true))
+	if !handled || err != nil {
+		t.Errorf("handled interceptor: got (handled=%v, err=%v), want (true, nil)", handled, err)
+	}
+}
+
+// TestValueStore_WriteInterceptor_Rejected verifies that an interceptor
+// returning (true, err) propagates the error.
+func TestValueStore_WriteInterceptor_Rejected(t *testing.T) {
+	vs := NewValueStore()
+	wantErr := fmt.Errorf("access denied")
+	vs.SetWriteInterceptor(func(_ context.Context, key string, val *mms.Value) (bool, error) {
+		return true, wantErr
+	})
+	handled, err := vs.CallInterceptorForTest(context.Background(), "LD1/key", mms.NewBoolean(true))
+	if !handled || err != wantErr {
+		t.Errorf("rejected interceptor: got (handled=%v, err=%v), want (true, wantErr)", handled, err)
+	}
+}
+
+// TestValueStore_WriteInterceptor_Passthrough verifies that (false, nil)
+// from an interceptor lets the normal write path proceed.
+func TestValueStore_WriteInterceptor_Passthrough(t *testing.T) {
+	vs := NewValueStore()
+	vs.SetWriteInterceptor(func(_ context.Context, key string, val *mms.Value) (bool, error) {
+		return false, nil // pass through to normal write
+	})
+	handled, err := vs.CallInterceptorForTest(context.Background(), "LD1/key", mms.NewBoolean(true))
+	if handled || err != nil {
+		t.Errorf("passthrough interceptor: got (handled=%v, err=%v), want (false, nil)", handled, err)
+	}
+}
+
+// TestValueStore_WriteInterceptor_Replace verifies that setting a new
+// interceptor replaces the previous one.
+func TestValueStore_WriteInterceptor_Replace(t *testing.T) {
+	vs := NewValueStore()
+	callCount := 0
+	vs.SetWriteInterceptor(func(_ context.Context, _ string, _ *mms.Value) (bool, error) {
+		callCount++
+		return true, nil
+	})
+	vs.CallInterceptorForTest(context.Background(), "k", mms.NewBoolean(true)) //nolint:errcheck
+
+	// Replace with a new interceptor that always rejects.
+	vs.SetWriteInterceptor(func(_ context.Context, _ string, _ *mms.Value) (bool, error) {
+		callCount += 10
+		return true, fmt.Errorf("replaced")
+	})
+	_, err := vs.CallInterceptorForTest(context.Background(), "k", mms.NewBoolean(false))
+	if err == nil {
+		t.Fatal("replaced interceptor should return error")
+	}
+	if callCount != 11 { // 1 from first interceptor + 10 from replacement
+		t.Errorf("callCount = %d, want 11", callCount)
+	}
 }

@@ -1,5 +1,68 @@
 # go-iec61850 Releases
 
+## v1.0.2
+
+**Fixed**: SBO/SBOw control server — connection-scoped ownership and ctlVal matching.
+
+- `controlRegistration` now tracks `selectConn *mms.ServerConn` (SBO normal and SBOw contention) and `selectCtlVal *mms.Value` (SBOw value matching).
+- `executeSelect` denies a second client's select when an active selection by a different connection exists; stale selections (owner disconnected or timed out) are cleared automatically.
+- `executeOperate` (SBOw) rejects operates where the operating connection does not match the selecting connection (`AddCauseSelectFailed`) or where the `ctlVal` differs from the one provided at select time (`AddCauseParameterChange`).
+- `executeCancel` enforces ownership for both SBO normal (connection identity) and SBOw (connection + origin identity).
+- `handleSBOSelectRead` lazily clears a stale selection when the previous owner's connection is no longer active, allowing immediate re-selection by a new client.
+- `isConnActive` helper queries the live `mms.Server.Connections()` list to determine whether a stored `*ServerConn` is still open.
+- `mmsValuesEqual` helper compares two `*mms.Value` instances by type and byte content.
+
+**Added**: `ControlHandler.SelectTimeout` — configurable per-control select reservation timeout.
+
+When `SelectTimeout > 0` in a `ControlHandler`, that duration overrides `DefaultSelectTimeout` (30 s) for that specific control object. Allows tests and applications to use short timeouts without changing the global default.
+
+**Fixed**: Panic containment for `ControlHandler` callbacks.
+
+`callControlHandler` wraps every invocation of `OnSelect` and `OnOperate` in a `defer recover()`. A panic in application callback code is caught and returned as a `*ControlError` instead of crashing the server goroutine.
+
+**Fixed**: Panic containment for `OnOverflow` report callback.
+
+`deliver` in `report.go` wraps the `OverflowCallback` invocation in a `defer recover()`, preventing an application panic from terminating the report delivery goroutine.
+
+**Fixed**: RCB write interceptor value-restore on rejection.
+
+`internal/servermodel.registerRCB` now saves the previous store value before calling `vs.Set`, and restores it if the write interceptor (e.g. `ReportEngine.HandleRCBWrite`) returns an error. This prevents a rejected URCB `Resv` or `RptEna` write from leaving the value store in an inconsistent state.
+
+**Fixed**: URCB reservation and enable ownership enforcement.
+
+`ReportEngine.HandleRCBWrite` now enforces connection-scoped ownership for `Resv` and `RptEna` writes:
+- `Resv=true` is rejected with `DataAccessErrorObjectAccessDenied` if another active connection already holds the reservation.
+- `Resv=false` is rejected if the clearing client does not own the reservation.
+- `RptEna=true` is rejected for URCBs if the enabling client is not the reservation owner.
+- Stale reservations (owner disconnected) are released automatically so a new client can reserve immediately.
+
+**Added**: BRCB replay on re-enable.
+
+`ReportEngine.enableRCB` now replays all buffered entries to the enabling connection when a BRCB is re-enabled with a non-empty buffer. Replay is delivered asynchronously via `replayBRCBEntries` after a 150 ms delay (to ensure the `RptEna` write response reaches the client before the first replayed report). `ReportEngine.SetRCBBufMax` allows test code to shrink the buffer for overflow testing without changing the default.
+
+**Added**: DPS and BCR CDCs to the interop fixture.
+
+`interop/testdata/interop.icd` (and the matching `mms-interop` fixture) now includes:
+- `GGIO1.DPS1` — double-point status (`Dbpos` 2-bit BitString, cdc=DPS).
+- `MMTR1.TotVAh` — binary counter reading (`INT32U`, cdc=BCR).
+- `brcb01` buffered report control block with `entryID=true` and `bufOvfl=true` in `OptFields`.
+
+**Added**: Interop test coverage for new phases.
+
+New test files gated behind `-tags=interop`:
+
+- `interop/brcb_test.go` — `TestGoServer_BRCB_EntryID`, `_Replay`, `_Purge`, `_Overflow`.
+- `interop/cdc_test.go` — DPS and BCR read tests in all four directions (adapter directions skip pending `mms-interop` image rebuild).
+- `interop/quality_timestamp_test.go` — Quality validity states (good/invalid/questionable/detail-bits), UTC timestamp round-trip, quality flags (`LeapSecondsKnown`, `ClockNotSynchronized`), and fractional-second accuracy sub-tests.
+- `interop/sbo_state_test.go` — Full SBO/SBOw state-machine suite: cancel by non-owner, configurable select timeout, repeated select, second-client contention, disconnect releases selection, SBOw `ctlVal` mismatch, SBOw second-client contention.
+- `interop/urcb_reservation_test.go` — Double-reserve same/different connection, enable without ownership, disconnect releases reservation.
+- `interop/urcb_integrity_test.go` — Integrity-period delivery, coexistence with dchg, disable stops timer.
+- `interop/urcb_trigger_test.go` — Data-change, quality-change, data-update, no-dchg-on-same-value, multiple-trigger coalescing.
+- `interop/multi_client_test.go` — Concurrent reads (5 clients), concurrent writes to independent variables, invoke-ID isolation (3 clients × 10 reads), disconnect-one-keeps-others.
+- `interop/dataset_depth_test.go` additions — `TestGoServer_DS_WritePartialFail` (type-mismatch partial failure in `WriteMultiple`), `TestGoServer_DS_NestedDORead` (structured MX read of `TotW.mag`).
+
+---
+
 ## v1.0.1
 
 **Added**: MIT `LICENSE` with copyright `Copyright (c) 2026 OT Fabric`.
