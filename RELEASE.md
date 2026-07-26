@@ -1,5 +1,23 @@
 # go-iec61850 Releases
 
+## v1.0.6
+
+### Fixed
+
+- **Report subscription overflow tests** — `TestSubscribeReport_QueueOverflow` and
+  `TestSubscribeReport_OverflowDropOldest` no longer use a fixed sleep plus non-blocking
+  drain. They wait for the first delivered report (timeout) before draining the channel,
+  which removes a flake under `-race` on busy CI (observed on Go 1.26).
+- **Report engine logging** — removed accidental `stderr` debug prints from the URCB
+  delayed-send path (`[DBG] send OK` / `send failed`). Failures remain on the structured
+  logger.
+
+No API changes. No breaking changes.
+
+Import path remains `github.com/otfabric/go-iec61850`.
+
+---
+
 ## v1.0.5
 
 ### Dependencies

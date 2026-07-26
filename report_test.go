@@ -778,11 +778,20 @@ func TestSubscribeReport_QueueOverflow(t *testing.T) {
 		}
 	}
 
-	// Allow time for dispatch to process all broadcasts.
-	time.Sleep(200 * time.Millisecond)
-
-	// Drain whatever made it into the channel.
+	// Wait for the first delivery (async MMS recv path); fixed sleeps flake
+	// under -race on busy CI runners.
 	received := 0
+	select {
+	case _, ok := <-sub.Reports():
+		if !ok {
+			t.Fatal("channel closed unexpectedly")
+		}
+		received = 1
+	case <-time.After(5 * time.Second):
+		t.Fatal("expected at least 1 report to be delivered")
+	}
+
+	// Drain whatever else is already buffered without waiting for more.
 	for {
 		select {
 		case _, ok := <-sub.Reports():
@@ -799,9 +808,6 @@ done:
 		// The channel has buffer=2; we shouldn't get more than 2 without
 		// draining between broadcasts.
 		t.Logf("received %d (buffer=2, some may have been drained during dispatch)", received)
-	}
-	if received == 0 {
-		t.Error("expected at least 1 report to be delivered")
 	}
 }
 
@@ -1055,20 +1061,18 @@ func TestSubscribeReport_OverflowDropOldest(t *testing.T) {
 		})
 	}
 
-	time.Sleep(200 * time.Millisecond)
-
-	received := 0
+	select {
+	case <-sub.Reports():
+	case <-time.After(5 * time.Second):
+		t.Fatal("expected at least 1 report")
+	}
+	// Drain any remaining buffered reports (overflow policy may keep up to QueueSize).
 	for {
 		select {
 		case <-sub.Reports():
-			received++
 		default:
-			goto done
+			return
 		}
-	}
-done:
-	if received == 0 {
-		t.Error("expected at least 1 report")
 	}
 }
 
