@@ -7,7 +7,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -791,10 +790,8 @@ func (re *ReportEngine) sendReport(_ context.Context, rt *rcbRuntime, seqNum uin
 			if err := enableConn.SendInformationReport(context.Background(), req); err != nil {
 				re.logger.Warn("iec61850: URCB report send to enableConn failed",
 					"rcb", rt.rcbItemID, "error", err)
-				fmt.Fprintf(os.Stderr, "[DBG] send failed: %v\n", err)
 			} else {
 				re.logger.Info("iec61850: URCB report sent", "rcb", rt.rcbItemID)
-				fmt.Fprintf(os.Stderr, "[DBG] send OK nValues=%d\n", len(req.Values))
 			}
 		}()
 		return
