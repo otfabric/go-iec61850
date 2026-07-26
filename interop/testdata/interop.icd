@@ -115,6 +115,7 @@
       <DO name="SPCSO1" type="SPC_Type"/>
       <DO name="SPCSO2" type="SPC_Type"/>
       <DO name="SPCSO3" type="SPC_Type"/>
+      <DO name="SetInt1" type="ING_Type"/>
     </LNodeType>
 
     <LNodeType id="MMXU1_Type" lnClass="MMXU" desc="Measurement unit">
@@ -184,6 +185,13 @@
     <DOType id="BCR_Type" cdc="BCR" desc="Binary counter reading">
       <DA name="actVal" fc="ST" bType="INT32U"  dchg="true"/>
       <DA name="q"      fc="ST" bType="Quality"/>
+      <DA name="t"      fc="ST" bType="Timestamp"/>
+    </DOType>
+
+    <!-- ING: Integer status setting (GGIO1.SetInt1) — writable setVal[SP] -->
+    <DOType id="ING_Type" cdc="ING" desc="Integer status setting">
+      <DA name="setVal" fc="SP" bType="INT32"/>
+      <DA name="q"      fc="ST" bType="Quality" qchg="true"/>
       <DA name="t"      fc="ST" bType="Timestamp"/>
     </DOType>
 
