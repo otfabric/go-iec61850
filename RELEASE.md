@@ -1,5 +1,17 @@
 # go-iec61850 Releases
 
+## v1.0.5
+
+### Dependencies
+
+- Bumped `github.com/otfabric/go-mms` from **v1.0.4 → v1.0.5** (fix 32-bit / linux armv7 compile overflow in file PDU error formatting).
+
+No API changes. No breaking changes.
+
+Import path remains `github.com/otfabric/go-iec61850`.
+
+---
+
 ## v1.0.4
 
 Documentation, lint hardening, and code-quality improvements. No API changes, no behavior changes.
