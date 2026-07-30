@@ -164,6 +164,8 @@
 //
 // # Logging
 //
-// All logging uses [log/slog]. Inject a logger via [DialOptions.Logger]
-// or [ClientOptions.Logger]. When nil, no logging is emitted.
+// All logging uses [log/slog]. Inject a logger via [DialOptions.Logger],
+// [ClientOptions.Logger], or [ServerOptions.Logger]. When nil, no logging
+// is emitted. On Dial/NewServer, a nil nested MMS logger inherits the IEC
+// logger; [iso.WithLogger] is independent. See OBSERVABILITY.md.
 package iec61850

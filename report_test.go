@@ -334,6 +334,43 @@ func TestListReports_EmptyLD(t *testing.T) {
 	}
 }
 
+func TestListReportsVerified(t *testing.T) {
+	client, _, _ := setupRCBLoopback(t)
+	ctx := context.Background()
+
+	rcbs, err := client.ListReportsVerified(ctx, "simpleIOGenericIO")
+	if err != nil {
+		t.Fatalf("ListReportsVerified: %v", err)
+	}
+	if len(rcbs) != 2 {
+		t.Fatalf("got %d verified RCBs, want 2", len(rcbs))
+	}
+
+	// Direct verify path with a mix of good and bad candidates.
+	verified := client.verifyReportCandidates(ctx, "simpleIOGenericIO", []string{
+		"LLN0$BR$brcb01",
+		"LLN0$BR$notARealRCB",
+		"LLN0$RP$urcb01",
+	})
+	if len(verified) != 2 {
+		t.Fatalf("verifyReportCandidates = %v, want 2 valid", verified)
+	}
+}
+
+func TestListReports_VerifyCandidatesOption(t *testing.T) {
+	client, _, _ := setupRCBLoopback(t)
+	client.opts.Strictness.VerifyReportCandidates = true
+	ctx := context.Background()
+
+	rcbs, err := client.ListReports(ctx, "simpleIOGenericIO")
+	if err != nil {
+		t.Fatalf("ListReports with verify: %v", err)
+	}
+	if len(rcbs) != 2 {
+		t.Fatalf("got %d RCBs, want 2", len(rcbs))
+	}
+}
+
 func TestGetReportControlBlock_BRCB(t *testing.T) {
 	client, _, _ := setupRCBLoopback(t)
 	ctx := context.Background()

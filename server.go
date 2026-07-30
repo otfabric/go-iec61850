@@ -79,7 +79,10 @@ type Server struct {
 
 // ServerOptions configures the IEC 61850 server.
 type ServerOptions struct {
-	// Logger, when non-nil, enables structured logging.
+	// Logger, when non-nil, enables structured logging. When
+	// [ServerOptions.MMS].Logger is also nil, this logger is passed
+	// through to the underlying [mms.Server]. ISO transport logging
+	// ([iso.WithLogger]) is independent and is not set from here.
 	Logger *slog.Logger
 
 	// Identity, when non-nil, registers the MMS Identify handler so

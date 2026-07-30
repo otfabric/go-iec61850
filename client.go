@@ -58,6 +58,16 @@ type Client struct {
 	fetchItemsFn func(ctx context.Context, ld string) ([]string, error)
 }
 
+// dialMMSOptions returns MMS dial options with Logger filled from the
+// IEC logger when MMS.Logger is unset (mirrors NewServer behaviour).
+func dialMMSOptions(opts DialOptions, logger *slog.Logger) mms.DialOptions {
+	mmsOpts := opts.MMS
+	if mmsOpts.Logger == nil {
+		mmsOpts.Logger = logger
+	}
+	return mmsOpts
+}
+
 // Dial establishes a new IEC 61850 MMS connection to the specified
 // address (host:port).
 //
@@ -72,7 +82,7 @@ func Dial(ctx context.Context, addr string, opts DialOptions) (*Client, error) {
 	logger.Info("iec61850: dialing", "addr", addr)
 
 	mmsClient, err := iso.Dial(ctx, addr,
-		iso.WithClientDialOptions(opts.MMS),
+		iso.WithClientDialOptions(dialMMSOptions(opts, logger)),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("iec61850: dial %s: %w", addr, err)

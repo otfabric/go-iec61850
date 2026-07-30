@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -110,6 +111,14 @@ func TestOperate_ClosedClient(t *testing.T) {
 	}
 }
 
+func TestOperate_InvalidRef(t *testing.T) {
+	c := &Client{logger: discardLogger(), mmsClient: &mms.Client{}}
+	err := c.Operate(context.Background(), Ref{LD: "LD1", LN: "GGIO1"}, OperateParams{CtlVal: BoolCtlVal(true)})
+	if !errors.Is(err, ErrInvalidArgument) {
+		t.Errorf("expected ErrInvalidArgument, got %v", err)
+	}
+}
+
 func TestSelectWithValue_NilCtlVal(t *testing.T) {
 	c := &Client{
 		logger:    discardLogger(),
@@ -121,6 +130,23 @@ func TestSelectWithValue_NilCtlVal(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for nil CtlVal")
 	}
+	if !errors.Is(err, ErrInvalidArgument) {
+		t.Errorf("expected ErrInvalidArgument, got %v", err)
+	}
+}
+
+func TestSelectWithValue_ClosedClient(t *testing.T) {
+	c := &Client{logger: discardLogger(), mmsClient: &mms.Client{}, state: clientClosed}
+	ref := Ref{LD: "LD1", LN: "GGIO1", Path: []string{"SPCSO1"}}
+	err := c.SelectWithValue(context.Background(), ref, OperateParams{CtlVal: BoolCtlVal(true)})
+	if !errors.Is(err, ErrClosed) {
+		t.Errorf("expected ErrClosed, got %v", err)
+	}
+}
+
+func TestSelectWithValue_InvalidRef(t *testing.T) {
+	c := &Client{logger: discardLogger(), mmsClient: &mms.Client{}}
+	err := c.SelectWithValue(context.Background(), Ref{LD: "LD1"}, OperateParams{CtlVal: BoolCtlVal(true)})
 	if !errors.Is(err, ErrInvalidArgument) {
 		t.Errorf("expected ErrInvalidArgument, got %v", err)
 	}
@@ -139,6 +165,226 @@ func TestCancel_NilCtlVal(t *testing.T) {
 	}
 	if !errors.Is(err, ErrInvalidArgument) {
 		t.Errorf("expected ErrInvalidArgument, got %v", err)
+	}
+}
+
+func TestCancel_ClosedClient(t *testing.T) {
+	c := &Client{logger: discardLogger(), mmsClient: &mms.Client{}, state: clientClosed}
+	ref := Ref{LD: "LD1", LN: "GGIO1", Path: []string{"SPCSO1"}}
+	err := c.Cancel(context.Background(), ref, CancelParams{CtlVal: BoolCtlVal(true)})
+	if !errors.Is(err, ErrClosed) {
+		t.Errorf("expected ErrClosed, got %v", err)
+	}
+}
+
+func TestSelect_ClosedClient(t *testing.T) {
+	c := &Client{logger: discardLogger(), mmsClient: &mms.Client{}, state: clientClosed}
+	_, err := c.Select(context.Background(), Ref{LD: "LD1", LN: "GGIO1", Path: []string{"SPCSO1"}})
+	if !errors.Is(err, ErrClosed) {
+		t.Errorf("expected ErrClosed, got %v", err)
+	}
+}
+
+func TestSelect_InvalidRef(t *testing.T) {
+	c := &Client{logger: discardLogger(), mmsClient: &mms.Client{}}
+	_, err := c.Select(context.Background(), Ref{LD: "LD1", LN: "GGIO1"})
+	if !errors.Is(err, ErrInvalidArgument) {
+		t.Errorf("expected ErrInvalidArgument, got %v", err)
+	}
+}
+
+func TestReadCtlModel_ClosedClient(t *testing.T) {
+	c := &Client{logger: discardLogger(), mmsClient: &mms.Client{}, state: clientClosed}
+	_, err := c.ReadCtlModel(context.Background(), Ref{LD: "LD1", LN: "GGIO1", Path: []string{"SPCSO1"}})
+	if !errors.Is(err, ErrClosed) {
+		t.Errorf("expected ErrClosed, got %v", err)
+	}
+}
+
+func TestReadCtlModel_InvalidRef(t *testing.T) {
+	c := &Client{logger: discardLogger(), mmsClient: &mms.Client{}}
+	_, err := c.ReadCtlModel(context.Background(), Ref{LD: "LD1", LN: "GGIO1"})
+	if !errors.Is(err, ErrInvalidArgument) {
+		t.Errorf("expected ErrInvalidArgument, got %v", err)
+	}
+}
+
+func TestReadLastApplError_ClosedClient(t *testing.T) {
+	c := &Client{logger: discardLogger(), mmsClient: &mms.Client{}, state: clientClosed}
+	_, err := c.ReadLastApplError(context.Background(), Ref{LD: "LD1", LN: "GGIO1", Path: []string{"SPCSO1"}})
+	if !errors.Is(err, ErrClosed) {
+		t.Errorf("expected ErrClosed, got %v", err)
+	}
+}
+
+// setupControlLoopback registers Oper/SBOw/Cancel/SBO/ctlModel/LastApplError
+// variables for client control API happy-path tests.
+func setupControlLoopback(t *testing.T) *Client {
+	t.Helper()
+	ctx := context.Background()
+
+	mu := &sync.Mutex{}
+	store := map[string]*mms.Value{}
+
+	srv := mms.NewServer(mms.ServerOptions{
+		MMS: mms.ServerMMSOptions{
+			MaxPDUSize:                65000,
+			MaxOutstandingCalling:     5,
+			MaxOutstandingCalled:      5,
+			DataStructureNestingLevel: 10,
+		},
+	})
+
+	domain := "LD1"
+	if err := srv.RegisterDomain(domain); err != nil {
+		t.Fatalf("register domain: %v", err)
+	}
+
+	register := func(itemID string, ts mms.TypeSpec, initial *mms.Value) {
+		t.Helper()
+		key := domain + "/" + itemID
+		mu.Lock()
+		store[key] = initial
+		mu.Unlock()
+		if err := srv.RegisterVariable(mms.Variable{
+			Name:     mms.ObjectName{Scope: mms.ObjectScopeDomain, Domain: mms.DomainID(domain), ItemID: mms.ItemID(itemID)},
+			TypeSpec: ts,
+			Read: func(_ context.Context) (*mms.Value, error) {
+				mu.Lock()
+				defer mu.Unlock()
+				return store[key], nil
+			},
+			Write: func(_ context.Context, val *mms.Value) error {
+				mu.Lock()
+				defer mu.Unlock()
+				store[key] = val
+				return nil
+			},
+		}); err != nil {
+			t.Fatalf("register %q: %v", itemID, err)
+		}
+	}
+
+	structTS := mms.TypeSpec{Type: mms.ValueTypeStructure}
+	register("GGIO1$CO$SPCSO1$Oper", structTS, mms.NewStructure(nil))
+	register("GGIO1$CO$SPCSO1$SBOw", structTS, mms.NewStructure(nil))
+	register("GGIO1$CO$SPCSO1$Cancel", structTS, mms.NewStructure(nil))
+	register("GGIO1$CO$SPCSO1$SBO", mms.TypeSpec{Type: mms.ValueTypeVisibleString}, mms.NewVisibleString("LD1/GGIO1$CO$SPCSO1"))
+	register("GGIO1$CF$SPCSO1$ctlModel", mms.TypeSpec{Type: mms.ValueTypeInteger, Size: 8}, mms.NewInteger(int64(CtlModelDirectNormal)))
+	register("GGIO1$CO$LastApplError", structTS, mms.NewStructure([]*mms.Value{
+		mms.NewVisibleString("LD1/GGIO1.SPCSO1"),
+		mms.NewInteger(1),
+		mms.NewStructure([]*mms.Value{
+			mms.NewInteger(int64(OrCatRemoteControl)),
+			mms.NewOctetString([]byte{1}),
+		}),
+		mms.NewInteger(int64(AddCauseSelectFailed)),
+	}))
+	register("GGIO1$CO$SPCSO2$SBO", mms.TypeSpec{Type: mms.ValueTypeVisibleString}, mms.NewVisibleString(""))
+	register("GGIO1$CO$SPCSO3$SBO", mms.TypeSpec{Type: mms.ValueTypeInteger, Size: 8}, mms.NewInteger(1))
+
+	clientT, serverT := loopbackPair()
+	go func() { _ = srv.Serve(ctx, serverT) }()
+
+	mmsClient, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
+	if err != nil {
+		t.Fatalf("mms.NewClient: %v", err)
+	}
+	client, err := NewClient(mmsClient, ClientOptions{})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close(ctx) })
+	return client
+}
+
+func TestOperate_HappyPath(t *testing.T) {
+	client := setupControlLoopback(t)
+	ref := Ref{LD: "LD1", LN: "GGIO1", Path: []string{"SPCSO1"}}
+	if err := client.Operate(context.Background(), ref, OperateParams{CtlVal: BoolCtlVal(true), CtlNum: 1}); err != nil {
+		t.Fatalf("Operate: %v", err)
+	}
+}
+
+func TestSelect_HappyPath(t *testing.T) {
+	client := setupControlLoopback(t)
+	ref := Ref{LD: "LD1", LN: "GGIO1", Path: []string{"SPCSO1"}}
+	selected, err := client.Select(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("Select: %v", err)
+	}
+	if selected == "" {
+		t.Fatal("expected non-empty SBO string")
+	}
+}
+
+func TestSelect_DeniedEmpty(t *testing.T) {
+	client := setupControlLoopback(t)
+	_, err := client.Select(context.Background(), Ref{LD: "LD1", LN: "GGIO1", Path: []string{"SPCSO2"}})
+	if err == nil {
+		t.Fatal("expected select denied for empty SBO")
+	}
+}
+
+func TestSelect_UnexpectedType(t *testing.T) {
+	client := setupControlLoopback(t)
+	_, err := client.Select(context.Background(), Ref{LD: "LD1", LN: "GGIO1", Path: []string{"SPCSO3"}})
+	if err == nil {
+		t.Fatal("expected type error for non-VisibleString SBO")
+	}
+}
+
+func TestSelectWithValue_HappyPath(t *testing.T) {
+	client := setupControlLoopback(t)
+	ref := Ref{LD: "LD1", LN: "GGIO1", Path: []string{"SPCSO1"}}
+	if err := client.SelectWithValue(context.Background(), ref, OperateParams{CtlVal: BoolCtlVal(true), CtlNum: 2}); err != nil {
+		t.Fatalf("SelectWithValue: %v", err)
+	}
+}
+
+func TestCancel_HappyPath(t *testing.T) {
+	client := setupControlLoopback(t)
+	ref := Ref{LD: "LD1", LN: "GGIO1", Path: []string{"SPCSO1"}}
+	if err := client.Cancel(context.Background(), ref, CancelParams{CtlVal: BoolCtlVal(true), CtlNum: 3}); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+}
+
+func TestReadCtlModel_HappyPath(t *testing.T) {
+	client := setupControlLoopback(t)
+	model, err := client.ReadCtlModel(context.Background(), Ref{LD: "LD1", LN: "GGIO1", Path: []string{"SPCSO1"}})
+	if err != nil {
+		t.Fatalf("ReadCtlModel: %v", err)
+	}
+	if model != CtlModelDirectNormal {
+		t.Errorf("ctlModel = %v, want DirectNormal", model)
+	}
+}
+
+func TestReadLastApplError_HappyPath(t *testing.T) {
+	client := setupControlLoopback(t)
+	lae, err := client.ReadLastApplError(context.Background(), Ref{LD: "LD1", LN: "GGIO1", Path: []string{"SPCSO1"}})
+	if err != nil {
+		t.Fatalf("ReadLastApplError: %v", err)
+	}
+	if lae == nil || lae.CntrlObj != "LD1/GGIO1.SPCSO1" {
+		t.Fatalf("unexpected LastApplError: %+v", lae)
+	}
+	if lae.AddCause != AddCauseSelectFailed {
+		t.Errorf("AddCause = %v, want SelectFailed", lae.AddCause)
+	}
+}
+
+func TestOperate_WriteFailure(t *testing.T) {
+	client := setupControlLoopback(t)
+	// Unknown DO — writeControlValue / MMS write fails.
+	err := client.Operate(context.Background(), Ref{LD: "LD1", LN: "GGIO1", Path: []string{"NoSuch"}}, OperateParams{CtlVal: BoolCtlVal(true), CtlNum: 1})
+	if err == nil {
+		t.Fatal("expected write failure")
+	}
+	var ce *ControlError
+	if !errors.As(err, &ce) {
+		t.Errorf("expected ControlError, got %T: %v", err, err)
 	}
 }
 
@@ -622,6 +868,59 @@ func TestDecodeLastApplError_Strict(t *testing.T) {
 	})
 	if _, err := decodeLastApplError(bad3); err == nil {
 		t.Error("expected error for Origin not being a structure")
+	}
+
+	// Origin structure with too few members.
+	bad4 := mms.NewStructure([]*mms.Value{
+		mms.NewVisibleString("ref"),
+		mms.NewInteger(1),
+		mms.NewStructure([]*mms.Value{mms.NewInteger(1)}),
+		mms.NewInteger(0),
+	})
+	if _, err := decodeLastApplError(bad4); err == nil {
+		t.Error("expected error for short Origin")
+	}
+
+	// OrCat wrong type.
+	bad5 := mms.NewStructure([]*mms.Value{
+		mms.NewVisibleString("ref"),
+		mms.NewInteger(1),
+		mms.NewStructure([]*mms.Value{
+			mms.NewVisibleString("not-int"),
+			mms.NewOctetString([]byte{1}),
+		}),
+		mms.NewInteger(0),
+	})
+	if _, err := decodeLastApplError(bad5); err == nil {
+		t.Error("expected error for OrCat type")
+	}
+
+	// OrIdent wrong type.
+	bad6 := mms.NewStructure([]*mms.Value{
+		mms.NewVisibleString("ref"),
+		mms.NewInteger(1),
+		mms.NewStructure([]*mms.Value{
+			mms.NewInteger(1),
+			mms.NewVisibleString("not-octets"),
+		}),
+		mms.NewInteger(0),
+	})
+	if _, err := decodeLastApplError(bad6); err == nil {
+		t.Error("expected error for OrIdent type")
+	}
+
+	// AddCause wrong type.
+	bad7 := mms.NewStructure([]*mms.Value{
+		mms.NewVisibleString("ref"),
+		mms.NewInteger(1),
+		mms.NewStructure([]*mms.Value{
+			mms.NewInteger(1),
+			mms.NewOctetString([]byte{1}),
+		}),
+		mms.NewVisibleString("not-int"),
+	})
+	if _, err := decodeLastApplError(bad7); err == nil {
+		t.Error("expected error for AddCause type")
 	}
 }
 

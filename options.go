@@ -17,6 +17,10 @@ type DialOptions struct {
 
 	// Logger, when non-nil, enables structured logging for IEC 61850
 	// operations. When nil (the default), no logging is emitted.
+	//
+	// When [DialOptions.MMS].Logger is also nil, this logger is passed
+	// through to the underlying [mms.Client]. ISO transport logging
+	// ([iso.WithLogger]) is independent and is not set from here.
 	Logger *slog.Logger
 
 	// Strictness controls validation behavior.

@@ -56,7 +56,13 @@ func TestOrCat_String(t *testing.T) {
 	}{
 		{OrCatNotSupported, "not-supported"},
 		{OrCatBayControl, "bay-control"},
+		{OrCatStationControl, "station-control"},
 		{OrCatRemoteControl, "remote-control"},
+		{OrCatAutomaticBay, "automatic-bay"},
+		{OrCatAutomaticStation, "automatic-station"},
+		{OrCatAutomaticRemote, "automatic-remote"},
+		{OrCatMaintenance, "maintenance"},
+		{OrCatProcess, "process"},
 		{OrCat(99), "orCat(99)"},
 	}
 	for _, tt := range tests {
@@ -187,14 +193,53 @@ func TestBuildCancel_Structure(t *testing.T) {
 	}
 }
 
+func TestBuildCancel_DefaultOriginAndOperTm(t *testing.T) {
+	// Nil Origin → OrCatRemoteControl default.
+	v := buildCancel(CancelParams{CtlVal: BoolCtlVal(false), CtlNum: 1})
+	members, ok := v.Structure()
+	if !ok || len(members) != 5 {
+		t.Fatalf("default origin: %v len=%d", ok, len(members))
+	}
+
+	scheduled := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
+	v = buildCancel(CancelParams{
+		CtlVal: BoolCtlVal(true),
+		OperTm: scheduled,
+		CtlNum: 2,
+	})
+	members, ok = v.Structure()
+	if !ok || len(members) != 6 {
+		t.Fatalf("with OperTm: %v len=%d", ok, len(members))
+	}
+	operTm, ok := members[1].UTCTime()
+	if !ok || !operTm.Equal(scheduled) {
+		t.Fatalf("operTm = %v ok=%v", operTm, ok)
+	}
+}
+
 func TestAddCause_String(t *testing.T) {
 	tests := []struct {
 		c    AddCause
 		want string
 	}{
 		{AddCauseUnknown, "unknown"},
+		{AddCauseNotSupported, "not-supported"},
+		{AddCauseBlocked, "blocked-by-switching-hierarchy"},
 		{AddCauseSelectFailed, "select-failed"},
+		{AddCauseInvalidPosition, "invalid-position"},
+		{AddCausePositionReached, "position-reached"},
+		{AddCauseParameterChange, "parameter-change-in-execution"},
+		{AddCauseStepLimit, "step-limit"},
+		{AddCauseBlockedBySwitch, "blocked-by-other"},
 		{AddCauseBlockedByInterlocking, "blocked-by-interlocking"},
+		{AddCauseBlockedBySynchrocheck, "blocked-by-synchrocheck"},
+		{AddCauseCommandAlreadyExec, "command-already-in-execution"},
+		{AddCauseBlockedByHealth, "blocked-by-health"},
+		{AddCause1of1, "1-of-n-control"},
+		{AddCauseAbort, "abort"},
+		{AddCauseTimeLimit, "time-limit-over"},
+		{AddCauseBlockedByMode, "blocked-by-mode"},
+		{AddCauseBlockedByProcess, "blocked-by-process"},
 		{AddCause(99), "addCause(99)"},
 	}
 	for _, tt := range tests {

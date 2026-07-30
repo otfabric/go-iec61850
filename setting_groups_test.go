@@ -189,6 +189,10 @@ func TestSettingGroupEngine_EditSG(t *testing.T) {
 	engine := srv.SettingGroupEngine()
 	ctx := context.Background()
 
+	if got := engine.GetEditSettingGroup("unknownLD"); got != 0 {
+		t.Errorf("unknown LD EditSG = %d, want 0", got)
+	}
+
 	if got := engine.GetEditSettingGroup("LD1"); got != 0 {
 		t.Errorf("initial EditSG = %d, want 0", got)
 	}
