@@ -58,9 +58,14 @@ level=DEBUG msg="iec61850: setting group change" ld=LD1 actSG=2
 
 ### Logger propagation
 
-The logger configured on `Client` or `Server` is also passed to the underlying
-`go-mms` layer (when not already configured), so MMS-level protocol events
-appear in the same log stream.
+When `DialOptions.Logger` / `ServerOptions.Logger` is set and the nested
+`MMS.Logger` is nil, the IEC logger is passed through to the underlying
+`go-mms` client or server so MMS-level protocol events appear in the same
+log stream. An explicit `MMS.Logger` is left unchanged.
+
+ISO transport logging (`iso.WithLogger`) is independent: it is **not**
+inherited from the IEC or MMS logger. Configure it separately when ISO-layer
+logs are needed. See go-mms `OBSERVABILITY.md` for MMS vs ISO details.
 
 ### Covered subsystems
 

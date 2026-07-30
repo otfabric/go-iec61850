@@ -1,6 +1,8 @@
 SHELL := /bin/bash
 
-GO       ?= go
+# Parent otfabric/go.work must not override this module's go.mod pins.
+export GOWORK := off
+
 PKGS     := ./...
 FUZZTIME ?= 15s
 
@@ -23,19 +25,24 @@ help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "}; /^[a-zA-Z0-9_.-]+:.*## / {printf "%-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 test: ## Run unit tests
-	$(GO) test $(PKGS)
+	@echo "Running unit tests"
+	@go test $(PKGS)
 
 interop: ## Run interoperability tests against mms-interop adapter images (-tags=interop).
-	$(GO) test -tags=interop -v -timeout 300s ./interop/...
+	@echo "Running interoperability tests"
+	@go test -tags=interop -v -timeout 300s ./interop/...
 
 test-verbose: ## Run unit tests with verbose output
-	$(GO) test -v $(PKGS)
+	@echo "Running tests with verbose output"
+	@go test -v $(PKGS)
 
 test-race: ## Run tests with race detector
-	$(GO) test -race $(PKGS)
+	@echo "Running tests with race detector"
+	@go test -race $(PKGS)
 
 vet: ## Run go vet
-	$(GO) vet $(PKGS)
+	@echo "Running go vet"
+	@go vet $(PKGS)
 
 lint: ## Run staticcheck
 	@echo "Running staticcheck"
@@ -52,41 +59,63 @@ vuln: ## Run govulncheck
 fmt: ## Format all Go source files
 	@echo "Running gofmt"
 	@gofmt -w .
+	@echo "Running go fmt"
+	@go fmt $(PKGS)
 
 coverage: ## Run tests with coverage profile and text summary
-	$(GO) test -coverprofile=coverage.out $(PKGS)
-	$(GO) tool cover -func=coverage.out | tee coverage.txt
+	@echo "Running tests with coverage profile and text summary"
+	@go test -coverprofile=coverage.out $(PKGS)
+	@go tool cover -func=coverage.out | tee coverage.txt
 
 coverage-html: coverage ## Generate HTML coverage report
-	$(GO) tool cover -html=coverage.out -o coverage.html
+	@echo "Generating HTML coverage report"
+	@go tool cover -html=coverage.out -o coverage.html
 
 coverage-clean: ## Remove coverage artifacts
+	@echo "Removing coverage artifacts"
 	rm -f coverage.out coverage.txt coverage.html
 
 fuzz: ## Run all fuzz targets for FUZZTIME each (default 15s)
-	@echo "No fuzz targets defined yet (planned for M6)."
+	@echo "=== Fuzzing iec61850 ==="
+	@go test -fuzz=FuzzParseRef                   -fuzztime=$(FUZZTIME) .
+	@go test -fuzz=FuzzParseFC                    -fuzztime=$(FUZZTIME) .
+	@go test -fuzz=FuzzDecodeQuality              -fuzztime=$(FUZZTIME) .
+	@go test -fuzz=FuzzNewValue                   -fuzztime=$(FUZZTIME) .
+	@go test -fuzz=FuzzDecodeReportIndication     -fuzztime=$(FUZZTIME) .
+	@go test -fuzz=FuzzDecodeOptFlds              -fuzztime=$(FUZZTIME) .
+	@go test -fuzz=FuzzDecodeTrgOps               -fuzztime=$(FUZZTIME) .
+	@go test -fuzz=FuzzDecodeReportIndication_NilValues -fuzztime=$(FUZZTIME) .
+	@echo "=== Fuzzing scl ==="
+	@go test -fuzz=FuzzParse                      -fuzztime=$(FUZZTIME) ./scl
 
 bench: ## Run all benchmarks
-	$(GO) test -run=^$$ -bench=. -benchmem $(PKGS)
+	@echo "Running benchmarks"
+	@go test -run=^$$ -bench=. -benchmem $(PKGS)
 
 tidy: ## Tidy and verify module files
-	$(GO) mod tidy
-	$(GO) mod verify
+	@echo "Running go mod tidy"
+	@go mod tidy
+	@echo "Running go mod verify"
+	@go mod verify
 
 scl-generate: ## Generate SCL raw types from XSD schemas
-	$(GO) run ./scl/cmd/sclgen generate --spec-root ./scl/specs --out ./scl/internal/raw
+	@echo "Generating SCL raw types from XSD schemas"
+	@go run ./scl/cmd/sclgen generate --spec-root ./scl/specs --out ./scl/internal/raw
 
 scl-check-generate: ## Verify generated SCL code is up to date
-	$(GO) run ./scl/cmd/sclgen check --spec-root ./scl/specs --out ./scl/internal/raw
+	@echo "Verifying generated SCL code is up to date"
+	@go run ./scl/cmd/sclgen check --spec-root ./scl/specs --out ./scl/internal/raw
 
 build: ## Build all commands for the current platform
+	@echo "Building all commands for the current platform"
 	@mkdir -p bin
 	@for cmd in $(CMDS); do \
 		echo "  BUILD $$cmd $(VERSION) -> bin/$$cmd"; \
-		$(GO) build -ldflags '$(LDFLAGS)' -o bin/$$cmd ./scl/cmd/$$cmd || exit 1; \
+		go build -ldflags '$(LDFLAGS)' -o bin/$$cmd ./scl/cmd/$$cmd || exit 1; \
 	done
 
 build-all: ## Cross-compile all commands for all platforms
+	@echo "Cross-compiling all commands for all platforms"
 	@mkdir -p $(DIST)
 	@for cmd in $(CMDS); do \
 		for target in $(PLATFORMS); do \
@@ -94,12 +123,13 @@ build-all: ## Cross-compile all commands for all platforms
 			ext=""; [ "$$os" = "windows" ] && ext=".exe"; \
 			out=$(DIST)/$$cmd-$$os-$$arch$$ext; \
 			echo "  BUILD $$cmd $(VERSION) $$target -> $$out"; \
-			GOOS=$$os GOARCH=$$arch $(GO) build -ldflags '$(LDFLAGS)' -o $$out ./scl/cmd/$$cmd || exit 1; \
+			GOOS=$$os GOARCH=$$arch @go build -ldflags '$(LDFLAGS)' -o $$out ./scl/cmd/$$cmd || exit 1; \
 		done; \
 	done
 	@echo "Built $$(ls $(DIST)/ | wc -l | tr -d ' ') binaries in $(DIST)/"
 
 release-all: build-all ## Package release archives (tar.gz + zip) for all commands
+	@echo "Packaging release archives (tar.gz + zip) for all commands"
 	@for cmd in $(CMDS); do \
 		for target in $(PLATFORMS); do \
 			os=$${target%/*}; arch=$${target#*/}; \
@@ -117,6 +147,7 @@ release-all: build-all ## Package release archives (tar.gz + zip) for all comman
 	done
 
 install: build ## Install commands to PREFIX/bin (default /usr/local/bin)
+	@echo "Installing commands to PREFIX/bin (default /usr/local/bin)"
 	@for cmd in $(CMDS); do \
 		sudo install -m 755 bin/$$cmd $(PREFIX)/bin/$$cmd; \
 		echo "  INSTALL $(PREFIX)/bin/$$cmd"; \
@@ -125,87 +156,6 @@ install: build ## Install commands to PREFIX/bin (default /usr/local/bin)
 check: fmt tidy vet lint lint-ci vuln test test-race coverage ## Run all pre-commit checks
 
 clean: coverage-clean ## Clean test cache, coverage, and dist artifacts
-	$(GO) clean -testcache
+	@echo "Cleaning test cache, coverage, and dist artifacts"
+	@go clean -testcache
 	rm -rf bin $(DIST)
-
-ai-print-all: ## Print all Go files (code + tests)
-	@find . -type f -name '*.go' ! -path './sources/*' -print0 | sort -z | \
-	while IFS= read -r -d '' f; do \
-		echo "=== START $$f ==="; \
-		cat "$$f"; \
-		echo; \
-		echo "=== END $$f ==="; \
-	done
-
-ai-print-test: ## Print all Go files (tests)
-	@find . -type f -name '*_test.go' ! -path './sources/*' -print0 | sort -z | \
-	while IFS= read -r -d '' f; do \
-		echo "=== START $$f ==="; \
-		cat "$$f"; \
-		echo; \
-		echo "=== END $$f ==="; \
-	done
-
-ai-print: ## Print all Go files (code only no tests)
-	@find . -type f -name '*.go' ! -name '*_test.go' ! -path './sources/*' -print0 | sort -z | \
-	while IFS= read -r -d '' f; do \
-		echo "=== START $$f ==="; \
-		cat "$$f"; \
-		echo; \
-		echo "=== END $$f ==="; \
-	done
-
-ai-diff: ## Diff against main, including untracked files, plus full changed Go file dump
-	@mkdir -p ai
-	@files=$$( \
-		{ \
-			git diff --name-only main; \
-			git ls-files --others --exclude-standard; \
-		} | grep -E '\.go$$' | grep -v '^ai/' | sort -u \
-	); \
-	{ \
-		git diff --binary main; \
-		for f in $$(git ls-files --others --exclude-standard | grep -v '^ai/'); do \
-			if [ -f "$$f" ]; then \
-				echo; \
-				echo "=== START NEW FILE: $$f ==="; \
-				cat "$$f"; \
-				echo; \
-				echo "=== END NEW FILE: $$f ==="; \
-			fi; \
-		done; \
-	} > ai/changes.patch; \
-	{ \
-		for f in $$files; do \
-			if [ -f "$$f" ]; then \
-				echo "=== START $$f ==="; \
-				cat "$$f"; \
-				echo; \
-				echo "=== END $$f ==="; \
-				echo; \
-			fi; \
-		done; \
-	} > ai/changed.full
-	@echo "Written ai/changes.patch"
-	@echo "Written ai/changed.full"
-
-ai-digest: ## Generate repo digest (structure only)
-	@mkdir -p ai
-	@echo "# Repo Digest" > ai/digest.md
-	@echo "" >> ai/digest.md
-	@echo "## Files" >> ai/digest.md
-	@find . -type f -name '*.go' ! -path './sources/*' | sort | while read f; do \
-		echo "- $$f" >> ai/digest.md; \
-	done
-	@echo "" >> ai/digest.md
-	@echo "## Packages" >> ai/digest.md
-	@go list ./... >> ai/digest.md 2>/dev/null || true
-	@echo "Written ai/digest.md"
-
-ai-context: ## Compress context
-	@mkdir -p ai
-	@echo "Summarize PROGRESS.md into max 30 lines." > ai/context.md
-	@echo "Then append decisions and current state." >> ai/context.md
-	@echo "" >> ai/context.md
-	@cat PROGRESS.md >> ai/context.md
-	@echo "Written ai/context.md"

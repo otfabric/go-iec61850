@@ -1,5 +1,80 @@
 # go-iec61850 Releases
 
+## v1.0.7
+
+**Date:** 2026-07-30
+**Previous release:** v1.0.6
+
+### Summary
+
+Dial now propagates `DialOptions.Logger` into the underlying MMS client when
+`MMS.Logger` is unset (matching existing Server behaviour). Dependency bump to
+go-mms v1.0.6 / go-cotp v1.0.3. Docs and Makefile tooling aligned with sibling
+OT Fabric libraries, including a real `make fuzz` target. Broad unit-test
+coverage lift (non-example packages ~**90–100%**). Go floor remains **1.24**.
+
+### Fixed
+
+- **Dial logger → MMS** — when `DialOptions.Logger` is set and
+  `DialOptions.MMS.Logger` is nil, the IEC logger is passed through to
+  `iso.Dial` / `mms.Client` (Server already did this).
+
+### Dependencies
+
+- **go-mms** — `v1.0.5` → **v1.0.6**
+- **go-cotp** (indirect) — `v1.0.2` → **v1.0.3**
+
+### Changed
+
+- **OBSERVABILITY.md / options godoc / doc.go** — clarify IEC→MMS logger
+  inheritance and that `iso.WithLogger` is independent.
+- **API.md** — document `IEDName` on DialOptions/ClientOptions; note logger
+  propagation.
+
+### Build / tooling
+
+- **Makefile** — exports `GOWORK=off`; `make fuzz` runs the eight root fuzz
+  targets plus `FuzzParse` in `./scl` (replaces the stale “planned for M6”
+  stub).
+
+### Tests
+
+Coverage pass across client, server, SCL, and `internal/servermodel`
+(approximate statement coverage: root ~**90%**, `scl` ~**92%**,
+`scl/validate` **100%**, `scl/index` ~**93%**, `scl/internal/genir` ~**93%**,
+`internal/servermodel` ~**87%**). Notable additions:
+
+- **Values / Write / client helpers** — type-mismatch and nil guards on
+  accessors; `Write` validation edges; `ldDomain` / `refToMMS` /
+  `stripIEDPrefix`.
+- **Server** — `installWriteInterceptor` (RCB / SGCB / CO / DA notify),
+  `parseCOStoreKey` / `parseRCBStoreKey`.
+- **Control / reports** — Operate / Select / SelectWithValue / Cancel /
+  ReadCtlModel / ReadLastApplError edges; `buildCancel`; `OrCat` /
+  `AddCause` `String`; `ListReportsVerified` / `verifyReportCandidates`.
+- **Setting groups (client)** — `GetSettingGroupInfo`, `SelectActiveSG` /
+  `SelectEditSG` / `ConfirmEditSG`, `GetEditSGValue` / `SetEditSGValue` /
+  `GetActiveSGValue`, `decodeSGCB` member-type edges; server
+  `GetEditSettingGroup`.
+- **Data sets** — List / Get / Read / Create / Delete validation and
+  loopback paths; `memberIdentity`; lazy-cache `ReadDataSet`.
+- **SCL** — `Parse` / `ParseFile` / `ParseFileOpts` / `ParseWithOptions` /
+  `ParseBytes` (strict, MaxDiagnostics, read failures); `DetectKind` /
+  `KindFromPath`; flatten GSE/SMV/ConnectedAP exports; index
+  `FindGSEControl` / `FindSMVControl`; validate package edge matrix;
+  v1.7 convert Private / SMV / SettingControl / LogControl; genir
+  `Emit` / enums / types / SCL root / type-resolve helpers; sclparse
+  `list-smv` / completion / version string.
+- **servermodel** — `registerSGCB`, compound `registerDA` /
+  `registerDAWithFC`, RCB register Read/Write via MMS loopback,
+  `makeStructRead` / `buildAttrElemAndRead`.
+
+No public API surface changes. No breaking changes.
+
+Import path remains `github.com/otfabric/go-iec61850`.
+
+---
+
 ## v1.0.6
 
 ### Fixed

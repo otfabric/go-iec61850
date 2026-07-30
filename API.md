@@ -58,9 +58,10 @@ func (c *Client) MMS() *mms.Client
 ```go
 type DialOptions struct {
     MMS        mms.DialOptions
-    Logger     *slog.Logger
+    Logger     *slog.Logger // also passed to MMS when MMS.Logger is nil
     Strictness StrictnessOptions
     Cache      CacheStrategy
+    IEDName    string
 }
 ```
 
@@ -71,6 +72,7 @@ type ClientOptions struct {
     Logger     *slog.Logger
     Strictness StrictnessOptions
     Cache      CacheStrategy
+    IEDName    string
 }
 ```
 
