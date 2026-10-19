@@ -33,8 +33,10 @@ library at the current development stage.
   InformationReports for data-change, quality-change, data-update,
   integrity, and GI triggers. RCB writes from MMS clients are
   automatically dispatched to the report engine. BRCB buffering is
-  in-memory with configurable depth but no persistent storage or
-  replay/readout path for reconnecting clients. Multi-client RCB
+  in-memory with configurable depth and no persistent storage; buffered
+  entries are replayed to a client that re-enables the BRCB (optionally
+  resuming after a given `EntryID`, see [INTEROP.md](INTEROP.md)), but the
+  buffer does not survive a server restart. Multi-client RCB
   ownership arbitration and segmented report generation are not yet
   implemented.
 - **Server-side control hooks are initial** — control handlers
@@ -122,6 +124,8 @@ library at the current development stage.
 
 ## Interoperability
 
-- **Tested against go-mms only** — interoperability with third-party IEC 61850
-  implementations (libiec61850, ABB, Siemens, etc.) has not been formally
-  validated. See `interop/` for the testing framework.
+- **Tested against software stacks only** — client and server behaviour is
+  tested against pinned `libiec61850` and `iec61850bean` adapters (see
+  [INTEROP.md](INTEROP.md) and `interop/`). Interoperability with physical
+  IEDs and vendor stacks (ABB, Siemens, etc.) has not been formally
+  validated.

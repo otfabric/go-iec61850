@@ -49,8 +49,9 @@ The `scl` package provides:
 - Semantic validation (type resolution, dataset references, topology linkage,
   GOOSE/SMV `cbName` cross-checks)
 - Flatten/export to tabular rows and CSV
-- XML generation (lossless round-trip)
-- Fast lookup helpers: `FindIED`, `FindLDevice`, `FindLN`, `FindDO`, etc.
+- XML generation (structure-preserving; not byte-for-byte, GSE/SMV control
+  blocks are not serialized)
+- Fast lookup helpers: `FindIED`, `FindLDevice`, `FindLN`, `FindLNodeType`, etc.
 - A cross-reference index for topology and type resolution
 
 ---
@@ -379,48 +380,61 @@ s, err := scl.ParseFile("station.scd")
 // Parse from an io.Reader.
 s, err := scl.Parse(r)
 
-// Detect schema edition without full parsing.
-kind, edition, err := scl.DetectKind(r)
+// Parse with options; the Result carries version info, diagnostics and kind.
+res, err := scl.ParseFileOpts("station.scd", scl.ParseOptions{})
+
+// Detect the schema edition without a full parse.
+info, err := scl.DetectFile("station.scd") // or scl.DetectVersion(data)
+
+// Infer the document kind (SCD/ICD/CID/...) from a parsed model.
+kind := scl.DetectKind(s)
 ```
 
 ### Validation
 
 ```go
-findings := scl.Validate(s)
-for _, f := range findings {
-    fmt.Println(f.Severity, f.Message)
-}
+import (
+    "github.com/otfabric/go-iec61850/scl/index"
+    "github.com/otfabric/go-iec61850/scl/validate"
+)
 
-// Extended validation rules.
-import "github.com/otfabric/go-iec61850/scl/validate"
-all := validate.All(s)
+// Pass-based validation with a shared cross-reference index.
+idx, idxDiags := index.Build(s)
+for _, d := range validate.All(s, idx, idxDiags) {
+    fmt.Println(d.Severity, d.Code, d.Path, d.Message)
+}
 ```
+
+`scl.Validate(s)` is still available but deprecated in favour of
+`validate.All`.
 
 ### Inspection and export
 
 ```go
 // Print SCL as a human-readable text tree.
-scl.PrintTree(s, os.Stdout)
+err := scl.PrintTree(os.Stdout, s)
 
 // Flatten all data attributes to tabular rows.
 rows := scl.Flatten(s)
 
-// Export to CSV.
-scl.WriteCSV(s, os.Stdout)
+// Export the flattened rows to CSV.
+err = scl.WriteCSV(os.Stdout, rows)
 
-// Export dataset / report / GOOSE / SMV / connected-AP summaries.
-scl.ExportDataSets(s, os.Stdout)
-scl.ExportReports(s, os.Stdout)
-scl.ExportGSEControls(s, os.Stdout)
-scl.ExportSMVControls(s, os.Stdout)
-scl.ExportConnectedAPs(s, os.Stdout)
+// Dataset / report / GOOSE / SMV / connected-AP summaries (row slices).
+dsRows := scl.ExportDataSets(s)
+rptRows := scl.ExportReports(s)
+gseRows := scl.ExportGSEControls(s)
+smvRows := scl.ExportSMVControls(s)
+apRows := scl.ExportConnectedAPs(s)
 ```
 
 ### Code generation
 
 ```go
-// Write the SCL model back to XML (lossless round-trip).
-if err := scl.Generate(s, outFile); err != nil {
+// Write the SCL model back to XML. Structure is preserved, but formatting,
+// namespace prefixes and ordering may differ, and GSE/SMV control blocks
+// are not serialized (see KNOWN_LIMITATIONS.md).
+if err := scl.Generate(outFile, s); err != nil {
     log.Fatal(err)
 }
 ```
@@ -428,14 +442,14 @@ if err := scl.Generate(s, outFile); err != nil {
 ### Lookup helpers
 
 ```go
-ied := scl.FindIED(s, "IED1")
-ld  := scl.FindLDevice(ied, "LD1")
-ln  := scl.FindLN(ld, "GGIO", "1")
-do  := scl.FindDO(ln, "SPCSO1")
+ied := s.FindIED("IED1")
+ld  := ied.FindLDevice("LD1")
+ln  := ld.FindLN("", "GGIO", "1")
+lnType := s.FindLNodeType("LGGIO")
 
 // Cross-reference index for fast bulk lookups.
 import "github.com/otfabric/go-iec61850/scl/index"
-idx := index.Build(s)
-lnType := idx.FindLNodeType("LGGIO")
+idx, diags := index.Build(s)
+lnType = idx.FindLNodeType("LGGIO")
 doType := idx.FindDOType("SPC_Type")
 ```
