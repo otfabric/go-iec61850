@@ -145,6 +145,7 @@ import (
 
     "github.com/otfabric/go-iec61850"
     "github.com/otfabric/go-iec61850/scl"
+    "github.com/otfabric/go-mms/transport/iso"
 )
 
 func main() {
@@ -167,15 +168,22 @@ func main() {
     defer re.Stop()
 
     // Register a direct-control handler for GGIO1.SPCSO1.
-    srv.RegisterControl("InteropLD", "GGIO1.SPCSO1", iec61850.CtlModelDirectNormal,
+    err = srv.RegisterControl("InteropLD", "GGIO1.SPCSO1", iec61850.CtlModelDirectNormal,
         iec61850.ControlHandler{
             OnOperate: func(ctx context.Context, req iec61850.ControlRequest) error {
                 log.Printf("operate: %s ctlVal=%v", req.Ref, req.CtlVal)
                 return nil
             },
         })
+    if err != nil {
+        log.Fatal(err)
+    }
 
-    log.Fatal(srv.ListenAndServe(":102"))
+    ln, err := iso.Listen(":102")
+    if err != nil {
+        log.Fatal(err)
+    }
+    log.Fatal(srv.ListenAndServe(context.Background(), ln))
 }
 ```
 
@@ -189,6 +197,8 @@ import (
     "log"
 
     "github.com/otfabric/go-iec61850/scl"
+    "github.com/otfabric/go-iec61850/scl/index"
+    "github.com/otfabric/go-iec61850/scl/validate"
 )
 
 func main() {
@@ -200,9 +210,9 @@ func main() {
         fmt.Printf("IED: %s (%s)\n", ied.Name, ied.Manufacturer)
     }
 
-    findings := scl.Validate(s)
-    for _, f := range findings {
-        fmt.Println(f)
+    idx, idxDiags := index.Build(s)
+    for _, d := range validate.All(s, idx, idxDiags) {
+        fmt.Println(d.Severity, d.Path, d.Message)
     }
 }
 ```
@@ -312,7 +322,7 @@ func main() {
 | Function | Description |
 |----------|-------------|
 | `Parse` / `ParseFile` | Parse SCL XML (auto-detects schema edition) |
-| `Validate` | Semantic validation (types, dataset refs, topology) |
+| `validate.All` | Semantic validation (types, dataset refs, topology); `scl.Validate` is deprecated |
 | `Flatten` / `WriteCSV` | Flatten model to tabular rows / CSV |
 | `PrintTree` | Print SCL as a human-readable text tree |
 | `ExportDataSets` / `ExportReports` | Export summaries |
@@ -329,7 +339,7 @@ the `sclparse` and `sclgen` command-line tools.
 | `NewServer` | Create an IEC 61850 server from a data model |
 | `NewServerModelFromSCL` | Build the server model from an SCL file |
 | `Server.Serve` | Handle a single accepted connection |
-| `Server.ListenAndServe` | Accept and serve connections on an address |
+| `Server.ListenAndServe` | Accept and serve connections on an `mms.TransportListener` (e.g. from `iso.Listen`) |
 | `Server.EnableReports` | Start the runtime report engine (URCB/BRCB) |
 | `Server.RegisterControl` | Install a control object handler |
 | `Server.SetValue` | Write a value and trigger change-detection reports |
