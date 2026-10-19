@@ -47,26 +47,29 @@ Returned when an IEC 61850 object reference cannot be parsed or resolved.
 
 ```go
 type ReferenceError struct {
-    Ref     string // the reference string that caused the error
+    Input   string // the reference string that caused the error
     Reason  string // human-readable explanation
+    Wrapped error  // optional underlying error
 }
 ```
 
-Wraps `ErrInvalidReference`.
+Unwraps to `Wrapped` when set, otherwise to `ErrInvalidReference`.
 
 ### `*DecodeError`
 
-Returned when decoding a received report or dataset payload fails.
+Returned when an MMS value cannot be semantically decoded into an
+IEC 61850 type.
 
 ```go
 type DecodeError struct {
-    Context string // e.g. "report", "dataset"
-    Offset  int    // byte offset where decoding failed
-    Msg     string // human-readable explanation
+    Ref     string // object reference, if known
+    Type    string // expected IEC 61850 type
+    Message string // human-readable explanation
+    Wrapped error  // optional underlying error
 }
 ```
 
-Wraps `ErrReportDecode` or `ErrDatasetDecode` depending on context.
+Unwraps to `Wrapped` when set, otherwise to `ErrTypeMismatch`.
 
 ### `*ModelError`
 
@@ -75,12 +78,13 @@ or incompatible with the requested operation.
 
 ```go
 type ModelError struct {
-    Object string // the object reference involved
-    Reason string
+    Ref     string // the object reference involved
+    Message string
+    Wrapped error
 }
 ```
 
-Wraps `ErrModelMismatch`.
+Unwraps to `Wrapped` when set, otherwise to `ErrModelMismatch`.
 
 ### `*ReportError`
 
@@ -89,10 +93,13 @@ after the subscription has been established.
 
 ```go
 type ReportError struct {
-    RptID  string // report control block ID
-    Reason string
+    RCBRef  string // report control block reference
+    Message string
+    Wrapped error
 }
 ```
+
+Unwraps to `Wrapped` when set, otherwise to `ErrReportDecode`.
 
 ### `*SCLParseError`
 
@@ -100,23 +107,27 @@ Returned when an SCL/ICD/CID file cannot be parsed.
 
 ```go
 type SCLParseError struct {
-    File    string // file path or "<inline>"
+    File    string // file path, if known
     Line    int    // approximate line number (0 if unknown)
-    Element string // XML element name where the error occurred
-    Reason  string
+    Message string
+    Wrapped error
 }
 ```
 
-Wraps `ErrSCLParse`.
+Unwraps to `Wrapped` when set, otherwise to `ErrSCLParse`.
 
 ### `*DataAccessError`
 
-Returned when the server reports a per-variable data access failure.
-Wraps `ErrDataAccess` and allows inspection of the underlying MMS error code.
+Returned per item by bulk read/write and dataset reads when the server
+reports a per-variable data access failure. Wraps `ErrDataAccess`;
+`ErrorCode` holds the underlying MMS code as an `int` (convert with
+`mms.DataAccessErrorCode(de.ErrorCode)`).
 
 ```go
 type DataAccessError struct {
-    Code mms.DataAccessErrorCode
+    Ref       string // object reference of the failed item
+    ErrorCode int    // mms.DataAccessErrorCode value
+    Operation string // "read", "write", or "read-dataset"
 }
 ```
 
@@ -137,15 +148,16 @@ server-supplied reason.
 
 ```go
 type ControlError struct {
-    Ref     string // the control object reference
-    Step    string // "select", "operate", or "cancel"
-    Reason  string // human-readable reason from the server
-    AddInfo string // optional additional info
+    Ref       string   // the control object reference
+    Operation string   // "select", "operate", or "cancel"
+    AddCause  AddCause // server-reported cause via LastApplError (0 = unknown)
+    Wrapped   error    // underlying error, if any
 }
 ```
 
-Wraps the operation-specific sentinel (`ErrSelectFailed`, `ErrOperateFailed`,
-`ErrCancelFailed`) and also `ErrControlFailed`.
+Matches the operation-specific sentinel (`ErrSelectFailed`, `ErrOperateFailed`,
+`ErrCancelFailed`; `ErrControlFailed` for any other operation) and `Wrapped`
+via `errors.Is`.
 
 ---
 
@@ -171,6 +183,7 @@ sufficient.
 import (
     "errors"
     iec61850 "github.com/otfabric/go-iec61850"
+    "github.com/otfabric/go-mms"
 )
 
 val, err := client.Read(ctx, ref)
@@ -181,7 +194,7 @@ if err != nil {
     case errors.Is(err, iec61850.ErrDataAccess):
         var de *iec61850.DataAccessError
         if errors.As(err, &de) {
-            log.Printf("access error: %v", de.Code)
+            log.Printf("access error: %v", mms.DataAccessErrorCode(de.ErrorCode))
         }
     case errors.Is(err, iec61850.ErrClosed):
         // connection was closed; reconnect if needed
@@ -192,10 +205,11 @@ if err != nil {
 ```
 
 ```go
-if err := client.Operate(ctx, ref, val); err != nil {
+params := iec61850.OperateParams{CtlVal: iec61850.BoolCtlVal(true)}
+if err := client.Operate(ctx, ref, params); err != nil {
     var ce *iec61850.ControlError
     if errors.As(err, &ce) {
-        log.Printf("control %s step=%s reason=%s", ce.Ref, ce.Step, ce.Reason)
+        log.Printf("control %s op=%s addCause=%s", ce.Ref, ce.Operation, ce.AddCause)
     }
 }
 ```
