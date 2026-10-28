@@ -18,11 +18,11 @@ jobs:
     timeout-minutes: 60
     env:
       GOWORK: "off"
-      LIBIEC61850_IMAGE: ghcr.io/otfabric/mms-interop-libiec61850@sha256:966e17e37e7fb5c22b825443ce79565d51067705c8f8485fd63d4001b4bd31ff
-      IEC61850BEAN_IMAGE: ghcr.io/otfabric/mms-interop-iec61850bean@sha256:ab2cda6a77ea054a04a736fdf1c36c5c8f50c766aa41cf5818bd11f3fadfac7d
-      DSCSYSTEMS_IMAGE: ghcr.io/otfabric/mms-interop-dscsystems@sha256:899e4d96605a921647e7c079db0b0a7f69c05d0582830b81607bc1a152a8d60a
-      IEC61850RUST_IMAGE: ghcr.io/otfabric/mms-interop-iec61850-rust@sha256:c46c83c6d7eaa9800bbe48fb6ca9d25a4e9338d0bfc6f31fbba7813d89e4445d
-      # The pinned images implement the SV fixture (mms-interop v0.4.0).
+      LIBIEC61850_IMAGE: ghcr.io/otfabric/mms-interop-libiec61850@sha256:022b90016edf4ba8feef91a11678759b480d1f8c136e18056047ebd595d5f2f5
+      IEC61850BEAN_IMAGE: ghcr.io/otfabric/mms-interop-iec61850bean@sha256:8076301ef86cac8099c7d6dd498880cfec86ef268e00e181603f15043a80e184
+      DSCSYSTEMS_IMAGE: ghcr.io/otfabric/mms-interop-dscsystems@sha256:e568ffcb33f949289f141758f63677b6d1bddfd90d80daa8198220fb46856b6a
+      IEC61850RUST_IMAGE: ghcr.io/otfabric/mms-interop-iec61850-rust@sha256:02ad4fb3123fc08cfc556814b9c9caea01fabbac9841260a28a337746bb38dca
+      # The pinned images (mms-interop v0.4.1) implement the SV fixture.
       IEC61850_SV_FIXTURE: sv-v1
 
     steps:

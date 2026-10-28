@@ -98,7 +98,7 @@ error) and the test is skipped with that reason.
 
 ### Per-stack matrix
 
-Results with the mms-interop v0.4.0 images pinned in
+Results with the mms-interop v0.4.1 images pinned in
 `.github/workflows/interop.yml`.
 
 | Area | libiec61850 | iec61850bean | dscsystems | iec61850-rust |
@@ -110,17 +110,17 @@ Results with the mms-interop v0.4.0 images pinned in
 | URCB TrgOps/IntgPd write on the stack server | ✓ | ✓ | ✓ | denied² |
 | Direct / SBO control (both directions) | ✓ | ✓ | ✓ | ✓ |
 | SBOw (enhanced security) | ✓ | skip³ | ✓⁴ | ✓ |
-| CDC reads DPS (Dbpos) / BCR from the stack server | skip⁵ | skip⁵ | ✓ | ✓ |
-| CDC reads DPS / BCR by the stack client from the Go server | skip⁹ | skip⁹ | skip⁹ | skip⁹ |
-| MMS file services | ✓ | ✓ | ✓ | unsupported⁶ |
-| GetNameList from the SCL model | ✓ | ✓ | ✓ | run-time registries⁶ |
+| CDC reads DPS (Dbpos) / BCR from the stack server | ✓ | ✓ | ✓ | ✓ |
+| CDC reads DPS / BCR by the stack client from the Go server | ✓ | ✓ | ✓ | ✓ |
+| MMS file services | ✓ | ✓ | ✓ | unsupported⁵ |
+| GetNameList from the SCL model | ✓ | ✓ | ✓ | run-time registries⁵ |
 | GOOSE: Go publisher → stack subscriber | ✓ | n/a | ✓ | ✓ |
 | GOOSE: stack publisher → Go subscriber (SCL-validated) | ✓ | n/a | ✓ | ✓ |
 | GOOSE: Go IED server GoCB → stack subscriber | ✓ | n/a | ✓ | ✓ |
-| SV: Go publisher → stack subscriber (9-2LE and generic) | ✓⁷ | n/a⁸ | ✓ | ✓ |
-| SV: stack publisher → Go subscriber (SCL-validated) | ✓ | n/a⁸ | ✓ | ✓ |
-| SV: Go IED server MSVCB → stack subscriber | ✓ | n/a⁸ | ✓ | ✓ |
-| MSVCB over MMS (Go client → stack server) | ✓ | n/a⁸ | ✓ | unsupported⁶ |
+| SV: Go publisher → stack subscriber (9-2LE and generic) | ✓⁶ | n/a⁷ | ✓ | ✓ |
+| SV: stack publisher → Go subscriber (SCL-validated) | ✓ | n/a⁷ | ✓ | ✓ |
+| SV: Go IED server MSVCB → stack subscriber | ✓ | n/a⁷ | ✓ | ✓ |
+| MSVCB over MMS (Go client → stack server) | ✓ | n/a⁷ | ✓ | unsupported⁵ |
 | R-GOOSE / R-SV | n/a | n/a | n/a | n/a |
 
 ¹ The iec61850bean server does not support URCB reservation (`Resv`);
@@ -131,23 +131,15 @@ write. The integrity-period test is skipped for iec61850-rust.
 ³ iec61850bean's server does not expose `SBOw[CO]` as writable.
 ⁴ Requires the server's CommandTermination (added in v1.1.0); the
 dscsystems controller waits for it.
-⁵ The libiec61850 and iec61850bean adapter servers do not apply the
-`GGIO1.DPS1.stVal` / `MMTR1.TotVAh.actVal` initial values of
-`values.json` and serve type defaults, so the read cannot be compared with
-the fixture. The Go server side is covered by `TestGoServer_CDC_*`.
-⁶ Not implemented by iec61850-rust: no MMS file services and no SVCB
+⁵ Not implemented by iec61850-rust: no MMS file services and no SVCB
 model over MMS; its GetNameList answers from run-time registries rather than the
 SCL. Adapter steps for these answer `unsupported` and are skipped.
-⁷ libiec61850's SV subscriber accepts smpMod only as one octet and drops
+⁶ libiec61850's SV subscriber accepts smpMod only as one octet and drops
 ASDUs carrying the two-octet INT16U that the Go publisher (like
 libiec61850's own) sends, so the generic stream (MSVCB02, with smpMod)
 is skipped for that subscriber; the 9-2LE stream is checked. The Go
 subscriber accepts both widths.
-⁸ iec61850bean has no SV publisher, subscriber or SVCB model.
-⁹ The ied-client adapters run a fixed script (`--host`/`--port` only)
-without a read of `GGIO1.DPS1.stVal` or `MMTR1.TotVAh.actVal`; the tests
-assert the read as soon as a script includes it. The Go server side is
-covered by `TestGoServer_CDC_*`.
+⁷ iec61850bean has no SV publisher, subscriber or SVCB model.
 
 Stack-specific deviations are listed in mms-interop
 `fixtures/capabilities.json` (`knownLimitations`). Interoperability with physical IEDs has not yet been formally
