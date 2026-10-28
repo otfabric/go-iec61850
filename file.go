@@ -20,6 +20,7 @@ type FileEntry struct {
 	Size int64
 
 	// LastModified is the file's last modification timestamp.
+	// The zero time means the server omitted the optional field.
 	LastModified time.Time
 }
 

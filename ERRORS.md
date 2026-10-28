@@ -135,11 +135,11 @@ Common codes:
 
 | Code | Meaning |
 |------|---------|
-| `DataAccessErrorObjectUndefined` | Object not found on server |
+| `DataAccessErrorObjectNonExistent` | Object not found on the server (unknown domain or variable; go-mms v1.1.0+) |
+| `DataAccessErrorObjectUndefined` | Alternate-access mismatch (component or index does not apply) |
 | `DataAccessErrorObjectAccessDenied` | Access not permitted |
 | `DataAccessErrorTemporarilyUnavailable` | Temporarily unavailable |
 | `DataAccessErrorTypeInconsistent` | Write value type mismatch |
-| `DataAccessErrorObjectNonExistent` | Object does not exist |
 
 ### `*ControlError`
 

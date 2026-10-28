@@ -714,7 +714,7 @@ func (c *Client) GetFileAttributes(ctx context.Context, fileName string) (*FileE
 type FileEntry struct {
     Name         string
     Size         int64
-    LastModified time.Time
+    LastModified time.Time // zero if the server omitted it
 }
 ```
 

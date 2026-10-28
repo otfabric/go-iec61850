@@ -13,6 +13,22 @@ import (
 	"github.com/otfabric/go-mms"
 )
 
+// binaryTimeEpoch is the MMS TimeOfDay origin (1984-01-01). go-mms v1.1.0
+// rejects BinaryTime values outside 1984-01-01…2163-06-05, so Unix 0
+// (1970) is no longer a valid empty TimeOfEntry / EntryTime.
+var binaryTimeEpoch = time.Date(1984, 1, 1, 0, 0, 0, 0, time.UTC)
+
+func emptyBinaryTime() *mms.Value {
+	return mms.NewBinaryTime(binaryTimeEpoch.UnixMilli())
+}
+
+func defaultMMSValue(ts mms.TypeSpec) *mms.Value {
+	if ts.Type == mms.ValueTypeBinaryTime {
+		return emptyBinaryTime()
+	}
+	return ts.DefaultValue()
+}
+
 // btypeToMMS maps IEC 61850 basic types to MMS TypeSpec values.
 var btypeToMMS = map[string]mms.TypeSpec{
 	"BOOLEAN":      {Type: mms.ValueTypeBoolean},
@@ -394,7 +410,7 @@ func registerLNHierarchy(srv *mms.Server, vs *ValueStore, ldName string, ln *Log
 				if v != nil {
 					return v, nil
 				}
-				return subTS.DefaultValue(), nil
+				return defaultMMSValue(subTS), nil
 			}
 		}
 		rcbTS := mms.TypeSpec{Type: mms.ValueTypeStructure, Elements: rcbElems}
@@ -554,7 +570,7 @@ func buildAttrElemAndRead(vs *ValueStore, ldName, lnName string, path []string, 
 			if v := vs.Get(sk); v != nil {
 				return v, nil
 			}
-			return ts0.DefaultValue(), nil
+			return defaultMMSValue(ts0), nil
 		}
 		return mms.TypeSpecElement{Name: attr.Name, Type: ts}, read, nil
 	}
@@ -724,7 +740,7 @@ func registerDA(srv *mms.Server, vs *ValueStore, ldName, lnName string, path []s
 			if val != nil {
 				return val, nil
 			}
-			return ts.DefaultValue(), nil
+			return defaultMMSValue(ts), nil
 		},
 		Write: func(ctx context.Context, val *mms.Value) error {
 			if val == nil {
@@ -826,7 +842,7 @@ func buildRCBFields(rpt *ReportDef, rptID, ldName, lnName string) []rcbField {
 		fields = append(fields,
 			rcbField{"PurgeBuf", mms.TypeSpec{Type: mms.ValueTypeBoolean}, mms.NewBoolean(false)},
 			rcbField{"EntryID", mms.TypeSpec{Type: mms.ValueTypeOctetString, Size: 8}, mms.NewOctetString(make([]byte, 8))},
-			rcbField{"TimeOfEntry", mms.TypeSpec{Type: mms.ValueTypeBinaryTime}, mms.NewBinaryTime(0)},
+			rcbField{"TimeOfEntry", mms.TypeSpec{Type: mms.ValueTypeBinaryTime}, emptyBinaryTime()},
 		)
 	}
 	return fields
@@ -881,7 +897,7 @@ func registerRCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, rpt *Re
 				if val != nil {
 					return val, nil
 				}
-				return subTS.DefaultValue(), nil
+				return defaultMMSValue(subTS), nil
 			},
 			Write: func(ctx context.Context, val *mms.Value) error {
 				prev := vs.Get(subSK)
@@ -892,7 +908,7 @@ func registerRCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, rpt *Re
 					if prev != nil {
 						vs.Set(subSK, prev)
 					} else {
-						vs.Set(subSK, subTS.DefaultValue())
+						vs.Set(subSK, defaultMMSValue(subTS))
 					}
 					return err
 				} else if handled {
@@ -920,7 +936,7 @@ func registerRCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, rpt *Re
 				subKey := StoreKey(ldName, rcbItemID+"$"+f.suffix)
 				v := vs.Get(subKey)
 				if v == nil {
-					v = f.typeSpec.DefaultValue()
+					v = defaultMMSValue(f.typeSpec)
 				}
 				elems[i] = v
 			}
@@ -986,7 +1002,7 @@ func registerSGCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, sg *Se
 				if val != nil {
 					return val, nil
 				}
-				return subTS.DefaultValue(), nil
+				return defaultMMSValue(subTS), nil
 			},
 			Write: func(ctx context.Context, val *mms.Value) error {
 				if handled, err := vs.callInterceptor(ctx, subSK, val); handled || err != nil {
@@ -1015,7 +1031,7 @@ func registerSGCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, sg *Se
 				subKey := StoreKey(ldName, sgcbItemID+"$"+f.suffix)
 				v := vs.Get(subKey)
 				if v == nil {
-					v = f.typeSpec.DefaultValue()
+					v = defaultMMSValue(f.typeSpec)
 				}
 				elems[i] = v
 			}
@@ -1142,7 +1158,7 @@ func parseInitialValue(btype, val string, enumNames map[string]int) (*mms.Value,
 		return mms.NewUTCTime(time.Time{}), nil
 
 	case "EntryTime":
-		return mms.NewBinaryTime(0), nil
+		return emptyBinaryTime(), nil
 
 	case "Octet6":
 		return parseInitialOctetString(val, 6)
