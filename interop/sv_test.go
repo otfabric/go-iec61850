@@ -36,6 +36,17 @@ const (
 	svEventTimeout = 30 * time.Second
 )
 
+// requireSVImages skips unless IEC61850_SV_FIXTURE names the fixture
+// revision the adapter images implement: the sv-* entrypoints and the
+// MSVCBs of the IED servers first ship in mms-interop v0.4.0, and older
+// images would fail every SV test rather than skip.
+func requireSVImages(t *testing.T) {
+	t.Helper()
+	if v := os.Getenv("IEC61850_SV_FIXTURE"); v != svFixtureRev {
+		t.Skipf("IEC61850_SV_FIXTURE=%q, want %q: the adapter images predate the SV fixture (mms-interop v0.4.0)", v, svFixtureRev)
+	}
+}
+
 // svStacks are the adapter stacks with SV commands (iec61850bean has
 // none).
 var svStacks = gooseStacks
@@ -309,6 +320,7 @@ func decodeCanon(t *testing.T, cb *sv.ControlBlock, sample []byte) string {
 // ---------------------------------------------------------------------------
 
 func TestSV_GoPublisher(t *testing.T) {
+	requireSVImages(t)
 	iface := gooseIface(t)
 	fix := loadSVFixture(t)
 	for _, st := range svStacks {
@@ -400,6 +412,7 @@ func TestSV_GoPublisher(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSV_GoSubscriber(t *testing.T) {
+	requireSVImages(t)
 	iface := gooseIface(t)
 	fix := loadSVFixture(t)
 	for _, st := range svStacks {
@@ -553,6 +566,7 @@ func TestSV_GoSubscriber(t *testing.T) {
 // server (Server.EnableSV) and checks that a data change reaches each
 // adapter subscriber.
 func TestSV_GoServer(t *testing.T) {
+	requireSVImages(t)
 	iface := gooseIface(t)
 	fix := loadSVFixture(t)
 	for _, st := range svStacks {
@@ -608,6 +622,7 @@ func TestSV_GoServer(t *testing.T) {
 // iec61850-v3) from the peer stack's IED server, where it is modelled
 // (capabilities.json svcbOverMms).
 func TestLibIECClient_SVCB_Read(t *testing.T) {
+	requireSVImages(t)
 	if !svcbOverMMS[peer().name] {
 		t.Skipf("%s does not expose SV control blocks over MMS (capabilities.json svcbOverMms)", peer().name)
 	}

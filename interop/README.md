@@ -86,6 +86,8 @@ docker run --rm --network mms-interop-goose --cap-add NET_RAW \
 
 SV is raw Ethernet too (EtherType 0x88BA) and uses the same network and
 `GOOSE_IFACE`; `make interop-goose` runs both (`-run 'GOOSE|SV_'`).
+The SV tests also need `IEC61850_SV_FIXTURE=sv-v1`, which says the
+pinned adapter images ship the SV fixture (mms-interop v0.4.0 or later).
 Fixture `sv-v1` (mms-interop `fixtures/sv/`, copied to
 `interop/testdata/sv/`): `MSVCB01` (9-2LE, 4000 samples/s, one ASDU per
 frame) and `MSVCB02` (generic dataset, 1000 samples/s, four ASDUs per
@@ -120,6 +122,7 @@ iec61850-rust:
 | `IEC61850_PEER_STACK` | Stack behind the `TestLibIEC*` tests: `libiec61850`, `dscsystems` or `iec61850-rust` | `libiec61850` |
 | `IEC61850_SKIP_BEAN` | Do not start the shared iec61850bean server | — |
 | `GOOSE_IFACE` | Interface on the GOOSE network (`goose0` on the host, `eth0` in a container); GOOSE tests skip when unset | — |
+| `IEC61850_SV_FIXTURE` | SV fixture revision the adapter images implement (`sv-v1` from mms-interop v0.4.0); SV tests skip unless it matches | — |
 | `GOOSE_NETWORK` | Docker network of the GOOSE adapters (created if missing) | `mms-interop-goose` |
 | `IEC61850_SERVER_BINARY` | Path to `libiec61850-ied-server` binary (skips Docker) | — |
 | `IEC61850_CLIENT_BINARY` | Path to `libiec61850-ied-client` binary (skips Docker) | — |
