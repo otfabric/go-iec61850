@@ -371,12 +371,14 @@ func validateDOs(ldName, lnName string, dos []DataObject, parentPath ...string) 
 		}
 		names[do.Name] = true
 
+		// A DA name may repeat under another FC (IEC 61850-7-3, e.g.
+		// ASG.setMag in SG and SE): the MMS item IDs differ by FC.
 		attrNames := make(map[string]bool)
 		for _, attr := range do.Attributes {
-			if attrNames[attr.Name] {
+			if attrNames[attr.FC+"$"+attr.Name] {
 				errs = append(errs, fmt.Errorf("model: LD %q %s: duplicate DA %q", ldName, pathStr, attr.Name))
 			}
-			attrNames[attr.Name] = true
+			attrNames[attr.FC+"$"+attr.Name] = true
 			if attr.FC == "" {
 				errs = append(errs, fmt.Errorf("model: LD %q %s DA %q: empty FC", ldName, pathStr, attr.Name))
 			}

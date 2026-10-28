@@ -996,6 +996,9 @@ func registerRCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, rpt *Re
 	})
 }
 
+// sgcbWritable are the SGCB attributes a client may write.
+var sgcbWritable = map[string]bool{"ActSG": true, "EditSG": true, "CnfEdit": true}
+
 func registerSGCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, sg *SettingGroupDef) error {
 	sgcbItemID := lnName + "$SP$SGCB"
 
@@ -1065,13 +1068,30 @@ func registerSGCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, sg *Se
 			}
 			return mms.NewStructure(elems), nil
 		},
-		Write: func(_ context.Context, val *mms.Value) error {
+		// A write of the whole SGCB, which is also how a write with
+		// alternate access to one component arrives, goes through the
+		// interceptor for every changed writable subfield (ActSG,
+		// EditSG, CnfEdit), in the order of the structure, as a write
+		// of that subfield would. NumOfSGs, LActTm and ResvTms are
+		// read-only (IEC 61850-7-2) and keep their values.
+		Write: func(ctx context.Context, val *mms.Value) error {
 			elems, ok := val.Structure()
 			if !ok || len(elems) != len(fields) {
 				return fmt.Errorf("SGCB write: expected structure with %d elements", len(fields))
 			}
 			for i, f := range fields {
+				if !sgcbWritable[f.suffix] {
+					continue
+				}
 				subKey := StoreKey(ldName, sgcbItemID+"$"+f.suffix)
+				if cur := vs.Get(subKey); cur != nil && cur.Equal(elems[i]) {
+					continue
+				}
+				if handled, err := vs.callInterceptor(ctx, subKey, elems[i]); err != nil {
+					return err
+				} else if handled {
+					continue
+				}
 				vs.Set(subKey, elems[i])
 			}
 			return nil

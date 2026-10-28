@@ -432,3 +432,26 @@ func TestValidate_LogEmptyName(t *testing.T) {
 		t.Error("expected empty log name error")
 	}
 }
+
+func TestValidate_SameDANameOtherFC(t *testing.T) {
+	m := &Model{
+		LogicalDevices: []LogicalDevice{{
+			Name: "LD1",
+			LogicalNodes: []LogicalNode{{Name: "LLN0", LNClass: "LLN0"}, {
+				Name:    "PTOC1",
+				LNClass: "PTOC",
+				DataObjects: []DataObject{{
+					Name: "StrVal",
+					CDC:  "ASG",
+					Attributes: []DataAttribute{
+						{Name: "setMag", FC: "SG", BType: "FLOAT32"},
+						{Name: "setMag", FC: "SE", BType: "FLOAT32"},
+					},
+				}},
+			}},
+		}},
+	}
+	if errs := m.Validate(); len(errs) != 0 {
+		t.Fatalf("ASG.setMag in SG and SE: %v", errs)
+	}
+}
