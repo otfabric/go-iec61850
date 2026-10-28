@@ -1,5 +1,59 @@
 # go-iec61850 Releases
 
+## v1.2.0
+
+**Date:** 2026-10-28
+**Previous release:** v1.1.0
+
+### Summary
+
+IEC 61850 Sampled Values (new `sv` package and server/client
+integration) and a shared raw Ethernet layer (new `l2` package) carrying
+GOOSE and SV.
+
+### Added
+
+- **`sv` package** ([SV.md](SV.md)) — pure Go, no cgo, clean-room from
+  IEC 61850-9-2, IEC 61869-9 and the UCA 9-2LE guideline:
+  - frame codec (EtherType `0x88BA`, APDU header incl. simulation bit,
+    `savPdu` with `noASDU`, opaque `security`, ASDUs with svID, datSet,
+    smpCnt, confRev, refrTm, smpSynch, smpRate, sample, smpMod,
+    gmIdentity) with strict, bounded decoding; zero-allocation
+    `DecodeInto` and `AppendFrame`;
+  - datasets: `Layout` of fixed-size basic types ↔ go-mms values,
+    `Quality`, and 9-2LE helpers (`LESample`, 1 mA / 10 mV scaling);
+  - `Publisher`: absolute-schedule pacing at `smpRate` with burst
+    catch-up and skip accounting, `noASDU` batching, `smpCnt` wrap,
+    `AlignSecond`, per-sample `Source` or thread-safe `Update`, run-time
+    `SetEnabled`/`SetSmpSynch`/`SetSimulation`, context shutdown;
+  - `Subscriber`: filters (dst, src, APPID, svID), validation (datSet,
+    confRev, smpRate/smpMod, sample size), per-stream loss/duplicate/
+    out-of-order accounting with learned or derived `smpCnt` wrap, rate
+    estimation, synch and confRev tracking, timeout supervision, callback
+    or channel delivery, no allocation per frame;
+  - SCL binding: `ControlBlocksFromSCL` / `ControlBlockFromSCL`
+    (SampledValueControl + SMV address + dataset layout);
+  - `Metrics` hooks, sentinel and typed errors; benchmarks for 32
+    interleaved 4 kHz streams.
+- **`l2` package** — the AF_PACKET/BPF/in-memory transport moved out of
+  `goose`: one socket can receive several EtherTypes (kernel filter),
+  `Demux` splits them, `MAC.IsSVMulticast`, `VLAN.TCI`.
+- **Server SV** — `Server.EnableSV` publishes the model's MSVCBs at
+  `smpRate` from the dataset values; MSVCB attributes
+  (`LLN0$MS$<name>`: SvEna, MsvID, DatSet, ConfRev, SmpRate, OptFlds,
+  SmpMod, DstAddress, noASDU) are readable over MMS, SvEna/MsvID/DatSet/
+  SmpRate/OptFlds/SmpMod writable; `Capabilities().SV`.
+- **Client MSVCB API** — `Client.GetMSVCB`, `Client.SetMSVCB`.
+- **SCL** — `SMVControl` gains `SmpMod`, `SecurityEnable` and `SmvOpts`;
+  `SMVControlRow` gains `SmpMod`.
+
+### Changed
+
+- `goose.MAC`, `Transport`, `TransportOptions`, `TransportError`, `Hub`,
+  `HubPort`, `Faults` and `HubStats` are now aliases of the `l2` types,
+  and the transport sentinels are shared with `l2`. Code using them by
+  name compiles unchanged (verified with iec61850ctl v0.3.0).
+
 ## v1.1.0
 
 **Date:** 2026-10-28

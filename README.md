@@ -78,6 +78,12 @@ domain names, item IDs, or alternate access selectors.
   (`AF_PACKET`) and macOS/BSD (BPF), SCL binding, server GoCBs published on
   data change and exposed over MMS, client GoCB read/write; see
   [GOOSE.md](GOOSE.md)
+- **Sampled Values** — pure-Go publisher and subscriber (IEC 61850-9-2,
+  IEC 61869-9, UCA 9-2LE): frame codec, dataset layouts and 9-2LE
+  scaling, drift-free pacing with `noASDU` batching, loss/duplicate/reorder
+  accounting and supervision without allocations per frame, SCL binding,
+  server MSVCBs published at `smpRate` and exposed over MMS, client MSVCB
+  read/write; see [SV.md](SV.md)
 
 ---
 
@@ -348,8 +354,9 @@ the `sclparse` and `sclgen` command-line tools.
 | `Server.ListenAndServe` | Accept and serve connections on an `mms.TransportListener` (e.g. from `iso.Listen`) |
 | `Server.EnableReports` | Start the runtime report engine (URCB/BRCB) |
 | `Server.RegisterControl` | Install a control object handler |
-| `Server.SetValue` | Write a value and trigger change-detection reports and GOOSE |
+| `Server.SetValue` | Write a value and trigger change-detection reports, GOOSE and SV samples |
 | `Server.EnableGOOSE` | Publish the model's GoCBs on a `goose.Transport` |
+| `Server.EnableSV` | Publish the model's MSVCBs on an `sv.Transport` |
 | `Server.Close` | Stop the server and all engines |
 
 ---
@@ -540,8 +547,11 @@ go-iec61850/
 │       ├── sclparse/           CLI: inspect, validate, summarize SCL files
 │       └── sclgen/             CLI: regenerate Go types from XSD schemas
 │
-├── goose/                      GOOSE codec, publisher, subscriber, raw
-│                               transports, hub, SCL binding
+├── goose/                      GOOSE codec, publisher, subscriber, SCL binding
+├── sv/                         Sampled Values codec, 9-2LE, publisher,
+│                               subscriber, SCL binding
+├── l2/                         Raw Ethernet (AF_PACKET, BPF), EtherType
+│                               demux and in-memory hub shared by goose and sv
 │
 ├── internal/
 │   ├── mapping/                IEC 61850 ↔ MMS name mapping utilities
@@ -552,6 +562,7 @@ go-iec61850/
 ├── API.md                      Complete public API reference
 ├── ERRORS.md                   Error taxonomy, sentinel values, and usage patterns
 ├── GOOSE.md                    GOOSE guide
+├── SV.md                       Sampled Values guide
 ├── KNOWN_LIMITATIONS.md        Known constraints and unsupported features
 ├── OBSERVABILITY.md            Logging and structured-log fields
 └── RELEASE.md                  Changelog
@@ -592,6 +603,7 @@ See [INTEROP.md](INTEROP.md) for the full compatibility matrix and
 | [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) | Known limitations and constraints |
 | [OBSERVABILITY.md](OBSERVABILITY.md) | Logging, structured-log fields and GOOSE metrics |
 | [GOOSE.md](GOOSE.md) | GOOSE publisher, subscriber, transports, SCL binding, server GoCBs |
+| [SV.md](SV.md) | Sampled Values publisher, subscriber, 9-2LE, SCL binding, server MSVCBs |
 
 ---
 

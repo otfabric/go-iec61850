@@ -20,8 +20,11 @@ Complete public API reference for `go-iec61850`.
 - [Object References](#object-references)
 - [Functional Constraints](#functional-constraints)
 - [GOOSE control blocks (client)](#goose-control-blocks-client)
+- [SV control blocks (client)](#sv-control-blocks-client)
 - [Server (experimental)](#server-experimental)
 - [GOOSE package](#goose-package)
+- [SV package](#sv-package)
+- [L2 package](#l2-package)
 - [SCL Package](#scl-package)
 - [SCL Index Package](#scl-index-package)
 - [SCL Validate Package](#scl-validate-package)
@@ -960,6 +963,46 @@ type GoCBUpdate struct {
 
 ---
 
+## SV control blocks (client)
+
+```go
+func (c *Client) GetMSVCB(ctx context.Context, ld, msvcbItemID string) (*MSVCB, error)
+func (c *Client) SetMSVCB(ctx context.Context, ld, msvcbItemID string, upd MSVCBUpdate) error
+
+type MSVCB struct {
+    Reference     string // "LD/LLN0$MS$name"
+    SvEna         bool
+    MsvID, DatSet string
+    ConfRev       uint32
+    SmpRate       uint16
+    OptFlds       sv.OptFlds
+    SmpMod        sv.SmpMod // SmpPerPeriod when !HasSmpMod (Edition 1)
+    HasSmpMod     bool
+    DstAddress    SvCBDstAddress
+    NoASDU        uint16 // 0 when absent
+}
+
+type SvCBDstAddress struct {
+    Addr     sv.MAC
+    Priority uint8
+    VID      uint16
+    AppID    uint16
+}
+
+// Nil fields are not written; SvEna is written last.
+type MSVCBUpdate struct {
+    MsvID, DatSet *string
+    SmpRate       *uint16
+    OptFlds       *sv.OptFlds
+    SmpMod        *sv.SmpMod
+    SvEna         *bool
+}
+```
+
+`msvcbItemID` is the MMS item (`"LLN0$MS$MSVCB01"`). See [SV.md](SV.md#client-msvcb-access).
+
+---
+
 ## Server (experimental)
 
 ### Construction
@@ -1006,6 +1049,8 @@ func (s *Server) HandleIdentify(id ServerIdentity)
 func (s *Server) HandleStatus()
 func (s *Server) EnableGOOSE(opts GOOSEOptions) (*GOOSEEngine, error)
 func (s *Server) GOOSEEngine() *GOOSEEngine
+func (s *Server) EnableSV(opts SVOptions) (*SVEngine, error)
+func (s *Server) SVEngine() *SVEngine
 ```
 
 ### ServiceCapabilities
@@ -1014,7 +1059,7 @@ func (s *Server) GOOSEEngine() *GOOSEEngine
 type ServiceCapabilities struct {
     Variables, DataSets, Reports, Controls     bool
     SettingGroups, Journals, Files, Identify   bool
-    GOOSE                                      bool
+    GOOSE, SV                                  bool
 }
 
 func (c ServiceCapabilities) String() string
@@ -1083,6 +1128,29 @@ func (e *GOOSEEngine) Stop()
 Errors wrap `ErrGOOSE` (or `ErrNotFound` for an unknown reference). See
 [GOOSE.md](GOOSE.md#server-gocbs).
 
+### SV engine
+
+```go
+type SVOptions struct {
+    Transport        sv.Transport // required
+    StartDisabled    bool         // SvEna false initially
+    SmpSynch         uint8        // smpSynch sent
+    NominalFrequency float64      // for SmpPerPeriod, default 50
+    Logger           *slog.Logger
+    Metrics          sv.Metrics
+}
+
+type SVEngine struct { /* unexported */ }
+
+func (e *SVEngine) ControlBlocks() []string // "LD/LLN0$MS$name", sorted
+func (e *SVEngine) Publisher(ref string) (*sv.Publisher, error) // nil while disabled
+func (e *SVEngine) SetEnabled(ref string, enabled bool) error
+func (e *SVEngine) Stop()
+```
+
+Errors wrap `ErrSV` (or `ErrNotFound` for an unknown reference). See
+[SV.md](SV.md#server-msvcbs).
+
 ### Setting group engine
 
 ```go
@@ -1150,15 +1218,9 @@ const EtherTypeVLAN uint16 = 0x8100
 const SimulationBit uint16 = 0x8000
 const MaxPayload = 1500
 
-type MAC [6]byte
+type MAC = l2.MAC // see the L2 package
 var Broadcast MAC
-func ParseMAC(s string) (MAC, error)
-func (m MAC) String() string
-func (m MAC) IsZero() bool
-func (m MAC) IsMulticast() bool
-func (m MAC) IsGOOSEMulticast() bool
-func (m MAC) MarshalText() ([]byte, error)
-func (m *MAC) UnmarshalText(b []byte) error
+func ParseMAC(s string) (MAC, error) // fails with *goose.ConfigError
 
 type VLAN struct { Priority uint8; DEI bool; ID uint16 }
 
@@ -1390,6 +1452,341 @@ type TransportError struct { Op, Interface string; Err error; Kind error }
 ```
 
 Sentinels are listed in [GOOSE.md](GOOSE.md#errors).
+
+---
+
+## SV package
+
+`import "github.com/otfabric/go-iec61850/sv"` — full guide in [SV.md](SV.md).
+
+### Frames
+
+```go
+const EtherType uint16 = 0x88BA
+const EtherTypeVLAN uint16 = 0x8100
+const SimulationBit uint16 = 0x8000
+const MaxPayload = 1500
+const SmpSynchNone, SmpSynchLocal, SmpSynchGlobal uint8 = 0, 1, 2
+
+type SmpMod uint16 // SmpPerPeriod, SmpPerSec, SecPerSmp
+func (m SmpMod) String() string
+
+type Frame struct {
+    Dst, Src             MAC
+    VLAN                 *VLAN
+    AppID                uint16
+    Simulation           bool
+    Reserved1, Reserved2 uint16
+    PDU                  PDU
+}
+func (f *Frame) String() string
+
+type PDU struct {
+    NoASDU   int    // 0 on encode: len(ASDUs)
+    Security []byte // opaque
+    ASDUs    []ASDU
+}
+
+type ASDU struct {
+    SvID, DatSet  string // DatSet optional
+    SmpCnt        uint16
+    ConfRev       uint32
+    RefrTm        time.Time; RefrTmQuality uint8; HasRefrTm bool
+    SmpSynch      uint8
+    SmpRate       uint16; HasSmpRate bool
+    Sample        []byte
+    SmpMod        SmpMod; HasSmpMod bool
+    GmIdentity    [8]byte; HasGmIdentity bool
+}
+
+type Limits struct { MaxASDUs, MaxSample int }
+var DefaultLimits = Limits{MaxASDUs: 64, MaxSample: 1500}
+
+func Encode(f *Frame) ([]byte, error)
+func AppendFrame(dst []byte, f *Frame) ([]byte, error)
+func EncodePDU(p *PDU) ([]byte, error)
+func Decode(b []byte) (*Frame, error)                // copies
+func DecodeInto(f *Frame, b []byte, lim Limits) error // reuses f, aliases b
+func DecodePDU(b []byte) (*PDU, error)
+```
+
+### Datasets
+
+```go
+type Kind uint8 // KindBoolean, KindInt8 … KindInt64, KindUint8 … KindUint32,
+                // KindFloat32, KindFloat64, KindEnum, KindDbpos, KindQuality, KindTimestamp
+func (k Kind) Size() int
+func (k Kind) String() string
+func KindOf(bType string) (Kind, bool)
+
+type Layout []Kind
+func (l Layout) Size() int
+func (l Layout) Offsets() []int
+func (l Layout) Validate() error
+func (l Layout) Encode(dst []byte, values []*mms.Value) ([]byte, error)
+func (l Layout) Decode(sample []byte) ([]*mms.Value, error)
+func (l Layout) String() string
+
+type Quality uint32 // QualityGood, QualityInvalid, QualityReserved, QualityQuestionable,
+                    // QualityOverflow … QualityTest, QualityOperatorBlocked, QualityDerived
+func (q Quality) Validity() Quality
+func (q Quality) IsGood() bool
+func (q Quality) Value() *mms.Value
+func QualityFromValue(v *mms.Value) (Quality, error)
+
+func Int32At(sample []byte, off int) int32
+func Float32At(sample []byte, off int) float32
+func QualityAt(sample []byte, off int) Quality
+func TimestampAt(sample []byte, off int) (time.Time, uint8)
+
+// UCA 9-2LE
+const LESampleSize = 64
+var LELayout Layout
+type Point struct { Value int32; Q Quality }
+type LESample struct { Current, Voltage [4]Point }
+func (s *LESample) Append(dst []byte) []byte
+func DecodeLE(sample []byte, s *LESample) error
+func Amps(count int32) float64; func AmpsCount(a float64) int32   // 1 mA/count
+func Volts(count int32) float64; func VoltsCount(v float64) int32 // 10 mV/count
+```
+
+### Publisher
+
+```go
+type PublisherConfig struct {
+    Dst, Src         MAC
+    VLAN             *VLAN
+    AppID            uint16
+    Simulation       bool
+    SvID, DatSet     string
+    ConfRev          uint32
+    SmpRate          uint16
+    SmpMod           SmpMod
+    NominalFrequency float64 // default 50
+    NoASDU           int     // default 1
+    SmpSynch         uint8
+    RefrTm, SendSmpRate, SendSmpMod bool
+    GmIdentity       *[8]byte
+    SmpCntWrap       int  // default: samples per second when integral, else 65536
+    AlignSecond      bool // start at a whole second with smpCnt 0
+    Layout           Layout
+    Sample           []byte
+    Source           func(info SampleInfo, dst []byte) []byte
+    Disabled         bool
+    MaxBurst         int // default 16
+    Now              func() time.Time
+    Logger           *slog.Logger
+    Metrics          Metrics
+}
+type SampleInfo struct { Index uint64; SmpCnt uint16; Time time.Time }
+type PublisherState struct {
+    Enabled bool; SmpSynch uint8; NextSmpCnt uint16
+    Samples, Frames, Skipped, Late, SendErrors uint64
+    Rate float64
+}
+
+func NewPublisher(t Transport, cfg PublisherConfig) (*Publisher, error)
+func (p *Publisher) Run(ctx context.Context) error
+func (p *Publisher) Update(values []*mms.Value) error
+func (p *Publisher) UpdateSample(sample []byte) error
+func (p *Publisher) SetEnabled(enabled bool)
+func (p *Publisher) SetSmpSynch(s uint8)
+func (p *Publisher) SetSimulation(sim bool)
+func (p *Publisher) State() PublisherState
+func (p *Publisher) Config() PublisherConfig
+func (p *Publisher) Close() error
+func SamplesPerSecond(smpRate uint16, mod SmpMod, nominalFrequency float64) float64
+func DefaultSmpCntWrap(rate float64) int
+```
+
+### Subscriber
+
+```go
+type SubscriberConfig struct {
+    Limits              Limits
+    AcceptSimulation    bool
+    SupervisionInterval time.Duration // default 10 ms
+    OnDecodeError       func(frame []byte, err error)
+    Now                 func() time.Time
+    Logger              *slog.Logger
+    Metrics             Metrics
+}
+type SubscriptionConfig struct {
+    Dst, Src         MAC
+    AppIDs           []uint16
+    SvID, DatSet     string
+    ConfRev          uint32
+    SmpRate          uint16
+    SmpMod           SmpMod
+    SampleSize       int
+    Layout           Layout
+    NominalFrequency float64
+    SmpCntWrap       int
+    Timeout          time.Duration // default 100 ms
+    OnASDU           func(*Sample) // or:
+    SampleQueue      int           // Samples() channel
+    EventQueue       int           // default 256
+}
+type StreamKey struct { Src MAC; AppID uint16; SvID string }
+type Sample struct {
+    Stream   StreamKey
+    Received time.Time
+    Frame    *Frame
+    Index    int
+    ASDU     *ASDU
+    Lost     int
+}
+type EventKind int // EventStart, EventGap, EventDuplicate, EventOutOfOrder, EventTimeout,
+                   // EventRestored, EventSynch, EventConfRev, EventInvalid
+type Event struct {
+    Kind     EventKind
+    Stream   StreamKey
+    Time     time.Time
+    SmpCnt   uint16
+    Lost     int
+    SmpSynch uint8
+    ConfRev  uint32
+    Err      error
+}
+type Status int // StatusOK, StatusTimeout, StatusInvalid
+type Stats struct {
+    Stream     StreamKey
+    Status     Status
+    Frames, ASDUs, Lost, Duplicates, OutOfOrder, Invalid, Timeouts, QueueDrops uint64
+    LastSmpCnt uint16
+    SmpSynch   uint8
+    ConfRev    uint32
+    Simulation bool
+    SmpCntWrap int
+    Rate       float64
+    First, Last time.Time
+}
+
+func NewSubscriber(t Transport, cfg SubscriberConfig) (*Subscriber, error) // t may be nil
+func (s *Subscriber) Subscribe(cfg SubscriptionConfig) (*Subscription, error)
+func (s *Subscriber) Run(ctx context.Context) error
+func (s *Subscriber) HandleFrame(raw []byte)
+func (s *Subscriber) CheckTimeouts()
+func (s *Subscriber) Close() error
+func (sub *Subscription) Events() <-chan Event
+func (sub *Subscription) Samples() <-chan Sample
+func (sub *Subscription) Stats() []Stats
+func (sub *Subscription) Close() error
+```
+
+### SCL binding
+
+```go
+type ControlBlock struct {
+    IEDName, APName, LDInst, LNName, Name string
+    SvCBRef, SvID, DatSet string
+    ConfRev    uint32
+    SmpRate    uint16
+    SmpMod     SmpMod
+    NoASDU     int
+    Opts       OptFlds
+    HasAddress bool
+    Dst        MAC
+    AppID      uint16
+    VLAN       *VLAN
+    Members    []Member
+    Layout     Layout
+}
+type OptFlds struct { RefreshTime, SampleSynchronized, SampleRate, DataSet, Security bool }
+type Member struct { Ref, FC string; Kinds []Kind }
+
+func ControlBlocksFromSCL(doc *scl.SCL) ([]ControlBlock, error)
+func ControlBlockFromSCL(doc *scl.SCL, iedName, ldInst, cbName string) (*ControlBlock, error)
+func (cb *ControlBlock) PublisherConfig() (PublisherConfig, error)
+func (cb *ControlBlock) SubscriptionConfig() SubscriptionConfig
+```
+
+### Transports, metrics and errors
+
+```go
+type MAC = l2.MAC; type VLAN = l2.VLAN
+type Transport = l2.Transport; type TransportOptions = l2.TransportOptions
+type TransportError = l2.TransportError
+type Hub = l2.Hub; type HubPort = l2.HubPort; type HubStats = l2.HubStats; type Faults = l2.Faults
+func Open(iface string, opts TransportOptions) (Transport, error) // EtherTypes default: SV
+func NewHub() *Hub
+func ParseMAC(s string) (MAC, error) // fails with *sv.ConfigError
+
+type Metrics interface {
+    FrameSent(svID string, asdus int)
+    SendError(svID string, err error)
+    ASDUReceived(svID string)
+    FrameDropped(reason string)
+    Event(svID string, kind EventKind, dropped bool)
+}
+type NopMetrics struct{}
+
+type DecodeError struct { Field string; Offset int; Message string; Err error }
+type ValidationError struct { SvID, Field, Want, Got string; Err error }
+type ConfigError struct { Field, Message string }
+```
+
+Sentinels are listed in [SV.md](SV.md#errors).
+
+---
+
+## L2 package
+
+`import "github.com/otfabric/go-iec61850/l2"` — the raw Ethernet layer
+shared by `goose` and `sv` (their `MAC`, `Transport`, `Hub` … are
+aliases of these types).
+
+```go
+const EtherTypeGOOSE, EtherTypeGSE, EtherTypeSV, EtherTypeVLAN uint16 = 0x88B8, 0x88B9, 0x88BA, 0x8100
+
+type MAC [6]byte
+var Broadcast MAC
+func ParseMAC(s string) (MAC, error)
+func (m MAC) String() string
+func (m MAC) IsZero() bool
+func (m MAC) IsMulticast() bool
+func (m MAC) IsGOOSEMulticast() bool // 01-0C-CD-01-xx-xx
+func (m MAC) IsSVMulticast() bool    // 01-0C-CD-04-xx-xx
+func (m MAC) MarshalText() ([]byte, error)
+func (m *MAC) UnmarshalText(b []byte) error
+
+type VLAN struct { Priority uint8; DEI bool; ID uint16 }
+func (v VLAN) TCI() (uint16, bool)
+func VLANFromTCI(tci uint16) VLAN
+
+type Transport interface {
+    Send(frame []byte) error
+    Recv(ctx context.Context) ([]byte, error)
+    HardwareAddr() MAC
+    Close() error
+}
+type TransportOptions struct {
+    EtherTypes   []uint16 // frames received (max 32); empty: GOOSE only
+    Multicast    []MAC
+    Promiscuous  bool
+    ReceiveLocal bool
+    Logger       *slog.Logger
+}
+func Open(iface string, opts TransportOptions) (Transport, error)
+
+// Demux splits one transport by EtherType.
+func NewDemux(t Transport, queue int) *Demux // queue < 1: DefaultDemuxQueue
+func EtherTypeOf(frame []byte) (uint16, bool)
+func (d *Demux) Port(etherTypes ...uint16) (*DemuxPort, error) // a Transport
+func (d *Demux) Stats() DemuxStats // Received, Unmatched, Overflow
+func (d *Demux) Err() error
+func (d *Demux) Close() error
+
+type Hub struct { /* in-memory segment */ }
+func NewHub() *Hub
+func (h *Hub) NewPort(mac MAC) *HubPort
+func (h *Hub) SetFaults(f Faults) // Loss, Duplicate, Reorder, Delay, Seed, Mutate
+func (h *Hub) Stats() HubStats    // Sent, Delivered, Lost, Duplicated, Reordered, Overflow
+func (h *Hub) Flush()
+```
+
+Sentinels: `ErrClosed`, `ErrUnsupportedPlatform`, `ErrPermission`,
+`ErrInterfaceNotFound`, `ErrInvalidConfig` (shared by `goose` and `sv`).
 
 ---
 
@@ -2006,6 +2403,7 @@ Sentinel errors are package-level variables tested with `errors.Is()`:
 | `ErrCancelFailed` | Cancel request denied or could not be executed |
 | `ErrNotControllable` | Target data object's ctlModel is status-only |
 | `ErrGOOSE` | Server GOOSE engine failure (see [GOOSE.md](GOOSE.md)) |
+| `ErrSV` | Server SV engine failure (see [SV.md](SV.md)) |
 
 ### Typed errors
 

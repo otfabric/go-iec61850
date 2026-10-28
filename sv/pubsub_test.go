@@ -675,3 +675,16 @@ func TestPublisherCatchUp(t *testing.T) {
 		t.Errorf("first aligned sample: %v %+v", err, g)
 	}
 }
+
+// TestSamplesChannelOwnsData checks that samples sent on the channel do
+// not alias the subscriber's reused frame.
+func TestSamplesChannelOwnsData(t *testing.T) {
+	s, _ := NewSubscriber(nil, SubscriberConfig{})
+	sub, _ := s.Subscribe(SubscriptionConfig{SampleQueue: 4})
+	s.HandleFrame(frameWith(t, func(f *Frame) { f.VLAN = &VLAN{Priority: 4, ID: 1} }, 0))
+	s.HandleFrame(frameWith(t, func(f *Frame) { f.VLAN = &VLAN{Priority: 6, ID: 2}; f.PDU.ASDUs[0].SvID = "MU02" }, 1))
+	a, b := <-sub.Samples(), <-sub.Samples()
+	if a.Frame.VLAN.ID != 1 || b.Frame.VLAN.ID != 2 || a.ASDU.SvID != "MU01" || a.ASDU.SmpCnt != 0 || Int32At(a.ASDU.Sample, 0) != 0 {
+		t.Fatalf("first sample changed: %+v %+v", a.Frame.VLAN, a.ASDU)
+	}
+}

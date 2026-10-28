@@ -35,12 +35,21 @@ Use `errors.Is(err, iec61850.ErrXxx)` for category classification.
 | `ErrCancelFailed` | Cancel step of a control failed |
 | `ErrNotControllable` | Target data object has no controllable model |
 | `ErrGOOSE` | Server GOOSE engine: already enabled, no transport, engine stopped, GoCB without address |
+| `ErrSV` | Server SV engine: already enabled, no transport, engine stopped, MSVCB sample not encodable |
 
 The `goose` package has its own sentinels (`goose.ErrInvalidFrame`,
 `goose.ErrValidation`, `goose.ErrPermission`, ...) and typed errors
 (`*goose.DecodeError`, `*goose.ValidationError`, `*goose.ConfigError`,
 `*goose.EncodeError`, `*goose.TransportError`); see
 [GOOSE.md](GOOSE.md#errors).
+
+The `sv` package likewise has its own sentinels (`sv.ErrInvalidFrame`,
+`sv.ErrInvalidPDU`, `sv.ErrValidation`, `sv.ErrConfRevMismatch`, ...) and
+typed errors (`*sv.DecodeError`, `*sv.ValidationError`,
+`*sv.ConfigError`, `*sv.TransportError`); see [SV.md](SV.md#errors).
+The transport sentinels (`ErrClosed`, `ErrPermission`,
+`ErrInterfaceNotFound`, `ErrUnsupportedPlatform`, `ErrInvalidConfig`) are
+the same values in `goose`, `sv` and `l2`.
 
 ---
 

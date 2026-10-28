@@ -615,6 +615,11 @@ func (sub *Subscription) handleASDU(f *Frame, idx int, a *ASDU, now time.Time, s
 		fc := *f
 		fc.PDU.ASDUs = nil
 		fc.PDU.Security = clone(f.PDU.Security)
+		fc.strs = nil
+		if f.VLAN != nil {
+			v := *f.VLAN // DecodeInto reuses the tag
+			fc.VLAN = &v
+		}
 		sub.mu.Lock()
 		if !sub.closed {
 			select {
