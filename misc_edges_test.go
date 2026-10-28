@@ -242,6 +242,29 @@ func TestQualityChanged_InStructure(t *testing.T) {
 	}
 }
 
+func TestQualityChanged_Nil(t *testing.T) {
+	q := mms.NewBitStringWithLength([]byte{0x00, 0x00}, 13)
+	withQ := mms.NewStructure([]*mms.Value{mms.NewInteger(0), q})
+	noQ := mms.NewFloat(230.1)
+	for _, tc := range []struct {
+		name       string
+		prev, curr *mms.Value
+		want       bool
+	}{
+		{"both nil", nil, nil, false},
+		{"nil to value without quality", nil, noQ, false},
+		{"value without quality to nil", noQ, nil, false},
+		{"nil to quality", nil, q, true},
+		{"nil to structure with quality", nil, withQ, true},
+		{"structure with quality to nil", withQ, nil, true},
+		{"nil to structure without quality", nil, mms.NewStructure([]*mms.Value{noQ, noQ}), false},
+	} {
+		if got := qualityChanged(tc.prev, tc.curr); got != tc.want {
+			t.Errorf("%s: qualityChanged = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestParseRCBStoreKey(t *testing.T) {
 	tests := []struct {
 		input     string

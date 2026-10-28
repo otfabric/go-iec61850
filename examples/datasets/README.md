@@ -4,7 +4,7 @@ List, read, create and delete data sets.
 
 ## What it shows
 
-`ListDataSets`, `GetDataSet`, `ReadDataSet` with per-member errors, `CreateDataSet`, `DeleteDataSet`, and the `*mms.ServiceError` of a missing data set.
+`ListDataSets`, `GetDataSet`, `ReadDataSet` with per-member errors, `CreateDataSet`, `DeleteDataSet`, and `ErrNotFound` (wrapping the `*mms.ServiceError`) for a missing data set.
 
 ## Run
 

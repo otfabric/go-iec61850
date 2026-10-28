@@ -5,6 +5,7 @@ package iec61850
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/otfabric/go-mms"
@@ -210,6 +211,37 @@ func TestListDataSets_ClosedClient(t *testing.T) {
 	_, err := client.ListDataSets(ctx, "simpleIOGenericIO")
 	if !errors.Is(err, ErrClosed) {
 		t.Errorf("got %v, want ErrClosed", err)
+	}
+}
+
+func TestGetDataSet_NotFound(t *testing.T) {
+	client := setupDataSetLoopback(t)
+	ctx := context.Background()
+
+	_, err := client.GetDataSet(ctx, "simpleIOGenericIO", "LLN0$nosuchset")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("got %v, want ErrNotFound", err)
+	}
+	var se *mms.ServiceError
+	if !errors.As(err, &se) {
+		t.Errorf("%v does not keep the MMS ServiceError", err)
+	}
+}
+
+func TestIsObjectNotFound(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want bool
+	}{
+		{&mms.ServiceError{Class: mms.ErrorClassAccess, Code: 2}, true},
+		{&mms.ServiceError{Class: mms.ErrorClassDefinition, Code: 1}, true},
+		{&mms.ServiceError{Class: mms.ErrorClassAccess, Code: 3}, false},
+		{&mms.ServiceError{Class: mms.ErrorClassDefinition, Code: 2}, false},
+		{errors.New("other"), false},
+	} {
+		if got := isObjectNotFound(fmt.Errorf("wrapped: %w", tc.err)); got != tc.want {
+			t.Errorf("isObjectNotFound(%v) = %v, want %v", tc.err, got, tc.want)
+		}
 	}
 }
 
