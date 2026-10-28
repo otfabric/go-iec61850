@@ -2,7 +2,7 @@
 
 //go:build darwin || freebsd || netbsd || dragonfly
 
-package goose
+package l2
 
 import "golang.org/x/sys/unix"
 

@@ -2,7 +2,7 @@
 
 //go:build darwin || freebsd || netbsd || openbsd || dragonfly
 
-package goose
+package l2
 
 import (
 	"context"
@@ -37,14 +37,18 @@ type bpfTransport struct {
 // Open opens a raw Ethernet transport on the named interface using a
 // BPF device (/dev/bpf*). It requires read/write access to the device
 // (root, or membership of the group that owns /dev/bpf*, e.g. via
-// Wireshark's ChmodBPF). A kernel filter limits delivery to GOOSE
-// frames. Frames sent by this transport are not looped back.
+// Wireshark's ChmodBPF). A kernel filter limits delivery to
+// opts.EtherTypes (default GOOSE). Frames sent by this transport are not looped back.
 //
 // BPF has no per-group multicast membership, so the interface is put in
 // promiscuous mode unless opts.Multicast is non-empty and
 // opts.Promiscuous is false; in that case only groups the host has
 // already joined are received.
 func Open(iface string, opts TransportOptions) (Transport, error) {
+	types, err := etherTypes(opts)
+	if err != nil {
+		return nil, err
+	}
 	ifi, err := net.InterfaceByName(iface)
 	if err != nil {
 		return nil, &TransportError{Op: "open", Interface: iface, Err: err, Kind: ErrInterfaceNotFound}
@@ -60,11 +64,11 @@ func Open(iface string, opts TransportOptions) (Transport, error) {
 	copy(mac[:], ifi.HardwareAddr)
 	t := &bpfTransport{iface: iface, mac: mac, fd: fd}
 	promisc := opts.Promiscuous || len(opts.Multicast) == 0
-	if err := t.setup(promisc, opts.ReceiveLocal); err != nil {
+	if err := t.setup(types, promisc, opts.ReceiveLocal); err != nil {
 		_ = unix.Close(fd)
 		return nil, err
 	}
-	orDiscard(opts.Logger).Info("goose: BPF transport opened", "iface", iface, "mac", mac.String(), "promiscuous", promisc)
+	orDiscard(opts.Logger).Info("l2: BPF transport opened", "iface", iface, "mac", mac.String(), "promiscuous", promisc)
 	return t, nil
 }
 
@@ -102,7 +106,7 @@ func ioctlPtr(fd int, req uint, p unsafe.Pointer) error {
 	return nil
 }
 
-func (t *bpfTransport) setup(promisc, local bool) error {
+func (t *bpfTransport) setup(types []uint16, promisc, local bool) error {
 	fd := t.fd
 	// struct ifreq starts with the NUL-padded name; pad to its full size.
 	var ifr [32]byte
@@ -121,8 +125,9 @@ func (t *bpfTransport) setup(promisc, local bool) error {
 	if err := setSeeSent(fd, local); err != nil {
 		return osErr("BIOCSSEESENT", t.iface, err)
 	}
-	insns := make([]unix.BpfInsn, len(gooseFilter))
-	for i, in := range gooseFilter {
+	filter := etherTypeFilter(types)
+	insns := make([]unix.BpfInsn, len(filter))
+	for i, in := range filter {
 		insns[i] = unix.BpfInsn{Code: in.code, Jt: in.jt, Jf: in.jf, K: in.k}
 	}
 	prog := unix.BpfProgram{Len: uint32(len(insns)), Insns: &insns[0]}

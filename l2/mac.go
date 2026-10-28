@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-package goose
+package l2
 
 import (
 	"fmt"
@@ -43,6 +43,13 @@ func (m MAC) IsZero() bool { return m == MAC{} }
 
 // IsMulticast reports whether the group bit (I/G) is set.
 func (m MAC) IsMulticast() bool { return m[0]&0x01 != 0 }
+
+// IsSVMulticast reports whether m lies in the multicast range
+// recommended for Sampled Values by IEC 61850-9-2 / 8-1 Annex B
+// (01-0C-CD-04-00-00 to 01-0C-CD-04-01-FF).
+func (m MAC) IsSVMulticast() bool {
+	return m[0] == 0x01 && m[1] == 0x0c && m[2] == 0xcd && m[3] == 0x04 && m[4] <= 0x01
+}
 
 // IsGOOSEMulticast reports whether m lies in the multicast range
 // recommended for GOOSE by IEC 61850-8-1 Annex B

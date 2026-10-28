@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-package goose
+package l2
 
 import (
 	"context"

@@ -2,7 +2,7 @@
 
 //go:build !linux && !darwin && !freebsd && !netbsd && !openbsd && !dragonfly
 
-package goose
+package l2
 
 // Open is not available on this platform: it always fails with
 // [ErrUnsupportedPlatform]. Use a [Hub] or a custom [Transport].

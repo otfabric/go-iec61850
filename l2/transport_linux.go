@@ -2,7 +2,7 @@
 
 //go:build linux
 
-package goose
+package l2
 
 import (
 	"context"
@@ -37,10 +37,15 @@ type packetTransport struct {
 
 // Open opens a raw Ethernet transport on the named interface using an
 // AF_PACKET socket. It requires CAP_NET_RAW (or root). A kernel socket
-// filter limits delivery to GOOSE frames (untagged or 802.1Q tagged).
+// filter limits delivery to opts.EtherTypes (default GOOSE), untagged or
+// 802.1Q tagged.
 // VLAN tags stripped by NIC offload are restored from PACKET_AUXDATA so
 // that decoded frames report their VLAN.
 func Open(iface string, opts TransportOptions) (Transport, error) {
+	types, err := etherTypes(opts)
+	if err != nil {
+		return nil, err
+	}
 	ifi, err := net.InterfaceByName(iface)
 	if err != nil {
 		return nil, &TransportError{Op: "open", Interface: iface, Err: err, Kind: ErrInterfaceNotFound}
@@ -53,18 +58,19 @@ func Open(iface string, opts TransportOptions) (Transport, error) {
 		return nil, osErr("socket", iface, err)
 	}
 	t := &packetTransport{iface: iface, mac: mac, idx: ifi.Index, local: opts.ReceiveLocal, fd: fd, rbuf: make([]byte, 1<<16), oob: make([]byte, unix.CmsgSpace(sizeofAuxdata))}
-	if err := t.setup(proto, opts); err != nil {
+	if err := t.setup(proto, types, opts); err != nil {
 		_ = unix.Close(fd)
 		return nil, err
 	}
-	orDiscard(opts.Logger).Info("goose: AF_PACKET transport opened", "iface", iface, "mac", mac.String())
+	orDiscard(opts.Logger).Info("l2: AF_PACKET transport opened", "iface", iface, "mac", mac.String())
 	return t, nil
 }
 
-func (t *packetTransport) setup(proto uint16, opts TransportOptions) error {
+func (t *packetTransport) setup(proto uint16, types []uint16, opts TransportOptions) error {
 	fd := t.fd
-	prog := make([]unix.SockFilter, len(gooseFilter))
-	for i, in := range gooseFilter {
+	filter := etherTypeFilter(types)
+	prog := make([]unix.SockFilter, len(filter))
+	for i, in := range filter {
 		prog[i] = unix.SockFilter{Code: in.code, Jt: in.jt, Jf: in.jf, K: in.k}
 	}
 	fprog := unix.SockFprog{Len: uint16(len(prog)), Filter: &prog[0]}

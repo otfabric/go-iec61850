@@ -5,11 +5,16 @@ package goose
 import (
 	"errors"
 	"fmt"
+
+	"github.com/otfabric/go-iec61850/l2"
 )
 
 // Sentinel errors returned by the goose package.
 //
-// Use [errors.Is] to test against these values. Decoder failures are
+// Use [errors.Is] to test against these values. The transport and
+// configuration sentinels (ErrClosed, ErrUnsupportedPlatform,
+// ErrPermission, ErrInterfaceNotFound, ErrInvalidConfig) are the l2
+// values, shared with package sv. Decoder failures are
 // returned as [*DecodeError] values that unwrap to one of the decode
 // sentinels below.
 var (
@@ -45,7 +50,7 @@ var (
 
 	// ErrInvalidConfig indicates an invalid publisher, subscriber or
 	// transport configuration.
-	ErrInvalidConfig = errors.New("goose: invalid configuration")
+	ErrInvalidConfig = l2.ErrInvalidConfig
 
 	// ErrInvalidValue indicates a value that cannot be encoded in a
 	// GOOSE message (nil element, unsupported type, out of range).
@@ -53,20 +58,20 @@ var (
 
 	// ErrClosed indicates an operation on a closed publisher,
 	// subscriber or transport.
-	ErrClosed = errors.New("goose: closed")
+	ErrClosed = l2.ErrClosed
 
 	// ErrUnsupportedPlatform indicates that no raw Ethernet transport
 	// is available on this operating system.
-	ErrUnsupportedPlatform = errors.New("goose: raw Ethernet not supported on this platform")
+	ErrUnsupportedPlatform = l2.ErrUnsupportedPlatform
 
 	// ErrPermission indicates that opening a raw Ethernet socket was
 	// denied (on Linux CAP_NET_RAW is required; on macOS/BSD read and
 	// write access to /dev/bpf*).
-	ErrPermission = errors.New("goose: permission denied")
+	ErrPermission = l2.ErrPermission
 
 	// ErrInterfaceNotFound indicates that the named network interface
 	// does not exist.
-	ErrInterfaceNotFound = errors.New("goose: interface not found")
+	ErrInterfaceNotFound = l2.ErrInterfaceNotFound
 
 	// ErrSCL indicates that a GOOSE control block could not be built
 	// from an SCL document.
@@ -159,27 +164,6 @@ func (e *ConfigError) Unwrap() error { return ErrInvalidConfig }
 
 func configErr(field, format string, args ...any) error {
 	return &ConfigError{Field: field, Message: fmt.Sprintf(format, args...)}
-}
-
-// TransportError wraps an operating-system error from a raw Ethernet
-// backend. It unwraps to the underlying error and, where applicable,
-// to [ErrPermission], [ErrInterfaceNotFound] or [ErrClosed].
-type TransportError struct {
-	Op        string
-	Interface string
-	Err       error
-	Kind      error // optional classification sentinel
-}
-
-func (e *TransportError) Error() string {
-	return fmt.Sprintf("goose: %s %s: %v", e.Op, e.Interface, e.Err)
-}
-
-func (e *TransportError) Unwrap() []error {
-	if e.Kind != nil {
-		return []error{e.Kind, e.Err}
-	}
-	return []error{e.Err}
 }
 
 func errValue(format string, args ...any) error {
