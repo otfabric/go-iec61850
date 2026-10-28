@@ -306,7 +306,8 @@ Embed `goose.NopMetrics` to implement only some methods. See
 - No GOOSE security (IEC 62351-6): the `security` field is carried
   opaquely, not generated or verified.
 - No fixed-offset encoding (`FixedOffs` is reported, not applied).
-- No GSSE, no GOOSE management APDUs, no Sampled Values.
+- No GSSE, no GOOSE management APDUs. Sampled Values are in package
+  [`sv`](SV.md); both share the raw Ethernet layer of package `l2`.
 - No Windows transport.
 - The subscriber does not map received values into a server model
   (no LGOS/`InRef` binding); applications handle `EventMessage`.

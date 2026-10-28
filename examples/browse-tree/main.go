@@ -1,50 +1,65 @@
 // SPDX-License-Identifier: MIT
 
-// Command browse-tree demonstrates building and printing the IEC 61850
-// model tree from a server, optionally with FC annotations.
+// Command browse-tree prints the IEC 61850 model tree of a server
+// (logical devices, logical nodes, data objects and attributes) with
+// their functional constraints.
+//
+// Usage:
+//
+//	browse-tree [-addr 127.0.0.1:102] [-depth 5] [-ld LD1]
+//
+// Run it against examples/ied-server or any IEC 61850 server.
 package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
-	"github.com/otfabric/go-iec61850"
+	iec61850 "github.com/otfabric/go-iec61850"
 )
 
 func main() {
-	addr := "127.0.0.1:102"
-	if len(os.Args) > 1 {
-		addr = os.Args[1]
-	}
+	addr := flag.String("addr", "127.0.0.1:102", "server address")
+	depth := flag.Int("depth", 5, "maximum depth (0 = unlimited)")
+	ld := flag.String("ld", "", "only this logical device")
+	flag.Parse()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	client, err := iec61850.Dial(ctx, addr, iec61850.DialOptions{
-		Cache: iec61850.CacheLazy,
-	})
-	if err != nil {
-		log.Fatalf("dial: %v", err)
+	if err := run(ctx, *addr, iec61850.TreeOptions{MaxDepth: *depth, LDFilter: *ld, IncludeFCs: true}, os.Stdout); err != nil {
+		log.Fatal(err)
 	}
-	defer client.Close(context.Background()) //nolint:errcheck
-
-	tree, err := client.TreeWithOptions(ctx, iec61850.TreeOptions{
-		MaxDepth:   5,
-		IncludeFCs: true,
-	})
-	if err != nil {
-		log.Fatalf("tree: %v", err)
-	}
-
-	printNode(tree, 0)
 }
 
-func printNode(node *iec61850.ModelNode, depth int) {
-	indent := strings.Repeat("  ", depth)
+func run(ctx context.Context, addr string, opts iec61850.TreeOptions, out io.Writer) error {
+	// CacheLazy keeps the discovered model, so a later read of the same
+	// node does not query the server again.
+	client, err := iec61850.Dial(ctx, addr, iec61850.DialOptions{Cache: iec61850.CacheLazy})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = client.Close(context.Background()) }()
+
+	tree, err := client.TreeWithOptions(ctx, opts)
+	if err != nil {
+		return err
+	}
+	printNode(out, tree, 0)
+	return nil
+}
+
+func printNode(out io.Writer, node *iec61850.ModelNode, depth int) {
 	fc := ""
 	if node.FC != "" {
 		fc = fmt.Sprintf(" [%s]", node.FC)
@@ -55,8 +70,8 @@ func printNode(node *iec61850.ModelNode, depth int) {
 		}
 		fc = fmt.Sprintf(" [%s]", strings.Join(fcs, ","))
 	}
-	fmt.Printf("%s%s%s\n", indent, node.Name, fc)
+	fmt.Fprintf(out, "%s%s%s\n", strings.Repeat("  ", depth), node.Name, fc)
 	for _, child := range node.Children {
-		printNode(child, depth+1)
+		printNode(out, child, depth+1)
 	}
 }

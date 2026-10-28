@@ -85,6 +85,7 @@ Logging is integrated across all runtime subsystems:
 | Report engine | RCB enable/disable, report generation, buffer management |
 | Journal engine | Entry creation, query results, overflow |
 | GOOSE | Publisher start/stop and send failures, subscriber stream state changes and validation failures, GoCB enable/disable and writes |
+| SV | Publisher pacing (samples skipped when behind) and send failures, decode failures, MSVCB enable/disable and sample update failures |
 
 ## SCL diagnostics
 
@@ -107,7 +108,12 @@ implementation (`PublisherConfig.Metrics`, `SubscriberConfig.Metrics`,
 | `FrameDropped(reason)` | a frame was dropped: `decode`, `simulation`, `filtered` |
 | `Event(gocbRef, kind, dropped)` | a subscription event was produced (dropped when the queue was full) |
 
-Embed `goose.NopMetrics` to implement a subset; a nil `Metrics` costs
+Sampled Values publishers and subscribers report to an `sv.Metrics`
+(`FrameSent(svID, asdus)`, `SendError`, `ASDUReceived(svID)`,
+`FrameDropped(reason)`, `Event(svID, kind, dropped)`; `SVOptions.Metrics`
+for the server engine).
+
+Embed `goose.NopMetrics` (or `sv.NopMetrics`) to implement a subset; a nil `Metrics` costs
 nothing. Adapters to Prometheus or OpenTelemetry are left to the
 application. Publisher and subscriber state is also available as
 snapshots (`Publisher.State`, `Subscription.Supervision`).

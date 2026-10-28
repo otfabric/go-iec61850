@@ -111,9 +111,12 @@ func (p *MemoryJournalProvider) AddEntry(domain, journal string, occTime time.Ti
 		}
 	}
 
+	// The occurrence time travels as an MMS TimeOfDay (millisecond
+	// resolution): store it at that resolution so that the cursor a
+	// client sends back (ReadStartAfter) matches the entry exactly.
 	jl.entries = append(jl.entries, mms.JournalEntry{
 		EntryID:        entryID,
-		OccurrenceTime: occTime,
+		OccurrenceTime: occTime.Truncate(time.Millisecond),
 		Variables:      copiedVars,
 	})
 
@@ -188,10 +191,27 @@ func (p *MemoryJournalProvider) ReadStartAfter(_ context.Context, domain, journa
 		return &mms.JournalResult{}, nil
 	}
 
+	// The entry ID locates the cursor; the time only when the entry is
+	// no longer in the log (evicted), then entries after afterTime follow.
+	afterTime = afterTime.Truncate(time.Millisecond)
+	start := -1
+	for i, e := range jl.entries {
+		if bytes.Equal(e.EntryID, afterID) && e.OccurrenceTime.Equal(afterTime) {
+			start = i + 1
+			break
+		}
+	}
+
 	pastCursor := false
 	var result []mms.JournalEntry
 	moreFollows := false
-	for _, e := range jl.entries {
+	for i, e := range jl.entries {
+		if start >= 0 {
+			if i < start {
+				continue
+			}
+			pastCursor = true
+		}
 		if !pastCursor {
 			if e.OccurrenceTime.Equal(afterTime) && bytes.Equal(e.EntryID, afterID) {
 				pastCursor = true

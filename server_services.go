@@ -67,6 +67,9 @@ type ServiceCapabilities struct {
 	// GOOSE is true when [Server.EnableGOOSE] has been called.
 	GOOSE bool
 
+	// SV is true when [Server.EnableSV] has been called.
+	SV bool
+
 	// Files is true when a [mms.FileProvider] was configured.
 	Files bool
 
@@ -104,6 +107,7 @@ func (s *Server) Capabilities() ServiceCapabilities {
 		SettingGroups: s.sgEngine != nil,
 		Journals:      s.journalEngine != nil,
 		GOOSE:         s.gooseEngine != nil,
+		SV:            s.svEngine != nil,
 		Files:         s.hasFileProvider,
 		Identify:      s.hasIdentity,
 	}
@@ -158,6 +162,9 @@ func (c ServiceCapabilities) String() string {
 	}
 	if c.GOOSE {
 		services = append(services, "goose")
+	}
+	if c.SV {
+		services = append(services, "sv")
 	}
 	if c.Files {
 		services = append(services, "files")

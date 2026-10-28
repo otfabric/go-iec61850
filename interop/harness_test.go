@@ -605,7 +605,7 @@ func startIEDServer(t *testing.T) *iedServerHandle {
 			stop()
 			t.Fatal("IED server exited before emitting readiness event")
 		}
-		validateIEDAdapterMeta(t, m, "iec61850-v2", peer().name)
+		validateIEDAdapterMeta(t, m, "iec61850-v3", peer().name)
 		t.Cleanup(stop)
 		return &iedServerHandle{addr: m.addr, iedName: m.iedName}
 	case <-startCtx.Done():
@@ -864,7 +864,7 @@ func startIEC61850BeanServer(t *testing.T) *iedServerHandle {
 			stop()
 			t.Fatal("iec61850bean IED server exited before emitting readiness event")
 		}
-		validateIEDAdapterMeta(t, m, "iec61850-v2", "iec61850bean")
+		validateIEDAdapterMeta(t, m, "iec61850-v3", "iec61850bean")
 		t.Cleanup(stop)
 		return &iedServerHandle{addr: m.addr, iedName: m.iedName}
 	case <-startCtx.Done():

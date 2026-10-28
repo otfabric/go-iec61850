@@ -71,6 +71,7 @@ type Server struct {
 	journalEngine      *JournalEngine
 	mmsJournalProvider *MemoryJournalProvider
 	gooseEngine        *GOOSEEngine
+	svEngine           *SVEngine
 
 	hasFileProvider bool
 	hasIdentity     bool
@@ -237,6 +238,9 @@ func (s *Server) SetValue(ctx context.Context, storeKey string, val *mms.Value) 
 	if s.gooseEngine != nil {
 		s.gooseEngine.notify(storeKey)
 	}
+	if s.svEngine != nil {
+		s.svEngine.notify(storeKey)
+	}
 }
 
 // ReportEngine returns the report engine, or nil if reports have not
@@ -291,6 +295,12 @@ func (s *Server) installWriteInterceptor() {
 			}
 		}
 
+		if s.svEngine != nil && strings.Contains(itemID, "$MS$") {
+			if handled, err := s.svEngine.handleWrite(storeKey, val); handled {
+				return true, err
+			}
+		}
+
 		// CO functional-constraint write — dispatch to the control handler.
 		// Store key format: "lnName$CO$doPath...$subAttr"
 		// e.g. "GGIO1$CO$SPCSO1$Oper" or "GGIO1$CO$SPCSO1$Oper$ctlVal"
@@ -306,6 +316,9 @@ func (s *Server) installWriteInterceptor() {
 		// contents to suppress reports for unchanged values.
 		if s.gooseEngine != nil {
 			s.gooseEngine.notify(storeKey)
+		}
+		if s.svEngine != nil {
+			s.svEngine.notify(storeKey)
 		}
 		if s.reportEngine != nil {
 			s.reportEngine.NotifyValueChanged(ctx, storeKey)
@@ -405,6 +418,9 @@ func (s *Server) Close() {
 	}
 	if s.gooseEngine != nil {
 		s.gooseEngine.Stop()
+	}
+	if s.svEngine != nil {
+		s.svEngine.Stop()
 	}
 	s.journalEngine = nil
 	s.sgEngine = nil

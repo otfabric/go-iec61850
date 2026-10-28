@@ -131,7 +131,7 @@ func decodeGoCB(ref string, v *mms.Value) (*GoCB, error) {
 	cb.DatSet, ok = e[2].VisibleString()
 	get(ok)
 	var u uint64
-	u, ok = e[3].Uint64()
+	u, ok = cbUint(e[3])
 	cb.ConfRev = uint32(u)
 	get(ok)
 	cb.NdsCom, ok = e[4].Bool()
@@ -148,16 +148,16 @@ func decodeGoCB(ref string, v *mms.Value) (*GoCB, error) {
 		return nil, bad("DstAddress.Addr: expected 6 octets")
 	}
 	copy(cb.DstAddress.Addr[:], addr)
-	p, ok1 := dst[1].Uint64()
-	vid, ok2 := dst[2].Uint64()
-	app, ok3 := dst[3].Uint64()
+	p, ok1 := cbUint(dst[1])
+	vid, ok2 := cbUint(dst[2])
+	app, ok3 := cbUint(dst[3])
 	if !ok1 || !ok2 || !ok3 {
 		return nil, bad("DstAddress: unexpected attribute types")
 	}
 	cb.DstAddress.Priority, cb.DstAddress.VID, cb.DstAddress.AppID = uint8(p), uint16(vid), uint16(app)
 	if len(e) >= 8 {
-		mn, ok1 := e[6].Uint64()
-		mx, ok2 := e[7].Uint64()
+		mn, ok1 := cbUint(e[6])
+		mx, ok2 := cbUint(e[7])
 		if ok1 && ok2 {
 			cb.MinTime, cb.MaxTime, cb.HasTimes = uint32(mn), uint32(mx), true
 		}

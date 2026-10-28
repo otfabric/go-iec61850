@@ -43,9 +43,9 @@ func FromSCL(s *scl.SCL, iedName, apName string) (*Model, error) {
 
 	m := &Model{}
 	var warnings []string
-	gse := gseIndex(s, iedName, apUsed)
+	gse, smv := gseIndex(s, iedName, apUsed)
 	for _, sclLD := range srv.LDevices {
-		ld, err := convertLD(s, &sclLD, dotIdx, datIdx, enumIdx, gse, &warnings)
+		ld, err := convertLD(s, &sclLD, dotIdx, datIdx, enumIdx, gse, smv, &warnings)
 		if err != nil {
 			return nil, fmt.Errorf("servermodel: LD %q: %w", sclLD.Inst, err)
 		}
@@ -83,12 +83,13 @@ func findServer(ied *scl.IED, apName string) (*scl.Server, string, error) {
 	return found, name, nil
 }
 
-// gseIndex maps "ldInst/cbName" to the GSE address of the given
-// IED/AccessPoint in the Communication section.
-func gseIndex(s *scl.SCL, iedName, apName string) map[string]*scl.GSEAddress {
+// gseIndex maps "ldInst/cbName" to the GSE and SMV addresses of the
+// given IED/AccessPoint in the Communication section.
+func gseIndex(s *scl.SCL, iedName, apName string) (map[string]*scl.GSEAddress, map[string]*scl.SMVAddress) {
 	idx := map[string]*scl.GSEAddress{}
+	smv := map[string]*scl.SMVAddress{}
 	if s.Communication == nil {
-		return idx
+		return idx, smv
 	}
 	for i := range s.Communication.SubNetworks {
 		sn := &s.Communication.SubNetworks[i]
@@ -101,9 +102,13 @@ func gseIndex(s *scl.SCL, iedName, apName string) map[string]*scl.GSEAddress {
 				g := &cap.GSEs[k]
 				idx[g.LDInst+"/"+g.CBName] = g
 			}
+			for k := range cap.SMVs {
+				a := &cap.SMVs[k]
+				smv[a.LDInst+"/"+a.CBName] = a
+			}
 		}
 	}
-	return idx
+	return idx, smv
 }
 
 func indexDOTypes(s *scl.SCL) map[string]*scl.DOType {
@@ -133,7 +138,7 @@ func indexEnumTypes(s *scl.SCL) map[string]*scl.EnumType {
 	return idx
 }
 
-func convertLD(s *scl.SCL, sclLD *scl.LDevice, dotIdx map[string]*scl.DOType, datIdx map[string]*scl.DAType, enumIdx map[string]*scl.EnumType, gse map[string]*scl.GSEAddress, warnings *[]string) (*LogicalDevice, error) {
+func convertLD(s *scl.SCL, sclLD *scl.LDevice, dotIdx map[string]*scl.DOType, datIdx map[string]*scl.DAType, enumIdx map[string]*scl.EnumType, gse map[string]*scl.GSEAddress, smv map[string]*scl.SMVAddress, warnings *[]string) (*LogicalDevice, error) {
 	ld := &LogicalDevice{Name: sclLD.Inst}
 
 	if sclLD.LN0 != nil {
@@ -147,6 +152,10 @@ func convertLD(s *scl.SCL, sclLD *scl.LDevice, dotIdx map[string]*scl.DOType, da
 				continue // GSSE is not supported
 			}
 			ln.GoCBs = append(ln.GoCBs, convertGoCB(gc, gse[sclLD.Inst+"/"+gc.Name], sclLD.Inst+"/"+ln.Name, warnings))
+		}
+		for i := range sclLD.LN0.SMVControls {
+			sc := &sclLD.LN0.SMVControls[i]
+			ln.SvCBs = append(ln.SvCBs, convertSvCB(sc, smv[sclLD.Inst+"/"+sc.Name], sclLD.Inst+"/"+ln.Name, warnings))
 		}
 		ld.LogicalNodes = append(ld.LogicalNodes, *ln)
 	}

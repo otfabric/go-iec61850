@@ -59,6 +59,10 @@ type LogicalNode struct {
 	// valid on LLN0.
 	GoCBs []GoCBDef
 
+	// SvCBs are the multicast Sampled Values control blocks (MSVCB)
+	// defined under this LN. Only valid on LLN0.
+	SvCBs []SvCBDef
+
 	// SettingGroup, when non-nil, defines the setting group control
 	// block (SGCB) for this LN. Only valid on LLN0.
 	SettingGroup *SettingGroupDef
@@ -307,6 +311,20 @@ func validateLD(ld *LogicalDevice) []error {
 			}
 		}
 
+		svcbNames := make(map[string]bool)
+		for _, sv := range ln.SvCBs {
+			if sv.Name == "" {
+				errs = append(errs, fmt.Errorf("model: LD %q LN %q: SvCB with empty name", ld.Name, ln.Name))
+			}
+			if svcbNames[sv.Name] {
+				errs = append(errs, fmt.Errorf("model: LD %q LN %q: duplicate SvCB %q", ld.Name, ln.Name, sv.Name))
+			}
+			svcbNames[sv.Name] = true
+			if sv.DatSet != "" && !dsNames[sv.DatSet] {
+				errs = append(errs, fmt.Errorf("model: LD %q LN %q: SvCB %q references non-existent dataset %q", ld.Name, ln.Name, sv.Name, sv.DatSet))
+			}
+		}
+
 		if ln.SettingGroup != nil && ln.SettingGroup.NumOfSGs == 0 {
 			errs = append(errs, fmt.Errorf("model: LD %q LN %q: SGCB NumOfSGs must be >= 1", ld.Name, ln.Name))
 		}
@@ -353,12 +371,14 @@ func validateDOs(ldName, lnName string, dos []DataObject, parentPath ...string) 
 		}
 		names[do.Name] = true
 
+		// A DA name may repeat under another FC (IEC 61850-7-3, e.g.
+		// ASG.setMag in SG and SE): the MMS item IDs differ by FC.
 		attrNames := make(map[string]bool)
 		for _, attr := range do.Attributes {
-			if attrNames[attr.Name] {
+			if attrNames[attr.FC+"$"+attr.Name] {
 				errs = append(errs, fmt.Errorf("model: LD %q %s: duplicate DA %q", ldName, pathStr, attr.Name))
 			}
-			attrNames[attr.Name] = true
+			attrNames[attr.FC+"$"+attr.Name] = true
 			if attr.FC == "" {
 				errs = append(errs, fmt.Errorf("model: LD %q %s DA %q: empty FC", ldName, pathStr, attr.Name))
 			}

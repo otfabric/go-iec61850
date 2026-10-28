@@ -29,6 +29,8 @@ mms-interop
       sbow_test.go                   TestLibIEC*_Control_SBOw* / TestBean*_Control_SBOw* / TestGoServer_SBOw_*
       report_semantics_test.go       TestLibIEC*_URCB_GI* / *MultiMember*
       goose_test.go                  TestGOOSE_* (libiec61850, dscsystems, iec61850-rust)
+      sv_test.go                     TestSV_* (libiec61850, dscsystems, iec61850-rust),
+                                     TestLibIECClient_SVCB_Read (MSVCB over MMS)
 ```
 
 The `TestLibIEC*` tests run twice in CI: against libiec61850 and, with
@@ -205,6 +207,35 @@ The publisher-side VLAN tag is not checked by the adapter subscribers:
 Linux strips it before an `AF_PACKET` socket sees the frame and neither
 adapter asks for auxiliary data; the Go subscriber does.
 
+### Sampled Values
+
+Fixture `sv-v1` (mms-interop `fixtures/sv/`, copied to
+`interop/testdata/sv/`) with the v0.4.0 images: `MSVCB01` (9-2LE, 4000
+samples/s, one ASDU per frame) and `MSVCB02` (generic dataset, 1000
+samples/s, four ASDUs per frame, every optional field). Each row holds
+for libiec61850, dscsystems and iec61850-rust unless noted.
+
+| Capability | Go → stack | stack → Go |
+|-----------|:---:|:---:|
+| Header: svID, APPID, dst, confRev, smpSynch, noASDU | ✓ | ✓ |
+| Optional fields: datSet, refrTm, smpRate, smpMod | ✓¹ | ✓ |
+| 9-2LE values (8 × INT32 + quality) and generic dataset values | ✓ | ✓ |
+| Value update reaches the other side | ✓ | ✓ |
+| Loss, duplicates, reordering (stats, ≤ 1 %) | ✓ | ✓ |
+| Subscriber validation from SCL, supervision timeout | n/a | ✓ |
+| IED server MSVCB: SvEna, data change in the stream | ✓ | n/a |
+| MSVCB read over MMS (Go client → IED server) | libiec61850, dscsystems² | n/a |
+
+¹ libiec61850's subscriber drops ASDUs with a two-octet smpMod, so
+`MSVCB02` (with smpMod) is skipped for that subscriber. The Go
+subscriber accepts one- and two-octet smpMod.
+² iec61850-rust does not model SV control blocks over MMS. libiec61850
+encodes the MSVCB's ConfRev, SmpRate, SmpMod and noASDU as MMS
+`Integer`; the client accepts non-negative Integer wherever an
+unsigned control-block attribute is expected. The MS `OptFlds` is 5
+bits from libiec61850 and 10 bits from dscsystems; the client reads the
+first five.
+
 ---
 
 ## IEC 61850 edition service profile
@@ -255,7 +286,9 @@ adapter asks for auxiliary data; the Go subscriber does.
 | SendGOOSEMessage | ✓ | ✓ | [GOOSE.md](GOOSE.md); `goose` package and `Server.EnableGOOSE` |
 | GetGoCBValues / SetGoCBValues | ✓ | ✓ | `Client.GetGoCB` / `SetGoCB`; GoEna, GoID, DatSet writable |
 | SendGSSEMessage | — | — | GSSE not supported |
-| SendMSVMessage | — | — | Sampled Values out of scope |
+| SendMSVMessage | ✓ | ✓ | [SV.md](SV.md); `sv` package and `Server.EnableSV` |
+| GetMSVCBValues / SetMSVCBValues | ✓ | ✓ | `Client.GetMSVCB` / `SetMSVCB`; SvEna, MsvID, DatSet, SmpRate, OptFlds, SmpMod writable |
+| SendUSVMessage, Get/SetUSVCBValues | — | — | unicast SV not supported |
 | Select | ✓ | ✓ | SBO normal |
 | SelectWithValue | ✓ | ✓ | SBOw enhanced |
 | Cancel | ✓ | ✓ | |
@@ -308,7 +341,7 @@ adapter asks for auxiliary data; the Go subscriber does.
 | Feature | Status | Notes |
 |---------|--------|-------|
 | GOOSE security (IEC 62351-6), fixed-offset encoding | not implemented | see [GOOSE.md](GOOSE.md#limitations) |
-| Sampled Values | not implemented | out of scope |
+| SV security (IEC 62351), unicast SV (USVCB) | not implemented | see [SV.md](SV.md#limitations) |
 | Dynamic dataset creation | not implemented | deferred |
 | CommandTermination− (negative), client-side termination handling | not implemented | deferred |
 | TimeActivatedOperate | not implemented | deferred |

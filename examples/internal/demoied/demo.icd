@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Demo IED for the go-iec61850 examples.
+
+  IED DemoIED, access point S1, logical device LD1 (MMS domain "LD1" on
+  the go-iec61850 server). It has:
+    - MMXU1.PhV.phsA (measurement) and GGIO1.SPCSO1 (direct control;
+      the application registers its handler),
+    - GGIO1.Ind1/Ind2 (status inputs) published by GOOSE control block
+      gcb01 (dataset dsGoose, 01-0C-CD-01-00-01, APPID 0x1001),
+    - the 9-2LE dataset PhsMeas1 published by MSVCB01 (80 samples per
+      period, 01-0C-CD-04-00-01, APPID 0x4000),
+    - an unbuffered report control block urcb01 on dsAll,
+    - two setting groups (LLN0.SettingControl) with PTOC1.StrVal as a
+      setting,
+    - a log EventLog (MMS journal LLN0$EventLog).
+-->
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL" version="2007" revision="B">
+  <Header id="demo" version="1" revision="0" nameStructure="IEDName"/>
+  <Communication>
+    <SubNetwork name="StationBus" type="8-MMS">
+      <ConnectedAP iedName="DemoIED" apName="S1">
+        <Address>
+          <P type="IP">127.0.0.1</P>
+        </Address>
+        <GSE ldInst="LD1" cbName="gcb01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-01-00-01</P>
+            <P type="APPID">1001</P>
+            <P type="VLAN-ID">000</P>
+            <P type="VLAN-PRIORITY">4</P>
+          </Address>
+          <MinTime unit="s" multiplier="m">10</MinTime>
+          <MaxTime unit="s" multiplier="m">1000</MaxTime>
+        </GSE>
+        <SMV ldInst="LD1" cbName="MSVCB01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-04-00-01</P>
+            <P type="APPID">4000</P>
+            <P type="VLAN-ID">000</P>
+            <P type="VLAN-PRIORITY">4</P>
+          </Address>
+        </SMV>
+      </ConnectedAP>
+    </SubNetwork>
+  </Communication>
+  <IED name="DemoIED" manufacturer="otfabric" type="Demo">
+    <AccessPoint name="S1">
+      <Server>
+        <Authentication none="true"/>
+        <LDevice inst="LD1">
+          <LN0 lnClass="LLN0" inst="" lnType="LLN0_T">
+            <DataSet name="dsAll">
+              <FCDA ldInst="LD1" lnClass="MMXU" lnInst="1" doName="PhV" daName="phsA.cVal.mag.f" fc="MX"/>
+              <FCDA ldInst="LD1" lnClass="GGIO" lnInst="1" doName="SPCSO1" daName="stVal" fc="ST"/>
+            </DataSet>
+            <DataSet name="dsGoose">
+              <FCDA ldInst="LD1" lnClass="GGIO" lnInst="1" doName="Ind1" daName="stVal" fc="ST"/>
+              <FCDA ldInst="LD1" lnClass="GGIO" lnInst="1" doName="Ind1" daName="q" fc="ST"/>
+              <FCDA ldInst="LD1" lnClass="GGIO" lnInst="1" doName="Ind2" daName="stVal" fc="ST"/>
+            </DataSet>
+            <DataSet name="PhsMeas1">
+          <FCDA ldInst="LD1" prefix="I" lnClass="TCTR" lnInst="1" doName="AmpSv" daName="instMag.i" fc="MX"/>
+          <FCDA ldInst="LD1" prefix="I" lnClass="TCTR" lnInst="1" doName="AmpSv" daName="q" fc="MX"/>
+          <FCDA ldInst="LD1" prefix="I" lnClass="TCTR" lnInst="2" doName="AmpSv" daName="instMag.i" fc="MX"/>
+          <FCDA ldInst="LD1" prefix="I" lnClass="TCTR" lnInst="2" doName="AmpSv" daName="q" fc="MX"/>
+          <FCDA ldInst="LD1" prefix="I" lnClass="TCTR" lnInst="3" doName="AmpSv" daName="instMag.i" fc="MX"/>
+          <FCDA ldInst="LD1" prefix="I" lnClass="TCTR" lnInst="3" doName="AmpSv" daName="q" fc="MX"/>
+          <FCDA ldInst="LD1" prefix="I" lnClass="TCTR" lnInst="4" doName="AmpSv" daName="instMag.i" fc="MX"/>
+          <FCDA ldInst="LD1" prefix="I" lnClass="TCTR" lnInst="4" doName="AmpSv" daName="q" fc="MX"/>
+          <FCDA ldInst="LD1" prefix="U" lnClass="TVTR" lnInst="1" doName="VolSv" daName="instMag.i" fc="MX"/>
+          <FCDA ldInst="LD1" prefix="U" lnClass="TVTR" lnInst="1" doName="VolSv" daName="q" fc="MX"/>
+          <FCDA ldInst="LD1" prefix="U" lnClass="TVTR" lnInst="2" doName="VolSv" daName="instMag.i" fc="MX"/>
+          <FCDA ldInst="LD1" prefix="U" lnClass="TVTR" lnInst="2" doName="VolSv" daName="q" fc="MX"/>
+          <FCDA ldInst="LD1" prefix="U" lnClass="TVTR" lnInst="3" doName="VolSv" daName="instMag.i" fc="MX"/>
+          <FCDA ldInst="LD1" prefix="U" lnClass="TVTR" lnInst="3" doName="VolSv" daName="q" fc="MX"/>
+          <FCDA ldInst="LD1" prefix="U" lnClass="TVTR" lnInst="4" doName="VolSv" daName="instMag.i" fc="MX"/>
+          <FCDA ldInst="LD1" prefix="U" lnClass="TVTR" lnInst="4" doName="VolSv" daName="q" fc="MX"/>
+            </DataSet>
+            <ReportControl name="urcb01" confRev="1" datSet="dsAll" rptID="DemoURCB01" buffered="false" intgPd="0">
+              <TrgOps dchg="true" qchg="true" dupd="false" period="false" gi="true"/>
+              <OptFields seqNum="true" timeStamp="true" dataSet="true" reasonCode="true"/>
+              <RptEnabled max="5"/>
+            </ReportControl>
+            <LogControl name="EventLog" datSet="dsAll" logName="EventLog" logEna="true">
+              <TrgOps dchg="true" qchg="true"/>
+            </LogControl>
+            <GSEControl name="gcb01" appID="DemoGoose" datSet="dsGoose" confRev="1" type="GOOSE"/>
+            <SampledValueControl name="MSVCB01" smvID="DemoMU01" datSet="PhsMeas1" confRev="1" smpRate="80" nofASDU="1" multicast="true" smpMod="SmpPerPeriod">
+              <SmvOpts sampleSynchronized="true"/>
+            </SampledValueControl>
+            <SettingControl numOfSGs="2" actSG="1"/>
+            <Log name="EventLog"/>
+          </LN0>
+          <LN lnClass="LPHD" inst="1" lnType="LPHD_T"/>
+          <LN lnClass="GGIO" inst="1" lnType="GGIO_T">
+            <DOI name="SPCSO1">
+              <DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+            </DOI>
+          </LN>
+          <LN lnClass="MMXU" inst="1" lnType="MMXU_T"/>
+          <LN lnClass="PTOC" inst="1" lnType="PTOC_T"/>
+        <LN prefix="I" lnClass="TCTR" inst="1" lnType="TCTR_LE"/>
+        <LN prefix="I" lnClass="TCTR" inst="2" lnType="TCTR_LE"/>
+        <LN prefix="I" lnClass="TCTR" inst="3" lnType="TCTR_LE"/>
+        <LN prefix="I" lnClass="TCTR" inst="4" lnType="TCTR_LE"/>
+        <LN prefix="U" lnClass="TVTR" inst="1" lnType="TVTR_LE"/>
+        <LN prefix="U" lnClass="TVTR" inst="2" lnType="TVTR_LE"/>
+        <LN prefix="U" lnClass="TVTR" inst="3" lnType="TVTR_LE"/>
+        <LN prefix="U" lnClass="TVTR" inst="4" lnType="TVTR_LE"/>
+        </LDevice>
+      </Server>
+    </AccessPoint>
+  </IED>
+  <DataTypeTemplates>
+    <LNodeType id="LLN0_T" lnClass="LLN0">
+      <DO name="Mod" type="INC_T"/>
+      <DO name="Beh" type="INS_T"/>
+    </LNodeType>
+    <LNodeType id="LPHD_T" lnClass="LPHD">
+      <DO name="PhyHealth" type="INS_T"/>
+    </LNodeType>
+    <LNodeType id="GGIO_T" lnClass="GGIO">
+      <DO name="Ind1" type="SPS_T"/>
+      <DO name="Ind2" type="SPS_T"/>
+      <DO name="SPCSO1" type="SPC_T"/>
+    </LNodeType>
+    <LNodeType id="MMXU_T" lnClass="MMXU">
+      <DO name="PhV" type="WYE_T"/>
+    </LNodeType>
+    <LNodeType id="PTOC_T" lnClass="PTOC">
+      <DO name="StrVal" type="ASG_T"/>
+    </LNodeType>
+    <LNodeType id="TCTR_LE" lnClass="TCTR">
+      <DO name="AmpSv" type="SAV_T"/>
+    </LNodeType>
+    <LNodeType id="TVTR_LE" lnClass="TVTR">
+      <DO name="VolSv" type="SAV_T"/>
+    </LNodeType>
+    <DOType id="INC_T" cdc="INC">
+      <DA name="stVal" bType="INT32" fc="ST"/>
+      <DA name="q" bType="Quality" fc="ST"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+    </DOType>
+    <DOType id="INS_T" cdc="INS">
+      <DA name="stVal" bType="INT32" fc="ST"/>
+      <DA name="q" bType="Quality" fc="ST"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+    </DOType>
+    <DOType id="SPS_T" cdc="SPS">
+      <DA name="stVal" bType="BOOLEAN" fc="ST"/>
+      <DA name="q" bType="Quality" fc="ST"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+    </DOType>
+    <DOType id="SPC_T" cdc="SPC">
+      <DA name="stVal" bType="BOOLEAN" fc="ST"/>
+      <DA name="q" bType="Quality" fc="ST"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+      <DA name="ctlModel" bType="Enum" type="CtlModelKind" fc="CF"/>
+      <DA name="Oper" bType="Struct" type="OperSPC_T" fc="CO"/>
+      <DA name="SBO" bType="VisString255" fc="CO"/>
+      <DA name="SBOw" bType="Struct" type="OperSPC_T" fc="CO"/>
+      <DA name="Cancel" bType="Struct" type="OperSPC_T" fc="CO"/>
+    </DOType>
+    <DOType id="WYE_T" cdc="WYE">
+      <SDO name="phsA" type="CMV_T"/>
+    </DOType>
+    <DOType id="CMV_T" cdc="CMV">
+      <DA name="cVal" bType="Struct" type="Vector_T" fc="MX"/>
+      <DA name="q" bType="Quality" fc="MX"/>
+      <DA name="t" bType="Timestamp" fc="MX"/>
+    </DOType>
+    <DOType id="ASG_T" cdc="ASG">
+      <DA name="setMag" bType="Struct" type="AnalogueValue_F" fc="SG"/>
+      <DA name="setMag" bType="Struct" type="AnalogueValue_F" fc="SE"/>
+    </DOType>
+    <DOType id="SAV_T" cdc="SAV">
+      <DA name="instMag" bType="Struct" type="AnalogueValue_I" fc="MX"/>
+      <DA name="q" bType="Quality" fc="MX"/>
+    </DOType>
+    <DAType id="OperSPC_T">
+      <BDA name="ctlVal" bType="BOOLEAN"/>
+      <BDA name="origin" bType="Struct" type="Originator_T"/>
+      <BDA name="ctlNum" bType="INT8U"/>
+      <BDA name="T" bType="Timestamp"/>
+      <BDA name="Test" bType="BOOLEAN"/>
+      <BDA name="Check" bType="Check"/>
+    </DAType>
+    <DAType id="Originator_T">
+      <BDA name="orCat" bType="Enum" type="OrCat"/>
+      <BDA name="orIdent" bType="Octet64"/>
+    </DAType>
+    <DAType id="Vector_T">
+      <BDA name="mag" bType="Struct" type="AnalogueValue_F"/>
+    </DAType>
+    <DAType id="AnalogueValue_F">
+      <BDA name="f" bType="FLOAT32"/>
+    </DAType>
+    <DAType id="AnalogueValue_I">
+      <BDA name="i" bType="INT32"/>
+    </DAType>
+    <EnumType id="CtlModelKind">
+      <EnumVal ord="0">status-only</EnumVal>
+      <EnumVal ord="1">direct-with-normal-security</EnumVal>
+      <EnumVal ord="2">sbo-with-normal-security</EnumVal>
+      <EnumVal ord="3">direct-with-enhanced-security</EnumVal>
+      <EnumVal ord="4">sbo-with-enhanced-security</EnumVal>
+    </EnumType>
+    <EnumType id="OrCat">
+      <EnumVal ord="0">not-supported</EnumVal>
+      <EnumVal ord="1">bay-control</EnumVal>
+      <EnumVal ord="2">station-control</EnumVal>
+      <EnumVal ord="3">remote-control</EnumVal>
+      <EnumVal ord="4">automatic-bay</EnumVal>
+      <EnumVal ord="5">automatic-station</EnumVal>
+      <EnumVal ord="6">automatic-remote</EnumVal>
+      <EnumVal ord="7">maintenance</EnumVal>
+      <EnumVal ord="8">process</EnumVal>
+    </EnumType>
+  </DataTypeTemplates>
+</SCL>

@@ -37,13 +37,6 @@ func openOrSkip(t *testing.T, iface string, opts TransportOptions) Transport {
 	return tr
 }
 
-func TestOpenUnknownInterface(t *testing.T) {
-	_, err := Open("goose-no-such-if0", TransportOptions{})
-	if !errors.Is(err, ErrInterfaceNotFound) && !errors.Is(err, ErrUnsupportedPlatform) {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 // TestRawTransportRoundTrip sends GOOSE over a real interface. On Linux
 // it uses lo and needs CAP_NET_RAW (CI runs it as root); elsewhere set
 // GOOSE_TEST_IFACE to an Ethernet interface you may send test multicast
@@ -85,37 +78,5 @@ func TestRawTransportRoundTrip(t *testing.T) {
 		case <-ctx.Done():
 			t.Fatal("no GOOSE received over raw transport")
 		}
-	}
-}
-
-func TestRawTransportCloseAndCancel(t *testing.T) {
-	iface := rawTestIface()
-	if iface == "" {
-		if runtime.GOOS == "darwin" {
-			iface = "lo0" // BPF attaches to lo0 without sending anything
-		} else {
-			t.Skip("no interface")
-		}
-	}
-	tr := openOrSkip(t, iface, TransportOptions{})
-	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
-	defer cancel()
-	if _, err := tr.Recv(ctx); !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("recv: %v", err)
-	}
-	if tr.HardwareAddr() == (MAC{0xff}) {
-		t.Error("unexpected address")
-	}
-	if err := tr.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := tr.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tr.Recv(context.Background()); !errors.Is(err, ErrClosed) {
-		t.Errorf("recv after close: %v", err)
-	}
-	if err := tr.Send(make([]byte, 60)); !errors.Is(err, ErrClosed) {
-		t.Errorf("send after close: %v", err)
 	}
 }
