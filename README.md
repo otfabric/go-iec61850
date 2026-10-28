@@ -22,8 +22,10 @@ domain names, item IDs, or alternate access selectors.
 - [Features](#features)
 - [Installation](#installation)
 - [Quick start](#quick-start)
-  - [Client](#client)
-  - [Server](#server)
+  - [MMS client](#mms-client)
+  - [MMS server](#mms-server)
+  - [GOOSE](#goose)
+  - [Sampled Values](#sampled-values)
   - [SCL parsing](#scl-parsing)
 - [API overview](#api-overview)
   - [Connection](#connection)
@@ -36,7 +38,7 @@ domain names, item IDs, or alternate access selectors.
   - [Journals](#journals)
   - [Caching](#caching)
   - [SCL tooling](#scl-tooling-scl-package)
-  - [Server](#server-1)
+  - [Server](#server)
 - [Command-line tools](#command-line-tools)
   - [sclparse](#sclparse)
   - [sclgen](#sclgen)
@@ -106,98 +108,252 @@ go install github.com/otfabric/go-iec61850/scl/cmd/sclgen@latest
 
 ## Quick start
 
-### Client
+The snippets below are compiled and run by `go test`
+([readme_test.go](readme_test.go)) against the demo IED of the examples
+([demo.icd](examples/internal/demoied/demo.icd)): an IED `DemoIED` with
+logical device `LD1`, a GOOSE control block `gcb01` and a 9-2LE Sampled
+Values control block `MSVCB01`. Complete programs, each with a README
+and a smoke test, are in [examples/](examples/).
+
+### MMS client
 
 ```go
-package main
-
 import (
     "context"
+    "errors"
     "fmt"
-    "log"
+    "log/slog"
 
-    "github.com/otfabric/go-iec61850"
+    iec61850 "github.com/otfabric/go-iec61850"
+    "github.com/otfabric/go-mms"
 )
 
-func main() {
-    ctx := context.Background()
-
-    client, err := iec61850.Dial(ctx, "10.0.0.1:102", iec61850.DialOptions{})
+func readMeasurement(ctx context.Context, addr string) error {
+    client, err := iec61850.Dial(ctx, addr, iec61850.DialOptions{
+        Retry:  mms.DefaultRetryPolicy(), // retry the connection with backoff
+        Logger: slog.Default(),
+    })
     if err != nil {
-        log.Fatal(err)
+        return err
     }
-    defer client.Close(ctx)
+    defer func() { _ = client.Close(ctx) }()
 
     devices, err := client.ListLogicalDevices(ctx)
     if err != nil {
-        log.Fatal(err)
+        return err
     }
     for _, ld := range devices {
-        fmt.Println(ld.Name)
+        fmt.Println("LD", ld.Name)
     }
 
-    // Read a data attribute by IEC 61850 reference.
-    ref, _ := iec61850.ParseRef("PROT1LD/MMXU1.TotW.mag.f[MX]")
-    val, err := client.Read(ctx, ref)
+    ref, err := iec61850.ParseRef("LD1/MMXU1.PhV.phsA.cVal.mag.f[MX]")
     if err != nil {
-        log.Fatal(err)
+        return err
     }
-    fmt.Println(val)
+    val, err := client.Read(ctx, ref)
+    if errors.Is(err, iec61850.ErrDataAccess) {
+        return fmt.Errorf("the server refused %s: %w", ref, err)
+    } else if err != nil {
+        return err
+    }
+    fmt.Println(ref, "=", val)
+    return nil
 }
 ```
 
-### Server
+`DialOptions` also takes `Metrics` (an `mms.Metrics`), a model `Cache`
+and the `IEDName` prefix of Edition 1 servers. Examples:
+[basic-client](examples/basic-client), [ied-client](examples/ied-client)
+(reports), [resilient-client](examples/resilient-client) (reconnects,
+slog, metrics), [datasets](examples/datasets),
+[setting-groups](examples/setting-groups), [journal](examples/journal),
+[control](examples/control), [files](examples/files).
+
+### MMS server
 
 ```go
-package main
-
-import (
-    "context"
-    "log"
-
-    "github.com/otfabric/go-iec61850"
-    "github.com/otfabric/go-iec61850/scl"
-    "github.com/otfabric/go-mms/transport/iso"
-)
-
-func main() {
-    s, err := scl.ParseFile("station.icd")
+func serve(ctx context.Context, doc *scl.SCL, ln *iso.Listener) error {
+    model, err := iec61850.NewServerModelFromSCL(doc, "DemoIED", "")
     if err != nil {
-        log.Fatal(err)
+        return err
     }
-
-    model, err := iec61850.NewServerModelFromSCL(s, "IED1", "")
+    srv, err := iec61850.NewServer(model, iec61850.ServerOptions{Logger: slog.Default()})
     if err != nil {
-        log.Fatal(err)
+        return err
     }
+    defer srv.Close()
+    srv.EnableReports()
 
-    srv, err := iec61850.NewServer(model, iec61850.ServerOptions{})
+    // Store keys are "<LD>/<MMS item ID>".
+    err = srv.RegisterControl("LD1", "GGIO1.SPCSO1", iec61850.CtlModelDirectNormal, iec61850.ControlHandler{
+        OnOperate: func(ctx context.Context, req iec61850.ControlRequest) error {
+            on, _ := req.CtlVal.Bool()
+            srv.SetValue(ctx, "LD1/GGIO1$ST$SPCSO1$stVal", mms.NewBoolean(on))
+            return nil
+        },
+    })
     if err != nil {
-        log.Fatal(err)
+        return err
     }
+    // SetValue updates the model and drives reports, logs, GOOSE and SV.
+    srv.SetValue(ctx, "LD1/MMXU1$MX$PhV$phsA$cVal$mag$f", mms.NewFloat(230.1))
 
-    re := srv.EnableReports()
-    defer re.Stop()
-
-    // Register a direct-control handler for GGIO1.SPCSO1.
-    err = srv.RegisterControl("InteropLD", "GGIO1.SPCSO1", iec61850.CtlModelDirectNormal,
-        iec61850.ControlHandler{
-            OnOperate: func(ctx context.Context, req iec61850.ControlRequest) error {
-                log.Printf("operate: %s ctlVal=%v", req.Ref, req.CtlVal)
-                return nil
-            },
-        })
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    ln, err := iso.Listen(":102")
-    if err != nil {
-        log.Fatal(err)
-    }
-    log.Fatal(srv.ListenAndServe(context.Background(), ln))
+    return srv.ListenAndServe(ctx, ln) // until ctx is done
 }
 ```
+
+with `doc, err := scl.ParseFile("station.icd")` and
+`ln, err := iso.Listen(":102")`. `EnableJournals`,
+`EnableSettingGroups`, `EnableGOOSE` and `EnableSV` add the other
+services; see [examples/ied-server](examples/ied-server).
+
+### GOOSE
+
+```go
+func publishGOOSE(ctx context.Context, tr goose.Transport, doc *scl.SCL) error {
+    cb, err := goose.ControlBlockFromSCL(doc, "DemoIED", "LD1", "gcb01")
+    if err != nil {
+        return err
+    }
+    cfg, err := cb.PublisherConfig() // address, references, times, initial values
+    if err != nil {
+        return err
+    }
+    cfg.Src = tr.HardwareAddr()
+    pub, err := goose.NewPublisher(tr, cfg)
+    if err != nil {
+        return err
+    }
+    defer func() { _ = pub.Close() }()
+    go func() { _ = pub.Run(ctx) }() // sends, then retransmits from MinTime to MaxTime
+
+    values := cfg.Values
+    values[0] = mms.NewBoolean(true)            // GGIO1.Ind1.stVal
+    if err := pub.Publish(values); err != nil { // a new state (stNum)
+        return err
+    }
+    <-ctx.Done()
+    return nil
+}
+```
+
+```go
+func subscribeGOOSE(ctx context.Context, tr goose.Transport, doc *scl.SCL) error {
+    cb, err := goose.ControlBlockFromSCL(doc, "DemoIED", "LD1", "gcb01")
+    if err != nil {
+        return err
+    }
+    sub, err := goose.NewSubscriber(tr, goose.SubscriberConfig{})
+    if err != nil {
+        return err
+    }
+    defer func() { _ = sub.Close() }()
+    cfg := cb.SubscriptionConfig() // filters and validation from SCL
+    cfg.OnlyStateChanges = true
+    s, err := sub.Subscribe(cfg)
+    if err != nil {
+        return err
+    }
+    go func() { _ = sub.Run(ctx) }()
+
+    for {
+        select {
+        case <-ctx.Done():
+            return nil
+        case ev := <-s.Events():
+            switch ev.Kind {
+            case goose.EventMessage:
+                fmt.Println("stNum", ev.Frame.PDU.StNum, ev.Frame.PDU.AllData)
+            case goose.EventTimeout:
+                fmt.Println("timeAllowedToLive expired")
+            case goose.EventInvalid:
+                fmt.Println("invalid:", ev.Err, errors.Is(ev.Err, goose.ErrConfRevMismatch))
+            default: // restarts, sequence gaps, ...
+            }
+        }
+    }
+}
+```
+
+`tr` is a raw Ethernet transport, `goose.Open("eth0",
+goose.TransportOptions{})` (Linux: `CAP_NET_RAW`; macOS: `/dev/bpf`
+access), or an in-memory `goose.NewHub().NewPort(goose.MAC{})` in tests.
+See [GOOSE.md](GOOSE.md) and the examples
+[goose-publisher](examples/goose-publisher),
+[goose-subscriber](examples/goose-subscriber),
+[goose-server](examples/goose-server) and
+[goose-client](examples/goose-client).
+
+### Sampled Values
+
+```go
+func publishSV(ctx context.Context, tr sv.Transport, doc *scl.SCL) error {
+    cb, err := sv.ControlBlockFromSCL(doc, "DemoIED", "LD1", "MSVCB01") // 9-2LE, 4000 samples/s
+    if err != nil {
+        return err
+    }
+    cfg, err := cb.PublisherConfig()
+    if err != nil {
+        return err
+    }
+    cfg.Src = tr.HardwareAddr()
+    cfg.Source = func(info sv.SampleInfo, dst []byte) []byte { // called for every sample
+        wt := 2 * math.Pi * 50 * float64(info.Index) / 4000
+        var s sv.LESample
+        s.Current[0].Value = sv.AmpsCount(141.4 * math.Sin(wt))
+        s.Voltage[0].Value = sv.VoltsCount(89800 * math.Sin(wt))
+        return s.Append(dst)
+    }
+    pub, err := sv.NewPublisher(tr, cfg)
+    if err != nil {
+        return err
+    }
+    defer func() { _ = pub.Close() }()
+    return pub.Run(ctx) // paced on an absolute schedule until ctx is done
+}
+```
+
+```go
+func subscribeSV(ctx context.Context, tr sv.Transport, doc *scl.SCL) error {
+    cb, err := sv.ControlBlockFromSCL(doc, "DemoIED", "LD1", "MSVCB01")
+    if err != nil {
+        return err
+    }
+    s, err := sv.NewSubscriber(tr, sv.SubscriberConfig{})
+    if err != nil {
+        return err
+    }
+    defer func() { _ = s.Close() }()
+    cfg := cb.SubscriptionConfig()      // filters and validation from SCL
+    cfg.OnASDU = func(smp *sv.Sample) { // on the receive goroutine, without allocation
+        var le sv.LESample
+        if smp.ASDU.SmpCnt == 0 && sv.DecodeLE(smp.ASDU.Sample, &le) == nil {
+            fmt.Printf("IA %.1f A, UA %.0f V\n", sv.Amps(le.Current[0].Value), sv.Volts(le.Voltage[0].Value))
+        }
+    }
+    sub, err := s.Subscribe(cfg)
+    if err != nil {
+        return err
+    }
+    go func() {
+        for ev := range sub.Events() { // start, gaps, timeouts, synch changes, invalid ASDUs
+            fmt.Println(ev.Kind, ev.Stream)
+        }
+    }()
+
+    err = s.Run(ctx)
+    for _, st := range sub.Stats() {
+        fmt.Printf("%s: %d ASDUs, %d lost, %.0f samples/s\n", st.Stream, st.ASDUs, st.Lost, st.Rate)
+    }
+    return err
+}
+```
+
+`tr` is `sv.Open("eth0", sv.TransportOptions{})` or
+`sv.NewHub().NewPort(sv.MAC{})`. See [SV.md](SV.md) and the examples
+[sv-publisher](examples/sv-publisher),
+[sv-subscriber](examples/sv-subscriber) and
+[svcb-client](examples/svcb-client).
 
 ### SCL parsing
 
@@ -508,12 +664,16 @@ go-iec61850/
 │                               write, reports, controls, files, journals,
 │                               datasets, caching, values, FC types, errors)
 │
-├── examples/
-│   ├── basic-client/           Connect, list LDs, read a data attribute
-│   ├── browse-tree/            Print the full model tree
-│   ├── control/                Direct and SBO control operations
-│   ├── files/                  File listing and download
-│   └── reports/                URCB/BRCB subscription and delivery
+├── examples/                   Runnable programs, each with a README and
+│   │                           an in-process smoke test (see examples/README.md)
+│   ├── basic-client/ browse-tree/ ied-client/ resilient-client/
+│   │                           MMS client: discovery, reads, reconnects
+│   ├── reports/ datasets/ setting-groups/ journal/ control/ files/
+│   │                           MMS client services
+│   ├── ied-server/             Server with every service (demo IED)
+│   ├── goose-publisher/ goose-subscriber/ goose-server/ goose-client/
+│   ├── sv-publisher/ sv-subscriber/ svcb-client/
+│   └── internal/demoied/       The demo IED (demo.icd) and test helpers
 │
 ├── interop/                    Interoperability tests (build tag: interop)
 │   │                           Runs against live libiec61850 and iec61850bean

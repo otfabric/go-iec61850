@@ -46,6 +46,29 @@ GOOSE and SV.
 - **Client MSVCB API** — `Client.GetMSVCB`, `Client.SetMSVCB`.
 - **SCL** — `SMVControl` gains `SmpMod`, `SecurityEnable` and `SmvOpts`;
   `SMVControlRow` gains `SmpMod`.
+- **Examples** ([examples/README.md](examples/README.md)) — new
+  `goose-publisher`, `goose-subscriber`, `goose-server`, `goose-client`,
+  `sv-publisher`, `sv-subscriber`, `svcb-client`, `datasets`,
+  `setting-groups`, `journal` and `resilient-client`; the existing ones
+  reworked (flags, contexts, `errors.Is`, graceful shutdown) and
+  `ied-server` now serves a demo IED with every service. Each has a
+  README and an in-process smoke test; CI builds them.
+- **README** quick start for MMS client and server, GOOSE and SV; the
+  snippets are compiled and run by `readme_test.go`.
+
+### Fixed
+
+- Server setting groups: `SelectActiveSG`, `SelectEditSG` and
+  `ConfirmEditSG` from the go-iec61850 client (component writes to the
+  SGCB) bypassed the setting-group engine, so the handlers never ran and
+  no edit session started. The SGCB now routes component writes through
+  the engine; its read-only attributes ignore stale values.
+- Server journals: a `ReadJournalAfter` cursor never matched its entry
+  (stored with sub-millisecond time, sent back as a millisecond
+  TimeOfDay), so polling clients received the last entries again.
+- Server model: a DA name repeated under another FC (ASG `setMag` in SG
+  and SE) was rejected as a duplicate.
+- SV decoder accepts a one-octet `smpMod` (sent by iec61850-rust).
 
 ### Changed
 

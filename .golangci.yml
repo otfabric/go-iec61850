@@ -20,6 +20,13 @@ linters:
       disabled-checks:
         - ifElseChain     # style preference; if/else if/else is acceptable
         - exitAfterDefer  # Example_ doc functions intentionally use defer+log.Fatal to show cleanup pattern
+  exclusions:
+    rules:
+      # The example programs print their progress to an io.Writer
+      # (stdout, or a buffer in their smoke tests).
+      - path: examples/
+        linters: [errcheck]
+        source: "fmt\\.Fprint"
 
 formatters:
   enable:

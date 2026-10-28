@@ -35,6 +35,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Build examples
+        run: go build ./examples/...
+
       - name: Test with coverage (raw sockets as root)
         run: go test -exec sudo -race -covermode=atomic -coverprofile=coverage.out ./...
 
