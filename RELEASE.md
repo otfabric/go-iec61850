@@ -1,5 +1,36 @@
 # go-iec61850 Releases
 
+## v1.0.9
+
+**Date:** 2026-10-28
+**Previous release:** v1.0.8
+
+### Summary
+
+Bump go-mms to [v1.1.0](https://github.com/otfabric/go-mms/releases/tag/v1.1.0)
+(FileDirectory / FileDelete wire fixes, optional `lastModified`, BinaryTime
+range). No IEC 61850 API is added or removed.
+
+### Dependencies
+
+- **go-mms** — `v1.0.7` → **v1.1.0**
+
+### Changed
+
+- **Empty BRCB `TimeOfEntry` / SCL `EntryTime`** — initialise to the MMS
+  TimeOfDay epoch (1984-01-01) instead of Unix 0. go-mms v1.1.0 rejects
+  BinaryTime values outside 1984-01-01…2163-06-05, so a read of an unused
+  BRCB would fail with a service error.
+- **Unknown object DataAccessError** — go-mms now reports
+  `object-non-existent` (10) for an unknown domain or variable;
+  `object-undefined` (4) remains for alternate-access mismatches. The
+  IEC 61850 wrappers still pass the MMS code through
+  [`DataAccessError.ErrorCode`](ERRORS.md).
+- **FileEntry.LastModified** — zero means the server omitted the optional
+  field (already true on the wire; the godoc now says so).
+
+---
+
 ## v1.0.8
 
 **Date:** 2026-07-30
