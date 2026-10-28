@@ -1084,8 +1084,8 @@ func valuesEqual(a, b *mms.Value) bool {
 		}
 		return true
 	case mms.ValueTypeArray:
-		am, aok := a.Structure() // arrays use Structure() accessor
-		bm, bok := b.Structure()
+		am, aok := a.ArrayElements()
+		bm, bok := b.ArrayElements()
 		if !aok || !bok || len(am) != len(bm) {
 			return false
 		}

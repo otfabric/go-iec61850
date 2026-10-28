@@ -84,6 +84,7 @@ Logging is integrated across all runtime subsystems:
 | Server | Server startup, connection handling, identify/status |
 | Report engine | RCB enable/disable, report generation, buffer management |
 | Journal engine | Entry creation, query results, overflow |
+| GOOSE | Publisher start/stop and send failures, subscriber stream state changes and validation failures, GoCB enable/disable and writes |
 
 ## SCL diagnostics
 
@@ -94,9 +95,25 @@ values with severity, code, path, and message fields. See the
 
 ## Metrics
 
-The library does not currently emit metrics (counters, gauges, histograms).
-Applications that need metrics can instrument at the boundary by wrapping
-Client methods or processing log output.
+GOOSE publishers and subscribers report to a `goose.Metrics`
+implementation (`PublisherConfig.Metrics`, `SubscriberConfig.Metrics`,
+`GOOSEOptions.Metrics` for the server engine):
+
+| Method | Called when |
+|--------|-------------|
+| `FrameSent(gocbRef, retransmission)` | a frame was put on the wire |
+| `SendError(gocbRef, err)` | the transport rejected a frame |
+| `FrameReceived(gocbRef)` | a GOOSE frame was decoded |
+| `FrameDropped(reason)` | a frame was dropped: `decode`, `simulation`, `filtered` |
+| `Event(gocbRef, kind, dropped)` | a subscription event was produced (dropped when the queue was full) |
+
+Embed `goose.NopMetrics` to implement a subset; a nil `Metrics` costs
+nothing. Adapters to Prometheus or OpenTelemetry are left to the
+application. Publisher and subscriber state is also available as
+snapshots (`Publisher.State`, `Subscription.Supervision`).
+
+The MMS client and server do not emit metrics; instrument at the
+boundary by wrapping Client methods or processing log output.
 
 ## Tracing
 

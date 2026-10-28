@@ -1,5 +1,66 @@
 # go-iec61850 Releases
 
+## v1.1.0
+
+**Date:** TBD
+**Previous release:** v1.0.9
+
+### Summary
+
+GOOSE support (new `goose` package and server/client integration), a
+quality pass (per-package coverage gate, fuzz targets, chaos tests,
+dial retry) and a third interop stack (dscsystems/go-iec61850).
+
+### Added
+
+- **`goose` package** ([GOOSE.md](GOOSE.md)) — pure Go, no cgo:
+  - frame codec (Ethernet, 802.1Q, APDU header incl. simulation bit, BER
+    `goosePdu`, `allData` as go-mms values) with strict, bounded decoding;
+  - `Publisher`: stNum/sqNum, MinTime→MaxTime retransmission,
+    timeAllowedToLive, test/simulation/ndsCom, GoEna, context shutdown;
+  - `Subscriber`: filters (dst, APPID, gocbRef, src), validation (datSet,
+    goID, confRev, member types), per-stream supervision (timeout, gaps,
+    duplicates, out-of-order, restarts) as typed events, LGOS-style
+    `Supervision` snapshots, channel or callback delivery;
+  - transports: Linux `AF_PACKET`, macOS/BSD BPF, in-memory `Hub` with
+    fault injection; `ErrUnsupportedPlatform` elsewhere;
+  - SCL binding: `ControlBlocksFromSCL` / `ControlBlockFromSCL`
+    (GSEControl + GSE address + dataset layout);
+  - `Metrics` hooks, `slog` logging, sentinel and typed errors.
+- **Server GOOSE** — `Server.EnableGOOSE` publishes the model's GoCBs on
+  data change; GoCB attributes (`LLN0$GO$<name>`) are readable over MMS,
+  GoEna/GoID/DatSet writable per IEC 61850-7-2/8-1.
+- **Client GoCB API** — `Client.GetGoCB`, `Client.SetGoCB`.
+- **CommandTermination** — the server sends a positive CommandTermination
+  after an enhanced-security operate (found by the dscsystems
+  controller, which waits for it).
+- **`DialOptions.Retry`** (`RetryPolicy`) — connection retries with
+  exponential back-off.
+- `ServiceCapabilities.GOOSE`, `ErrGOOSE`.
+
+### Fixed
+
+- Server report engine: equal array values compared as different, so an
+  unchanged array member triggered a data-change report.
+
+### Quality
+
+- CI coverage gate: every package ≥ 90 % statement coverage
+  (`scripts/covergate.go`, raw-socket tests run as root on `lo`).
+- Fuzz targets for the GOOSE decoder, GoCB mapping and GSE address
+  parsing (nightly matrix now per package).
+- Chaos tests: fault-injecting MMS transport (corrupt, truncate, drop,
+  reset) on client and server; GOOSE loss/duplication/reorder/corruption.
+
+### Interop
+
+- dscsystems adapters as third stack (`IEC61850_PEER_STACK=dscsystems`
+  runs the libiec61850 client/server suites against them).
+- GOOSE interop against libiec61850 and dscsystems, both directions, plus
+  Go IED server → libiec61850 subscriber (fixture `goose-v1`).
+
+---
+
 ## v1.0.9
 
 **Date:** 2026-10-28

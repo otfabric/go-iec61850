@@ -19,7 +19,9 @@ Complete public API reference for `go-iec61850`.
 - [Values and Types](#values-and-types)
 - [Object References](#object-references)
 - [Functional Constraints](#functional-constraints)
+- [GOOSE control blocks (client)](#goose-control-blocks-client)
 - [Server (experimental)](#server-experimental)
+- [GOOSE package](#goose-package)
 - [SCL Package](#scl-package)
 - [SCL Index Package](#scl-index-package)
 - [SCL Validate Package](#scl-validate-package)
@@ -62,6 +64,13 @@ type DialOptions struct {
     Strictness StrictnessOptions
     Cache      CacheStrategy
     IEDName    string
+    Retry      RetryPolicy // zero value: one attempt
+}
+
+type RetryPolicy struct {
+    Attempts   int           // maximum attempts (< 1 means 1)
+    Backoff    time.Duration // first delay, doubling (default 100ms)
+    MaxBackoff time.Duration // cap (default 5s)
 }
 ```
 
@@ -913,6 +922,42 @@ func (fc FunctionalConstraint) String() string
 
 ---
 
+## GOOSE control blocks (client)
+
+```go
+func (c *Client) GetGoCB(ctx context.Context, ld, gocbItemID string) (*GoCB, error)
+func (c *Client) SetGoCB(ctx context.Context, ld, gocbItemID string, upd GoCBUpdate) error
+
+type GoCB struct {
+    Reference        string // "LD/LLN0$GO$name"
+    GoEna            bool
+    GoID, DatSet     string
+    ConfRev          uint32
+    NdsCom           bool
+    DstAddress       GoCBDstAddress
+    MinTime, MaxTime uint32 // ms, valid when HasTimes
+    HasTimes         bool
+    FixedOffs        bool
+}
+
+type GoCBDstAddress struct {
+    Addr     goose.MAC
+    Priority uint8
+    VID      uint16
+    AppID    uint16
+}
+
+// Nil fields are not written; GoEna is written last.
+type GoCBUpdate struct {
+    GoID, DatSet *string
+    GoEna        *bool
+}
+```
+
+`gocbItemID` is the MMS item (`"LLN0$GO$gcb01"`). See [GOOSE.md](GOOSE.md#client-gocb-access).
+
+---
+
 ## Server (experimental)
 
 ### Construction
@@ -955,6 +1000,8 @@ func (s *Server) Close()
 func (s *Server) Capabilities() ServiceCapabilities
 func (s *Server) HandleIdentify(id ServerIdentity)
 func (s *Server) HandleStatus()
+func (s *Server) EnableGOOSE(opts GOOSEOptions) (*GOOSEEngine, error)
+func (s *Server) GOOSEEngine() *GOOSEEngine
 ```
 
 ### ServiceCapabilities
@@ -963,6 +1010,7 @@ func (s *Server) HandleStatus()
 type ServiceCapabilities struct {
     Variables, DataSets, Reports, Controls     bool
     SettingGroups, Journals, Files, Identify   bool
+    GOOSE                                      bool
 }
 
 func (c ServiceCapabilities) String() string
@@ -1004,6 +1052,32 @@ type ControlRequest struct {
     Check     CheckConditions
 }
 ```
+
+After a successful operate of an enhanced-security control
+(`CtlModelDirectEnhanced`, `CtlModelSBOEnhanced`) the server sends a
+positive CommandTermination: an InformationReport of `LN$CO$DO$Oper`
+with the operated value, to the operating connection.
+
+### GOOSE engine
+
+```go
+type GOOSEOptions struct {
+    Transport     goose.Transport // required
+    StartDisabled bool            // GoEna false initially
+    Logger        *slog.Logger
+    Metrics       goose.Metrics
+}
+
+type GOOSEEngine struct { /* unexported */ }
+
+func (e *GOOSEEngine) ControlBlocks() []string // "LD/LLN0$GO$name", sorted
+func (e *GOOSEEngine) Publisher(ref string) (*goose.Publisher, error)
+func (e *GOOSEEngine) SetEnabled(ref string, enabled bool) error
+func (e *GOOSEEngine) Stop()
+```
+
+Errors wrap `ErrGOOSE` (or `ErrNotFound` for an unknown reference). See
+[GOOSE.md](GOOSE.md#server-gocbs).
 
 ### Setting group engine
 
@@ -1056,6 +1130,262 @@ func (p *MemoryJournalProvider) ListJournals(ctx context.Context, domain string)
 func (p *MemoryJournalProvider) ReadTimeRange(ctx context.Context, domain, journal string, start, stop time.Time, maxEntries int) (*mms.JournalResult, error)
 func (p *MemoryJournalProvider) ReadStartAfter(ctx context.Context, domain, journal string, afterID []byte, afterTime time.Time, maxEntries int) (*mms.JournalResult, error)
 ```
+
+---
+
+## GOOSE package
+
+`import "github.com/otfabric/go-iec61850/goose"` — full guide in
+[GOOSE.md](GOOSE.md).
+
+### Frames
+
+```go
+const EtherType uint16 = 0x88B8
+const EtherTypeVLAN uint16 = 0x8100
+const SimulationBit uint16 = 0x8000
+const MaxPayload = 1500
+
+type MAC [6]byte
+var Broadcast MAC
+func ParseMAC(s string) (MAC, error)
+func (m MAC) String() string
+func (m MAC) IsZero() bool
+func (m MAC) IsMulticast() bool
+func (m MAC) IsGOOSEMulticast() bool
+func (m MAC) MarshalText() ([]byte, error)
+func (m *MAC) UnmarshalText(b []byte) error
+
+type VLAN struct { Priority uint8; DEI bool; ID uint16 }
+
+type Frame struct {
+    Dst, Src             MAC
+    VLAN                 *VLAN
+    AppID                uint16
+    Simulation           bool
+    Reserved1, Reserved2 uint16
+    PDU                  PDU
+}
+
+type PDU struct {
+    GocbRef           string
+    TimeAllowedToLive uint32 // ms
+    DatSet, GoID      string
+    T                 time.Time
+    TimeQuality       uint8
+    StNum, SqNum      uint32
+    Test              bool
+    ConfRev           uint32
+    NdsCom            bool
+    NumDatSetEntries  uint32
+    AllData           []*mms.Value
+    Security          []byte
+}
+
+type Limits struct { MaxDepth, MaxElements int }
+var DefaultLimits = Limits{MaxDepth: 16, MaxElements: 4096}
+
+func Encode(f *Frame) ([]byte, error)
+func AppendFrame(dst []byte, f *Frame) ([]byte, error)
+func EncodePDU(p *PDU) ([]byte, error)
+func Decode(b []byte) (*Frame, error)
+func DecodeWithLimits(b []byte, lim Limits) (*Frame, error)
+func DecodePDU(b []byte) (*PDU, error)
+func EncodeData(v *mms.Value) ([]byte, error)
+func DecodeData(b []byte) (*mms.Value, error)
+func SameShape(a, b *mms.Value) bool
+func MatchesType(v *mms.Value, ts mms.TypeSpec) bool
+func ZeroValue(ts mms.TypeSpec) *mms.Value
+```
+
+### Publisher
+
+```go
+const DefaultMinTime = 10 * time.Millisecond
+const DefaultMaxTime = time.Second
+
+type PublisherConfig struct {
+    Dst, Src             MAC   // Src defaults to the transport address
+    VLAN                 *VLAN
+    AppID                uint16
+    GocbRef, DatSet, GoID string
+    ConfRev              uint32
+    MinTime, MaxTime     time.Duration
+    TimeAllowedToLive    time.Duration // default 2*MaxTime
+    Test, Simulation, NdsCom bool
+    InitialStNum         uint32
+    Values               []*mms.Value
+    Logger               *slog.Logger
+    Metrics              Metrics
+    Now                  func() time.Time
+}
+
+type PublisherState struct {
+    StNum, SqNum uint32
+    T            time.Time
+    Enabled      bool
+    Interval     time.Duration
+    Sent         uint64
+}
+
+func NewPublisher(t Transport, cfg PublisherConfig) (*Publisher, error)
+func (p *Publisher) Run(ctx context.Context) error
+func (p *Publisher) Publish(values []*mms.Value) error
+func (p *Publisher) SetFlags(test, simulation, ndsCom bool) error
+func (p *Publisher) SetEnabled(enabled bool) error
+func (p *Publisher) State() PublisherState
+func (p *Publisher) Config() PublisherConfig
+func (p *Publisher) Close() error
+```
+
+### Subscriber
+
+```go
+type SubscriberConfig struct {
+    Limits        Limits
+    Logger        *slog.Logger
+    Metrics       Metrics
+    OnDecodeError func(raw []byte, err error)
+    Now           func() time.Time
+}
+
+type SubscriptionConfig struct {
+    Dst              MAC      // zero: any
+    AppIDs           []uint16 // empty: any
+    GocbRef          string
+    Src              MAC
+    DatSet, GoID     string   // validated when set
+    ConfRev          uint32   // validated when non-zero
+    Members          []mms.TypeSpec
+    AcceptSimulation bool
+    OnlyStateChanges bool
+    Handler          func(Event) // instead of the channel
+    QueueSize        int         // default 256
+}
+
+func NewSubscriber(t Transport, cfg SubscriberConfig) (*Subscriber, error)
+func (s *Subscriber) Subscribe(cfg SubscriptionConfig) (*Subscription, error)
+func (s *Subscriber) Run(ctx context.Context) error
+func (s *Subscriber) HandleFrame(raw []byte)
+func (s *Subscriber) Close() error
+func (sub *Subscription) Events() <-chan Event
+func (sub *Subscription) Supervision() []Supervision
+func (sub *Subscription) Close() error
+
+type EventKind int // EventMessage, EventTimeout, EventStNumGap, EventSqNumGap,
+                   // EventDuplicate, EventOutOfOrder, EventRestart,
+                   // EventInvalid, EventSupervision
+type Status int    // StatusWaiting, StatusOK, StatusTimeout, StatusInvalid,
+                   // StatusNeedsCommissioning
+
+type Event struct {
+    Kind                 EventKind
+    Received             time.Time
+    Frame                *Frame
+    NewState             bool
+    PrevStNum, PrevSqNum uint32
+    State                Supervision
+    Err                  error
+}
+
+type StreamKey struct { Src MAC; AppID uint16; GocbRef string }
+
+type Supervision struct {
+    Stream                    StreamKey
+    Status                    Status
+    St, SimSt, NdsCom         bool
+    LastStNum, LastSqNum      uint32
+    ConfRevNum, RxConfRevNum  uint32
+    LastRx                    time.Time
+    TimeAllowedToLive         time.Duration
+    LastErr                   error
+    Messages, StateChanges, Duplicates, OutOfOrder,
+    StNumGaps, SqNumGaps, Restarts, Timeouts,
+    Invalid, DroppedEvents    uint64
+}
+```
+
+### Transports
+
+```go
+type Transport interface {
+    Send(frame []byte) error
+    Recv(ctx context.Context) ([]byte, error)
+    HardwareAddr() MAC
+    Close() error
+}
+
+type TransportOptions struct {
+    Promiscuous  bool
+    Multicast    []MAC
+    ReceiveLocal bool
+    Logger       *slog.Logger
+}
+
+// AF_PACKET on Linux, BPF on macOS/BSD, ErrUnsupportedPlatform elsewhere.
+func Open(iface string, opts TransportOptions) (Transport, error)
+
+func NewHub() *Hub
+func (h *Hub) NewPort(mac MAC) *HubPort // implements Transport
+func (h *Hub) SetFaults(f Faults)
+func (h *Hub) Stats() HubStats
+func (h *Hub) Flush()
+
+type Faults struct {
+    Loss, Duplicate, Reorder float64 // probabilities
+    Delay                    time.Duration
+    Seed                     int64
+    Mutate                   func(frame []byte) []byte
+}
+type HubStats struct { Sent, Delivered, Lost, Duplicated, Reordered, Overflow uint64 }
+```
+
+### SCL binding
+
+```go
+type ControlBlock struct {
+    IEDName, APName, LDInst, LNName, Name string
+    GocbRef, DatSet, GoID string // on-wire references
+    ConfRev    uint32
+    FixedOffs  bool
+    HasAddress bool
+    Dst        MAC
+    AppID      uint16
+    VLAN       *VLAN
+    MinTime, MaxTime time.Duration
+    Members    []Member
+}
+
+type Member struct { Ref, FC string; Type mms.TypeSpec }
+
+func ControlBlocksFromSCL(doc *scl.SCL) ([]ControlBlock, error)
+func ControlBlockFromSCL(doc *scl.SCL, iedName, ldInst, cbName string) (*ControlBlock, error)
+func (cb *ControlBlock) MemberTypes() []mms.TypeSpec
+func (cb *ControlBlock) DefaultValues() []*mms.Value
+func (cb *ControlBlock) PublisherConfig() (PublisherConfig, error)
+func (cb *ControlBlock) SubscriptionConfig() SubscriptionConfig
+```
+
+### Observability and errors
+
+```go
+type Metrics interface {
+    FrameSent(gocbRef string, retransmission bool)
+    SendError(gocbRef string, err error)
+    FrameReceived(gocbRef string)
+    FrameDropped(reason string)
+    Event(gocbRef string, kind EventKind, dropped bool)
+}
+type NopMetrics struct{}
+
+type DecodeError struct { Field string; Offset int; Message string; Err error }
+type EncodeError struct { Field string; Index int; Err error }
+type ValidationError struct { GocbRef, Field, Want, Got string; Err error }
+type ConfigError struct { Field, Message string }
+type TransportError struct { Op, Interface string; Err error; Kind error }
+```
+
+Sentinels are listed in [GOOSE.md](GOOSE.md#errors).
 
 ---
 
@@ -1671,6 +2001,7 @@ Sentinel errors are package-level variables tested with `errors.Is()`:
 | `ErrOperateFailed` | Operate request denied or could not be executed |
 | `ErrCancelFailed` | Cancel request denied or could not be executed |
 | `ErrNotControllable` | Target data object's ctlModel is status-only |
+| `ErrGOOSE` | Server GOOSE engine failure (see [GOOSE.md](GOOSE.md)) |
 
 ### Typed errors
 

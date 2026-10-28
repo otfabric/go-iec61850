@@ -34,6 +34,13 @@ Use `errors.Is(err, iec61850.ErrXxx)` for category classification.
 | `ErrOperateFailed` | Operate step of a control failed |
 | `ErrCancelFailed` | Cancel step of a control failed |
 | `ErrNotControllable` | Target data object has no controllable model |
+| `ErrGOOSE` | Server GOOSE engine: already enabled, no transport, engine stopped, GoCB without address |
+
+The `goose` package has its own sentinels (`goose.ErrInvalidFrame`,
+`goose.ErrValidation`, `goose.ErrPermission`, ...) and typed errors
+(`*goose.DecodeError`, `*goose.ValidationError`, `*goose.ConfigError`,
+`*goose.EncodeError`, `*goose.TransportError`); see
+[GOOSE.md](GOOSE.md#errors).
 
 ---
 

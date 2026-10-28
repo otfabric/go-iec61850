@@ -8,7 +8,7 @@
 //	go test -coverprofile=coverage.out ./...
 //	go run scripts/covergate.go -min 90 coverage.out
 //
-// Packages matching -exclude (examples, commands and generated raw SCL
+// Packages matching -exclude (examples, the sclgen generator and generated raw SCL
 // bindings by default) are reported but not enforced.
 package main
 
@@ -28,7 +28,7 @@ type counts struct{ covered, total int }
 
 func main() {
 	minPct := flag.Float64("min", 90, "minimum coverage percentage per package")
-	exclude := flag.String("exclude", `/examples/|/cmd/|/scl/internal/raw/|/interop`, "regexp of packages not enforced")
+	exclude := flag.String("exclude", `/examples/|/scl/cmd/sclgen|/scl/internal/raw/|/interop`, "regexp of packages not enforced")
 	flag.Parse()
 	if flag.NArg() != 1 {
 		fmt.Fprintln(os.Stderr, "usage: covergate [-min N] [-exclude RE] coverage.out")

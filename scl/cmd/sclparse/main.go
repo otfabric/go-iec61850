@@ -6,6 +6,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -66,17 +67,23 @@ func init() {
 }
 
 func main() {
+	os.Exit(run(os.Stderr))
+}
+
+// run executes rootCmd and maps its result to a process exit code, writing
+// any error message to stderr.
+func run(stderr io.Writer) int {
 	err := rootCmd.Execute()
 	if err == nil {
-		os.Exit(exitOK)
+		return exitOK
 	}
 	var ee *exitError
 	if errors.As(err, &ee) {
-		fmt.Fprintln(os.Stderr, "sclparse: "+ee.msg)
-		os.Exit(ee.code)
+		_, _ = fmt.Fprintln(stderr, "sclparse: "+ee.msg)
+		return ee.code
 	}
-	fmt.Fprintln(os.Stderr, err)
-	os.Exit(exitUsage)
+	_, _ = fmt.Fprintln(stderr, err)
+	return exitUsage
 }
 
 func sclFileCompletion(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {

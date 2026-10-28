@@ -194,7 +194,13 @@ func (s *Server) handleControlWrite(ctx context.Context, ldName, lnName string, 
 
 	switch subAttr {
 	case "Oper":
-		return s.executeOperate(ctx, reg, req)
+		if err := s.executeOperate(ctx, reg, req); err != nil {
+			return err
+		}
+		if reg.ctlModel.IsEnhanced() {
+			s.sendCommandTermination(ctx, ldName, lnName+"$CO$"+strings.Join(doPath, "$")+"$Oper", val)
+		}
+		return nil
 	case "SBO":
 		return s.executeSelect(ctx, reg, req)
 	case "SBOw":
@@ -204,6 +210,34 @@ func (s *Server) handleControlWrite(ctx context.Context, ldName, lnName string, 
 	default:
 		return nil
 	}
+}
+
+// commandTerminationDelay lets the Write response of the Operate reach
+// the client before the CommandTermination report (as for URCB reports
+// triggered by a write).
+const commandTerminationDelay = 100 * time.Millisecond
+
+// sendCommandTermination sends a positive CommandTermination (IEC
+// 61850-8-1 clause 20.6) to the connection that operated an
+// enhanced-security control: an InformationReport of the Oper attribute
+// with the operated value.
+func (s *Server) sendCommandTermination(ctx context.Context, domain, operItem string, oper *mms.Value) {
+	sc := mms.ServerConnFromContext(ctx)
+	if sc == nil || oper == nil {
+		return
+	}
+	req := &mms.InformationReportRequest{
+		Variables: []mms.ObjectName{{Scope: mms.ObjectScopeDomain, Domain: mms.DomainID(domain), ItemID: mms.ItemID(operItem)}},
+		Values:    []*mms.Value{oper.Clone()},
+	}
+	go func() {
+		time.Sleep(commandTerminationDelay)
+		if err := sc.SendInformationReport(context.Background(), req); err != nil {
+			s.logger.Debug("iec61850: CommandTermination send failed", "oper", domain+"/"+operItem, "error", err)
+			return
+		}
+		s.logger.Debug("iec61850: CommandTermination sent", "oper", domain+"/"+operItem)
+	}()
 }
 
 func (s *Server) executeOperate(ctx context.Context, reg *controlRegistration, req ControlRequest) error {
