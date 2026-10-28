@@ -31,15 +31,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - FuzzParseRef
-          - FuzzParseFC
-          - FuzzDecodeQuality
-          - FuzzNewValue
-          - FuzzDecodeReportIndication
-          - FuzzDecodeOptFlds
-          - FuzzDecodeTrgOps
-          - FuzzDecodeReportIndication_NilValues
+        include:
+          - { pkg: ".", target: FuzzParseRef }
+          - { pkg: ".", target: FuzzParseFC }
+          - { pkg: ".", target: FuzzDecodeQuality }
+          - { pkg: ".", target: FuzzNewValue }
+          - { pkg: ".", target: FuzzDecodeReportIndication }
+          - { pkg: ".", target: FuzzDecodeOptFlds }
+          - { pkg: ".", target: FuzzDecodeTrgOps }
+          - { pkg: ".", target: FuzzDecodeReportIndication_NilValues }
+          - { pkg: ".", target: FuzzDecodeGoCB }
+          - { pkg: "./scl", target: FuzzParse }
+          - { pkg: "./goose", target: FuzzDecode }
+          - { pkg: "./goose", target: FuzzDecodeData }
+          - { pkg: "./internal/servermodel", target: FuzzParseGSEAddress }
 
     steps:
       - uses: actions/checkout@v4
@@ -49,7 +54,7 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Fuzz ${{ matrix.target }}
+      - name: Fuzz ${{ matrix.pkg }} ${{ matrix.target }}
         env:
           FUZZ_TIME: ${{ github.event.inputs.fuzztime || '5m' }}
         run: |
@@ -59,13 +64,13 @@ jobs:
             -fuzz=^${{ matrix.target }}$ \
             -fuzztime=${FUZZ_TIME} \
             -timeout=${TIMEOUT_SECS}s \
-            github.com/otfabric/go-iec61850
+            ${{ matrix.pkg }}
 
       - name: Upload failing corpus entry
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: fuzz-failure-${{ matrix.target }}-${{ github.run_id }}
-          path: testdata/fuzz/${{ matrix.target }}/
+          path: ${{ matrix.pkg }}/testdata/fuzz/${{ matrix.target }}/
           if-no-files-found: ignore
           retention-days: 30

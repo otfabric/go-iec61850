@@ -165,7 +165,11 @@ func appendBits(b []byte, tag byte, bits []byte, n int) ([]byte, error) {
 func encodeUTCTime(t time.Time, quality uint8) []byte {
 	c := make([]byte, 8)
 	binary.BigEndian.PutUint32(c[0:4], uint32(t.Unix()))
-	frac := uint32((uint64(t.Nanosecond()) << 24) / 1e9)
+	// Round to nearest so that decode/encode is stable.
+	frac := (uint64(t.Nanosecond())<<24 + 5e8) / 1e9
+	if frac > 0xffffff {
+		frac = 0xffffff
+	}
 	c[4], c[5], c[6] = byte(frac>>16), byte(frac>>8), byte(frac)
 	c[7] = quality
 	return c

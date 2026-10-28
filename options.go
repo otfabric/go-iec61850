@@ -4,6 +4,7 @@ package iec61850
 
 import (
 	"log/slog"
+	"time"
 
 	"github.com/otfabric/go-mms"
 )
@@ -41,6 +42,40 @@ type DialOptions struct {
 	// device names and prepends it when making MMS requests, so
 	// callers can always use the bare LD instance name.
 	IEDName string
+
+	// Retry controls how [Dial] retries a failed connection attempt.
+	// The zero value makes a single attempt.
+	Retry RetryPolicy
+}
+
+// RetryPolicy configures connection retries with exponential back-off.
+// Each failed attempt waits Backoff, doubling up to MaxBackoff, before
+// the next one; the dial context bounds the total time.
+type RetryPolicy struct {
+	// Attempts is the maximum number of connection attempts. Values
+	// below 1 mean a single attempt.
+	Attempts int
+
+	// Backoff is the delay after the first failure (default 100ms).
+	Backoff time.Duration
+
+	// MaxBackoff caps the delay (default 5s).
+	MaxBackoff time.Duration
+}
+
+// delay returns the back-off before attempt n+1 (n >= 1).
+func (p RetryPolicy) delay(n int) time.Duration {
+	d, maxD := p.Backoff, p.MaxBackoff
+	if d <= 0 {
+		d = 100 * time.Millisecond
+	}
+	if maxD <= 0 {
+		maxD = 5 * time.Second
+	}
+	for i := 1; i < n && d < maxD; i++ {
+		d *= 2
+	}
+	return min(d, maxD)
 }
 
 // ClientOptions configures an IEC 61850 client created via [NewClient]

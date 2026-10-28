@@ -316,3 +316,14 @@ func TestFromSCLGoCBs(t *testing.T) {
 		t.Error("expected warnings")
 	}
 }
+
+func FuzzParseGSEAddress(f *testing.F) {
+	f.Add("01-0C-CD-01-00-01", "1001", "000", "4", "10.5")
+	f.Fuzz(func(t *testing.T, mac, appID, vid, prio, ms string) {
+		a, err := ParseGSEAddress([]scl.P{{Type: "MAC-Address", Value: mac}, {Type: "APPID", Value: appID}, {Type: "VLAN-ID", Value: vid}, {Type: "VLAN-PRIORITY", Value: prio}})
+		if err == nil && (a.VLANID > 0xfff || a.VLANPriority > 7) {
+			t.Fatalf("out of range: %+v", a)
+		}
+		_, _ = parseMillis(ms)
+	})
+}
