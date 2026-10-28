@@ -32,6 +32,7 @@ no code derived from other GOOSE implementations.
 - [Errors](#errors)
 - [Logging and metrics](#logging-and-metrics)
 - [Testing](#testing)
+- [Deployment](#deployment)
 - [Limitations](#limitations)
 
 ## Frames
@@ -300,6 +301,29 @@ Embed `goose.NopMetrics` to implement only some methods. See
 - Interop: `interop/goose_test.go` against libiec61850, dscsystems and iec61850-rust
   publishers and subscribers on a Docker bridge (see
   [INTEROP.md](INTEROP.md)).
+
+## Deployment
+
+- **Privileges** — grant the binary the capability instead of running it
+  as root: `sudo setcap cap_net_raw+ep ./myapp` (Linux). On macOS add the
+  user to the `access_bpf` group (installed by Wireshark's ChmodBPF) or
+  adjust `/dev/bpf*` permissions. `Open` returns an error wrapping
+  `ErrPermission` when access is missing.
+- **Multicast reception** — set `TransportOptions.Multicast` to the
+  control blocks' destination addresses (`cb.Dst` from SCL) so the NIC
+  filters in hardware; without it the transport receives all multicast
+  (Linux) or enables promiscuous mode (macOS/BSD).
+- **Network** — GOOSE and SV are layer-2 multicast: switches flood them
+  unless static multicast filtering or VLANs limit them. Keep the VLAN
+  ID and priority from SCL (default priority 4) and check that every
+  switch on the path forwards 802.1Q-tagged frames. See
+  [SECURITY.md](SECURITY.md#deployment-guidance) for isolation.
+- **Supervision** — the subscriber times each stream out after the
+  `timeAllowedToLive` carried in its last message (the Go publisher sends
+  `2 × MaxTime` unless `PublisherConfig.TimeAllowedToLive` is set) and
+  reports `EventTimeout`. It does not substitute values: the application
+  decides what a lost input means (e.g. treat it as invalid, as LGOS
+  `St` would show).
 
 ## Limitations
 

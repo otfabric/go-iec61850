@@ -1,7 +1,9 @@
 # Known Limitations
 
-This document describes known limitations and constraints of the `go-iec61850`
-library at the current development stage.
+What `go-iec61850` does not do, or does only partly, as of v1.2. Each item
+is a deliberate scope decision or a documented gap; behaviour that deviates
+from a peer stack is listed in [INTEROP.md](INTEROP.md) and
+[COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Protocol scope
 
@@ -15,21 +17,12 @@ library at the current development stage.
 
 ## Client limitations
 
-- **Control model implementation is initial** — IEC 61850 control
-  models (DO, DOw, SBO, SBOw) are implemented as first-class typed
-  APIs (`Operate`, `Select`, `SelectWithValue`, `Cancel`), but
-  command termination monitoring and timed-command scheduling are
-  not yet fully implemented.
-- **Sampled Values limitations** — no IEC 62351 SV security (the
-  `security` field is carried opaquely), no unicast SV control blocks
-  (USVCB) on the server, no Windows raw transport. The server publishes
-  dataset values from its store; waveform sources feed the engine's
-  publishers directly.
-- **GOOSE limitations** — no IEC 62351-6 security, no fixed-offset
-  encoding, no GSSE or GOOSE management APDUs, no Windows raw transport;
-  received GOOSE values are not mapped into a server model (no `InRef`
-  binding). Raw sockets need `CAP_NET_RAW` (Linux) or `/dev/bpf*` access
-  (macOS/BSD).
+- **Control: no CommandTermination wait, no time-activated operate** —
+  the control models (direct, SBO, SBOw, normal and enhanced security) are
+  typed APIs (`Operate`, `Select`, `SelectWithValue`, `Cancel`), but the
+  client does not wait for or surface the CommandTermination of an
+  enhanced-security operate, and does not schedule time-activated
+  operations (`operTm`).
 - **No automatic model discovery caching persistence** — the client cache is
   in-memory only and does not survive process restarts.
 - **Report subscription assumes single-client ownership** — the library does
@@ -37,9 +30,7 @@ library at the current development stage.
 
 ## Server limitations
 
-- **Experimental API** — the server API (`Server`, `NewServer`, etc.) is
-  experimental and subject to breaking changes.
-- **Runtime report engine is initial** — the server generates
+- **Reports: in-memory BRCB buffer, no segmentation** — the server generates
   InformationReports for data-change, quality-change, data-update,
   integrity, and GI triggers. RCB writes from MMS clients are
   automatically dispatched to the report engine. BRCB buffering is
@@ -49,18 +40,14 @@ library at the current development stage.
   buffer does not survive a server restart. Multi-client RCB
   ownership arbitration and segmented report generation are not yet
   implemented.
-- **Server-side control hooks are initial** — control handlers
+- **Controls: no interlocking, no negative CommandTermination** — control handlers
   (`RegisterControl`) support select/operate/cancel dispatch with
   SBO timeout tracking, but interlocking and synchrocheck are
   application-responsibility via callbacks. After a successful
   enhanced-security operate the server sends a positive
   CommandTermination; negative termination (an operate that fails after
   it was accepted) is not generated.
-- **GOOSE and SV references use the server's MMS domain** — the server's MMS
-  domain is the bare LD instance, so GoCB/MSVCB references and the published
-  gocbRef/datSet are `LD/LLN0$...` rather than the IED-name-prefixed form
-  used by IEDs that name domains `<IED><LD>`.
-- **Setting group engine is initial** — the server supports SGCB
+- **Setting groups: no per-group value banks** — the server supports SGCB
   registration, active/edit group selection, confirmation, handler
   callbacks, and automatic dispatch from MMS client writes. However,
   persistent multi-bank SE/SG value storage is not yet implemented:
@@ -69,8 +56,8 @@ library at the current development stage.
   Reservation timeouts (ResvTms), multi-connection edit ownership
   tracking, and connection-scoped reservation are also not yet
   implemented.
-- **Journal engine is initial** — the server supports runtime journal
-  entry generation, in-memory storage via [MemoryJournalProvider], and
+- **Journals: in-memory, no LCB runtime configuration** — the server supports runtime journal
+  entry generation, in-memory storage via `MemoryJournalProvider`, and
   MMS journal service integration. Persistent journal storage, log
   control block (LCB) runtime configuration, and automatic event
   logging from control operations are not yet implemented.
@@ -79,7 +66,38 @@ library at the current development stage.
   No built-in filesystem-backed provider is included; applications must
   implement the `mms.FileProvider` interface.
 - **No dynamic server model updates** — the server model is immutable after
-  construction.
+  construction, and clients cannot create or delete named variable lists
+  on the server (`DefineNamedVariableList` / `DeleteNamedVariableList`);
+  the client supports both against other servers.
+
+## GOOSE and Sampled Values
+
+- **No IEC 62351-6 security** — GOOSE and SV frames are neither signed nor
+  encrypted; the SV `security` field is carried opaquely. Protect the
+  process bus at the network layer (VLANs, port security, separate
+  switches).
+- **No R-GOOSE / R-SV** (IEC 61850-90-5, routable over UDP/IP).
+- **Raw Ethernet only on Linux, macOS and the BSDs** — Linux uses
+  `AF_PACKET` and needs `CAP_NET_RAW` (or root); macOS/BSD use BPF and need
+  read/write access to `/dev/bpf*`. Other platforms (Windows) return
+  `ErrUnsupportedPlatform`; the in-memory `Hub` works everywhere.
+- **GOOSE** — no fixed-offset (IEC 61850-8-1 Ed. 2.1) encoding, no GSSE and
+  no GOOSE management APDUs (GetGoReference/GetGOOSEElementNumber).
+  Received GOOSE values are not mapped into a server model (no `ExtRef` /
+  `InRef` binding); applications map them from subscriber events.
+- **Sampled Values** — multicast control blocks (MSVCB) only: no unicast
+  SV (USVCB, `SendUSVMessage`). The server's SV engine publishes the
+  dataset values from its value store at `smpRate`; waveform sources feed
+  the engine's publishers (`SVEngine.Publisher`) directly. Software timing
+  is subject to OS scheduling: the publisher paces on an absolute schedule
+  and counts late and skipped samples, but it is not a substitute for a
+  hardware merging unit with PTP or 1PPS synchronisation.
+- **References use the server's MMS domain** — the server's MMS domain is
+  the bare LD instance, so GoCB/MSVCB references and the published
+  `gocbRef`/`datSet` are `LD/LLN0$...` rather than the IED-name-prefixed
+  form used by IEDs that name domains `<IED><LD>`. Subscribers that
+  validate against an SCL with IED-prefixed references must relax the
+  reference check (see `examples/goose-subscriber -any-ref`).
 
 ## SCL limitations
 
@@ -141,8 +159,11 @@ library at the current development stage.
 
 ## Interoperability
 
-- **Tested against software stacks only** — client and server behaviour is
-  tested against pinned `libiec61850` and `iec61850bean` adapters (see
-  [INTEROP.md](INTEROP.md) and `interop/`). Interoperability with physical
-  IEDs and vendor stacks (ABB, Siemens, etc.) has not been formally
-  validated.
+- **Tested against software stacks only** — MMS client and server
+  behaviour is tested against pinned libiec61850, iec61850bean, dscsystems
+  and iec61850-rust adapters, and GOOSE and SV against the libiec61850,
+  dscsystems and iec61850-rust publishers and subscribers (see
+  [INTEROP.md](INTEROP.md) and [COMPATIBILITY.md](COMPATIBILITY.md)).
+  Interoperability with physical IEDs and vendor stacks has not been
+  formally validated, and the library has no UCA conformance
+  certification.

@@ -190,11 +190,11 @@ layer. These are wrapped and typically match one of:
 - `*mms.RejectError` — the peer answered with an MMS Reject PDU
 - `mms.ErrServerClosed` — returned by `Server.ListenAndServe` after
   `Server.Shutdown`
-- `mms.ServiceError` — server returned a ConfirmedError PDU (`CodeName()`
+- `*mms.ServiceError` — server returned a ConfirmedError PDU (`CodeName()`
   names the class/code; since go-mms v1.2.0 `Error()` ends with it, so do
   not compare error strings)
-- `mms.ProtocolError` — wire-level protocol violation
-- `mms.DecodeError` — received PDU could not be parsed
+- `*mms.ProtocolError` — wire-level protocol violation
+- `*mms.DecodeError` — received PDU could not be parsed
 
 Use `errors.As` to inspect them directly when fine-grained MMS error handling
 is needed. For most IEC 61850 application code, the sentinels above are

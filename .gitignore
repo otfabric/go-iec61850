@@ -25,3 +25,7 @@ coverage.*
 
 # OS
 .DS_Store
+
+# Local reference material and AI working files (never commit)
+/sources/
+/ai/
