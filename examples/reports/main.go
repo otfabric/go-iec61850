@@ -1,108 +1,127 @@
 // SPDX-License-Identifier: MIT
 
-// Command reports demonstrates subscribing to an IEC 61850 buffered
-// report and printing incoming indications.
+// Command reports subscribes to an IEC 61850 report control block and
+// prints the reports it receives.
+//
+// It reads the RCB (RptID, DatSet, TrgOps, OptFlds), reserves and
+// enables it with a general interrogation, and prints each report with
+// its sequence number, reason codes and values. Without -rcb it uses the
+// first RCB of the first logical device.
+//
+// Usage:
+//
+//	reports [-addr 127.0.0.1:102] [-ld LD1] [-rcb LLN0$RP$urcb01] [-count 0]
+//
+// Run it against examples/ied-server, which updates its measurement
+// every two seconds.
 package main
 
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
-	"github.com/otfabric/go-iec61850"
+	iec61850 "github.com/otfabric/go-iec61850"
 )
 
 func main() {
-	addr := "127.0.0.1:102"
-	if len(os.Args) > 1 {
-		addr = os.Args[1]
+	addr := flag.String("addr", "127.0.0.1:102", "server address")
+	ld := flag.String("ld", "", "logical device (default: the first)")
+	rcb := flag.String("rcb", "", "RCB item ID (default: the first)")
+	count := flag.Int("count", 0, "stop after this many reports (0 = until interrupted)")
+	flag.Parse()
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := run(ctx, *addr, *ld, *rcb, *count, os.Stdout); err != nil {
+		log.Fatal(err)
 	}
+}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-
-	dialCtx, dialCancel := context.WithTimeout(ctx, 10*time.Second)
+func run(ctx context.Context, addr, ld, rcbItem string, count int, out io.Writer) error {
+	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	client, err := iec61850.Dial(dialCtx, addr, iec61850.DialOptions{})
-	dialCancel()
+	cancel()
 	if err != nil {
-		cancel()
-		log.Fatalf("dial: %v", err)
+		return err
 	}
-	defer cancel()
 	defer func() { _ = client.Close(context.Background()) }()
 
-	devices, err := client.ListLogicalDevices(ctx)
-	if err != nil {
-		log.Fatalf("list LDs: %v", err)
-	}
-	if len(devices) == 0 {
-		log.Fatal("no logical devices found")
-	}
-	ld := devices[0].Name
-
-	reports, err := client.ListReports(ctx, ld)
-	if err != nil {
-		if errors.Is(err, iec61850.ErrUnsupportedService) || errors.Is(err, iec61850.ErrNotFound) {
-			log.Printf("list reports: %v (server may not support reporting)", err)
-			return
+	if ld == "" {
+		devices, err := client.ListLogicalDevices(ctx)
+		if err != nil {
+			return err
 		}
-		log.Fatalf("list reports: %v", err)
-	}
-
-	fmt.Printf("Found %d report(s) in %s:\n", len(reports), ld)
-	for _, r := range reports {
-		fmt.Printf("  %s\n", r)
-	}
-
-	if len(reports) == 0 {
-		fmt.Println("no reports found in", ld)
-		return
-	}
-
-	rcb, err := client.GetReportControlBlock(ctx, ld, reports[0])
-	if err != nil {
-		if errors.Is(err, iec61850.ErrNotFound) || errors.Is(err, iec61850.ErrDataAccess) {
-			log.Printf("get RCB %s: %v (RCB may not be accessible)", reports[0], err)
-			return
+		if len(devices) == 0 {
+			return errors.New("server has no logical devices")
 		}
-		log.Fatalf("get RCB: %v", err)
+		ld = devices[0].Name
 	}
-	fmt.Printf("\nSubscribing to %s (RptID=%s, DatSet=%s)\n", reports[0], rcb.RptID, rcb.DatSet)
+	if rcbItem == "" {
+		rcbs, err := client.ListReports(ctx, ld)
+		if err != nil {
+			return err
+		}
+		if len(rcbs) == 0 {
+			return fmt.Errorf("%s has no report control blocks", ld)
+		}
+		rcbItem = rcbs[0]
+	}
 
+	rcb, err := client.GetReportControlBlock(ctx, ld, rcbItem)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "%s/%s: RptID=%s DatSet=%s\n", ld, rcbItem, rcb.RptID, rcb.DatSet)
+
+	// Reports are routed by RptID; AutoEnable reserves (URCB) and
+	// enables the RCB, GIOnSubscribe asks for the current values.
 	sub, err := client.SubscribeReport(ctx, rcb.RptID, iec61850.SubscribeReportOptions{
-		QueueSize:     64,
-		AutoEnable:    true,
-		GIOnSubscribe: true,
-		LD:            ld,
-		RCBItemID:     reports[0],
+		LD:             ld,
+		RCBItemID:      rcbItem,
+		AutoEnable:     true,
+		GIOnSubscribe:  true,
+		QueueSize:      64,
+		OverflowPolicy: iec61850.OverflowDropOldest,
 	})
 	if err != nil {
-		log.Fatalf("subscribe: %v", err)
+		return err
 	}
-	defer sub.Close() //nolint:errcheck
+	defer func() { _ = sub.Close() }()
 
-	fmt.Println("Waiting for reports (Ctrl-C to stop)...")
-	for {
+	for n := 0; count == 0 || n < count; n++ {
 		select {
-		case ri, ok := <-sub.Reports():
-			if !ok {
-				fmt.Println("subscription closed")
-				return
-			}
-			fmt.Printf("\nReport RptID=%s SeqNum=%d\n", ri.RptID, ri.SeqNum)
-			fmt.Printf("  OptFlds: %s\n", ri.OptFlds)
-			fmt.Printf("  Values:  %d\n", len(ri.Values))
-			for i, v := range ri.Values {
-				if v != nil {
-					fmt.Printf("    [%d] %s\n", i, v)
-				}
-			}
 		case <-ctx.Done():
-			fmt.Println("\ninterrupted")
-			return
+			return nil
+		case rpt, ok := <-sub.Reports():
+			if !ok {
+				return errors.New("subscription closed")
+			}
+			printReport(out, rpt)
 		}
+	}
+	return nil
+}
+
+func printReport(out io.Writer, rpt *iec61850.ReportIndication) {
+	fmt.Fprintf(out, "report %s seq=%d", rpt.RptID, rpt.SeqNum)
+	if !rpt.Timestamp.IsZero() {
+		fmt.Fprintf(out, " t=%s", rpt.Timestamp.Format(time.RFC3339Nano))
+	}
+	fmt.Fprintln(out)
+	for i, v := range rpt.Values {
+		reason := ""
+		if i < len(rpt.ReasonCodes) {
+			reason = fmt.Sprintf(" (%v)", rpt.ReasonCodes[i])
+		}
+		fmt.Fprintf(out, "  [%d] %v%s\n", i, v, reason)
 	}
 }

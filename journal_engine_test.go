@@ -3,6 +3,7 @@
 package iec61850
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"testing"
@@ -796,5 +797,30 @@ func TestServer_EnableJournals_AutoAdoptsMmsProvider(t *testing.T) {
 	engine.LogEvent("LD1", "LLN0$log1", time.Now(), nil)
 	if jp.EntryCount("LD1", "LLN0$log1") != 1 {
 		t.Fatal("entry should be in the MMS provider")
+	}
+}
+
+// TestMemoryJournalProvider_ReadStartAfter_WireCursor reads after a
+// cursor as a client sends it back: the entry's time at TimeOfDay
+// (millisecond) resolution. Entries are logged with sub-millisecond
+// times; the cursor must still match its entry.
+func TestMemoryJournalProvider_ReadStartAfter_WireCursor(t *testing.T) {
+	p := NewMemoryJournalProvider()
+	base := time.Date(2026, 1, 2, 3, 4, 5, 123456789, time.UTC)
+	var ids [][]byte
+	for i := 0; i < 3; i++ {
+		ids = append(ids, p.AddEntry("LD", "LLN0$log", base.Add(time.Duration(i)*time.Microsecond), nil))
+	}
+	res, err := p.ReadStartAfter(context.Background(), "LD", "LLN0$log", ids[1], base.Truncate(time.Millisecond), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Entries) != 1 || !bytes.Equal(res.Entries[0].EntryID, ids[2]) {
+		t.Fatalf("after entry 2: %d entries, want only entry 3", len(res.Entries))
+	}
+	// An evicted (unknown) entry ID falls back to the time.
+	res, err = p.ReadStartAfter(context.Background(), "LD", "LLN0$log", []byte{0xff}, base.Add(-time.Second), 0)
+	if err != nil || len(res.Entries) != 3 {
+		t.Fatalf("unknown cursor: %d entries, %v", len(res.Entries), err)
 	}
 }

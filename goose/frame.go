@@ -8,15 +8,17 @@ import (
 	"time"
 
 	"github.com/otfabric/go-mms"
+
+	"github.com/otfabric/go-iec61850/l2"
 )
 
 // Ethernet and GOOSE framing constants (IEC 61850-8-1 Annex C).
 const (
 	// EtherType is the GOOSE EtherType.
-	EtherType uint16 = 0x88B8
+	EtherType = l2.EtherTypeGOOSE
 
 	// EtherTypeVLAN is the IEEE 802.1Q tag protocol identifier.
-	EtherTypeVLAN uint16 = 0x8100
+	EtherTypeVLAN = l2.EtherTypeVLAN
 
 	// SimulationBit is the bit in Reserved1 that marks a simulated
 	// message (IEC 61850-8-1 Ed2.1 "S" bit).

@@ -69,11 +69,11 @@ func TestGoServer_CDC_DPS_Read(t *testing.T) {
 }
 
 // cdcSeedGap lists adapter servers that do not apply the DPS1/TotVAh
-// initial values of values.json (mms-interop v0.3.0): they serve the type
+// initial values of values.json (mms-interop v0.4.0): they serve the type
 // defaults, so the read cannot be compared with the fixture.
 var cdcSeedGap = map[string]string{
-	"libiec61850":  "libiec61850-ied-server (mms-interop v0.3.0) does not seed GGIO1.DPS1.stVal / MMTR1.TotVAh.actVal from values.json",
-	"iec61850bean": "iec61850bean-ied-server (mms-interop v0.3.0) does not seed GGIO1.DPS1.stVal / MMTR1.TotVAh.actVal from values.json",
+	"libiec61850":  "libiec61850-ied-server (mms-interop v0.4.0) does not seed GGIO1.DPS1.stVal / MMTR1.TotVAh.actVal from values.json",
+	"iec61850bean": "iec61850bean-ied-server (mms-interop v0.4.0) does not seed GGIO1.DPS1.stVal / MMTR1.TotVAh.actVal from values.json",
 }
 
 func skipCDCSeedGap(t *testing.T, stack string) {

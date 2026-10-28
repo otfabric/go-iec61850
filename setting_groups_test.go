@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/otfabric/go-mms"
+	"github.com/otfabric/go-mms/transport/iso"
 
 	"github.com/otfabric/go-iec61850/internal/servermodel"
 )
@@ -408,5 +409,70 @@ func TestSettingGroupEngine_NoSGCBInModel(t *testing.T) {
 	// No SGCB → engine exists but has no registrations.
 	if got := srv.SettingGroupEngine().GetActiveSettingGroup("LD1"); got != 0 {
 		t.Errorf("expected 0 for LD without SGCB, got %d", got)
+	}
+}
+
+// TestSettingGroups_ClientServer runs the setting-group services of the
+// Go client against the Go server: the client writes SGCB components
+// with alternate access, which the server receives as writes of the
+// whole SGCB and must still route through the engine.
+func TestSettingGroups_ClientServer(t *testing.T) {
+	srv := newTestSGServer(t)
+	var calls []string
+	srv.EnableSettingGroups(SettingGroupHandler{
+		OnActiveSGChanged: func(_ context.Context, ld string, sg uint8) error {
+			calls = append(calls, fmt.Sprintf("active %s %d", ld, sg))
+			return nil
+		},
+		OnEditSGSelected: func(_ context.Context, ld string, sg uint8) error {
+			calls = append(calls, fmt.Sprintf("edit %s %d", ld, sg))
+			return nil
+		},
+		OnConfirmEdit: func(_ context.Context, ld string, sg uint8) error {
+			calls = append(calls, fmt.Sprintf("confirm %s %d", ld, sg))
+			return nil
+		},
+	})
+	ln, err := iso.Listen("127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = srv.ListenAndServe(ctx, ln) }()
+	defer srv.Close()
+	c, err := Dial(ctx, ln.Addr().String(), DialOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close(ctx) }()
+
+	if err := c.SelectActiveSG(ctx, "LD1", 2); err != nil {
+		t.Fatalf("SelectActiveSG: %v", err)
+	}
+	if err := c.SelectEditSG(ctx, "LD1", 3); err != nil {
+		t.Fatalf("SelectEditSG: %v", err)
+	}
+	if err := c.ConfirmEditSG(ctx, "LD1"); err != nil {
+		t.Fatalf("ConfirmEditSG: %v", err)
+	}
+	// A second active-group change after LActTm moved: the stale LActTm
+	// in the whole-SGCB write must not be rejected as a read-only write.
+	if err := c.SelectActiveSG(ctx, "LD1", 4); err != nil {
+		t.Fatalf("SelectActiveSG again: %v", err)
+	}
+	if err := c.SelectActiveSG(ctx, "LD1", 5); err == nil {
+		t.Fatal("SelectActiveSG 5 of 4 groups succeeded")
+	}
+	info, err := c.GetSettingGroupInfo(ctx, "LD1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.ActSG != 4 || info.EditSG != 0 || info.NumOfSGs != 4 {
+		t.Errorf("SGCB = %+v", info)
+	}
+	want := []string{"active LD1 2", "edit LD1 3", "confirm LD1 3", "active LD1 4"}
+	if fmt.Sprint(calls) != fmt.Sprint(want) {
+		t.Errorf("callbacks = %v, want %v", calls, want)
 	}
 }

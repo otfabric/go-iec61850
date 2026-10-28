@@ -105,6 +105,10 @@ func convLN017(r raw.LN0, _ *[]Diagnostic) LN {
 			Name: sv.Name, Desc: sv.Desc, SmvID: sv.SmvID,
 			DatSet: sv.DatSet, ConfRev: sv.ConfRev,
 			SmpRate: sv.SmpRate, NofASDU: sv.NofASDU, Multicast: sv.Multicast,
+			SmvOpts: SmvOpts{
+				RefreshTime: sv.SmvOpts.RefreshTime, SampleSynchronized: sv.SmvOpts.SampleSynchronized,
+				SampleRate: sv.SmvOpts.SampleRate, Security: sv.SmvOpts.Security, DataRef: sv.SmvOpts.DataRef,
+			},
 		})
 	}
 	for _, lc := range r.LogControl {

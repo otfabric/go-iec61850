@@ -106,6 +106,12 @@ func convLN0B4(r raw.LN0, _ *[]Diagnostic) LN {
 			Name: sv.Name, Desc: sv.Desc, SmvID: sv.SmvID,
 			DatSet: sv.DatSet, ConfRev: sv.ConfRev,
 			SmpRate: sv.SmpRate, NofASDU: sv.NofASDU, Multicast: sv.Multicast,
+			SmpMod: string(sv.SmpMod), SecurityEnable: string(sv.SecurityEnable),
+			SmvOpts: SmvOpts{
+				RefreshTime: sv.SmvOpts.RefreshTime, SampleSynchronized: sv.SmvOpts.SampleSynchronized,
+				SampleRate: sv.SmvOpts.SampleRate, DataSet: sv.SmvOpts.DataSet, Security: sv.SmvOpts.Security,
+				Timestamp: sv.SmvOpts.Timestamp, SynchSourceID: sv.SmvOpts.SynchSourceId,
+			},
 		})
 	}
 	for _, lc := range r.LogControl {

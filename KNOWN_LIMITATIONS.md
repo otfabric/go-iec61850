@@ -5,8 +5,10 @@ library at the current development stage.
 
 ## Protocol scope
 
-- **MMS only** — this library implements IEC 61850 over MMS (ISO 9506). GOOSE
-  and Sampled Values (SV) are out of scope.
+- **MMS, GOOSE and Sampled Values** — this library implements IEC 61850
+  over MMS (ISO 9506), GOOSE (IEC 61850-8-1, see [GOOSE.md](GOOSE.md)) and
+  Sampled Values (IEC 61850-9-2, see [SV.md](SV.md)). R-GOOSE/R-SV
+  (IEC 61850-90-5) are out of scope.
 - **No ACSI mapping completeness guarantee** — not every ACSI service defined
   in IEC 61850-7-2 is mapped. The library focuses on the services needed for
   practical client/server use cases.
@@ -18,8 +20,11 @@ library at the current development stage.
   APIs (`Operate`, `Select`, `SelectWithValue`, `Cancel`), but
   command termination monitoring and timed-command scheduling are
   not yet fully implemented.
-- **No Sampled Values** — GOOSE is supported (see [GOOSE.md](GOOSE.md)),
-  SV (IEC 61850-9-2) is not.
+- **Sampled Values limitations** — no IEC 62351 SV security (the
+  `security` field is carried opaquely), no unicast SV control blocks
+  (USVCB) on the server, no Windows raw transport. The server publishes
+  dataset values from its store; waveform sources feed the engine's
+  publishers directly.
 - **GOOSE limitations** — no IEC 62351-6 security, no fixed-offset
   encoding, no GSSE or GOOSE management APDUs, no Windows raw transport;
   received GOOSE values are not mapped into a server model (no `InRef`
@@ -51,8 +56,8 @@ library at the current development stage.
   enhanced-security operate the server sends a positive
   CommandTermination; negative termination (an operate that fails after
   it was accepted) is not generated.
-- **GOOSE references use the server's MMS domain** — the server's MMS
-  domain is the bare LD instance, so GoCB references and the published
+- **GOOSE and SV references use the server's MMS domain** — the server's MMS
+  domain is the bare LD instance, so GoCB/MSVCB references and the published
   gocbRef/datSet are `LD/LLN0$...` rather than the IED-name-prefixed form
   used by IEDs that name domains `<IED><LD>`.
 - **Setting group engine is initial** — the server supports SGCB

@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sampled Values test fixture: a merging unit in the UCA 9-2LE layout.
+
+  IED MUIED, AP AP1, LD MU01. LLN0.PhsMeas1 holds the 9-2LE dataset
+  (4 x TCTR AmpSv, 4 x TVTR VolSv, instMag.i and q each). MSVCB01
+  publishes it at 80 samples per period, one ASDU per frame; MSVCB02
+  at 256 samples per period, eight ASDUs per frame, with refresh time
+  and sample rate. MSVCB03 has no SMV address.
+-->
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL" version="2007" revision="B">
+  <Header id="mu-9-2le" version="1" revision="0" nameStructure="IEDName"/>
+  <Communication>
+    <SubNetwork name="ProcessBus" type="8-MMS">
+      <ConnectedAP iedName="MUIED" apName="AP1">
+        <Address>
+          <P type="IP">0.0.0.0</P>
+        </Address>
+        <SMV ldInst="MU01" cbName="MSVCB01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-04-00-01</P>
+            <P type="APPID">4000</P>
+            <P type="VLAN-ID">000</P>
+            <P type="VLAN-PRIORITY">4</P>
+          </Address>
+        </SMV>
+        <SMV ldInst="MU01" cbName="MSVCB02">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-04-00-02</P>
+            <P type="APPID">4001</P>
+          </Address>
+        </SMV>
+      </ConnectedAP>
+    </SubNetwork>
+  </Communication>
+  <IED name="MUIED" manufacturer="otfabric" type="MU">
+    <Services>
+      <SMVsc max="3"/>
+    </Services>
+    <AccessPoint name="AP1">
+      <Server>
+        <Authentication none="true"/>
+        <LDevice inst="MU01">
+          <LN0 lnClass="LLN0" inst="" lnType="LLN0_MU">
+            <DataSet name="PhsMeas1">
+          <FCDA ldInst="MU01" prefix="I" lnClass="TCTR" lnInst="1" doName="AmpSv" daName="instMag.i" fc="MX"/>
+          <FCDA ldInst="MU01" prefix="I" lnClass="TCTR" lnInst="1" doName="AmpSv" daName="q" fc="MX"/>
+          <FCDA ldInst="MU01" prefix="I" lnClass="TCTR" lnInst="2" doName="AmpSv" daName="instMag.i" fc="MX"/>
+          <FCDA ldInst="MU01" prefix="I" lnClass="TCTR" lnInst="2" doName="AmpSv" daName="q" fc="MX"/>
+          <FCDA ldInst="MU01" prefix="I" lnClass="TCTR" lnInst="3" doName="AmpSv" daName="instMag.i" fc="MX"/>
+          <FCDA ldInst="MU01" prefix="I" lnClass="TCTR" lnInst="3" doName="AmpSv" daName="q" fc="MX"/>
+          <FCDA ldInst="MU01" prefix="I" lnClass="TCTR" lnInst="4" doName="AmpSv" daName="instMag.i" fc="MX"/>
+          <FCDA ldInst="MU01" prefix="I" lnClass="TCTR" lnInst="4" doName="AmpSv" daName="q" fc="MX"/>
+          <FCDA ldInst="MU01" prefix="U" lnClass="TVTR" lnInst="1" doName="VolSv" daName="instMag.i" fc="MX"/>
+          <FCDA ldInst="MU01" prefix="U" lnClass="TVTR" lnInst="1" doName="VolSv" daName="q" fc="MX"/>
+          <FCDA ldInst="MU01" prefix="U" lnClass="TVTR" lnInst="2" doName="VolSv" daName="instMag.i" fc="MX"/>
+          <FCDA ldInst="MU01" prefix="U" lnClass="TVTR" lnInst="2" doName="VolSv" daName="q" fc="MX"/>
+          <FCDA ldInst="MU01" prefix="U" lnClass="TVTR" lnInst="3" doName="VolSv" daName="instMag.i" fc="MX"/>
+          <FCDA ldInst="MU01" prefix="U" lnClass="TVTR" lnInst="3" doName="VolSv" daName="q" fc="MX"/>
+          <FCDA ldInst="MU01" prefix="U" lnClass="TVTR" lnInst="4" doName="VolSv" daName="instMag.i" fc="MX"/>
+          <FCDA ldInst="MU01" prefix="U" lnClass="TVTR" lnInst="4" doName="VolSv" daName="q" fc="MX"/>
+            </DataSet>
+            <SampledValueControl name="MSVCB01" smvID="MU01" datSet="PhsMeas1" confRev="1" smpRate="80" nofASDU="1" multicast="true" smpMod="SmpPerPeriod">
+              <SmvOpts sampleSynchronized="true"/>
+            </SampledValueControl>
+            <SampledValueControl name="MSVCB02" smvID="MU01-256" datSet="PhsMeas1" confRev="2" smpRate="256" nofASDU="8" multicast="true">
+              <SmvOpts refreshTime="true" sampleSynchronized="true" sampleRate="true" dataSet="true"/>
+            </SampledValueControl>
+            <SampledValueControl name="MSVCB03" smvID="MU01-x" datSet="PhsMeas1" confRev="1" smpRate="4000" nofASDU="1" smpMod="SmpPerSec">
+              <SmvOpts/>
+            </SampledValueControl>
+          </LN0>
+          <LN lnClass="LPHD" inst="1" lnType="LPHD_MU"/>
+        <LN prefix="I" lnClass="TCTR" inst="1" lnType="TCTR_9-2LE"/>
+        <LN prefix="I" lnClass="TCTR" inst="2" lnType="TCTR_9-2LE"/>
+        <LN prefix="I" lnClass="TCTR" inst="3" lnType="TCTR_9-2LE"/>
+        <LN prefix="I" lnClass="TCTR" inst="4" lnType="TCTR_9-2LE"/>
+        <LN prefix="U" lnClass="TVTR" inst="1" lnType="TVTR_9-2LE"/>
+        <LN prefix="U" lnClass="TVTR" inst="2" lnType="TVTR_9-2LE"/>
+        <LN prefix="U" lnClass="TVTR" inst="3" lnType="TVTR_9-2LE"/>
+        <LN prefix="U" lnClass="TVTR" inst="4" lnType="TVTR_9-2LE"/>
+        </LDevice>
+      </Server>
+    </AccessPoint>
+  </IED>
+  <DataTypeTemplates>
+    <LNodeType id="LLN0_MU" lnClass="LLN0">
+      <DO name="Mod" type="INC_MU"/>
+      <DO name="Beh" type="INS_MU"/>
+    </LNodeType>
+    <LNodeType id="LPHD_MU" lnClass="LPHD">
+      <DO name="PhyHealth" type="INS_MU"/>
+    </LNodeType>
+    <LNodeType id="TCTR_9-2LE" lnClass="TCTR">
+      <DO name="AmpSv" type="SAV_MU"/>
+    </LNodeType>
+    <LNodeType id="TVTR_9-2LE" lnClass="TVTR">
+      <DO name="VolSv" type="SAV_MU"/>
+    </LNodeType>
+    <DOType id="INC_MU" cdc="INC">
+      <DA name="stVal" bType="INT32" fc="ST"/>
+      <DA name="q" bType="Quality" fc="ST"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+    </DOType>
+    <DOType id="INS_MU" cdc="INS">
+      <DA name="stVal" bType="INT32" fc="ST"/>
+      <DA name="q" bType="Quality" fc="ST"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+    </DOType>
+    <DOType id="SAV_MU" cdc="SAV">
+      <DA name="instMag" bType="Struct" type="AnalogueValue_I" fc="MX"/>
+      <DA name="q" bType="Quality" fc="MX"/>
+    </DOType>
+    <DAType id="AnalogueValue_I">
+      <BDA name="i" bType="INT32"/>
+    </DAType>
+  </DataTypeTemplates>
+</SCL>

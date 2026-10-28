@@ -18,10 +18,12 @@ jobs:
     timeout-minutes: 60
     env:
       GOWORK: "off"
-      LIBIEC61850_IMAGE: ghcr.io/otfabric/mms-interop-libiec61850@sha256:18e7e5c249f74e708a0699bd64732cd238ad9579574431a16b27b9c6000232a0
-      IEC61850BEAN_IMAGE: ghcr.io/otfabric/mms-interop-iec61850bean@sha256:8d76b3cc065c2b18cc031bb26b2b879a7b433e164f9664ce9a3363241db65514
-      DSCSYSTEMS_IMAGE: ghcr.io/otfabric/mms-interop-dscsystems@sha256:f0b233737c1bd6e9cc6cfe7338bb287ed0e5b4a6b589b7496ae2409501dc6deb
-      IEC61850RUST_IMAGE: ghcr.io/otfabric/mms-interop-iec61850-rust@sha256:ebd09921ef9b22ed9a318256eb2fac74268dde7f18a17f9e8300aba46c624110
+      LIBIEC61850_IMAGE: ghcr.io/otfabric/mms-interop-libiec61850@sha256:966e17e37e7fb5c22b825443ce79565d51067705c8f8485fd63d4001b4bd31ff
+      IEC61850BEAN_IMAGE: ghcr.io/otfabric/mms-interop-iec61850bean@sha256:ab2cda6a77ea054a04a736fdf1c36c5c8f50c766aa41cf5818bd11f3fadfac7d
+      DSCSYSTEMS_IMAGE: ghcr.io/otfabric/mms-interop-dscsystems@sha256:899e4d96605a921647e7c079db0b0a7f69c05d0582830b81607bc1a152a8d60a
+      IEC61850RUST_IMAGE: ghcr.io/otfabric/mms-interop-iec61850-rust@sha256:c46c83c6d7eaa9800bbe48fb6ca9d25a4e9338d0bfc6f31fbba7813d89e4445d
+      # The pinned images implement the SV fixture (mms-interop v0.4.0).
+      IEC61850_SV_FIXTURE: sv-v1
 
     steps:
       - uses: actions/checkout@v4
@@ -56,7 +58,7 @@ jobs:
       # GOOSE is raw Ethernet: the adapters run on a Docker bridge network
       # whose bridge device goose0 the test opens from the host (as root,
       # for CAP_NET_RAW). An idle container gives the bridge its carrier.
-      - name: Run GOOSE interop
+      - name: Run GOOSE and SV interop
         env:
           GOOSE_IFACE: goose0
         run: |
@@ -66,7 +68,7 @@ jobs:
           docker network create -o com.docker.network.bridge.name=goose0 mms-interop-goose
           docker run -d --rm --name goose-carrier --network mms-interop-goose --entrypoint sleep "$LIBIEC61850_IMAGE" infinity
           sleep 2
-          go test -exec 'sudo -E' -tags=interop -v -timeout 300s -run 'GOOSE' ./interop/...
+          go test -exec 'sudo -E' -tags=interop -v -timeout 600s -run 'GOOSE|SV_' ./interop/...
 
       - name: Collect Docker diagnostics
         if: failure()
