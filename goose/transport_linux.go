@@ -25,6 +25,7 @@ type packetTransport struct {
 	iface string
 	mac   MAC
 	idx   int
+	local bool
 
 	mu     sync.RWMutex // held for reading during syscalls, for writing by Close
 	fd     int
@@ -51,7 +52,7 @@ func Open(iface string, opts TransportOptions) (Transport, error) {
 	if err != nil {
 		return nil, osErr("socket", iface, err)
 	}
-	t := &packetTransport{iface: iface, mac: mac, idx: ifi.Index, fd: fd, rbuf: make([]byte, 1<<16), oob: make([]byte, unix.CmsgSpace(sizeofAuxdata))}
+	t := &packetTransport{iface: iface, mac: mac, idx: ifi.Index, local: opts.ReceiveLocal, fd: fd, rbuf: make([]byte, 1<<16), oob: make([]byte, unix.CmsgSpace(sizeofAuxdata))}
 	if err := t.setup(proto, opts); err != nil {
 		_ = unix.Close(fd)
 		return nil, err
@@ -135,7 +136,7 @@ func (t *packetTransport) Recv(ctx context.Context) ([]byte, error) {
 			}
 			return nil, osErr("recv", t.iface, err)
 		}
-		if ll, ok := from.(*unix.SockaddrLinklayer); ok && ll.Pkttype == unix.PACKET_OUTGOING {
+		if ll, ok := from.(*unix.SockaddrLinklayer); ok && ll.Pkttype == unix.PACKET_OUTGOING && !t.local {
 			continue
 		}
 		return restoreVLAN(t.rbuf[:n], t.oob[:oobn]), nil

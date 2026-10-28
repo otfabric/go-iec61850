@@ -60,7 +60,7 @@ func Open(iface string, opts TransportOptions) (Transport, error) {
 	copy(mac[:], ifi.HardwareAddr)
 	t := &bpfTransport{iface: iface, mac: mac, fd: fd}
 	promisc := opts.Promiscuous || len(opts.Multicast) == 0
-	if err := t.setup(promisc); err != nil {
+	if err := t.setup(promisc, opts.ReceiveLocal); err != nil {
 		_ = unix.Close(fd)
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func ioctlPtr(fd int, req uint, p unsafe.Pointer) error {
 	return nil
 }
 
-func (t *bpfTransport) setup(promisc bool) error {
+func (t *bpfTransport) setup(promisc, local bool) error {
 	fd := t.fd
 	// struct ifreq starts with the NUL-padded name; pad to its full size.
 	var ifr [32]byte
@@ -116,7 +116,7 @@ func (t *bpfTransport) setup(promisc bool) error {
 			return osErr(s.name, t.iface, err)
 		}
 	}
-	if err := setSeeSent(fd); err != nil {
+	if err := setSeeSent(fd, local); err != nil {
 		return osErr("BIOCSSEESENT", t.iface, err)
 	}
 	insns := make([]unix.BpfInsn, len(gooseFilter))
@@ -188,16 +188,21 @@ func (t *bpfTransport) Recv(ctx context.Context) ([]byte, error) {
 	}
 }
 
+// bpfHdrMin is the size of the bpf_hdr fields without trailing
+// padding; bh_hdrlen may be smaller than sizeof(struct bpf_hdr) (18 vs
+// 20 on Darwin).
+const bpfHdrMin = int(unsafe.Offsetof(unix.BpfHdr{}.Hdrlen)) + 2
+
 // nextRecord splits one bpf_hdr record off buf. It returns ok=false when
 // buf holds no complete record, and f=nil for a truncated capture.
 func nextRecord(buf []byte) (f, rest []byte, ok bool) {
-	if len(buf) < unix.SizeofBpfHdr {
+	if len(buf) < bpfHdrMin {
 		return nil, nil, false
 	}
 	h := (*unix.BpfHdr)(unsafe.Pointer(&buf[0]))
 	start := int(h.Hdrlen)
 	end := start + int(h.Caplen)
-	if end > len(buf) || start < unix.SizeofBpfHdr {
+	if end > len(buf) || start < bpfHdrMin {
 		return nil, nil, false
 	}
 	next := (end + unix.BPF_ALIGNMENT - 1) &^ (unix.BPF_ALIGNMENT - 1)

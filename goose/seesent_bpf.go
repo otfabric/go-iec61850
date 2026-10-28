@@ -6,5 +6,12 @@ package goose
 
 import "golang.org/x/sys/unix"
 
-// setSeeSent disables loopback of frames sent on this descriptor.
-func setSeeSent(fd int) error { return unix.IoctlSetPointerInt(fd, unix.BIOCSSEESENT, 0) }
+// setSeeSent controls whether locally sent frames are captured. Frames
+// written to this descriptor itself are never captured.
+func setSeeSent(fd int, local bool) error {
+	v := 0
+	if local {
+		v = 1
+	}
+	return unix.IoctlSetPointerInt(fd, unix.BIOCSSEESENT, v)
+}

@@ -45,6 +45,12 @@ type TransportOptions struct {
 	// the socket receives all multicast traffic (PACKET_MR_ALLMULTI).
 	Multicast []MAC
 
+	// ReceiveLocal also delivers frames sent from this host by other
+	// sockets, so a publisher and a subscriber can run on the same
+	// machine. On Linux the transport then also receives its own
+	// frames.
+	ReceiveLocal bool
+
 	// Logger receives transport diagnostics. Nil disables logging.
 	Logger *slog.Logger
 }

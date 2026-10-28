@@ -404,6 +404,7 @@ type stream struct {
 	timer    *time.Timer
 	gen      uint64
 	simSeen  bool
+	lastT    time.Time // T of the last accepted message
 	lastSent Status // last status reported via EventSupervision
 }
 
@@ -570,7 +571,15 @@ func (sub *Subscription) process(f *Frame, now time.Time) {
 				sub.setStatus(st, StatusOK, now, f)
 				return
 			}
-		case p.StNum <= 1 && prevSt > 1:
+		case p.StNum == nextSeq(prevSt):
+			newState = true
+			if p.SqNum != 0 {
+				st.sup.SqNumGaps++
+				extra = append(extra, EventSqNumGap)
+			}
+		case p.StNum <= 1 && prevSt > 1 && !p.T.Before(st.lastT):
+			// A reset to stNum 0/1 with a T no older than the last
+			// state is a restart; an older T is a late frame.
 			st.sup.Restarts++
 			extra = append(extra, EventRestart)
 			newState = true
@@ -592,6 +601,7 @@ func (sub *Subscription) process(f *Frame, now time.Time) {
 		}
 	}
 	st.have = true
+	st.lastT = p.T
 	st.sup.LastStNum, st.sup.LastSqNum = p.StNum, p.SqNum
 	st.sup.Messages++
 	if newState {
