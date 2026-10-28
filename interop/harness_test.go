@@ -14,7 +14,10 @@
 //
 // Environment variables (all optional):
 //
+//	IEC61850_PEER_STACK       Stack behind the TestLibIEC* adapters: libiec61850 (default), dscsystems or iec61850-rust
 //	LIBIEC61850_IMAGE         Docker image with libiec61850 adapters (default: mms-interop-libiec61850:local)
+//	DSCSYSTEMS_IMAGE          Docker image with dscsystems adapters (default: mms-interop-dscsystems:local)
+//	IEC61850RUST_IMAGE        Docker image with iec61850-rust adapters (default: mms-interop-iec61850-rust:local)
 //	IEC61850BEAN_IMAGE        Docker image with iec61850bean adapters (default: mms-interop-iec61850bean:local)
 //	IEC61850_SERVER_BINARY    Path to libiec61850-ied-server binary (skips Docker)
 //	IEC61850_CLIENT_BINARY    Path to libiec61850-ied-client binary (skips Docker)
@@ -49,6 +52,8 @@ import (
 
 const (
 	defaultLibIECImage = "mms-interop-libiec61850:local"
+	defaultDSCImage    = "mms-interop-dscsystems:local"
+	defaultRustImage   = "mms-interop-iec61850-rust:local"
 	defaultBeanImage   = "mms-interop-iec61850bean:local"
 	defaultFixtureDir  = "testdata"
 	iedReadyTimeout    = 60 * time.Second
@@ -104,7 +109,11 @@ func TestMain(m *testing.M) {
 	// avoids a 60 s per-test overhead that causes the overall test run to
 	// exceed the default timeout.
 	var beanErr error
-	sharedBeanHandle, beanErr = startSharedBeanServer()
+	if peer().name != "libiec61850" || os.Getenv("IEC61850_SKIP_BEAN") != "" {
+		beanErr = fmt.Errorf("skipped for peer stack %s", peer().name)
+	} else {
+		sharedBeanHandle, beanErr = startSharedBeanServer()
+	}
 	if beanErr != nil {
 		fmt.Fprintf(os.Stderr, "[interop] shared bean server not started: %v (falling back to per-test start)\n", beanErr)
 	} else {
@@ -236,6 +245,37 @@ func loadFixtureValues(fixtureDir string) (*fixtureValues, error) {
 // Helpers
 // ---------------------------------------------------------------------------
 
+// peerStack is the adapter stack used by the TestLibIEC* tests. The
+// libiec61850 and dscsystems images implement the same commands, flags,
+// fixture and JSON Lines contract under their own prefix, so the same
+// tests run against either (IEC61850_PEER_STACK).
+type peerStack struct {
+	name     string // adapter name in the ready event and command prefix
+	imageEnv string
+	image    string // default image
+}
+
+func peer() peerStack {
+	switch s := os.Getenv("IEC61850_PEER_STACK"); s {
+	case "", "libiec61850":
+		return peerStack{"libiec61850", "LIBIEC61850_IMAGE", defaultLibIECImage}
+	case "dscsystems":
+		return peerStack{"dscsystems", "DSCSYSTEMS_IMAGE", defaultDSCImage}
+	case "iec61850-rust":
+		return peerStack{"iec61850-rust", "IEC61850RUST_IMAGE", defaultRustImage}
+	default:
+		fmt.Fprintf(os.Stderr, "unknown IEC61850_PEER_STACK %q\n", s)
+		os.Exit(2)
+		return peerStack{}
+	}
+}
+
+// dockerImage returns the peer image ($imageEnv or the local default).
+func (p peerStack) dockerImage() string { return getEnvOr(p.imageEnv, p.image) }
+
+// cmd returns the adapter command for an IED role, e.g. "dscsystems-ied-server".
+func (p peerStack) cmd(role string) string { return p.name + "-ied-" + role }
+
 func getEnvOr(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -334,6 +374,9 @@ func validateIEDAdapterMeta(t *testing.T, m iedAdapterReady, wantFixture, wantAd
 }
 
 type iedClientResult struct {
+	Event     string          `json:"event,omitempty"`
+	Code      string          `json:"code,omitempty"`
+	Reason    string          `json:"reason,omitempty"`
 	Operation string          `json:"operation"`
 	OK        bool            `json:"ok"`
 	Error     string          `json:"error,omitempty"`
@@ -344,6 +387,9 @@ type iedClientResult struct {
 }
 
 type iedReporterResult struct {
+	Event     string          `json:"event,omitempty"`
+	Code      string          `json:"code,omitempty"`
+	Reason    string          `json:"reason,omitempty"`
 	Operation string          `json:"operation"`
 	OK        bool            `json:"ok"`
 	Error     string          `json:"error,omitempty"`
@@ -357,6 +403,9 @@ type iedReporterResult struct {
 }
 
 type iedControllerResult struct {
+	Event     string          `json:"event,omitempty"`
+	Code      string          `json:"code,omitempty"`
+	Reason    string          `json:"reason,omitempty"`
 	Operation string          `json:"operation"`
 	OK        bool            `json:"ok"`
 	Error     string          `json:"error,omitempty"`
@@ -379,17 +428,39 @@ func collectIEDResults(t *testing.T, ch <-chan iedClientResult) []iedClientResul
 	return out
 }
 
-func findIEDResult(results []iedClientResult, op, target string) (iedClientResult, bool) {
+// unsupportedError is the result error (or error event code) of an
+// adapter step that the stack does not implement.
+const unsupportedError = "unsupported"
+
+// skipUnsupported skips the test when the adapter reported op (or the
+// whole command, as an error event) as unsupported by its stack.
+func skipUnsupported(t *testing.T, op, event, code, errText, reason string) {
+	t.Helper()
+	if (event == "error" && code == unsupportedError) || errText == unsupportedError {
+		if reason == "" {
+			reason = "not implemented by the stack"
+		}
+		t.Skipf("%s adapter: %s unsupported: %s", peer().name, op, reason)
+	}
+}
+
+func findIEDResult(t *testing.T, results []iedClientResult, op, target string) (iedClientResult, bool) {
+	t.Helper()
+	for _, r := range results {
+		skipUnsupported(t, op, r.Event, r.Code, "", r.Reason)
+	}
 	for _, r := range results {
 		if r.Operation == op && (target == "" || r.Target == target) {
+			skipUnsupported(t, op, "", "", r.Error, r.Reason)
 			return r, true
 		}
 	}
 	return iedClientResult{}, false
 }
 
-func findIEDOp(results []iedClientResult, op string) (iedClientResult, bool) {
-	return findIEDResult(results, op, "")
+func findIEDOp(t *testing.T, results []iedClientResult, op string) (iedClientResult, bool) {
+	t.Helper()
+	return findIEDResult(t, results, op, "")
 }
 
 func collectReporterResults(t *testing.T, ch <-chan iedReporterResult) []iedReporterResult {
@@ -402,9 +473,14 @@ func collectReporterResults(t *testing.T, ch <-chan iedReporterResult) []iedRepo
 	return out
 }
 
-func findReporterOp(results []iedReporterResult, op string) (iedReporterResult, bool) {
+func findReporterOp(t *testing.T, results []iedReporterResult, op string) (iedReporterResult, bool) {
+	t.Helper()
+	for _, r := range results {
+		skipUnsupported(t, op, r.Event, r.Code, "", r.Reason)
+	}
 	for _, r := range results {
 		if r.Operation == op {
+			skipUnsupported(t, op, "", "", r.Error, r.Reason)
 			return r, true
 		}
 	}
@@ -472,11 +548,11 @@ func startIEDServer(t *testing.T) *iedServerHandle {
 		cmd = exec.CommandContext(cmdCtx, binary, "--port", port)
 	} else {
 		containerName = dockerContainerName(t)
-		image := getEnvOr("LIBIEC61850_IMAGE", defaultLibIECImage)
+		image := peer().dockerImage()
 		cmd = exec.CommandContext(cmdCtx, "docker", "run", "--rm",
 			"--name", containerName,
 			"-p", port+":"+port,
-			"--entrypoint", "libiec61850-ied-server",
+			"--entrypoint", peer().cmd("server"),
 			image,
 			"--port", port,
 		)
@@ -529,7 +605,7 @@ func startIEDServer(t *testing.T) *iedServerHandle {
 			stop()
 			t.Fatal("IED server exited before emitting readiness event")
 		}
-		validateIEDAdapterMeta(t, m, "iec61850-v2", "libiec61850")
+		validateIEDAdapterMeta(t, m, "iec61850-v2", peer().name)
 		t.Cleanup(stop)
 		return &iedServerHandle{addr: m.addr, iedName: m.iedName}
 	case <-startCtx.Done():
@@ -555,10 +631,10 @@ func startIEDClientAdapter(t *testing.T, port int) <-chan iedClientResult {
 			"--port", fmt.Sprintf("%d", port),
 		)
 	} else {
-		image := getEnvOr("LIBIEC61850_IMAGE", defaultLibIECImage)
+		image := peer().dockerImage()
 		cmd = exec.CommandContext(ctx, "docker", "run", "--rm",
 			"--add-host=host.docker.internal:host-gateway",
-			"--entrypoint", "libiec61850-ied-client",
+			"--entrypoint", peer().cmd("client"),
 			image,
 			"--host", "host.docker.internal",
 			"--port", fmt.Sprintf("%d", port),
@@ -1084,10 +1160,10 @@ func startIEDReporterAdapter(t *testing.T, port int, sps1Initial bool) <-chan ie
 			"--sps1-initial", initial,
 		)
 	} else {
-		image := getEnvOr("LIBIEC61850_IMAGE", defaultLibIECImage)
+		image := peer().dockerImage()
 		cmd = exec.CommandContext(ctx, "docker", "run", "--rm",
 			"--add-host=host.docker.internal:host-gateway",
-			"--entrypoint", "libiec61850-ied-reporter",
+			"--entrypoint", peer().cmd("reporter"),
 			image,
 			"--host", "host.docker.internal",
 			"--port", fmt.Sprintf("%d", port),
@@ -1167,10 +1243,10 @@ func startIEDControllerAdapter(t *testing.T, port int, ctlVal bool, doName strin
 			"--do", doName,
 		)
 	} else {
-		image := getEnvOr("LIBIEC61850_IMAGE", defaultLibIECImage)
+		image := peer().dockerImage()
 		cmd = exec.CommandContext(ctx, "docker", "run", "--rm",
 			"--add-host=host.docker.internal:host-gateway",
-			"--entrypoint", "libiec61850-ied-controller",
+			"--entrypoint", peer().cmd("controller"),
 			image,
 			"--host", "host.docker.internal",
 			"--port", fmt.Sprintf("%d", port),
@@ -1313,9 +1389,14 @@ func collectControllerResults(t *testing.T, ch <-chan iedControllerResult) []ied
 }
 
 // findControllerOp returns the first result with the given operation.
-func findControllerOp(results []iedControllerResult, op string) (iedControllerResult, bool) {
+func findControllerOp(t *testing.T, results []iedControllerResult, op string) (iedControllerResult, bool) {
+	t.Helper()
+	for _, r := range results {
+		skipUnsupported(t, op, r.Event, r.Code, "", r.Reason)
+	}
 	for _, r := range results {
 		if r.Operation == op {
+			skipUnsupported(t, op, "", "", r.Error, r.Reason)
 			return r, true
 		}
 	}

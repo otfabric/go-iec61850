@@ -15,7 +15,13 @@ jobs:
   iec61850:
     name: IEC 61850 interop
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
+    env:
+      GOWORK: "off"
+      LIBIEC61850_IMAGE: ghcr.io/otfabric/mms-interop-libiec61850@sha256:18e7e5c249f74e708a0699bd64732cd238ad9579574431a16b27b9c6000232a0
+      IEC61850BEAN_IMAGE: ghcr.io/otfabric/mms-interop-iec61850bean@sha256:8d76b3cc065c2b18cc031bb26b2b879a7b433e164f9664ce9a3363241db65514
+      DSCSYSTEMS_IMAGE: ghcr.io/otfabric/mms-interop-dscsystems@sha256:f0b233737c1bd6e9cc6cfe7338bb287ed0e5b4a6b589b7496ae2409501dc6deb
+      IEC61850RUST_IMAGE: ghcr.io/otfabric/mms-interop-iec61850-rust@sha256:ebd09921ef9b22ed9a318256eb2fac74268dde7f18a17f9e8300aba46c624110
 
     steps:
       - uses: actions/checkout@v4
@@ -32,10 +38,35 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run interop matrix
-        env:
-          LIBIEC61850_IMAGE: ghcr.io/otfabric/mms-interop-libiec61850@sha256:9c29847dbd0523002b113a2fd1806cfb523bdd1610ae2e47f53b6156ec15fde7
-          IEC61850BEAN_IMAGE: ghcr.io/otfabric/mms-interop-iec61850bean@sha256:d95a64e2cb801db24ce9836e9dacc1035bf5131056802e241e9de6546861c611
         run: make interop
+
+      # The TestLibIEC* suites run once per stack with the same adapter
+      # contract; steps a stack does not implement are skipped with the
+      # adapter's reason.
+      - name: Run IEC 61850 interop against dscsystems
+        env:
+          IEC61850_PEER_STACK: dscsystems
+        run: go test -tags=interop -v -timeout 900s -run '^Test(LibIEC|GoServer)' ./interop/...
+
+      - name: Run IEC 61850 interop against iec61850-rust
+        env:
+          IEC61850_PEER_STACK: iec61850-rust
+        run: go test -tags=interop -v -timeout 900s -run '^Test(LibIEC|GoServer)' ./interop/...
+
+      # GOOSE is raw Ethernet: the adapters run on a Docker bridge network
+      # whose bridge device goose0 the test opens from the host (as root,
+      # for CAP_NET_RAW). An idle container gives the bridge its carrier.
+      - name: Run GOOSE interop
+        env:
+          GOOSE_IFACE: goose0
+        run: |
+          docker pull -q "$LIBIEC61850_IMAGE"
+          docker pull -q "$DSCSYSTEMS_IMAGE"
+          docker pull -q "$IEC61850RUST_IMAGE"
+          docker network create -o com.docker.network.bridge.name=goose0 mms-interop-goose
+          docker run -d --rm --name goose-carrier --network mms-interop-goose --entrypoint sleep "$LIBIEC61850_IMAGE" infinity
+          sleep 2
+          go test -exec 'sudo -E' -tags=interop -v -timeout 300s -run 'GOOSE' ./interop/...
 
       - name: Collect Docker diagnostics
         if: failure()

@@ -28,7 +28,7 @@ func TestLibIECServer_GetServerDirectory(t *testing.T) {
 	ch := startIEDClientAdapter(t, srv.port)
 	results := collectIEDResults(t, ch)
 
-	r, ok := findIEDOp(results, "get-server-directory")
+	r, ok := findIEDOp(t, results, "get-server-directory")
 	if !ok {
 		t.Fatal("no 'get-server-directory' result in client output")
 	}
@@ -54,7 +54,7 @@ func TestLibIECServer_GetLDDirectory(t *testing.T) {
 	ch := startIEDClientAdapter(t, srv.port)
 	results := collectIEDResults(t, ch)
 
-	r, ok := findIEDResult(results, "get-ld-directory", "InteropLD")
+	r, ok := findIEDResult(t, results, "get-ld-directory", "InteropLD")
 	if !ok {
 		t.Fatal("no 'get-ld-directory' result for InteropLD")
 	}
@@ -80,7 +80,7 @@ func TestLibIECServer_GetLNDirectory(t *testing.T) {
 	ch := startIEDClientAdapter(t, srv.port)
 	results := collectIEDResults(t, ch)
 
-	r, ok := findIEDResult(results, "get-ln-directory", "InteropLD/GGIO1")
+	r, ok := findIEDResult(t, results, "get-ln-directory", "InteropLD/GGIO1")
 	if !ok {
 		t.Fatal("no 'get-ln-directory' result for InteropLD/GGIO1")
 	}
@@ -107,7 +107,7 @@ func TestLibIECServer_Read_ST(t *testing.T) {
 	results := collectIEDResults(t, ch)
 
 	target := "InteropLD/GGIO1.SPS1.stVal[ST]"
-	r, ok := findIEDResult(results, "read", target)
+	r, ok := findIEDResult(t, results, "read", target)
 	if !ok {
 		t.Fatalf("no 'read' result for %q", target)
 	}
@@ -132,7 +132,7 @@ func TestLibIECServer_Read_MX(t *testing.T) {
 	results := collectIEDResults(t, ch)
 
 	target := "InteropLD/MMXU1.TotW.mag.f[MX]"
-	r, ok := findIEDResult(results, "read", target)
+	r, ok := findIEDResult(t, results, "read", target)
 	if !ok {
 		t.Fatalf("no 'read' result for %q", target)
 	}
@@ -157,7 +157,7 @@ func TestLibIECServer_Read_CF(t *testing.T) {
 	results := collectIEDResults(t, ch)
 
 	target := "InteropLD/LLN0.Mod.ctlModel[CF]"
-	r, ok := findIEDResult(results, "read", target)
+	r, ok := findIEDResult(t, results, "read", target)
 	if !ok {
 		t.Fatalf("no 'read' result for %q", target)
 	}
@@ -182,7 +182,7 @@ func TestLibIECServer_Read_DC(t *testing.T) {
 	results := collectIEDResults(t, ch)
 
 	target := "InteropLD/LLN0.Mod.d[DC]"
-	r, ok := findIEDResult(results, "read", target)
+	r, ok := findIEDResult(t, results, "read", target)
 	if !ok {
 		t.Fatalf("no 'read' result for %q", target)
 	}
@@ -207,7 +207,7 @@ func TestLibIECServer_Write(t *testing.T) {
 	results := collectIEDResults(t, ch)
 
 	target := "InteropLD/LLN0.Mod.stVal[ST]"
-	r, ok := findIEDResult(results, "write", target)
+	r, ok := findIEDResult(t, results, "write", target)
 	if !ok {
 		t.Fatalf("no 'write' result for %q", target)
 	}
@@ -224,7 +224,7 @@ func TestLibIECServer_ReadDataSet(t *testing.T) {
 	results := collectIEDResults(t, ch)
 
 	target := "InteropLD/LLN0$dsInterop"
-	r, ok := findIEDResult(results, "read-dataset", target)
+	r, ok := findIEDResult(t, results, "read-dataset", target)
 	if !ok {
 		t.Fatalf("no 'read-dataset' result for %q", target)
 	}
@@ -269,7 +269,7 @@ func TestLibIECServer_Conclude(t *testing.T) {
 	ch := startIEDClientAdapter(t, srv.port)
 	results := collectIEDResults(t, ch)
 
-	r, ok := findIEDOp(results, "conclude")
+	r, ok := findIEDOp(t, results, "conclude")
 	if !ok {
 		t.Fatal("no 'conclude' result in client output")
 	}

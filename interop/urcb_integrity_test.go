@@ -282,8 +282,9 @@ func TestLibIECServer_URCB_IntegrityPeriod(t *testing.T) {
 		TrgOps: iec61850.TrgOpIntegrity,
 		IntgPd: 1000,
 	}); err != nil {
-		t.Skipf("libiec61850 server rejected TrgOps/IntgPd write "+
-			"(ICD may mark them fixed via ReportSettings): %v", err)
+		t.Skipf("%s server rejected TrgOps/IntgPd write; the fixture ICD "+
+			"declares ReportSettings trgOps=\"Fix\" intgPd=\"Fix\", so this is "+
+			"conformant: %v", peer().name, err)
 	}
 
 	sub, err := c.SubscribeReport(ctx, urcbRptID, iec61850.SubscribeReportOptions{

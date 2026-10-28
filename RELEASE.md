@@ -1,5 +1,84 @@
 # go-iec61850 Releases
 
+## v1.1.0
+
+**Date:** 2026-10-28
+**Previous release:** v1.0.9
+
+### Summary
+
+GOOSE support (new `goose` package and server/client integration), a
+quality pass (per-package coverage gate, fuzz targets, chaos tests,
+dial retry) and two more interop stacks (dscsystems, iec61850-rust).
+
+### Added
+
+- **`goose` package** ([GOOSE.md](GOOSE.md)) — pure Go, no cgo:
+  - frame codec (Ethernet, 802.1Q, APDU header incl. simulation bit, BER
+    `goosePdu`, `allData` as go-mms values) with strict, bounded decoding;
+  - `Publisher`: stNum/sqNum, MinTime→MaxTime retransmission,
+    timeAllowedToLive, test/simulation/ndsCom, GoEna, context shutdown;
+  - `Subscriber`: filters (dst, APPID, gocbRef, src), validation (datSet,
+    goID, confRev, member types), per-stream supervision (timeout, gaps,
+    duplicates, out-of-order, restarts) as typed events, LGOS-style
+    `Supervision` snapshots, channel or callback delivery;
+  - transports: Linux `AF_PACKET`, macOS/BSD BPF, in-memory `Hub` with
+    fault injection; `ErrUnsupportedPlatform` elsewhere;
+  - SCL binding: `ControlBlocksFromSCL` / `ControlBlockFromSCL`
+    (GSEControl + GSE address + dataset layout);
+  - `Metrics` hooks, `slog` logging, sentinel and typed errors.
+- **Server GOOSE** — `Server.EnableGOOSE` publishes the model's GoCBs on
+  data change; GoCB attributes (`LLN0$GO$<name>`) are readable over MMS,
+  GoEna/GoID/DatSet writable per IEC 61850-7-2/8-1.
+- **Client GoCB API** — `Client.GetGoCB`, `Client.SetGoCB`.
+- **CommandTermination** — the server sends a positive CommandTermination
+  after an enhanced-security operate (found by the dscsystems
+  controller, which waits for it).
+- **`DialOptions.Retry`** (`mms.RetryPolicy`, via `iso.WithRetry`) —
+  connection retries with exponential back-off and jitter; each retry is
+  logged at Warn.
+- **Metrics** — `DialOptions.Metrics` and `ServerOptions.Metrics` pass an
+  `mms.Metrics` to the MMS client and server.
+- **`Server.Shutdown`** — graceful stop: closes listeners (also on the
+  hook-routing accept loop), concludes associations, stops the engines.
+- `ServiceCapabilities.GOOSE`, `ErrGOOSE`.
+
+### Dependencies
+
+- **go-mms** — `v1.1.0` → **[v1.2.1](https://github.com/otfabric/go-mms/releases/tag/v1.2.1)**
+  (go-cotp v1.1.0 with per-direction deadlines: a context that expires
+  before any octet moved returns `ctx.Err()` and leaves the connection
+  usable; v1.2.0 added sentinels incl. `ErrServerClosed`/`ErrInvalidArgument`, `RejectError`,
+  `ServiceError.CodeName()`, metrics, retry, `Client.Done`/`Err`,
+  `RequestTimeout`, `Server.Shutdown`, `AssociationTimeout`).
+  `ServiceError.Error()` now ends with the code name; match errors with
+  `errors.Is` / `errors.As`, not their text.
+
+### Fixed
+
+- Server report engine: equal array values compared as different, so an
+  unchanged array member triggered a data-change report.
+
+### Quality
+
+- CI coverage gate: every package ≥ 90 % statement coverage
+  (`scripts/covergate.go`, raw-socket tests run as root on `lo`).
+- Fuzz targets for the GOOSE decoder, GoCB mapping and GSE address
+  parsing (nightly matrix now per package).
+- Chaos tests: fault-injecting MMS transport (corrupt, truncate, drop,
+  reset) on client and server; GOOSE loss/duplication/reorder/corruption.
+
+### Interop
+
+- dscsystems and iec61850-rust adapters as further stacks:
+  `IEC61850_PEER_STACK` runs the client/server suites against libiec61850,
+  dscsystems or iec61850-rust; unsupported steps skip with a reason
+  (per-stack matrix in COMPATIBILITY.md).
+- GOOSE interop against libiec61850, dscsystems and iec61850-rust, both
+  directions, plus Go IED server → each subscriber (fixture `goose-v1`).
+
+---
+
 ## v1.0.9
 
 **Date:** 2026-10-28

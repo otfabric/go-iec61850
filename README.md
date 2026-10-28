@@ -71,7 +71,13 @@ domain names, item IDs, or alternate access selectors.
   `sclgen` (re-generate Go types from XSD)
 - **Caching** — optional client-side model cache (none / explicit / lazy)
 - **Server** — SCL-driven MMS server; runtime report engine (URCB/BRCB),
-  control handlers (SBO/SBOw state machine), setting groups, journal services
+  control handlers (SBO/SBOw state machine, CommandTermination), setting
+  groups, journal services
+- **GOOSE** — pure-Go publisher and subscriber (IEC 61850-8-1): frame codec,
+  retransmission, supervision and validation, raw Ethernet on Linux
+  (`AF_PACKET`) and macOS/BSD (BPF), SCL binding, server GoCBs published on
+  data change and exposed over MMS, client GoCB read/write; see
+  [GOOSE.md](GOOSE.md)
 
 ---
 
@@ -225,7 +231,7 @@ func main() {
 
 | Function | Description |
 |----------|-------------|
-| `Dial` | Connect to an IEC 61850 server over MMS/TCP |
+| `Dial` | Connect to an IEC 61850 server over MMS/TCP (`DialOptions.Retry` for back-off) |
 | `NewClient` | Wrap an existing `mms.Client` |
 | `Client.Close` | Graceful close (MMS Conclude) |
 | `Client.Abort` | Immediate abort |
@@ -342,7 +348,8 @@ the `sclparse` and `sclgen` command-line tools.
 | `Server.ListenAndServe` | Accept and serve connections on an `mms.TransportListener` (e.g. from `iso.Listen`) |
 | `Server.EnableReports` | Start the runtime report engine (URCB/BRCB) |
 | `Server.RegisterControl` | Install a control object handler |
-| `Server.SetValue` | Write a value and trigger change-detection reports |
+| `Server.SetValue` | Write a value and trigger change-detection reports and GOOSE |
+| `Server.EnableGOOSE` | Publish the model's GoCBs on a `goose.Transport` |
 | `Server.Close` | Stop the server and all engines |
 
 ---
@@ -505,6 +512,7 @@ go-iec61850/
 │   │                           Runs against live libiec61850 and iec61850bean
 │   │                           adapters from mms-interop
 │   ├── harness_test.go         Docker-based test harness
+│   ├── goose_test.go           GOOSE vs libiec61850, dscsystems, iec61850-rust
 │   ├── libiec61850_*_test.go   Tests against libiec61850 adapters
 │   ├── iec61850bean_*_test.go  Tests against iec61850bean adapters
 │   ├── brcb_test.go            BRCB: EntryID, replay, purge, overflow
@@ -532,6 +540,9 @@ go-iec61850/
 │       ├── sclparse/           CLI: inspect, validate, summarize SCL files
 │       └── sclgen/             CLI: regenerate Go types from XSD schemas
 │
+├── goose/                      GOOSE codec, publisher, subscriber, raw
+│                               transports, hub, SCL binding
+│
 ├── internal/
 │   ├── mapping/                IEC 61850 ↔ MMS name mapping utilities
 │   ├── sclindex/               Lightweight SCL cross-reference index
@@ -540,6 +551,7 @@ go-iec61850/
 ├── INTEROP.md                  IEC 61850 interoperability compatibility matrix
 ├── API.md                      Complete public API reference
 ├── ERRORS.md                   Error taxonomy, sentinel values, and usage patterns
+├── GOOSE.md                    GOOSE guide
 ├── KNOWN_LIMITATIONS.md        Known constraints and unsupported features
 ├── OBSERVABILITY.md            Logging and structured-log fields
 └── RELEASE.md                  Changelog
@@ -550,7 +562,9 @@ go-iec61850/
 ## Interoperability
 
 Client and server behaviour is tested bidirectionally against pinned
-`libiec61850` and `iec61850bean` adapters through the independently versioned
+`libiec61850`, `iec61850bean`, `dscsystems` and `iec61850-rust` adapters, and
+GOOSE against the libiec61850, dscsystems and iec61850-rust publishers and
+subscribers, through the independently versioned
 [mms-interop](https://github.com/otfabric/mms-interop) infrastructure.
 
 Tests live in `interop/` behind `-tags=interop` and cover:
@@ -558,7 +572,7 @@ basic operations, URCB/BRCB reporting, CDC reads (SPS, DPS, MV, BCR),
 quality and timestamp semantics, datasets, direct/SBO/SBOw controls,
 multi-client concurrency, and negative/error cases.
 
-**Scope of interoperability evidence:** two independent software stacks have
+**Scope of interoperability evidence:** four independent software stacks have
 been tested. Interoperability with physical IEDs (protection relays, meters,
 bay controllers, RTUs) has not yet been formally established.
 
@@ -576,7 +590,8 @@ See [INTEROP.md](INTEROP.md) for the full compatibility matrix and
 | [API.md](API.md) | Complete public API reference (types, methods, errors) |
 | [ERRORS.md](ERRORS.md) | Error taxonomy, sentinel values, typed errors, usage patterns |
 | [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) | Known limitations and constraints |
-| [OBSERVABILITY.md](OBSERVABILITY.md) | Logging and structured-log observability |
+| [OBSERVABILITY.md](OBSERVABILITY.md) | Logging, structured-log fields and GOOSE metrics |
+| [GOOSE.md](GOOSE.md) | GOOSE publisher, subscriber, transports, SCL binding, server GoCBs |
 
 ---
 

@@ -3,10 +3,13 @@
 package iec61850
 
 import (
+	"errors"
 	"log/slog"
 	"testing"
 
 	"github.com/otfabric/go-mms"
+
+	"github.com/otfabric/go-iec61850/goose"
 )
 
 func FuzzParseRef(f *testing.F) {
@@ -249,5 +252,33 @@ func FuzzDecodeReportIndication_NilValues(f *testing.F) {
 			}
 		}
 		_, _ = decodeReportIndication(values, logger)
+	})
+}
+
+// FuzzDecodeGoCB feeds arbitrary MMS Data (BER, decoded with the GOOSE
+// allData decoder) to the GoCB mapper.
+func FuzzDecodeGoCB(f *testing.F) {
+	seed := mms.NewStructure([]*mms.Value{
+		mms.NewBoolean(true), mms.NewVisibleString("id"), mms.NewVisibleString("LD/LLN0$ds"), mms.NewUnsigned(1), mms.NewBoolean(false),
+		mms.NewStructure([]*mms.Value{mms.NewOctetString(make([]byte, 6)), mms.NewUnsigned(4), mms.NewUnsigned(0), mms.NewUnsigned(1)}),
+		mms.NewUnsigned(10), mms.NewUnsigned(1000), mms.NewBoolean(false),
+	})
+	b, err := goose.EncodeData(seed)
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(b)
+	f.Fuzz(func(t *testing.T, b []byte) {
+		v, err := goose.DecodeData(b)
+		if err != nil {
+			return
+		}
+		cb, err := decodeGoCB("LD/LLN0$GO$g", v)
+		if err == nil && cb == nil {
+			t.Fatal("nil GoCB without error")
+		}
+		if err != nil && !errors.Is(err, ErrProtocol) {
+			t.Fatalf("error does not wrap ErrProtocol: %v", err)
+		}
 	})
 }
