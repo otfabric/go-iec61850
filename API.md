@@ -64,15 +64,17 @@ type DialOptions struct {
     Strictness StrictnessOptions
     Cache      CacheStrategy
     IEDName    string
-    Retry      RetryPolicy // zero value: one attempt
-}
-
-type RetryPolicy struct {
-    Attempts   int           // maximum attempts (< 1 means 1)
-    Backoff    time.Duration // first delay, doubling (default 100ms)
-    MaxBackoff time.Duration // cap (default 5s)
+    Retry      mms.RetryPolicy // passed to iso.WithRetry; zero value: one attempt
+    Metrics    mms.Metrics     // used when MMS.Metrics is nil
 }
 ```
+
+`Retry` covers TCP connect, COTP handshake and MMS association per attempt;
+errors another attempt cannot fix (`mms.IsRetryable`) return at once. Each
+retry is logged at Warn, then `Retry.OnRetry` is called.
+`mms.DefaultRetryPolicy()` is a reasonable reconnect policy. Per-request
+timeouts are set with `MMS.RequestTimeout`; `Client.MMS().Done()` and
+`Err()` report the end of the association.
 
 ### ClientOptions
 
@@ -977,7 +979,8 @@ type ServerOptions struct {
     Authenticate mms.Authenticator
     OnConnect    func(ConnectionEvent)
     OnDisconnect func(ConnectionEvent)
-    MMS          mms.ServerOptions
+    Metrics      mms.Metrics // used when MMS.Metrics is nil
+    MMS          mms.ServerOptions // incl. AssociationTimeout
 }
 
 type ServerIdentity struct {
@@ -996,6 +999,7 @@ func (s *Server) SetValue(ctx context.Context, storeKey string, val *mms.Value)
 func (s *Server) MMS() *mms.Server
 func (s *Server) Serve(ctx context.Context, conn mms.Transport) error
 func (s *Server) ListenAndServe(ctx context.Context, ln mms.TransportListener) error
+func (s *Server) Shutdown(ctx context.Context) error // graceful; ListenAndServe returns mms.ErrServerClosed
 func (s *Server) Close()
 func (s *Server) Capabilities() ServiceCapabilities
 func (s *Server) HandleIdentify(id ServerIdentity)

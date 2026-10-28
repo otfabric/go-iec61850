@@ -4,7 +4,6 @@ package iec61850
 
 import (
 	"log/slog"
-	"time"
 
 	"github.com/otfabric/go-mms"
 )
@@ -43,39 +42,19 @@ type DialOptions struct {
 	// callers can always use the bare LD instance name.
 	IEDName string
 
-	// Retry controls how [Dial] retries a failed connection attempt.
-	// The zero value makes a single attempt.
-	Retry RetryPolicy
-}
+	// Retry controls how [Dial] retries a failed connection attempt; it
+	// is passed to [iso.WithRetry], so one attempt covers the TCP connect,
+	// the COTP handshake and the MMS association, and errors another
+	// attempt cannot fix (see [mms.IsRetryable]) are returned at once.
+	// Each retry is logged at Warn before RetryPolicy.OnRetry is called.
+	// The zero value makes a single attempt; [mms.DefaultRetryPolicy] is
+	// a sensible reconnect policy.
+	Retry mms.RetryPolicy
 
-// RetryPolicy configures connection retries with exponential back-off.
-// Each failed attempt waits Backoff, doubling up to MaxBackoff, before
-// the next one; the dial context bounds the total time.
-type RetryPolicy struct {
-	// Attempts is the maximum number of connection attempts. Values
-	// below 1 mean a single attempt.
-	Attempts int
-
-	// Backoff is the delay after the first failure (default 100ms).
-	Backoff time.Duration
-
-	// MaxBackoff caps the delay (default 5s).
-	MaxBackoff time.Duration
-}
-
-// delay returns the back-off before attempt n+1 (n >= 1).
-func (p RetryPolicy) delay(n int) time.Duration {
-	d, maxD := p.Backoff, p.MaxBackoff
-	if d <= 0 {
-		d = 100 * time.Millisecond
-	}
-	if maxD <= 0 {
-		maxD = 5 * time.Second
-	}
-	for i := 1; i < n && d < maxD; i++ {
-		d *= 2
-	}
-	return min(d, maxD)
+	// Metrics, when non-nil, receives the MMS request and connection
+	// events of the client (see [mms.Metrics]). It is a convenience field
+	// equivalent to MMS.Metrics, which takes precedence when both are set.
+	Metrics mms.Metrics
 }
 
 // ClientOptions configures an IEC 61850 client created via [NewClient]

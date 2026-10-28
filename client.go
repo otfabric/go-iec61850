@@ -66,6 +66,9 @@ func dialMMSOptions(opts DialOptions, logger *slog.Logger) mms.DialOptions {
 	if mmsOpts.Logger == nil {
 		mmsOpts.Logger = logger
 	}
+	if mmsOpts.Metrics == nil {
+		mmsOpts.Metrics = opts.Metrics
+	}
 	return mmsOpts
 }
 
@@ -82,26 +85,18 @@ func Dial(ctx context.Context, addr string, opts DialOptions) (*Client, error) {
 
 	logger.Info("iec61850: dialing", "addr", addr)
 
-	attempts := max(opts.Retry.Attempts, 1)
-	var mmsClient *mms.Client
-	var err error
-	for n := 1; ; n++ {
-		mmsClient, err = iso.Dial(ctx, addr,
-			iso.WithClientDialOptions(dialMMSOptions(opts, logger)),
-		)
-		if err == nil || n >= attempts || ctx.Err() != nil {
-			break
-		}
-		d := opts.Retry.delay(n)
-		logger.Warn("iec61850: dial failed, retrying", "addr", addr, "attempt", n, "backoff", d, "error", err)
-		t := time.NewTimer(d)
-		select {
-		case <-ctx.Done():
-			t.Stop()
-			return nil, fmt.Errorf("iec61850: dial %s: %w (after %d attempts: %w)", addr, ctx.Err(), n, err)
-		case <-t.C:
+	retry := opts.Retry
+	userOnRetry := retry.OnRetry
+	retry.OnRetry = func(attempt int, err error, d time.Duration) {
+		logger.Warn("iec61850: dial failed, retrying", "addr", addr, "attempt", attempt, "backoff", d, "error", err)
+		if userOnRetry != nil {
+			userOnRetry(attempt, err, d)
 		}
 	}
+	mmsClient, err := iso.Dial(ctx, addr,
+		iso.WithClientDialOptions(dialMMSOptions(opts, logger)),
+		iso.WithRetry(retry),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("iec61850: dial %s: %w", addr, err)
 	}

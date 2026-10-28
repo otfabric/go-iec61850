@@ -112,8 +112,13 @@ nothing. Adapters to Prometheus or OpenTelemetry are left to the
 application. Publisher and subscriber state is also available as
 snapshots (`Publisher.State`, `Subscription.Supervision`).
 
-The MMS client and server do not emit metrics; instrument at the
-boundary by wrapping Client methods or processing log output.
+The MMS client and server report to an `mms.Metrics` implementation
+(go-mms v1.2.0+) set with `DialOptions.Metrics` / `ServerOptions.Metrics`
+(or `MMS.Metrics`, which takes precedence): `ObserveRequest` once per
+confirmed request with service, duration and error, `ObserveConnection`
+when an association is established, rejected or ends. Embed
+`mms.NopMetrics` to implement a subset. Dial retries are logged at Warn
+(`iec61850: dial failed, retrying` with `attempt`, `backoff`, `error`).
 
 ## Tracing
 

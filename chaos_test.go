@@ -246,7 +246,7 @@ func TestChaosMMSConnectionDrop(t *testing.T) {
 	}
 }
 
-// TestDialRetry covers RetryPolicy: a server that comes up after the
+// TestDialRetry covers DialOptions.Retry: a server that comes up after the
 // first attempts is reached, and a dead address fails after the
 // configured attempts.
 func TestDialRetry(t *testing.T) {
@@ -272,9 +272,16 @@ func TestDialRetry(t *testing.T) {
 	}()
 	dctx, dcancel := context.WithTimeout(ctx, 5*time.Second)
 	defer dcancel()
-	c, err := Dial(dctx, addr, DialOptions{Retry: RetryPolicy{Attempts: 20, Backoff: 20 * time.Millisecond, MaxBackoff: 100 * time.Millisecond}})
+	var retries atomic.Int32
+	c, err := Dial(dctx, addr, DialOptions{Retry: mms.RetryPolicy{
+		MaxAttempts: 20, InitialBackoff: 20 * time.Millisecond, MaxBackoff: 100 * time.Millisecond,
+		OnRetry: func(int, error, time.Duration) { retries.Add(1) },
+	}})
 	if err != nil {
 		t.Fatalf("dial with retry: %v", err)
+	}
+	if retries.Load() == 0 {
+		t.Error("OnRetry was not called before the server came up")
 	}
 	_ = c.Close(ctx)
 
@@ -283,7 +290,7 @@ func TestDialRetry(t *testing.T) {
 	dead := l2.Addr().String()
 	_ = l2.Close()
 	start := time.Now()
-	if _, err := Dial(ctx, dead, DialOptions{Retry: RetryPolicy{Attempts: 3, Backoff: 10 * time.Millisecond}}); err == nil {
+	if _, err := Dial(ctx, dead, DialOptions{Retry: mms.RetryPolicy{MaxAttempts: 3, InitialBackoff: 10 * time.Millisecond}}); err == nil {
 		t.Fatal("dial to dead address succeeded")
 	}
 	if time.Since(start) < 30*time.Millisecond {
@@ -292,12 +299,8 @@ func TestDialRetry(t *testing.T) {
 	// Context cancellation stops the retry loop.
 	cctx, ccancel := context.WithTimeout(ctx, 50*time.Millisecond)
 	defer ccancel()
-	if _, err := Dial(cctx, dead, DialOptions{Retry: RetryPolicy{Attempts: 100, Backoff: time.Second}}); !errors.Is(err, context.DeadlineExceeded) {
+	if _, err := Dial(cctx, dead, DialOptions{Retry: mms.RetryPolicy{MaxAttempts: 100, InitialBackoff: time.Second}}); !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("cancelled dial: %v", err)
 	}
 
-	p := RetryPolicy{}
-	if p.delay(1) != 100*time.Millisecond || p.delay(10) != 5*time.Second {
-		t.Errorf("default delays %v %v", p.delay(1), p.delay(10))
-	}
 }

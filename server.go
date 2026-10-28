@@ -76,6 +76,12 @@ type Server struct {
 	hasIdentity     bool
 	onConnect       func(ConnectionEvent)
 	onDisconnect    func(ConnectionEvent)
+
+	// hookListeners are the listeners of the hook-routing accept loop,
+	// closed by Shutdown (mms.Server only tracks its own listeners).
+	lnMu          sync.Mutex
+	hookListeners map[mms.TransportListener]struct{}
+	shutdown      bool
 }
 
 // ServerOptions configures the IEC 61850 server.
@@ -112,6 +118,11 @@ type ServerOptions struct {
 	// fully closed regardless of how it ended).
 	OnDisconnect func(ConnectionEvent)
 
+	// Metrics, when non-nil, receives the MMS request and connection
+	// events of the server (see [mms.Metrics]). It is a convenience field
+	// equivalent to MMS.Metrics, which takes precedence when both are set.
+	Metrics mms.Metrics
+
 	// MMS holds the underlying MMS server options. Fields set here
 	// take precedence over convenience fields above (FileProvider,
 	// Authenticate) when both are set.
@@ -144,6 +155,9 @@ func NewServer(model *servermodel.Model, opts ServerOptions) (*Server, error) {
 
 	if opts.FileProvider != nil && mmsOpts.FileProvider == nil {
 		mmsOpts.FileProvider = opts.FileProvider
+	}
+	if opts.Metrics != nil && mmsOpts.Metrics == nil {
+		mmsOpts.Metrics = opts.Metrics
 	}
 	if opts.Authenticate != nil && mmsOpts.Authenticate == nil {
 		mmsOpts.Authenticate = opts.Authenticate
@@ -397,6 +411,24 @@ func (s *Server) Close() {
 	s.logger.Info("iec61850: server closed")
 }
 
+// Shutdown stops the server gracefully: it closes the listeners of
+// [Server.ListenAndServe], lets in-flight requests finish, concludes every
+// association (see [mms.Server.Shutdown]) and then stops the report and
+// GOOSE engines like [Server.Close]. When ctx ends first, the remaining
+// connections are aborted and ctx's error is returned.
+// ListenAndServe then returns [mms.ErrServerClosed].
+func (s *Server) Shutdown(ctx context.Context) error {
+	s.lnMu.Lock()
+	s.shutdown = true
+	for ln := range s.hookListeners {
+		_ = ln.Close()
+	}
+	s.lnMu.Unlock()
+	err := s.mms.Shutdown(ctx)
+	s.Close()
+	return err
+}
+
 // MMS returns the underlying MMS server for advanced configuration
 // (e.g., registering Identify/Status handlers or a FileProvider).
 func (s *Server) MMS() *mms.Server {
@@ -439,13 +471,35 @@ func (s *Server) ListenAndServe(ctx context.Context, ln mms.TransportListener) e
 // listenAndServeWithHooks implements a custom accept loop that routes
 // through [Server.Serve] so connection hooks are invoked.
 func (s *Server) listenAndServeWithHooks(ctx context.Context, ln mms.TransportListener) error {
-	defer func() { _ = ln.Close() }()
+	s.lnMu.Lock()
+	if s.shutdown {
+		s.lnMu.Unlock()
+		_ = ln.Close()
+		return mms.ErrServerClosed
+	}
+	if s.hookListeners == nil {
+		s.hookListeners = make(map[mms.TransportListener]struct{})
+	}
+	s.hookListeners[ln] = struct{}{}
+	s.lnMu.Unlock()
+	defer func() {
+		s.lnMu.Lock()
+		delete(s.hookListeners, ln)
+		s.lnMu.Unlock()
+		_ = ln.Close()
+	}()
 
 	for {
 		transport, err := ln.Accept(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
+			}
+			s.lnMu.Lock()
+			down := s.shutdown
+			s.lnMu.Unlock()
+			if down {
+				return mms.ErrServerClosed
 			}
 			s.logger.Error("iec61850: accept error", "error", err)
 			return err

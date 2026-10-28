@@ -2,7 +2,7 @@
 
 ## v1.1.0
 
-**Date:** TBD
+**Date:** 2026-10-28
 **Previous release:** v1.0.9
 
 ### Summary
@@ -34,9 +34,23 @@ dial retry) and two more interop stacks (dscsystems, iec61850-rust).
 - **CommandTermination** — the server sends a positive CommandTermination
   after an enhanced-security operate (found by the dscsystems
   controller, which waits for it).
-- **`DialOptions.Retry`** (`RetryPolicy`) — connection retries with
-  exponential back-off.
+- **`DialOptions.Retry`** (`mms.RetryPolicy`, via `iso.WithRetry`) —
+  connection retries with exponential back-off and jitter; each retry is
+  logged at Warn.
+- **Metrics** — `DialOptions.Metrics` and `ServerOptions.Metrics` pass an
+  `mms.Metrics` to the MMS client and server.
+- **`Server.Shutdown`** — graceful stop: closes listeners (also on the
+  hook-routing accept loop), concludes associations, stops the engines.
 - `ServiceCapabilities.GOOSE`, `ErrGOOSE`.
+
+### Dependencies
+
+- **go-mms** — `v1.1.0` → **[v1.2.0](https://github.com/otfabric/go-mms/releases/tag/v1.2.0)**
+  (sentinels incl. `ErrServerClosed`/`ErrInvalidArgument`, `RejectError`,
+  `ServiceError.CodeName()`, metrics, retry, `Client.Done`/`Err`,
+  `RequestTimeout`, `Server.Shutdown`, `AssociationTimeout`).
+  `ServiceError.Error()` now ends with the code name; match errors with
+  `errors.Is` / `errors.As`, not their text.
 
 ### Fixed
 

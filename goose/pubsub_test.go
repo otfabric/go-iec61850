@@ -92,17 +92,21 @@ func TestPublisherRetransmissionCurve(t *testing.T) {
 			t.Fatalf("frame %d: %+v", i, f)
 		}
 	}
-	// Intervals: 5, 10, 20, 40, 40, 40 ms (timers only fire late, so the
-	// lower bound is strict and the upper bound loose for CI).
+	// Intervals: 5, 10, 20, 40, 40, 40 ms. Frames are scheduled from their
+	// planned time, so a late send shortens the next measured interval:
+	// each interval gets a loose lower bound, the total a strict one.
 	tx.mu.Lock()
 	times := append([]time.Time(nil), tx.times...)
 	tx.mu.Unlock()
 	want := []time.Duration{5, 10, 20, 40, 40, 40}
 	for i, w := range want {
 		got := times[i+1].Sub(times[i])
-		if got < w*time.Millisecond-time.Millisecond || got > w*time.Millisecond*4+20*time.Millisecond {
+		if got < w*time.Millisecond/2 || got > w*time.Millisecond*4+20*time.Millisecond {
 			t.Errorf("interval %d = %v, want ~%dms", i, got, w)
 		}
+	}
+	if total := times[6].Sub(times[0]); total < 150*time.Millisecond {
+		t.Errorf("6 intervals took %v, want >= ~155ms", total)
 	}
 
 	if err := p.Publish([]*mms.Value{mms.NewBoolean(true), mms.NewInteger(2)}); err != nil {
