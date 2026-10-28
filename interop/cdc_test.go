@@ -8,12 +8,10 @@
 //
 //   - TestGoServer_CDC_*: go-iec61850 client → go-iec61850 server.
 //   - TestLibIECClient_CDC_* / TestBeanClient_CDC_*: go-iec61850 client →
-//     the peer stack's (or iec61850bean's) IED server. Skipped where the
-//     adapter server does not seed the values (cdcSeedGap).
+//     the peer stack's (or iec61850bean's) IED server.
 //   - TestLibIECServer_CDC_* / TestBeanServer_CDC_*: the peer stack's (or
-//     iec61850bean's) ied-client → go-iec61850 server. They assert the
-//     client's read of the reference and skip, naming the gap, while the
-//     adapter's fixed client script has no such read step.
+//     iec61850bean's) ied-client → go-iec61850 server, asserting the
+//     client's read (fixed client script, mms-interop v0.4.1 and later).
 //
 // Quality and timestamp round trips are in quality_timestamp_test.go.
 package interop
@@ -71,22 +69,6 @@ func TestGoServer_CDC_DPS_Read(t *testing.T) {
 	}
 }
 
-// cdcSeedGap lists adapter servers that do not apply the DPS1/TotVAh
-// initial values of values.json (checked against mms-interop v0.4.0): they
-// serve type defaults, so the read cannot be compared with the fixture.
-// dscsystems and iec61850-rust seed both values and are tested.
-var cdcSeedGap = map[string]string{
-	"libiec61850":  "mms-interop gap: libiec61850-ied-server (v0.4.0) does not seed values.json DPS1.stVal=2 / TotVAh.actVal=42; it serves 0 (intermediate) / 0",
-	"iec61850bean": "mms-interop gap: iec61850bean-ied-server (v0.4.0) does not seed values.json DPS1.stVal=2 / TotVAh.actVal=42; it serves 1 (off) / 0",
-}
-
-func skipCDCSeedGap(t *testing.T, stack string) {
-	t.Helper()
-	if reason, ok := cdcSeedGap[stack]; ok {
-		t.Skip(reason)
-	}
-}
-
 // checkDPS reads GGIO1.DPS1.stVal through c and compares the Dbpos with
 // the fixture.
 func checkDPS(t *testing.T, ctx context.Context, c *iec61850.Client) {
@@ -129,7 +111,6 @@ func checkBCR(t *testing.T, ctx context.Context, c *iec61850.Client) {
 
 // TestLibIECClient_CDC_DPS_Read reads DPS1 from the peer stack's server.
 func TestLibIECClient_CDC_DPS_Read(t *testing.T) {
-	skipCDCSeedGap(t, peer().name)
 	h := startIEDServer(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -140,7 +121,6 @@ func TestLibIECClient_CDC_DPS_Read(t *testing.T) {
 
 // TestBeanClient_CDC_DPS_Read reads DPS1 from the iec61850bean server.
 func TestBeanClient_CDC_DPS_Read(t *testing.T) {
-	skipCDCSeedGap(t, "iec61850bean")
 	h := startIEC61850BeanServer(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -158,9 +138,8 @@ const (
 
 // clientCDCRead runs the ied-client adapter (the peer stack's, or
 // iec61850bean's when bean is set) against the Go IED server and returns
-// the value of its read of target. It skips, naming the gap, when the
-// adapter's fixed client script (--host/--port only, checked against
-// mms-interop v0.4.0) has no read of target.
+// the value of its read of target. The fixed client scripts read both
+// CDC references since mms-interop v0.4.1.
 func clientCDCRead(t *testing.T, bean bool, target string) json.RawMessage {
 	t.Helper()
 	srv := startGoIEDServer(t)
@@ -173,7 +152,7 @@ func clientCDCRead(t *testing.T, bean bool, target string) json.RawMessage {
 	}
 	r, ok := findIEDResult(t, collectIEDResults(t, ch), "read", target)
 	if !ok {
-		t.Skipf("mms-interop gap: %s-ied-client has no read step for %s (fixture iec61850-v3)", stack, target)
+		t.Fatalf("%s-ied-client printed no read of %s", stack, target)
 	}
 	if !r.OK {
 		t.Fatalf("%s-ied-client read %s: %s", stack, target, r.Error)
@@ -271,7 +250,6 @@ func TestGoServer_CDC_BCR_Read(t *testing.T) {
 
 // TestLibIECClient_CDC_BCR_Read reads TotVAh from the peer stack's server.
 func TestLibIECClient_CDC_BCR_Read(t *testing.T) {
-	skipCDCSeedGap(t, peer().name)
 	h := startIEDServer(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -282,7 +260,6 @@ func TestLibIECClient_CDC_BCR_Read(t *testing.T) {
 
 // TestBeanClient_CDC_BCR_Read reads TotVAh from the iec61850bean server.
 func TestBeanClient_CDC_BCR_Read(t *testing.T) {
-	skipCDCSeedGap(t, "iec61850bean")
 	h := startIEC61850BeanServer(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
