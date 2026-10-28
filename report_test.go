@@ -678,6 +678,17 @@ func setupReportLoopback(t *testing.T) (*Client, *mms.Server) {
 		_ = client.Close(ctx)
 	})
 
+	// The server registers the association after it sent the Initiate
+	// response, so the client can be ready first; a Broadcast before the
+	// registration reaches nobody.
+	deadline := time.Now().Add(5 * time.Second)
+	for len(srv.Connections()) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("server did not register the association")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
 	return client, srv
 }
 
