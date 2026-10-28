@@ -5,7 +5,14 @@
 go-iec61850 follows [Semantic Versioning 2.0.0](https://semver.org/).
 
 The module path is `github.com/otfabric/go-iec61850`. The v1 series is
-API-stable.
+API-stable for every non-internal package: the root package (client and
+server, including the report, control, setting-group, journal, GOOSE and
+SV engines), `goose`, `sv`, `l2`, `scl`, `scl/index` and `scl/validate`.
+Server constructors return types from `internal/servermodel`
+(`NewServerModelFromSCL` returns `*servermodel.Model`); their exported
+methods and fields are covered by the same guarantee. Packages under
+`internal/` and the `interop` and `examples` trees are not part of the
+API.
 
 ## What patch releases may change
 
@@ -38,7 +45,21 @@ Breaking public API changes are reserved for a future v2 major release.
 ## Minimum supported Go version
 
 The minimum supported Go version tracks the two most recent stable releases.
-The current minimum is recorded in `go.mod`.
+The current minimum is recorded in `go.mod` (Go 1.24); CI tests Go 1.24,
+1.25 and 1.26, with and without the race detector.
+
+## Supported platforms
+
+| Platform | MMS client/server, SCL | GOOSE / SV raw Ethernet |
+|---|:---:|:---:|
+| Linux (amd64, arm64) | ✓ | ✓ `AF_PACKET`, needs `CAP_NET_RAW` |
+| macOS | ✓ | ✓ BPF, needs `/dev/bpf*` access |
+| FreeBSD, NetBSD, OpenBSD, DragonFly | ✓ | BPF (builds; not tested) |
+| Windows and others | ✓ | `ErrUnsupportedPlatform` (in-memory `Hub` only) |
+
+CI runs on Linux, including the raw-socket GOOSE and SV tests as root.
+The BPF transport is tested on macOS during development, not in CI. The library has no cgo
+dependency.
 
 ## GOOSE
 

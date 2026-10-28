@@ -21,7 +21,7 @@ Complete public API reference for `go-iec61850`.
 - [Functional Constraints](#functional-constraints)
 - [GOOSE control blocks (client)](#goose-control-blocks-client)
 - [SV control blocks (client)](#sv-control-blocks-client)
-- [Server (experimental)](#server-experimental)
+- [Server](#server)
 - [GOOSE package](#goose-package)
 - [SV package](#sv-package)
 - [L2 package](#l2-package)
@@ -1007,7 +1007,7 @@ type MSVCBUpdate struct {
 
 ---
 
-## Server (experimental)
+## Server
 
 ### Construction
 
@@ -1079,6 +1079,7 @@ type ReportEngine struct { /* unexported */ }
 func (re *ReportEngine) Stop()
 func (re *ReportEngine) HandleRCBWrite(ctx context.Context, ldName, rcbItemID, subfield string, val *mms.Value, conn ...*mms.ServerConn) error
 func (re *ReportEngine) NotifyValueChanged(ctx context.Context, storeKey string)
+func (re *ReportEngine) SetRCBBufMax(ldName, rcbItemID string, max int) bool // BRCB buffer capacity; false if not found
 ```
 
 ### Control registration
@@ -1089,6 +1090,7 @@ const DefaultSelectTimeout = 30 * time.Second
 func (s *Server) RegisterControl(ldName, doRef string, ctlModel CtlModel, handler ControlHandler) error
 
 type ControlHandler struct {
+    SelectTimeout time.Duration // zero: DefaultSelectTimeout
     OnSelect  func(ctx context.Context, req ControlRequest) error
     OnOperate func(ctx context.Context, req ControlRequest) error
     OnCancel  func(ctx context.Context, req ControlRequest) error
@@ -1385,12 +1387,13 @@ type Transport interface {
     Close() error
 }
 
-type TransportOptions struct {
-    Promiscuous  bool
-    Multicast    []MAC
-    ReceiveLocal bool
-    Logger       *slog.Logger
-}
+// Aliases of the l2 types (see the L2 package): a transport opened
+// with goose.Open can be passed to sv and the other way round.
+type TransportOptions = l2.TransportOptions // EtherTypes, Promiscuous, Multicast, ReceiveLocal, Logger
+type Hub = l2.Hub
+type HubPort = l2.HubPort
+type Faults = l2.Faults
+type HubStats = l2.HubStats
 
 // AF_PACKET on Linux, BPF on macOS/BSD, ErrUnsupportedPlatform elsewhere.
 func Open(iface string, opts TransportOptions) (Transport, error)
@@ -1517,8 +1520,9 @@ func DecodePDU(b []byte) (*PDU, error)
 ### Datasets
 
 ```go
-type Kind uint8 // KindBoolean, KindInt8 … KindInt64, KindUint8 … KindUint32,
-                // KindFloat32, KindFloat64, KindEnum, KindDbpos, KindQuality, KindTimestamp
+type Kind uint8 // KindInvalid (zero), KindBoolean, KindInt8, KindInt16, KindInt32, KindInt64,
+                // KindUint8, KindUint16, KindUint24, KindUint32, KindFloat32, KindFloat64,
+                // KindEnum, KindDbpos, KindQuality, KindTimestamp
 func (k Kind) Size() int
 func (k Kind) String() string
 func KindOf(bType string) (Kind, bool)
@@ -1532,7 +1536,8 @@ func (l Layout) Decode(sample []byte) ([]*mms.Value, error)
 func (l Layout) String() string
 
 type Quality uint32 // QualityGood, QualityInvalid, QualityReserved, QualityQuestionable,
-                    // QualityOverflow … QualityTest, QualityOperatorBlocked, QualityDerived
+                    // QualityValidityMask, QualityOverflow … QualitySubstituted,
+                    // QualityTest, QualityOperatorBlocked, QualityDerived
 func (q Quality) Validity() Quality
 func (q Quality) IsGood() bool
 func (q Quality) Value() *mms.Value
@@ -1545,6 +1550,9 @@ func TimestampAt(sample []byte, off int) (time.Time, uint8)
 
 // UCA 9-2LE
 const LESampleSize = 64
+const LECurrentScale = 0.001 // A per count
+const LEVoltageScale = 0.01  // V per count
+const LESmpRateProtection, LESmpRateMetering = 80, 256 // samples per period
 var LELayout Layout
 type Point struct { Value int32; Q Quality }
 type LESample struct { Current, Voltage [4]Point }
@@ -1557,6 +1565,9 @@ func Volts(count int32) float64; func VoltsCount(v float64) int32 // 10 mV/count
 ### Publisher
 
 ```go
+const DefaultNominalFrequency = 50.0 // Hz, for SmpPerPeriod rates
+const DefaultMaxBurst = 16           // frames sent at once to catch up
+
 type PublisherConfig struct {
     Dst, Src         MAC
     VLAN             *VLAN
@@ -1606,6 +1617,9 @@ func DefaultSmpCntWrap(rate float64) int
 ### Subscriber
 
 ```go
+const DefaultTimeout = 100 * time.Millisecond // stream timeout when SubscriptionConfig.Timeout is zero
+const DefaultEventQueue = 256                // Events() capacity
+
 type SubscriberConfig struct {
     Limits              Limits
     AcceptSimulation    bool
@@ -1742,6 +1756,7 @@ aliases of these types).
 
 ```go
 const EtherTypeGOOSE, EtherTypeGSE, EtherTypeSV, EtherTypeVLAN uint16 = 0x88B8, 0x88B9, 0x88BA, 0x8100
+const DefaultDemuxQueue = 4096 // per-EtherType queue of a Demux
 
 type MAC [6]byte
 var Broadcast MAC
@@ -2008,6 +2023,18 @@ type SMVControl struct {
     Name, Desc, SmvID, DatSet string
     ConfRev, SmpRate, NofASDU uint32
     Multicast                 bool
+    SmpMod                    string // "SmpPerPeriod" (also when empty), "SmpPerSec", "SecPerSmp"
+    SecurityEnable            string // "None", "Signature", "SignatureAndEncryption"; empty in Edition 1
+    SmvOpts                   SmvOpts
+}
+
+// Optional ASDU fields; flags an SCL edition does not define stay false.
+type SmvOpts struct {
+    RefreshTime, SampleSynchronized, SampleRate, Security bool
+    DataSet, Timestamp                                    bool // Edition 2 and later
+    SynchSourceID                                         bool // 2007B4 and later
+    SampleMode                                            bool // 2007C5
+    DataRef                                               bool // Edition 1 only
 }
 
 type Log struct {
@@ -2210,9 +2237,9 @@ type GSEControlRow struct {
 func ExportGSEControls(s *SCL) []GSEControlRow
 
 type SMVControlRow struct {
-    IED, AccessPoint, LD, Name, SmvID, DatSet, Desc string
-    SmpRate, NofASDU, ConfRev                       uint32
-    Multicast                                       bool
+    IED, AccessPoint, LD, Name, SmvID, DatSet, SmpMod, Desc string
+    SmpRate, NofASDU, ConfRev                               uint32
+    Multicast                                               bool
 }
 
 func ExportSMVControls(s *SCL) []SMVControlRow
