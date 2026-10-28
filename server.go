@@ -70,6 +70,7 @@ type Server struct {
 	sgEngine           *SettingGroupEngine
 	journalEngine      *JournalEngine
 	mmsJournalProvider *MemoryJournalProvider
+	gooseEngine        *GOOSEEngine
 
 	hasFileProvider bool
 	hasIdentity     bool
@@ -206,7 +207,7 @@ func (s *Server) ValueStore() *servermodel.ValueStore {
 }
 
 // SetValue updates a data attribute value in the store and notifies
-// the report engine (if enabled) of the change. The storeKey follows
+// the report and GOOSE engines (if enabled) of the change. The storeKey follows
 // the format "ldName/itemID" (see [servermodel.StoreKey]).
 //
 // This is the primary way to inject process values into a running
@@ -218,6 +219,9 @@ func (s *Server) SetValue(ctx context.Context, storeKey string, val *mms.Value) 
 	}
 	if s.journalEngine != nil {
 		s.journalEngine.LogValueWrite(ctx, storeKey, time.Now())
+	}
+	if s.gooseEngine != nil {
+		s.gooseEngine.notify(storeKey)
 	}
 }
 
@@ -267,6 +271,12 @@ func (s *Server) installWriteInterceptor() {
 			}
 		}
 
+		if s.gooseEngine != nil && strings.Contains(itemID, "$GO$") {
+			if handled, err := s.gooseEngine.handleWrite(storeKey, val); handled {
+				return true, err
+			}
+		}
+
 		// CO functional-constraint write — dispatch to the control handler.
 		// Store key format: "lnName$CO$doPath...$subAttr"
 		// e.g. "GGIO1$CO$SPCSO1$Oper" or "GGIO1$CO$SPCSO1$Oper$ctlVal"
@@ -280,6 +290,9 @@ func (s *Server) installWriteInterceptor() {
 		// before calling the interceptor, so only the notification is
 		// needed here. The engine compares prevValues with the new store
 		// contents to suppress reports for unchanged values.
+		if s.gooseEngine != nil {
+			s.gooseEngine.notify(storeKey)
+		}
 		if s.reportEngine != nil {
 			s.reportEngine.NotifyValueChanged(ctx, storeKey)
 			return true, nil
@@ -362,7 +375,8 @@ func parseSGCBStoreKey(itemID string) (subfield string, ok bool) {
 }
 
 // Close performs an orderly shutdown of the server's runtime engines.
-// It stops the report engine (integrity timers, delivery goroutines)
+// It stops the report engine (integrity timers, delivery goroutines),
+// the GOOSE engine (publishers)
 // and clears references to the journal and setting group engines.
 // Close is idempotent and safe to call multiple times.
 //
@@ -374,6 +388,9 @@ func parseSGCBStoreKey(itemID string) (subfield string, ok bool) {
 func (s *Server) Close() {
 	if s.reportEngine != nil {
 		s.reportEngine.Stop()
+	}
+	if s.gooseEngine != nil {
+		s.gooseEngine.Stop()
 	}
 	s.journalEngine = nil
 	s.sgEngine = nil

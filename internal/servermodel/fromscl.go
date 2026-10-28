@@ -26,7 +26,7 @@ func FromSCL(s *scl.SCL, iedName, apName string) (*Model, error) {
 		return nil, fmt.Errorf("servermodel: IED %q not found", iedName)
 	}
 
-	srv, err := findServer(ied, apName)
+	srv, apUsed, err := findServer(ied, apName)
 	if err != nil {
 		return nil, fmt.Errorf("servermodel: %w", err)
 	}
@@ -43,8 +43,9 @@ func FromSCL(s *scl.SCL, iedName, apName string) (*Model, error) {
 
 	m := &Model{}
 	var warnings []string
+	gse := gseIndex(s, iedName, apUsed)
 	for _, sclLD := range srv.LDevices {
-		ld, err := convertLD(s, &sclLD, dotIdx, datIdx, enumIdx, &warnings)
+		ld, err := convertLD(s, &sclLD, dotIdx, datIdx, enumIdx, gse, &warnings)
 		if err != nil {
 			return nil, fmt.Errorf("servermodel: LD %q: %w", sclLD.Inst, err)
 		}
@@ -55,29 +56,54 @@ func FromSCL(s *scl.SCL, iedName, apName string) (*Model, error) {
 	return m, nil
 }
 
-func findServer(ied *scl.IED, apName string) (*scl.Server, error) {
+func findServer(ied *scl.IED, apName string) (*scl.Server, string, error) {
 	if apName != "" {
 		for i := range ied.AccessPoints {
 			ap := &ied.AccessPoints[i]
 			if ap.Name == apName && ap.Server != nil {
-				return ap.Server, nil
+				return ap.Server, ap.Name, nil
 			}
 		}
-		return nil, nil
+		return nil, "", nil
 	}
 	var found *scl.Server
+	var name string
 	var count int
 	for i := range ied.AccessPoints {
 		ap := &ied.AccessPoints[i]
 		if ap.Server != nil {
 			found = ap.Server
+			name = ap.Name
 			count++
 		}
 	}
 	if count > 1 {
-		return nil, fmt.Errorf("IED %q has %d AccessPoints with Server elements; specify apName to disambiguate", ied.Name, count)
+		return nil, "", fmt.Errorf("IED %q has %d AccessPoints with Server elements; specify apName to disambiguate", ied.Name, count)
 	}
-	return found, nil
+	return found, name, nil
+}
+
+// gseIndex maps "ldInst/cbName" to the GSE address of the given
+// IED/AccessPoint in the Communication section.
+func gseIndex(s *scl.SCL, iedName, apName string) map[string]*scl.GSEAddress {
+	idx := map[string]*scl.GSEAddress{}
+	if s.Communication == nil {
+		return idx
+	}
+	for i := range s.Communication.SubNetworks {
+		sn := &s.Communication.SubNetworks[i]
+		for j := range sn.ConnectedAPs {
+			cap := &sn.ConnectedAPs[j]
+			if cap.IEDName != iedName || cap.APName != apName {
+				continue
+			}
+			for k := range cap.GSEs {
+				g := &cap.GSEs[k]
+				idx[g.LDInst+"/"+g.CBName] = g
+			}
+		}
+	}
+	return idx
 }
 
 func indexDOTypes(s *scl.SCL) map[string]*scl.DOType {
@@ -107,13 +133,20 @@ func indexEnumTypes(s *scl.SCL) map[string]*scl.EnumType {
 	return idx
 }
 
-func convertLD(s *scl.SCL, sclLD *scl.LDevice, dotIdx map[string]*scl.DOType, datIdx map[string]*scl.DAType, enumIdx map[string]*scl.EnumType, warnings *[]string) (*LogicalDevice, error) {
+func convertLD(s *scl.SCL, sclLD *scl.LDevice, dotIdx map[string]*scl.DOType, datIdx map[string]*scl.DAType, enumIdx map[string]*scl.EnumType, gse map[string]*scl.GSEAddress, warnings *[]string) (*LogicalDevice, error) {
 	ld := &LogicalDevice{Name: sclLD.Inst}
 
 	if sclLD.LN0 != nil {
 		ln, err := convertLN(s, sclLD.LN0, dotIdx, datIdx, enumIdx, sclLD.Inst, warnings)
 		if err != nil {
 			return nil, fmt.Errorf("LLN0: %w", err)
+		}
+		for i := range sclLD.LN0.GSEControls {
+			gc := &sclLD.LN0.GSEControls[i]
+			if gc.Type != "" && gc.Type != "GOOSE" {
+				continue // GSSE is not supported
+			}
+			ln.GoCBs = append(ln.GoCBs, convertGoCB(gc, gse[sclLD.Inst+"/"+gc.Name], sclLD.Inst+"/"+ln.Name, warnings))
 		}
 		ld.LogicalNodes = append(ld.LogicalNodes, *ln)
 	}
