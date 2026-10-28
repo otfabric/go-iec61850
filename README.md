@@ -7,18 +7,46 @@
 [![Codecov](https://codecov.io/gh/otfabric/go-iec61850/graph/badge.svg)](https://codecov.io/gh/otfabric/go-iec61850)
 [![Release](https://img.shields.io/github/v/release/otfabric/go-iec61850?label=release)](https://github.com/otfabric/go-iec61850/releases)
 
-A pure-Go IEC 61850 MMS client and server library built on top of
-[go-mms](https://github.com/otfabric/go-mms).
+A pure-Go IEC 61850 stack: **MMS client and server**, **GOOSE** and
+**Sampled Values** publishers and subscribers, and **SCL** parsing and
+validation. No cgo, one module, Go 1.24+.
 
-Logical devices, logical nodes, data objects, data attributes, functional
-constraints, reports, datasets, controls, quality, timestamps, and SCL are
-all first-class Go types. You work with IEC 61850 semantics, not raw MMS
-domain names, item IDs, or alternate access selectors.
+Logical devices, logical nodes, data objects and attributes, functional
+constraints, datasets, report, GOOSE and SV control blocks, quality and
+timestamps are first-class Go types. You work with IEC 61850 semantics, not
+with raw MMS domain names, item IDs, BER or Ethernet frames.
+
+| Protocol | Standard | Client / subscriber | Server / publisher |
+|---|---|---|---|
+| MMS (ACSI over ISO/TCP) | IEC 61850-8-1, ISO 9506 | `iec61850.Client` | `iec61850.Server` |
+| GOOSE | IEC 61850-8-1 | `goose.Subscriber`, `Client.GetGoCB` | `goose.Publisher`, `Server.EnableGOOSE` |
+| Sampled Values | IEC 61850-9-2, IEC 61869-9, UCA 9-2LE | `sv.Subscriber`, `Client.GetMSVCB` | `sv.Publisher`, `Server.EnableSV` |
+| SCL | IEC 61850-6 (1.7 – 2007C5) | `scl`, `scl/index`, `scl/validate` | `NewServerModelFromSCL`, `goose`/`sv` `ControlBlockFromSCL` |
+
+---
+
+## Status
+
+- **Stable API** — v1 follows semantic versioning for every non-internal
+  package, client and server alike ([COMPATIBILITY.md](COMPATIBILITY.md)).
+- **Interoperability** — tested in CI against pinned builds of four
+  independent stacks (libiec61850, iec61850bean, dscsystems,
+  iec61850-rust) in both directions, GOOSE and SV on a Docker bridge
+  included ([per-stack matrix](COMPATIBILITY.md#per-stack-matrix),
+  [INTEROP.md](INTEROP.md)).
+- **Quality gates** — ≥ 90 % statement coverage per package, race
+  detector on Go 1.24–1.26, fuzz targets for the MMS value, GOOSE, SV and
+  SCL decoders, chaos tests, golangci-lint.
+- **Not certified** — no UCA conformance certification and no formal
+  validation against physical IEDs yet; see
+  [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) and
+  [SECURITY.md](SECURITY.md) before deploying.
 
 ---
 
 ## Table of contents
 
+- [Status](#status)
 - [Features](#features)
 - [Installation](#installation)
 - [Quick start](#quick-start)
@@ -28,25 +56,13 @@ domain names, item IDs, or alternate access selectors.
   - [Sampled Values](#sampled-values)
   - [SCL parsing](#scl-parsing)
 - [API overview](#api-overview)
-  - [Connection](#connection)
-  - [Browse & model discovery](#browse--model-discovery)
-  - [Read & write](#read--write)
-  - [Datasets](#datasets)
-  - [Reports (URCB / BRCB)](#reports-urcb--brcb)
-  - [Controls](#controls)
-  - [Files](#files)
-  - [Journals](#journals)
-  - [Caching](#caching)
-  - [SCL tooling](#scl-tooling-scl-package)
-  - [Server](#server)
 - [Command-line tools](#command-line-tools)
-  - [sclparse](#sclparse)
-  - [sclgen](#sclgen)
 - [Object references](#object-references)
 - [Functional constraints](#functional-constraints)
 - [Architecture](#architecture)
 - [Repository layout](#repository-layout)
 - [Interoperability](#interoperability)
+- [Development](#development)
 - [Documentation](#documentation)
 - [License](#license)
 
@@ -54,38 +70,51 @@ domain names, item IDs, or alternate access selectors.
 
 ## Features
 
-- **Browse & discover** — list logical devices, nodes, data objects; build
-  model trees; search by glob or regex
-- **Read & write** — typed single/bulk reads and writes with IEC 61850 semantic
+**MMS client**
+
+- **Browse & discover** — logical devices, nodes, data objects; model
+  trees; search by glob or regex; optional model cache
+- **Read & write** — typed single and bulk reads and writes with IEC 61850
   values (quality, timestamps, enums, Dbpos, BCR)
-- **Datasets** — list, inspect, read, create, and delete named variable lists
-- **Reports** — full BRCB/URCB lifecycle: inspect, configure, subscribe, GI
-  trigger, reserve/release, integrity period, segmented report reassembly,
-  configurable overflow callback, BRCB replay on re-enable
-- **Controls** — direct normal, SBO normal, and SBOw (enhanced security);
-  server-side connection-scoped ownership enforcement, configurable select
-  timeout, panic containment for application callbacks
-- **Files** — list, read, download, delete, rename, obtain
-- **Journals** — read by time range or entry ID, auto-pagination helpers
-- **SCL tooling** — parse SCD/ICD/CID/IID files (schema editions v1.7 through
-  2007C5), validate, flatten/export, generate XML, topology lookup helpers
-- **CLI tools** — `sclparse` (inspect, validate, summarize SCL files) and
-  `sclgen` (re-generate Go types from XSD)
-- **Caching** — optional client-side model cache (none / explicit / lazy)
-- **Server** — SCL-driven MMS server; runtime report engine (URCB/BRCB),
-  control handlers (SBO/SBOw state machine, CommandTermination), setting
-  groups, journal services
-- **GOOSE** — pure-Go publisher and subscriber (IEC 61850-8-1): frame codec,
-  retransmission, supervision and validation, raw Ethernet on Linux
-  (`AF_PACKET`) and macOS/BSD (BPF), SCL binding, server GoCBs published on
-  data change and exposed over MMS, client GoCB read/write; see
-  [GOOSE.md](GOOSE.md)
-- **Sampled Values** — pure-Go publisher and subscriber (IEC 61850-9-2,
-  IEC 61869-9, UCA 9-2LE): frame codec, dataset layouts and 9-2LE
-  scaling, drift-free pacing with `noASDU` batching, loss/duplicate/reorder
-  accounting and supervision without allocations per frame, SCL binding,
-  server MSVCBs published at `smpRate` and exposed over MMS, client MSVCB
-  read/write; see [SV.md](SV.md)
+- **Datasets** — list, inspect, read, create and delete
+- **Reports** — full BRCB/URCB lifecycle: configure, subscribe, GI,
+  reserve/release, integrity period, segmented report reassembly,
+  overflow callback, BRCB resume by EntryID
+- **Controls** — direct, SBO and SBOw (normal and enhanced security)
+- **Setting groups, journals, files**
+- **Resilience** — connection retry with back-off, `slog` logging, metrics
+  hooks (go-mms)
+
+**MMS server**
+
+- SCL-driven model; reports (URCB/BRCB), controls (SBO/SBOw state machine,
+  CommandTermination), setting groups, journals, file services, Identify
+  and Status; connection hooks, authentication hook, graceful `Shutdown`
+- One `SetValue` call drives reports, journals, GOOSE and SV
+
+**GOOSE** ([GOOSE.md](GOOSE.md))
+
+- Frame codec, publisher with stNum/sqNum and MinTime→MaxTime
+  retransmission, supervised subscriber (timeouts, gaps, restarts,
+  validation against SCL), typed events
+- Server GoCBs published on data change and exposed over MMS; client GoCB
+  read/write
+
+**Sampled Values** ([SV.md](SV.md))
+
+- Frame codec, dataset layouts and 9-2LE scaling, drift-free pacing with
+  `noASDU` batching, loss/duplicate/reorder accounting and supervision
+  without allocations per frame
+- Server MSVCBs published at `smpRate` and exposed over MMS; client MSVCB
+  read/write
+
+**Raw Ethernet** (`l2`, shared by GOOSE and SV) — Linux `AF_PACKET`,
+macOS/BSD BPF, kernel EtherType filters, an in-memory hub with fault
+injection for tests
+
+**SCL** ([scl/README.md](scl/README.md)) — parse SCD/ICD/CID/IID (schema
+editions 1.7 to 2007C5), validate, flatten/export, generate XML, lookup
+helpers; CLI tools `sclparse` and `sclgen`
 
 ---
 
@@ -455,6 +484,13 @@ func main() {
 | `ControlHandler` | Callbacks for `OnSelect`, `OnOperate`, `OnCancel` |
 | `CtlModelDirectNormal` / `CtlModelSBONormal` / `CtlModelSBOEnhanced` | Control model constants |
 
+### GOOSE and SV control blocks (client)
+
+| Method | Description |
+|--------|-------------|
+| `GetGoCB` / `SetGoCB` | Read a GoCB; write GoEna, GoID, DatSet (`GoCBUpdate`) |
+| `GetMSVCB` / `SetMSVCB` | Read an MSVCB; write SvEna, MsvID, DatSet, SmpRate, OptFlds, SmpMod (`MSVCBUpdate`) |
+
 ### Files
 
 | Method | Description |
@@ -513,7 +549,25 @@ the `sclparse` and `sclgen` command-line tools.
 | `Server.SetValue` | Write a value and trigger change-detection reports, GOOSE and SV samples |
 | `Server.EnableGOOSE` | Publish the model's GoCBs on a `goose.Transport` |
 | `Server.EnableSV` | Publish the model's MSVCBs on an `sv.Transport` |
-| `Server.Close` | Stop the server and all engines |
+| `Server.EnableSettingGroups` / `EnableJournals` | Start the setting-group and journal engines |
+| `ServerOptions` | Identity, `Authenticate`, `FileProvider`, `OnConnect`/`OnDisconnect`, `Logger`, `Metrics` |
+| `Server.Shutdown` | Stop accepting associations and drain the active ones |
+| `Server.Close` | Stop the server and all engines immediately |
+
+### GOOSE (`goose` package) and Sampled Values (`sv` package)
+
+| Function / Type | Description |
+|-----------------|-------------|
+| `Open` | Raw Ethernet transport on an interface (`AF_PACKET` / BPF) |
+| `NewHub` | In-memory transport for tests and simulation |
+| `ControlBlockFromSCL` / `ControlBlocksFromSCL` | Control block, address and dataset layout from SCL |
+| `NewPublisher` | GOOSE: stNum/sqNum and retransmission; SV: paced samples with `noASDU` batching |
+| `NewSubscriber` → `Subscribe` | Filtered, validated subscriptions with events and supervision (GOOSE) or stats (SV) |
+| `Encode` / `Decode` | Frame codecs with bounded decoding (`Limits`) |
+| `sv.LESample`, `sv.DecodeLE` | 9-2LE sample layout and scaling |
+
+See [GOOSE.md](GOOSE.md), [SV.md](SV.md) and [API.md](API.md#goose-package)
+for the full API.
 
 ---
 
@@ -620,7 +674,7 @@ LD instance names.
 | ST | Status |
 | MX | Measured values |
 | SP | Setpoint |
-| SV | Substitution |
+| SV | Substitution (not Sampled Values) |
 | CF | Configuration |
 | DC | Description |
 | SG | Setting group |
@@ -630,28 +684,36 @@ LD instance names.
 | BL | Blocking |
 | EX | Extended definition |
 | CO | Control |
+| US | Unicast SV control |
+| MS | Multicast SV control |
 | RP | Unbuffered reporting |
 | BR | Buffered reporting |
+| LG | Logging (log control) |
+| GO | GOOSE control |
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────┐
-│  Application / sclparse CLI         │
-├─────────────────────────────────────┤
-│  go-iec61850 (this package)         │
-│  IEC 61850 semantics, SCL, reports, │
-│  controls, server model             │
-├─────────────────────────────────────┤
-│  go-mms                             │
-│  Generic MMS protocol (ISO 9506)    │
-├─────────────────────────────────────┤
-│  go-cotp / go-tpkt                  │
-│  ISO transport (COTP over TPKT)     │
-└─────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│  Application, examples, sclparse                              │
+├───────────────────────────────┬───────────────────────────────┤
+│  iec61850: Client, Server     │  goose          sv            │
+│  reports, controls, datasets, │  codec, pub/sub, SCL binding  │
+│  setting groups, journals,    │                               │
+│  files, GoCB/MSVCB engines ───┼──► publishes via goose / sv   │
+├───────────────────────────────┼───────────────────────────────┤
+│  go-mms  (ISO 9506 MMS)       │  l2: AF_PACKET / BPF / Hub    │
+├───────────────────────────────┤  EtherType 0x88B8 / 0x88BA    │
+│  go-cotp / go-tpkt  (ISO/TCP) │                               │
+├───────────────────────────────┴───────────────────────────────┤
+│  scl, scl/index, scl/validate — model for server, goose, sv   │
+└───────────────────────────────────────────────────────────────┘
 ```
+
+MMS runs over TCP (port 102); GOOSE and SV are layer-2 multicast on the
+process or station bus and need raw-socket privileges.
 
 ---
 
@@ -676,19 +738,17 @@ go-iec61850/
 │   └── internal/demoied/       The demo IED (demo.icd) and test helpers
 │
 ├── interop/                    Interoperability tests (build tag: interop)
-│   │                           Runs against live libiec61850 and iec61850bean
-│   │                           adapters from mms-interop
-│   ├── harness_test.go         Docker-based test harness
-│   ├── goose_test.go           GOOSE vs libiec61850, dscsystems, iec61850-rust
-│   ├── libiec61850_*_test.go   Tests against libiec61850 adapters
-│   ├── iec61850bean_*_test.go  Tests against iec61850bean adapters
-│   ├── brcb_test.go            BRCB: EntryID, replay, purge, overflow
-│   ├── cdc_test.go             CDC reads: DPS, BCR
-│   ├── control_test.go         Direct, SBO, SBOw interop
-│   ├── sbo_state_test.go       SBO/SBOw state machine
-│   ├── urcb_*_test.go          URCB integrity, trigger, reservation
-│   ├── multi_client_test.go    Concurrent multi-client scenarios
-│   └── testdata/               ICD fixture and initial values
+│   │                           against mms-interop adapter images of
+│   │                           libiec61850, iec61850bean, dscsystems and
+│   │                           iec61850-rust (see interop/README.md)
+│   ├── harness_test.go         Docker-based harness, IEC61850_PEER_STACK
+│   ├── libiec61850_*_test.go   Stack-parametrized MMS suites (TestLibIEC*)
+│   ├── iec61850bean_*_test.go  iec61850bean suites (TestBean*)
+│   ├── brcb_*, urcb_*, sbo*,   Reporting, control, CDC, dataset and
+│   │   cdc_, dataset_*, …      multi-client scenarios
+│   ├── goose_test.go           GOOSE publisher/subscriber/server
+│   ├── sv_test.go              SV publisher/subscriber/server, MSVCB over MMS
+│   └── testdata/               IED, GOOSE and SV fixtures (mms-interop)
 │
 ├── scl/                        SCL parsing, validation, code generation
 │   ├── model.go                SCL Go type tree (SCD/ICD/CID/IID)
@@ -718,13 +778,17 @@ go-iec61850/
 │   ├── sclindex/               Lightweight SCL cross-reference index
 │   └── servermodel/            Server-side MMS registration and value store
 │
-├── INTEROP.md                  IEC 61850 interoperability compatibility matrix
+├── scripts/covergate.go         Per-package coverage gate used by CI
+│
 ├── API.md                      Complete public API reference
-├── ERRORS.md                   Error taxonomy, sentinel values, and usage patterns
+├── COMPATIBILITY.md            Versioning policy, platforms, per-stack matrix
+├── ERRORS.md                   Error taxonomy and usage patterns
 ├── GOOSE.md                    GOOSE guide
+├── INTEROP.md                  Interop architecture and service matrix
+├── KNOWN_LIMITATIONS.md        Unsupported features and constraints
+├── OBSERVABILITY.md            Logging fields and metrics
+├── SECURITY.md                 Vulnerability reporting, deployment guidance
 ├── SV.md                       Sampled Values guide
-├── KNOWN_LIMITATIONS.md        Known constraints and unsupported features
-├── OBSERVABILITY.md            Logging and structured-log fields
 └── RELEASE.md                  Changelog
 ```
 
@@ -732,23 +796,47 @@ go-iec61850/
 
 ## Interoperability
 
-Client and server behaviour is tested bidirectionally against pinned
-`libiec61850`, `iec61850bean`, `dscsystems` and `iec61850-rust` adapters, and
-GOOSE against the libiec61850, dscsystems and iec61850-rust publishers and
-subscribers, through the independently versioned
-[mms-interop](https://github.com/otfabric/mms-interop) infrastructure.
+Every pull request runs the MMS client and server in both directions
+against pinned [mms-interop](https://github.com/otfabric/mms-interop)
+adapter images of four independent stacks — libiec61850 (C),
+iec61850bean (Java), dscsystems go-iec61850 (Go) and iec61850-rust — and
+GOOSE and Sampled Values against the libiec61850, dscsystems and
+iec61850-rust publishers and subscribers on a Docker bridge.
 
-Tests live in `interop/` behind `-tags=interop` and cover:
-basic operations, URCB/BRCB reporting, CDC reads (SPS, DPS, MV, BCR),
-quality and timestamp semantics, datasets, direct/SBO/SBOw controls,
-multi-client concurrency, and negative/error cases.
+The suites in `interop/` (build tag `interop`) cover browsing, reads and
+writes, datasets, URCB/BRCB reporting (EntryID resume, overflow,
+reservation), CDC reads, quality and timestamps, direct/SBO/SBOw
+controls, files, multi-client concurrency, negative cases, GOOSE header,
+values, retransmission and supervision, and SV headers, optional fields,
+values, loss accounting and MSVCB access over MMS.
 
-**Scope of interoperability evidence:** four independent software stacks have
-been tested. Interoperability with physical IEDs (protection relays, meters,
-bay controllers, RTUs) has not yet been formally established.
+| Where | What |
+|---|---|
+| [COMPATIBILITY.md](COMPATIBILITY.md#per-stack-matrix) | Per-stack result matrix and stack deviations |
+| [INTEROP.md](INTEROP.md) | Test architecture, service matrix, running locally |
+| [interop/README.md](interop/README.md) | Environment variables, GOOSE/SV network setup |
 
-See [INTEROP.md](INTEROP.md) for the full compatibility matrix and
-`make interop` to run the suite locally.
+Interoperability with physical IEDs (protection relays, meters, bay
+controllers, merging units) has not yet been formally established.
+
+---
+
+## Development
+
+```bash
+make test           # unit tests
+make test-race      # with the race detector
+make lint-ci        # golangci-lint
+make coverage-gate  # >= 90 % statement coverage per package
+make fuzz           # every fuzz target, FUZZTIME each (default 15s)
+make interop        # MMS interop against the adapter images (Docker)
+make interop-goose  # GOOSE and SV interop (Linux, root, Docker network)
+make check          # the pre-commit set
+```
+
+The raw-socket tests of `l2`, `goose` and `sv` skip without privileges;
+CI runs them as root. Releases are cut by the `release.yml` workflow;
+[RELEASE.md](RELEASE.md) is the changelog.
 
 ---
 
@@ -756,14 +844,19 @@ See [INTEROP.md](INTEROP.md) for the full compatibility matrix and
 
 | Document | Description |
 |----------|-------------|
-| [scl/README.md](scl/README.md) | `scl` package, `sclparse`, and `sclgen` reference |
-| [INTEROP.md](INTEROP.md) | Interoperability tests and compatibility matrix |
-| [API.md](API.md) | Complete public API reference (types, methods, errors) |
-| [ERRORS.md](ERRORS.md) | Error taxonomy, sentinel values, typed errors, usage patterns |
-| [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) | Known limitations and constraints |
-| [OBSERVABILITY.md](OBSERVABILITY.md) | Logging, structured-log fields and GOOSE metrics |
+| [pkg.go.dev](https://pkg.go.dev/github.com/otfabric/go-iec61850) | Go reference for every package |
+| [API.md](API.md) | Public API reference (client, server, goose, sv, l2, scl) |
 | [GOOSE.md](GOOSE.md) | GOOSE publisher, subscriber, transports, SCL binding, server GoCBs |
 | [SV.md](SV.md) | Sampled Values publisher, subscriber, 9-2LE, SCL binding, server MSVCBs |
+| [scl/README.md](scl/README.md) | `scl` package, `sclparse` and `sclgen` |
+| [examples/README.md](examples/README.md) | Runnable examples for MMS, GOOSE and SV |
+| [ERRORS.md](ERRORS.md) | Sentinel and typed errors, usage patterns |
+| [OBSERVABILITY.md](OBSERVABILITY.md) | Logging fields and metrics hooks |
+| [COMPATIBILITY.md](COMPATIBILITY.md) | Versioning policy, supported platforms, per-stack matrix |
+| [INTEROP.md](INTEROP.md) | Interoperability tests and service matrix |
+| [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) | Unsupported features and constraints |
+| [SECURITY.md](SECURITY.md) | Vulnerability reporting and deployment guidance |
+| [RELEASE.md](RELEASE.md) | Release notes |
 
 ---
 

@@ -49,12 +49,20 @@ returns false for all levels, so log arguments are never evaluated.
 Log entries use structured key-value attributes for machine-parseable output:
 
 ```
-level=INFO msg="iec61850: report subscription created" rptID=rpt01 queueSize=64 overflow=drop_newest
-level=WARN msg="iec61850: report queue overflow" rptID=rpt01 dropped=1
-level=DEBUG msg="iec61850: browse cache hit" ld=LD1 cached_nodes=12
-level=INFO msg="iec61850: control operate" ref=LD1/XCBR1.Pos operation=operate
-level=DEBUG msg="iec61850: setting group change" ld=LD1 actSG=2
+level=DEBUG msg="iec61850: subscribe report" rptID=rpt01 queueSize=64 ...
+level=WARN msg="iec61850: report dropped (queue full)" rptID=rpt01
+level=DEBUG msg="iec61850: cache refreshed" devices=3
+level=DEBUG msg="iec61850: operate" ref=LD1/CSWI1.Pos ctlNum=1
+level=WARN msg="iec61850: operate denied: no active SBO select" ref=LD1/CSWI1.Pos
+level=WARN msg="iec61850: dial failed, retrying" addr=10.0.0.1:102 attempt=1 backoff=500ms error=...
+level=INFO msg="goose: subscription created" gocbRef=IED1LD0/LLN0$GO$gcb1 dst=01:0c:cd:01:00:01 appIDs=[1]
+level=WARN msg="goose: timeAllowedToLive expired" gocbRef=IED1LD0/LLN0$GO$gcb1 src=00:11:22:33:44:55
+level=WARN msg="sv: publisher behind schedule, samples skipped" skipped=3
 ```
+
+Messages are prefixed with the package (`iec61850:`, `goose:`, `sv:`,
+`l2:`); match on the message and attributes, not on the full text, which
+may gain detail in patch releases.
 
 ### Logger propagation
 
@@ -109,14 +117,24 @@ implementation (`PublisherConfig.Metrics`, `SubscriberConfig.Metrics`,
 | `Event(gocbRef, kind, dropped)` | a subscription event was produced (dropped when the queue was full) |
 
 Sampled Values publishers and subscribers report to an `sv.Metrics`
-(`FrameSent(svID, asdus)`, `SendError`, `ASDUReceived(svID)`,
-`FrameDropped(reason)`, `Event(svID, kind, dropped)`; `SVOptions.Metrics`
-for the server engine).
+(`PublisherConfig.Metrics`, `SubscriberConfig.Metrics`,
+`SVOptions.Metrics` for the server engine):
+
+| Method | Called when |
+|--------|-------------|
+| `FrameSent(svID, asdus)` | a frame with `asdus` samples was put on the wire |
+| `SendError(svID, err)` | the transport rejected a frame |
+| `ASDUReceived(svID)` | an ASDU was decoded and accepted |
+| `FrameDropped(reason)` | a frame was dropped: `decode`, `simulation`, `filtered` |
+| `Event(svID, kind, dropped)` | a subscription event was produced (dropped when the queue was full) |
 
 Embed `goose.NopMetrics` (or `sv.NopMetrics`) to implement a subset; a nil `Metrics` costs
 nothing. Adapters to Prometheus or OpenTelemetry are left to the
 application. Publisher and subscriber state is also available as
-snapshots (`Publisher.State`, `Subscription.Supervision`).
+snapshots: `goose.Publisher.State`, `goose.Subscription.Supervision`,
+`sv.Publisher.State` (frames, samples, rate, late, skipped, send errors)
+and `sv.Subscription.Stats` (per stream: ASDUs, lost, duplicates, out of
+order, rate, status).
 
 The MMS client and server report to an `mms.Metrics` implementation
 (go-mms v1.2.0+) set with `DialOptions.Metrics` / `ServerOptions.Metrics`
@@ -124,7 +142,7 @@ The MMS client and server report to an `mms.Metrics` implementation
 confirmed request with service, duration and error, `ObserveConnection`
 when an association is established, rejected or ends. Embed
 `mms.NopMetrics` to implement a subset. Dial retries are logged at Warn
-(`iec61850: dial failed, retrying` with `attempt`, `backoff`, `error`).
+(`iec61850: dial failed, retrying` with `addr`, `attempt`, `backoff`, `error`).
 
 ## Tracing
 

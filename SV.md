@@ -39,6 +39,7 @@ implementations.
 - [Metrics](#metrics)
 - [Performance](#performance)
 - [Testing](#testing)
+- [Deployment](#deployment)
 - [Limitations](#limitations)
 
 ## Frames
@@ -336,6 +337,35 @@ to zero allocations.
 - Raw transport tests run on `lo` on Linux as root (CI does) and on
   `GOOSE_TEST_IFACE` elsewhere (package `l2`).
 - Interop: see [INTEROP.md](INTEROP.md).
+
+## Deployment
+
+- **Privileges** — grant the binary the capability instead of running it
+  as root: `sudo setcap cap_net_raw+ep ./myapp` (Linux). On macOS add the
+  user to the `access_bpf` group (installed by Wireshark's ChmodBPF) or
+  adjust `/dev/bpf*` permissions. `Open` returns an error wrapping
+  `ErrPermission` when access is missing.
+- **Multicast reception** — set `TransportOptions.Multicast` to the
+  control blocks' destination addresses (`cb.Dst` from SCL) so the NIC
+  filters in hardware; without it the transport receives all multicast
+  (Linux) or enables promiscuous mode (macOS/BSD).
+- **Network** — GOOSE and SV are layer-2 multicast: switches flood them
+  unless static multicast filtering or VLANs limit them. Keep the VLAN
+  ID and priority from SCL (default priority 4) and check that every
+  switch on the path forwards 802.1Q-tagged frames. See
+  [SECURITY.md](SECURITY.md#deployment-guidance) for isolation.
+- **Timing** — the publisher is software-timed: it paces on an absolute
+  schedule, catches up in bursts of at most `MaxBurst` frames and counts
+  what it could not send in `PublisherState.Late` and `Skipped`. Run it on
+  a lightly loaded host, keep GC pressure low in the `Source` callback
+  (the publisher itself does not allocate per frame) and monitor `Late`,
+  `Skipped` and the subscribers' `Lost`. It does not replace a hardware
+  merging unit with PTP or 1PPS synchronisation: set `SmpSynch` to what
+  the host clock really provides (`SmpSynchLocal` without a reference).
+- **Receive buffers** — at 4000 frames/s per stream a subscriber stall
+  of a few hundred milliseconds overruns the default Linux socket buffer;
+  the transport does not change `SO_RCVBUF`, so raise
+  `net.core.rmem_default` for hosts that subscribe to many streams.
 
 ## Limitations
 
