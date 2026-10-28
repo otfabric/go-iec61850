@@ -1,5 +1,29 @@
 # go-iec61850 Releases
 
+## v1.2.1
+
+**Date:** 2026-10-28
+**Previous release:** v1.2.0
+
+### Summary
+
+Two client and server fixes found while writing the v1.2.0 examples.
+
+### Fixed
+
+- Client: `GetDataSet` on a data set that does not exist now wraps
+  `ErrNotFound`, so `errors.Is(err, iec61850.ErrNotFound)` works. Both
+  server answers for an unknown named variable list are recognised
+  (MMS access/object-non-existent and definition/object-undefined); the
+  `*mms.ServiceError` stays in the error chain. `examples/datasets` uses
+  the sentinel.
+- Server reports: a member that had no value when the RCB was enabled
+  (e.g. an MX float) carried a spurious `quality-change` reason next to
+  `data-change` on its first update. A missing previous value now counts
+  as a quality change only when the new value carries a quality.
+
+---
+
 ## v1.2.0
 
 **Date:** 2026-10-28
