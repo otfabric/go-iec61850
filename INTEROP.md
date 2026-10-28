@@ -29,6 +29,8 @@ mms-interop
       sbow_test.go                   TestLibIEC*_Control_SBOw* / TestBean*_Control_SBOw* / TestGoServer_SBOw_*
       report_semantics_test.go       TestLibIEC*_URCB_GI* / *MultiMember*
       goose_test.go                  TestGOOSE_* (libiec61850, dscsystems, iec61850-rust)
+      sv_test.go                     TestSV_* (libiec61850, dscsystems, iec61850-rust),
+                                     TestLibIECClient_SVCB_Read (MSVCB over MMS)
 ```
 
 The `TestLibIEC*` tests run twice in CI: against libiec61850 and, with
@@ -255,7 +257,9 @@ adapter asks for auxiliary data; the Go subscriber does.
 | SendGOOSEMessage | ✓ | ✓ | [GOOSE.md](GOOSE.md); `goose` package and `Server.EnableGOOSE` |
 | GetGoCBValues / SetGoCBValues | ✓ | ✓ | `Client.GetGoCB` / `SetGoCB`; GoEna, GoID, DatSet writable |
 | SendGSSEMessage | — | — | GSSE not supported |
-| SendMSVMessage | — | — | Sampled Values out of scope |
+| SendMSVMessage | ✓ | ✓ | [SV.md](SV.md); `sv` package and `Server.EnableSV` |
+| GetMSVCBValues / SetMSVCBValues | ✓ | ✓ | `Client.GetMSVCB` / `SetMSVCB`; SvEna, MsvID, DatSet, SmpRate, OptFlds, SmpMod writable |
+| SendUSVMessage, Get/SetUSVCBValues | — | — | unicast SV not supported |
 | Select | ✓ | ✓ | SBO normal |
 | SelectWithValue | ✓ | ✓ | SBOw enhanced |
 | Cancel | ✓ | ✓ | |
@@ -308,7 +312,7 @@ adapter asks for auxiliary data; the Go subscriber does.
 | Feature | Status | Notes |
 |---------|--------|-------|
 | GOOSE security (IEC 62351-6), fixed-offset encoding | not implemented | see [GOOSE.md](GOOSE.md#limitations) |
-| Sampled Values | not implemented | out of scope |
+| SV security (IEC 62351), unicast SV (USVCB) | not implemented | see [SV.md](SV.md#limitations) |
 | Dynamic dataset creation | not implemented | deferred |
 | CommandTermination− (negative), client-side termination handling | not implemented | deferred |
 | TimeActivatedOperate | not implemented | deferred |

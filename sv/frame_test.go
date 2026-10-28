@@ -238,7 +238,7 @@ func TestDecodeErrors(t *testing.T) {
 		{"refrTm size", rawFrame(savPdu([]byte{1}, asduBytes(fSvID, fCnt, fConf, tlvBytes(tagRefrTm, []byte{1}), fSynch, fSmp))), ErrInvalidPDU},
 		{"smpSynch size", rawFrame(savPdu([]byte{1}, asduBytes(fSvID, fCnt, fConf, tlvBytes(tagSmpSynch, nil), fSmp))), ErrInvalidPDU},
 		{"smpRate size", rawFrame(savPdu([]byte{1}, asduBytes(fSvID, fCnt, fConf, fSynch, tlvBytes(tagSmpRate, []byte{1}), fSmp))), ErrInvalidPDU},
-		{"smpMod size", rawFrame(savPdu([]byte{1}, asduBytes(fSvID, fCnt, fConf, fSynch, fSmp, tlvBytes(tagSmpMod, []byte{1})))), ErrInvalidPDU},
+		{"smpMod size", rawFrame(savPdu([]byte{1}, asduBytes(fSvID, fCnt, fConf, fSynch, fSmp, tlvBytes(tagSmpMod, []byte{0, 0, 1})))), ErrInvalidPDU},
 		{"gmIdentity size", rawFrame(savPdu([]byte{1}, asduBytes(fSvID, fCnt, fConf, fSynch, fSmp, tlvBytes(tagGmIdentity, []byte{1})))), ErrInvalidPDU},
 		{"sample over limit", rawFrame(savPdu([]byte{1}, asduBytes(fSvID, fCnt, fConf, fSynch, tlvBytes(tagSample, make([]byte, 1501))))), ErrLimitExceeded},
 		{"truncated tag", rawFrame(tlvBytes(tagSavPDU, []byte{0x80, 0x01, 0x01, 0xa2, 0x02, 0x30})), ErrInvalidPDU},
@@ -300,6 +300,15 @@ func TestDecodeIntoReuse(t *testing.T) {
 	})
 	if allocs != 0 {
 		t.Errorf("DecodeInto allocates %.1f per frame", allocs)
+	}
+}
+
+// TestSmpModOneOctet accepts the single-octet smpMod some publishers
+// send (the encoder writes INT16U).
+func TestSmpModOneOctet(t *testing.T) {
+	f, err := Decode(rawFrame(savPdu([]byte{1}, asduBytes(fSvID, fCnt, fConf, fSynch, fSmp, tlvBytes(tagSmpMod, []byte{1})))))
+	if err != nil || !f.PDU.ASDUs[0].HasSmpMod || f.PDU.ASDUs[0].SmpMod != SmpPerSec {
+		t.Fatalf("%v %+v", err, f)
 	}
 }
 

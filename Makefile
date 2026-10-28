@@ -32,8 +32,8 @@ interop: ## Run interoperability tests against mms-interop adapter images (-tags
 	@echo "Running interoperability tests"
 	@go test -tags=interop -v -timeout 300s ./interop/...
 
-interop-goose: ## Run GOOSE interop tests (Linux, root; needs the mms-interop-goose network, see interop/README.md)
-	@go test -exec 'sudo -E' -tags=interop -v -timeout 300s -run GOOSE ./interop/...
+interop-goose: ## Run GOOSE and SV interop tests (Linux, root; needs the mms-interop-goose network, see interop/README.md)
+	@go test -exec 'sudo -E' -tags=interop -v -timeout 600s -run 'GOOSE|SV_' ./interop/...
 
 test-verbose: ## Run unit tests with verbose output
 	@echo "Running tests with verbose output"

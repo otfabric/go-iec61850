@@ -606,10 +606,15 @@ func decodeASDU(c []byte, base int, lim Limits, a *ASDU, strs map[string]string)
 			}
 			a.Sample = v
 		case tagSmpMod:
-			if len(v) != 2 {
+			// INT16U; some publishers send a single octet.
+			switch len(v) {
+			case 1:
+				a.SmpMod = SmpMod(v[0])
+			case 2:
+				a.SmpMod = SmpMod(binary.BigEndian.Uint16(v))
+			default:
 				return sizeErr(name, off, 2, len(v))
 			}
-			a.SmpMod = SmpMod(binary.BigEndian.Uint16(v))
 			a.HasSmpMod = true
 		case tagGmIdentity:
 			if len(v) != 8 {

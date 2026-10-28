@@ -56,7 +56,7 @@ jobs:
       # GOOSE is raw Ethernet: the adapters run on a Docker bridge network
       # whose bridge device goose0 the test opens from the host (as root,
       # for CAP_NET_RAW). An idle container gives the bridge its carrier.
-      - name: Run GOOSE interop
+      - name: Run GOOSE and SV interop
         env:
           GOOSE_IFACE: goose0
         run: |
@@ -66,7 +66,7 @@ jobs:
           docker network create -o com.docker.network.bridge.name=goose0 mms-interop-goose
           docker run -d --rm --name goose-carrier --network mms-interop-goose --entrypoint sleep "$LIBIEC61850_IMAGE" infinity
           sleep 2
-          go test -exec 'sudo -E' -tags=interop -v -timeout 300s -run 'GOOSE' ./interop/...
+          go test -exec 'sudo -E' -tags=interop -v -timeout 600s -run 'GOOSE|SV_' ./interop/...
 
       - name: Collect Docker diagnostics
         if: failure()
