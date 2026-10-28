@@ -4,6 +4,7 @@ package iec61850
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -117,6 +118,9 @@ func (c *Client) GetDataSet(ctx context.Context, ld, dsName string) (*DataSet, e
 
 	attrs, err := c.mmsClient.GetNamedVariableListAttributes(ctx, listName)
 	if err != nil {
+		if isObjectNotFound(err) {
+			return nil, fmt.Errorf("iec61850: get data set %s/%s: %w: %w", ld, dsName, ErrNotFound, err)
+		}
 		return nil, fmt.Errorf("iec61850: get data set %s/%s: %w", ld, dsName, err)
 	}
 
@@ -410,4 +414,17 @@ func (c *Client) DeleteDataSet(ctx context.Context, ld, dsName string) error {
 // → "LLN0.dsName").
 func mmsItemIDToIECDSName(itemID string) string {
 	return strings.Replace(itemID, "$", ".", 1)
+}
+
+// isObjectNotFound reports whether err is an MMS ServiceError saying the
+// object does not exist: access/object-non-existent or
+// definition/object-undefined (servers answer an unknown named variable
+// list with either).
+func isObjectNotFound(err error) bool {
+	var se *mms.ServiceError
+	if !errors.As(err, &se) {
+		return false
+	}
+	return se.Class == mms.ErrorClassAccess && se.CodeName() == "object-non-existent" ||
+		se.Class == mms.ErrorClassDefinition && se.CodeName() == "object-undefined"
 }
