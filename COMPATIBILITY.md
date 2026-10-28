@@ -68,29 +68,41 @@ error) and the test is skipped with that reason.
 
 ### Per-stack matrix
 
+Results with the mms-interop v0.3.0 images pinned in
+`.github/workflows/interop.yml`.
+
 | Area | libiec61850 | iec61850bean | dscsystems | iec61850-rust |
 |---|:---:|:---:|:---:|:---:|
 | License | GPL-3.0 | Apache-2.0 | GPL-3.0 | MIT OR Apache-2.0 |
-| Go client → stack server: browse, read/write, datasets | ✓ | ✓ | ✓ | pending¹ |
-| Stack client → Go server: browse, read/write, datasets | ✓ | ✓ | ✓ | pending¹ |
-| URCB reporting (both directions) | ✓ | ✓ | ✓ | pending¹ |
-| Direct / SBO control | ✓ | ✓ | ✓ | pending¹ |
-| SBOw (enhanced security) | ✓ | skip² | ✓³ | pending¹ |
-| MMS file services | ✓ | ✓ | ✓ | unsupported⁴ |
-| GetNameList from the SCL model | ✓ | ✓ | ✓ | runtime registries⁴ |
+| Go client → stack server: browse, read/write, datasets | ✓ | ✓ | ✓ | ✓ |
+| Stack client → Go server: browse, read/write, datasets | ✓ | ✓ | ✓ | ✓ |
+| URCB reporting (both directions) | ✓ | ✓¹ | ✓ | ✓ |
+| URCB TrgOps/IntgPd write on the stack server | ✓ | ✓ | ✓ | denied² |
+| Direct / SBO control (both directions) | ✓ | ✓ | ✓ | ✓ |
+| SBOw (enhanced security) | ✓ | skip³ | ✓⁴ | ✓ |
+| CDC reads DPS (Dbpos) / BCR from the stack server | skip⁵ | skip⁵ | ✓ | ✓ |
+| MMS file services | ✓ | ✓ | ✓ | unsupported⁶ |
+| GetNameList from the SCL model | ✓ | ✓ | ✓ | run-time registries⁶ |
 | GOOSE: Go publisher → stack subscriber | ✓ | n/a | ✓ | ✓ |
 | GOOSE: stack publisher → Go subscriber (SCL-validated) | ✓ | n/a | ✓ | ✓ |
 | GOOSE: Go IED server GoCB → stack subscriber | ✓ | n/a | ✓ | ✓ |
-| Sampled Values / R-GOOSE | n/a | n/a | n/a | unsupported⁴ |
+| Sampled Values / R-GOOSE | n/a | n/a | n/a | unsupported⁶ |
 
-¹ The iec61850-rust IED/MMS adapters are part of mms-interop v0.3.0;
-results are recorded once its image is pinned.
-² iec61850bean's server does not expose `SBOw[CO]` as writable.
-³ Requires the server's CommandTermination (added in v1.1.0); the
+¹ The iec61850bean server does not support URCB reservation (`Resv`);
+that negative test is skipped.
+² The fixture ICD declares `ReportSettings trgOps="Fix" intgPd="Fix"`;
+iec61850-rust enforces it (object-access-denied), the others accept the
+write. The integrity-period test is skipped for iec61850-rust.
+³ iec61850bean's server does not expose `SBOw[CO]` as writable.
+⁴ Requires the server's CommandTermination (added in v1.1.0); the
 dscsystems controller waits for it.
-⁴ Not implemented by iec61850-rust: no MMS file services, no SVCB or
+⁵ The libiec61850 and iec61850bean adapter servers do not apply the
+`GGIO1.DPS1.stVal` / `MMTR1.TotVAh.actVal` initial values of
+`values.json` and serve type defaults, so the read cannot be compared with
+the fixture. The Go server side is covered by `TestGoServer_CDC_*`.
+⁶ Not implemented by iec61850-rust: no MMS file services, no SVCB or
 R-GOOSE; its GetNameList answers from run-time registries rather than the
-SCL. Affected steps are skipped as unsupported.
+SCL. Adapter steps for these answer `unsupported` and are skipped.
 
 Stack-specific deviations are listed in mms-interop
 `fixtures/capabilities.json` (`knownLimitations`). Interoperability with physical IEDs has not yet been formally
