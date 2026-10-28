@@ -18,10 +18,10 @@ jobs:
     timeout-minutes: 60
     env:
       GOWORK: "off"
-      LIBIEC61850_IMAGE: ghcr.io/otfabric/mms-interop-libiec61850@sha256:9c29847dbd0523002b113a2fd1806cfb523bdd1610ae2e47f53b6156ec15fde7
-      IEC61850BEAN_IMAGE: ghcr.io/otfabric/mms-interop-iec61850bean@sha256:d95a64e2cb801db24ce9836e9dacc1035bf5131056802e241e9de6546861c611
-      DSCSYSTEMS_IMAGE: ghcr.io/otfabric/mms-interop-dscsystems:v0.3.0
-      IEC61850RUST_IMAGE: ghcr.io/otfabric/mms-interop-iec61850-rust:v0.3.0
+      LIBIEC61850_IMAGE: ghcr.io/otfabric/mms-interop-libiec61850@sha256:18e7e5c249f74e708a0699bd64732cd238ad9579574431a16b27b9c6000232a0
+      IEC61850BEAN_IMAGE: ghcr.io/otfabric/mms-interop-iec61850bean@sha256:8d76b3cc065c2b18cc031bb26b2b879a7b433e164f9664ce9a3363241db65514
+      DSCSYSTEMS_IMAGE: ghcr.io/otfabric/mms-interop-dscsystems@sha256:f0b233737c1bd6e9cc6cfe7338bb287ed0e5b4a6b589b7496ae2409501dc6deb
+      IEC61850RUST_IMAGE: ghcr.io/otfabric/mms-interop-iec61850-rust@sha256:ebd09921ef9b22ed9a318256eb2fac74268dde7f18a17f9e8300aba46c624110
 
     steps:
       - uses: actions/checkout@v4
