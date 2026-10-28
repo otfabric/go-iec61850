@@ -61,15 +61,15 @@ IEC61850BEAN_IMAGE=iec61850-interop-iec61850bean:local \
 make interop
 
 # Run against published images (version tags)
-LIBIEC61850_IMAGE=ghcr.io/otfabric/iec61850-interop-libiec61850:v0.4.1 \
-IEC61850BEAN_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850bean:v0.4.1 \
+LIBIEC61850_IMAGE=ghcr.io/otfabric/iec61850-interop-libiec61850:v1.0.1 \
+IEC61850BEAN_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850bean:v1.0.1 \
 make interop
 
 # The same suites against another stack
 IEC61850_PEER_STACK=dscsystems \
-DSCSYSTEMS_IMAGE=ghcr.io/otfabric/iec61850-interop-dscsystems:v0.4.1 make interop
+DSCSYSTEMS_IMAGE=ghcr.io/otfabric/iec61850-interop-dscsystems:v1.0.1 make interop
 IEC61850_PEER_STACK=iec61850-rust \
-IEC61850RUST_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850-rust:v0.4.1 make interop
+IEC61850RUST_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850-rust:v1.0.1 make interop
 ```
 
 CI pins every image by digest in `.github/workflows/interop.yml`. GOOSE
@@ -219,7 +219,7 @@ adapter asks for auxiliary data; the Go subscriber does.
 ### Sampled Values
 
 Fixture `sv-v1` (iec61850-interop `fixtures/sv/`, copied to
-`interop/testdata/sv/`) with the v0.4.1 images: `MSVCB01` (9-2LE, 4000
+`interop/testdata/sv/`) with the v1.0.1 images: `MSVCB01` (9-2LE, 4000
 samples/s, one ASDU per frame) and `MSVCB02` (generic dataset, 1000
 samples/s, four ASDUs per frame, every optional field). Each row holds
 for libiec61850, dscsystems and iec61850-rust unless noted.
@@ -445,7 +445,7 @@ Report delivery (InformationReports) and confirmed services (Read, Write, SetRCB
 ## Fixtures
 
 `interop/testdata/` holds synchronized copies of the canonical iec61850-interop
-fixtures, matching the pinned adapter images (iec61850-interop v0.4.1):
+fixtures, matching the pinned adapter images (iec61850-interop v1.0.1):
 
 | Path | Fixture revision | Content |
 |---|---|---|

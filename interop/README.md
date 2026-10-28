@@ -41,8 +41,8 @@ IEC61850BEAN_IMAGE=iec61850-interop-iec61850bean:local \
 make interop
 
 # Or using published images
-LIBIEC61850_IMAGE=ghcr.io/otfabric/iec61850-interop-libiec61850:v0.4.1 \
-IEC61850BEAN_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850bean:v0.4.1 \
+LIBIEC61850_IMAGE=ghcr.io/otfabric/iec61850-interop-libiec61850:v1.0.1 \
+IEC61850BEAN_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850bean:v1.0.1 \
 make interop
 ```
 

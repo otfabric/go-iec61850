@@ -98,7 +98,7 @@ error) and the test is skipped with that reason.
 
 ### Per-stack matrix
 
-Results with the iec61850-interop v0.4.1 images pinned in
+Results with the iec61850-interop v1.0.1 images pinned in
 `.github/workflows/interop.yml`.
 
 | Area | libiec61850 | iec61850bean | dscsystems | iec61850-rust |

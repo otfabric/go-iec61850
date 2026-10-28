@@ -9,14 +9,14 @@
 
 Interop suite moved to the renamed
 [iec61850-interop](https://github.com/otfabric/iec61850-interop) adapter
-images (v1.0.0); go-mms v1.2.2.
+images (v1.0.1); go-mms v1.2.2.
 
 ### Changed
 
 - Dependency: `github.com/otfabric/go-mms` v1.2.2.
 - Interop: the adapter repository is renamed to
   `otfabric/iec61850-interop`. CI pins the
-  `ghcr.io/otfabric/iec61850-interop-<stack>` v1.0.0 images; the local
+  `ghcr.io/otfabric/iec61850-interop-<stack>` v1.0.1 images; the local
   default tags are `iec61850-interop-<stack>:local` and the GOOSE network
   is `iec61850-interop-goose`. Environment variables and adapter command
   names are unchanged.
