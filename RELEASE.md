@@ -45,8 +45,10 @@ dial retry) and two more interop stacks (dscsystems, iec61850-rust).
 
 ### Dependencies
 
-- **go-mms** — `v1.1.0` → **[v1.2.0](https://github.com/otfabric/go-mms/releases/tag/v1.2.0)**
-  (sentinels incl. `ErrServerClosed`/`ErrInvalidArgument`, `RejectError`,
+- **go-mms** — `v1.1.0` → **[v1.2.1](https://github.com/otfabric/go-mms/releases/tag/v1.2.1)**
+  (go-cotp v1.1.0 with per-direction deadlines: a context that expires
+  before any octet moved returns `ctx.Err()` and leaves the connection
+  usable; v1.2.0 added sentinels incl. `ErrServerClosed`/`ErrInvalidArgument`, `RejectError`,
   `ServiceError.CodeName()`, metrics, retry, `Client.Done`/`Err`,
   `RequestTimeout`, `Server.Shutdown`, `AssociationTimeout`).
   `ServiceError.Error()` now ends with the code name; match errors with
