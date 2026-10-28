@@ -207,15 +207,20 @@ func buildGoCBFields(g *GoCBDef, ldName, lnName string) []rcbField {
 	}
 }
 
-// goCBTypeSpec returns the GoCB structure TypeSpec and a read function
+// goCBStruct returns the GoCB structure TypeSpec and a read function
 // over the store.
 func goCBStruct(vs *ValueStore, g *GoCBDef, ldName, lnName string) (mms.TypeSpec, func(context.Context) (*mms.Value, error)) {
-	fields := buildGoCBFields(g, ldName, lnName)
+	return cbStruct(vs, buildGoCBFields(g, ldName, lnName), ldName, GoCBItemID(lnName, g.Name))
+}
+
+// cbStruct returns the structure TypeSpec of a control block with the
+// given fields and a read function over the store.
+func cbStruct(vs *ValueStore, fields []rcbField, ldName, cbItem string) (mms.TypeSpec, func(context.Context) (*mms.Value, error)) {
 	elems := make([]mms.TypeSpecElement, len(fields))
 	keys := make([]string, len(fields))
 	for i, f := range fields {
 		elems[i] = mms.TypeSpecElement{Name: f.suffix, Type: f.typeSpec}
-		keys[i] = StoreKey(ldName, GoCBItemID(lnName, g.Name)+"$"+f.suffix)
+		keys[i] = StoreKey(ldName, cbItem+"$"+f.suffix)
 	}
 	read := func(context.Context) (*mms.Value, error) {
 		vals := make([]*mms.Value, len(fields))
@@ -237,9 +242,14 @@ func goCBStruct(vs *ValueStore, g *GoCBDef, ldName, lnName string) (mms.TypeSpec
 // or is absent. Other attributes and whole-structure writes are
 // rejected with object-access-denied.
 func registerGoCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, g *GoCBDef) error {
-	cbItem := GoCBItemID(lnName, g.Name)
+	return registerCtrlBlock(srv, vs, ldName, GoCBItemID(lnName, g.Name), "GoCB", buildGoCBFields(g, ldName, lnName), GoCBWritableFields)
+}
+
+// registerCtrlBlock registers a GoCB or SvCB structure and its
+// attributes (see registerGoCB). kind names the block in errors.
+func registerCtrlBlock(srv *mms.Server, vs *ValueStore, ldName, cbItem, kind string, fields []rcbField, writable map[string]bool) error {
 	denied := &mms.DataAccessError{Code: mms.DataAccessErrorObjectAccessDenied}
-	for _, f := range buildGoCBFields(g, ldName, lnName) {
+	for _, f := range fields {
 		item := cbItem + "$" + f.suffix
 		sk := StoreKey(ldName, item)
 		vs.Set(sk, f.initial)
@@ -254,7 +264,7 @@ func registerGoCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, g *GoC
 				return defaultMMSValue(ts), nil
 			},
 		}
-		if GoCBWritableFields[f.suffix] {
+		if writable[f.suffix] {
 			v.Write = func(ctx context.Context, val *mms.Value) error {
 				if val == nil || val.Type() != ts.Type {
 					return &mms.DataAccessError{Code: mms.DataAccessErrorTypeInconsistent}
@@ -272,7 +282,7 @@ func registerGoCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, g *GoC
 			v.Write = func(context.Context, *mms.Value) error { return denied }
 		}
 		if err := srv.RegisterVariable(v); err != nil {
-			return fmt.Errorf("register GoCB attribute %s: %w", item, err)
+			return fmt.Errorf("register %s attribute %s: %w", kind, item, err)
 		}
 		if f.suffix == "DstAddress" {
 			for i, e := range dstAddressTS.Elements {
@@ -291,12 +301,12 @@ func registerGoCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, g *GoC
 					},
 					Write: func(context.Context, *mms.Value) error { return denied },
 				}); err != nil {
-					return fmt.Errorf("register GoCB attribute %s: %w", sub, err)
+					return fmt.Errorf("register %s attribute %s: %w", kind, sub, err)
 				}
 			}
 		}
 	}
-	ts, read := goCBStruct(vs, g, ldName, lnName)
+	ts, read := cbStruct(vs, fields, ldName, cbItem)
 	return srv.RegisterVariable(mms.Variable{
 		Name:     mms.ObjectName{Scope: mms.ObjectScopeDomain, Domain: mms.DomainID(ldName), ItemID: mms.ItemID(cbItem)},
 		TypeSpec: ts,
@@ -309,27 +319,42 @@ func registerGoCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, g *GoC
 // its TypeSpec element and read function for the LN structure. ok is
 // false when the LN has no GoCBs.
 func registerGOGroup(srv *mms.Server, vs *ValueStore, ldName string, ln *LogicalNode) (mms.TypeSpecElement, func(context.Context) (*mms.Value, error), bool, error) {
-	if len(ln.GoCBs) == 0 {
+	names := make([]string, len(ln.GoCBs))
+	structs := make([]func() (mms.TypeSpec, func(context.Context) (*mms.Value, error)), len(ln.GoCBs))
+	for i := range ln.GoCBs {
+		g := &ln.GoCBs[i]
+		names[i] = g.Name
+		structs[i] = func() (mms.TypeSpec, func(context.Context) (*mms.Value, error)) {
+			return goCBStruct(vs, g, ldName, ln.Name)
+		}
+	}
+	return registerFCGroup(srv, ldName, ln.Name, "GO", names, structs)
+}
+
+// registerFCGroup registers the "LN$<fc>" FC-group variable of control
+// blocks. ok is false when there are none.
+func registerFCGroup(srv *mms.Server, ldName, lnName, fc string, names []string, structs []func() (mms.TypeSpec, func(context.Context) (*mms.Value, error))) (mms.TypeSpecElement, func(context.Context) (*mms.Value, error), bool, error) {
+	if len(names) == 0 {
 		return mms.TypeSpecElement{}, nil, false, nil
 	}
-	elems := make([]mms.TypeSpecElement, len(ln.GoCBs))
-	reads := make([]func(context.Context) (*mms.Value, error), len(ln.GoCBs))
-	for i := range ln.GoCBs {
-		ts, read := goCBStruct(vs, &ln.GoCBs[i], ldName, ln.Name)
-		elems[i] = mms.TypeSpecElement{Name: ln.GoCBs[i].Name, Type: ts}
+	elems := make([]mms.TypeSpecElement, len(names))
+	reads := make([]func(context.Context) (*mms.Value, error), len(names))
+	for i := range names {
+		ts, read := structs[i]()
+		elems[i] = mms.TypeSpecElement{Name: names[i], Type: ts}
 		reads[i] = read
 	}
 	ts := mms.TypeSpec{Type: mms.ValueTypeStructure, Elements: elems}
 	read := makeStructRead(reads)
-	item := ln.Name + "$GO"
+	item := lnName + "$" + fc
 	if err := srv.RegisterVariable(mms.Variable{
 		Name:     mms.ObjectName{Scope: mms.ObjectScopeDomain, Domain: mms.DomainID(ldName), ItemID: mms.ItemID(item)},
 		TypeSpec: ts,
 		Read:     read,
 	}); err != nil {
-		return mms.TypeSpecElement{}, nil, false, fmt.Errorf("register GO FC group %s: %w", item, err)
+		return mms.TypeSpecElement{}, nil, false, fmt.Errorf("register %s FC group %s: %w", fc, item, err)
 	}
-	return mms.TypeSpecElement{Name: "GO", Type: ts}, read, true, nil
+	return mms.TypeSpecElement{Name: fc, Type: ts}, read, true, nil
 }
 
 // MemberNode is the resolved value layout of a dataset member: a leaf
@@ -337,8 +362,21 @@ func registerGOGroup(srv *mms.Server, vs *ValueStore, ldName string, ln *Logical
 type MemberNode struct {
 	Name     string
 	Key      string       // ValueStore key, leaves only
+	BType    string       // SCL basic type, leaves only
 	Type     mms.TypeSpec // full type of this node
 	Children []*MemberNode
+}
+
+// Leaves returns the leaves under n, in order.
+func (n *MemberNode) Leaves() []*MemberNode {
+	if n.Key != "" {
+		return []*MemberNode{n}
+	}
+	var out []*MemberNode
+	for _, c := range n.Children {
+		out = append(out, c.Leaves()...)
+	}
+	return out
 }
 
 // Keys returns the store keys of all leaves under n, in order.
@@ -513,7 +551,7 @@ func attrNode(a *DataAttribute, base string, parent []string) (*MemberNode, erro
 		if !ok {
 			return nil, fmt.Errorf("unsupported BType %q", a.BType)
 		}
-		return &MemberNode{Name: a.Name, Key: base + "$" + strings.Join(path, "$"), Type: ts}, nil
+		return &MemberNode{Name: a.Name, Key: base + "$" + strings.Join(path, "$"), BType: a.BType, Type: ts}, nil
 	}
 	n := &MemberNode{Name: a.Name}
 	var elems []mms.TypeSpecElement

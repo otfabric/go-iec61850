@@ -435,6 +435,7 @@ type SMVControlRow struct {
 	SmvID       string `json:"smvID"`
 	DatSet      string `json:"datSet,omitempty"`
 	SmpRate     uint32 `json:"smpRate"`
+	SmpMod      string `json:"smpMod,omitempty"`
 	NofASDU     uint32 `json:"nofASDU"`
 	Multicast   bool   `json:"multicast"`
 	ConfRev     uint32 `json:"confRev"`
@@ -459,7 +460,7 @@ func ExportSMVControls(s *SCL) []SMVControlRow {
 						IED: ied.Name, AccessPoint: ap.Name,
 						LD: ld.Inst, Name: sv.Name,
 						SmvID: sv.SmvID, DatSet: sv.DatSet,
-						SmpRate: sv.SmpRate, NofASDU: sv.NofASDU,
+						SmpRate: sv.SmpRate, SmpMod: sv.SmpMod, NofASDU: sv.NofASDU,
 						Multicast: sv.Multicast, ConfRev: sv.ConfRev,
 						Desc: sv.Desc,
 					})

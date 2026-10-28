@@ -62,7 +62,8 @@ type SubscriptionConfig struct {
 	// SvID filters on the svID.
 	SvID string
 
-	// Validation: DatSet (when non-empty), ConfRev (when non-zero),
+	// Validation: DatSet (when non-empty, checked against ASDUs that
+	// carry datSet), ConfRev (when non-zero),
 	// SmpRate/SmpMod (when SmpRate is non-zero, checked against ASDUs
 	// that carry smpRate) and SampleSize (when non-zero; Layout.Size()
 	// when a Layout is given). An ASDU failing validation produces an
@@ -672,7 +673,7 @@ func (sub *Subscription) updateRate(st *stream, now time.Time) {
 
 func (sub *Subscription) validate(a *ASDU) error {
 	c := &sub.cfg
-	if c.DatSet != "" && a.DatSet != c.DatSet {
+	if c.DatSet != "" && a.DatSet != "" && a.DatSet != c.DatSet { // datSet is optional on the wire
 		return &ValidationError{SvID: a.SvID, Field: "datSet", Want: c.DatSet, Got: a.DatSet, Err: ErrDatSetMismatch}
 	}
 	if c.ConfRev != 0 && a.ConfRev != c.ConfRev {

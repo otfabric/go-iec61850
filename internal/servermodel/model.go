@@ -59,6 +59,10 @@ type LogicalNode struct {
 	// valid on LLN0.
 	GoCBs []GoCBDef
 
+	// SvCBs are the multicast Sampled Values control blocks (MSVCB)
+	// defined under this LN. Only valid on LLN0.
+	SvCBs []SvCBDef
+
 	// SettingGroup, when non-nil, defines the setting group control
 	// block (SGCB) for this LN. Only valid on LLN0.
 	SettingGroup *SettingGroupDef
@@ -304,6 +308,20 @@ func validateLD(ld *LogicalDevice) []error {
 			gocbNames[g.Name] = true
 			if g.DatSet != "" && !dsNames[g.DatSet] {
 				errs = append(errs, fmt.Errorf("model: LD %q LN %q: GoCB %q references non-existent dataset %q", ld.Name, ln.Name, g.Name, g.DatSet))
+			}
+		}
+
+		svcbNames := make(map[string]bool)
+		for _, sv := range ln.SvCBs {
+			if sv.Name == "" {
+				errs = append(errs, fmt.Errorf("model: LD %q LN %q: SvCB with empty name", ld.Name, ln.Name))
+			}
+			if svcbNames[sv.Name] {
+				errs = append(errs, fmt.Errorf("model: LD %q LN %q: duplicate SvCB %q", ld.Name, ln.Name, sv.Name))
+			}
+			svcbNames[sv.Name] = true
+			if sv.DatSet != "" && !dsNames[sv.DatSet] {
+				errs = append(errs, fmt.Errorf("model: LD %q LN %q: SvCB %q references non-existent dataset %q", ld.Name, ln.Name, sv.Name, sv.DatSet))
 			}
 		}
 

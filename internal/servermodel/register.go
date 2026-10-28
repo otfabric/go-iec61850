@@ -272,6 +272,12 @@ func registerLN(srv *mms.Server, vs *ValueStore, ldName string, ln *LogicalNode)
 		}
 	}
 
+	for i := range ln.SvCBs {
+		if err := registerSvCB(srv, vs, ldName, ln.Name, &ln.SvCBs[i]); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -461,6 +467,14 @@ func registerLNHierarchy(srv *mms.Server, vs *ValueStore, ldName string, ln *Log
 
 	// ---- Phase 2c: GO FC group (GOOSE control blocks) ----
 	if elem, read, ok, err := registerGOGroup(srv, vs, ldName, ln); err != nil {
+		return err
+	} else if ok {
+		lnElems = append(lnElems, elem)
+		lnReads = append(lnReads, read)
+	}
+
+	// ---- Phase 2d: MS FC group (multicast SV control blocks) ----
+	if elem, read, ok, err := registerMSGroup(srv, vs, ldName, ln); err != nil {
 		return err
 	} else if ok {
 		lnElems = append(lnElems, elem)

@@ -222,6 +222,33 @@ type SMVControl struct {
 	SmpRate   uint32
 	NofASDU   uint32
 	Multicast bool
+
+	// SmpMod is the smpMod attribute ("SmpPerPeriod", "SmpPerSec" or
+	// "SecPerSmp"); empty when absent, which means SmpPerPeriod. Edition
+	// 1 (v1.7) files have no smpMod.
+	SmpMod string
+
+	// SecurityEnable is the securityEnable attribute ("None",
+	// "Signature" or "SignatureAndEncryption"); empty when absent or
+	// in Edition 1 files.
+	SecurityEnable string
+
+	// SmvOpts holds the optional fields of the SmvOpts element.
+	SmvOpts SmvOpts
+}
+
+// SmvOpts lists the optional ASDU fields a Sampled Values control block
+// sends. Flags an SCL edition does not define stay false.
+type SmvOpts struct {
+	RefreshTime        bool
+	SampleSynchronized bool
+	SampleRate         bool
+	DataSet            bool // Edition 2 and later
+	Security           bool
+	Timestamp          bool // Edition 2 and later
+	SynchSourceID      bool // 2007B4 and later
+	SampleMode         bool // 2007C5
+	DataRef            bool // Edition 1 only
 }
 
 // Log represents a log control block definition.
