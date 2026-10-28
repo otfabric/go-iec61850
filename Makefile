@@ -19,7 +19,7 @@ COMMIT     ?= $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "")
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS    := -s -w -X main.version=$(VERSION) -X main.tag=$(TAG) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
 
-.PHONY: help test test-race test-verbose vet lint fmt fuzz bench tidy check clean coverage coverage-html coverage-clean interop scl-generate scl-check-generate build build-all release-all install ai-print-all ai-print-test ai-print ai-diff ai-digest ai-context vuln
+.PHONY: coverage-gate help test test-race test-verbose vet lint fmt fuzz bench tidy check clean coverage coverage-html coverage-clean interop scl-generate scl-check-generate build build-all release-all install ai-print-all ai-print-test ai-print ai-diff ai-digest ai-context vuln
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "}; /^[a-zA-Z0-9_.-]+:.*## / {printf "%-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -66,6 +66,10 @@ coverage: ## Run tests with coverage profile and text summary
 	@echo "Running tests with coverage profile and text summary"
 	@go test -coverprofile=coverage.out $(PKGS)
 	@go tool cover -func=coverage.out | tee coverage.txt
+
+coverage-gate: ## Enforce >=90% statement coverage per package
+	@go test -covermode=atomic -coverprofile=coverage.out $(PKGS)
+	@go run scripts/covergate.go -min 90 coverage.out
 
 coverage-html: coverage ## Generate HTML coverage report
 	@echo "Generating HTML coverage report"
