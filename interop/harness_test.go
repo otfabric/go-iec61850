@@ -14,9 +14,10 @@
 //
 // Environment variables (all optional):
 //
-//	IEC61850_PEER_STACK       Stack behind the TestLibIEC* adapters: libiec61850 (default) or dscsystems
+//	IEC61850_PEER_STACK       Stack behind the TestLibIEC* adapters: libiec61850 (default), dscsystems or iec61850-rust
 //	LIBIEC61850_IMAGE         Docker image with libiec61850 adapters (default: mms-interop-libiec61850:local)
 //	DSCSYSTEMS_IMAGE          Docker image with dscsystems adapters (default: mms-interop-dscsystems:local)
+//	IEC61850RUST_IMAGE        Docker image with iec61850-rust adapters (default: mms-interop-iec61850-rust:local)
 //	IEC61850BEAN_IMAGE        Docker image with iec61850bean adapters (default: mms-interop-iec61850bean:local)
 //	IEC61850_SERVER_BINARY    Path to libiec61850-ied-server binary (skips Docker)
 //	IEC61850_CLIENT_BINARY    Path to libiec61850-ied-client binary (skips Docker)
@@ -52,6 +53,7 @@ import (
 const (
 	defaultLibIECImage = "mms-interop-libiec61850:local"
 	defaultDSCImage    = "mms-interop-dscsystems:local"
+	defaultRustImage   = "mms-interop-iec61850-rust:local"
 	defaultBeanImage   = "mms-interop-iec61850bean:local"
 	defaultFixtureDir  = "testdata"
 	iedReadyTimeout    = 60 * time.Second
@@ -259,6 +261,8 @@ func peer() peerStack {
 		return peerStack{"libiec61850", "LIBIEC61850_IMAGE", defaultLibIECImage}
 	case "dscsystems":
 		return peerStack{"dscsystems", "DSCSYSTEMS_IMAGE", defaultDSCImage}
+	case "iec61850-rust":
+		return peerStack{"iec61850-rust", "IEC61850RUST_IMAGE", defaultRustImage}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown IEC61850_PEER_STACK %q\n", s)
 		os.Exit(2)
@@ -370,6 +374,9 @@ func validateIEDAdapterMeta(t *testing.T, m iedAdapterReady, wantFixture, wantAd
 }
 
 type iedClientResult struct {
+	Event     string          `json:"event,omitempty"`
+	Code      string          `json:"code,omitempty"`
+	Reason    string          `json:"reason,omitempty"`
 	Operation string          `json:"operation"`
 	OK        bool            `json:"ok"`
 	Error     string          `json:"error,omitempty"`
@@ -380,6 +387,9 @@ type iedClientResult struct {
 }
 
 type iedReporterResult struct {
+	Event     string          `json:"event,omitempty"`
+	Code      string          `json:"code,omitempty"`
+	Reason    string          `json:"reason,omitempty"`
 	Operation string          `json:"operation"`
 	OK        bool            `json:"ok"`
 	Error     string          `json:"error,omitempty"`
@@ -393,6 +403,9 @@ type iedReporterResult struct {
 }
 
 type iedControllerResult struct {
+	Event     string          `json:"event,omitempty"`
+	Code      string          `json:"code,omitempty"`
+	Reason    string          `json:"reason,omitempty"`
 	Operation string          `json:"operation"`
 	OK        bool            `json:"ok"`
 	Error     string          `json:"error,omitempty"`
@@ -415,17 +428,39 @@ func collectIEDResults(t *testing.T, ch <-chan iedClientResult) []iedClientResul
 	return out
 }
 
-func findIEDResult(results []iedClientResult, op, target string) (iedClientResult, bool) {
+// unsupportedError is the result error (or error event code) of an
+// adapter step that the stack does not implement.
+const unsupportedError = "unsupported"
+
+// skipUnsupported skips the test when the adapter reported op (or the
+// whole command, as an error event) as unsupported by its stack.
+func skipUnsupported(t *testing.T, op, event, code, errText, reason string) {
+	t.Helper()
+	if (event == "error" && code == unsupportedError) || errText == unsupportedError {
+		if reason == "" {
+			reason = "not implemented by the stack"
+		}
+		t.Skipf("%s adapter: %s unsupported: %s", peer().name, op, reason)
+	}
+}
+
+func findIEDResult(t *testing.T, results []iedClientResult, op, target string) (iedClientResult, bool) {
+	t.Helper()
+	for _, r := range results {
+		skipUnsupported(t, op, r.Event, r.Code, "", r.Reason)
+	}
 	for _, r := range results {
 		if r.Operation == op && (target == "" || r.Target == target) {
+			skipUnsupported(t, op, "", "", r.Error, r.Reason)
 			return r, true
 		}
 	}
 	return iedClientResult{}, false
 }
 
-func findIEDOp(results []iedClientResult, op string) (iedClientResult, bool) {
-	return findIEDResult(results, op, "")
+func findIEDOp(t *testing.T, results []iedClientResult, op string) (iedClientResult, bool) {
+	t.Helper()
+	return findIEDResult(t, results, op, "")
 }
 
 func collectReporterResults(t *testing.T, ch <-chan iedReporterResult) []iedReporterResult {
@@ -438,9 +473,14 @@ func collectReporterResults(t *testing.T, ch <-chan iedReporterResult) []iedRepo
 	return out
 }
 
-func findReporterOp(results []iedReporterResult, op string) (iedReporterResult, bool) {
+func findReporterOp(t *testing.T, results []iedReporterResult, op string) (iedReporterResult, bool) {
+	t.Helper()
+	for _, r := range results {
+		skipUnsupported(t, op, r.Event, r.Code, "", r.Reason)
+	}
 	for _, r := range results {
 		if r.Operation == op {
+			skipUnsupported(t, op, "", "", r.Error, r.Reason)
 			return r, true
 		}
 	}
@@ -1349,9 +1389,14 @@ func collectControllerResults(t *testing.T, ch <-chan iedControllerResult) []ied
 }
 
 // findControllerOp returns the first result with the given operation.
-func findControllerOp(results []iedControllerResult, op string) (iedControllerResult, bool) {
+func findControllerOp(t *testing.T, results []iedControllerResult, op string) (iedControllerResult, bool) {
+	t.Helper()
+	for _, r := range results {
+		skipUnsupported(t, op, r.Event, r.Code, "", r.Reason)
+	}
 	for _, r := range results {
 		if r.Operation == op {
+			skipUnsupported(t, op, "", "", r.Error, r.Reason)
 			return r, true
 		}
 	}

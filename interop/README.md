@@ -12,14 +12,19 @@ This package contains interoperability tests for `go-iec61850` against independe
 | `iec61850bean_server_test.go` | IEC 61850 server | `iec61850bean-ied-client` | 2B |
 | `libiec61850_urcb_client_test.go` | URCB client | `libiec61850-ied-server` | 2C-a |
 | `libiec61850_urcb_server_test.go` | URCB server | `libiec61850-ied-reporter` | 2C-b |
-| `goose_test.go` | GOOSE publisher, subscriber, IED server GoCB | `libiec61850-goose-*`, `dscsystems-goose-*` | GOOSE |
+| `goose_test.go` | GOOSE publisher, subscriber, IED server GoCB | `libiec61850-goose-*`, `dscsystems-goose-*`, `iec61850-rust-goose-*` | GOOSE |
 
 The `TestLibIEC*` tests drive the libiec61850 adapters by default. With
 `IEC61850_PEER_STACK=dscsystems` the same tests drive the
 [dscsystems](https://github.com/dscsystems/go-iec61850) adapters, which
 implement the same commands, flags, fixture and JSON Lines contract under
-the `dscsystems-` prefix (CI runs both passes; the shared iec61850bean
-server is not started for the dscsystems pass).
+the `dscsystems-` prefix; `IEC61850_PEER_STACK=iec61850-rust` drives the
+[iec61850-rust](https://github.com/csp0924/iec61850-rust) adapters
+(`iec61850-rust-` prefix). CI runs one pass per stack; the shared
+iec61850bean server is only started for the libiec61850 pass. Steps an
+adapter reports as unsupported (`{"event":"error","code":"unsupported"}`
+or a step error `unsupported`) skip the test with the adapter's reason.
+The GOOSE tests run against every stack in turn.
 
 Tests start adapter containers, wait for the readiness event, exercise the `go-iec61850` API, and assert results. No pre-running containers are required.
 
@@ -52,7 +57,7 @@ docker network create -o com.docker.network.bridge.name=goose0 mms-interop-goose
 GOOSE_IFACE=goose0 make interop-goose
 ```
 
-The tests cover, against both libiec61850 and dscsystems:
+The tests cover, against libiec61850, dscsystems and iec61850-rust:
 
 - Go publisher → adapter subscriber: header fields, typed values of the
   `goose-v1` fixture (`values`, then `update` as stNum 2),
@@ -61,7 +66,7 @@ The tests cover, against both libiec61850 and dscsystems:
   SCL (`goose.ControlBlockFromSCL`) and validates datSet, goID, confRev
   and member types; VLAN tag, values, state change via `{"cmd":"set"}`,
   timeout after `{"cmd":"stop"}`.
-- Go IED server (`Server.EnableGOOSE`) → libiec61850 subscriber: a
+- Go IED server (`Server.EnableGOOSE`) → adapter subscriber: a
   `SetValue` on a dataset member produces a new state.
 
 On macOS (Docker Desktop) the bridge lives in the Linux VM; build the test
@@ -83,7 +88,8 @@ docker run --rm --network mms-interop-goose --cap-add NET_RAW \
 | `LIBIEC61850_IMAGE` | Docker image for the libiec61850 adapter | `mms-interop-libiec61850:local` |
 | `IEC61850BEAN_IMAGE` | Docker image for the iec61850bean adapter | `mms-interop-iec61850bean:local` |
 | `DSCSYSTEMS_IMAGE` | Docker image for the dscsystems adapter | `mms-interop-dscsystems:local` |
-| `IEC61850_PEER_STACK` | Stack behind the `TestLibIEC*` tests: `libiec61850` or `dscsystems` | `libiec61850` |
+| `IEC61850RUST_IMAGE` | Docker image for the iec61850-rust adapter | `mms-interop-iec61850-rust:local` |
+| `IEC61850_PEER_STACK` | Stack behind the `TestLibIEC*` tests: `libiec61850`, `dscsystems` or `iec61850-rust` | `libiec61850` |
 | `IEC61850_SKIP_BEAN` | Do not start the shared iec61850bean server | — |
 | `GOOSE_IFACE` | Interface on the GOOSE network (`goose0` on the host, `eth0` in a container); GOOSE tests skip when unset | — |
 | `GOOSE_NETWORK` | Docker network of the GOOSE adapters (created if missing) | `mms-interop-goose` |

@@ -512,7 +512,7 @@ go-iec61850/
 │   │                           Runs against live libiec61850 and iec61850bean
 │   │                           adapters from mms-interop
 │   ├── harness_test.go         Docker-based test harness
-│   ├── goose_test.go           GOOSE vs libiec61850 and dscsystems
+│   ├── goose_test.go           GOOSE vs libiec61850, dscsystems, iec61850-rust
 │   ├── libiec61850_*_test.go   Tests against libiec61850 adapters
 │   ├── iec61850bean_*_test.go  Tests against iec61850bean adapters
 │   ├── brcb_test.go            BRCB: EntryID, replay, purge, overflow
@@ -562,8 +562,9 @@ go-iec61850/
 ## Interoperability
 
 Client and server behaviour is tested bidirectionally against pinned
-`libiec61850`, `iec61850bean` and `dscsystems` adapters, and GOOSE against
-the libiec61850 and dscsystems publishers and subscribers, through the independently versioned
+`libiec61850`, `iec61850bean`, `dscsystems` and `iec61850-rust` adapters, and
+GOOSE against the libiec61850, dscsystems and iec61850-rust publishers and
+subscribers, through the independently versioned
 [mms-interop](https://github.com/otfabric/mms-interop) infrastructure.
 
 Tests live in `interop/` behind `-tags=interop` and cover:
@@ -571,7 +572,7 @@ basic operations, URCB/BRCB reporting, CDC reads (SPS, DPS, MV, BCR),
 quality and timestamp semantics, datasets, direct/SBO/SBOw controls,
 multi-client concurrency, and negative/error cases.
 
-**Scope of interoperability evidence:** three independent software stacks have
+**Scope of interoperability evidence:** four independent software stacks have
 been tested. Interoperability with physical IEDs (protection relays, meters,
 bay controllers, RTUs) has not yet been formally established.
 

@@ -11,6 +11,7 @@ mms-interop
   libiec61850 adapter images
   iec61850bean adapter images
   dscsystems adapter images
+  iec61850-rust adapter images
          |
     go-iec61850/interop/
       harness_test.go                lifecycle helpers, fixture loading
@@ -27,13 +28,15 @@ mms-interop
       sbo_test.go                    TestLibIEC*_Control_SBO* / TestBean*_Control_SBO* / TestGoServer_SBO_*
       sbow_test.go                   TestLibIEC*_Control_SBOw* / TestBean*_Control_SBOw* / TestGoServer_SBOw_*
       report_semantics_test.go       TestLibIEC*_URCB_GI* / *MultiMember*
-      goose_test.go                  TestGOOSE_* (libiec61850 and dscsystems)
+      goose_test.go                  TestGOOSE_* (libiec61850, dscsystems, iec61850-rust)
 ```
 
 The `TestLibIEC*` tests run twice in CI: against libiec61850 and, with
 `IEC61850_PEER_STACK=dscsystems`, against the
 [dscsystems](https://github.com/dscsystems/go-iec61850) adapters, which
-implement the same commands and JSON Lines contract (`dscsystems-` prefix).
+implement the same commands and JSON Lines contract (`dscsystems-` prefix),
+and with `IEC61850_PEER_STACK=iec61850-rust` against the iec61850-rust
+adapters. See the per-stack matrix in [COMPATIBILITY.md](COMPATIBILITY.md#per-stack-matrix).
 
 Each test:
 1. Starts the adapter container with `docker run`.
@@ -73,7 +76,8 @@ make interop
 | `LIBIEC61850_IMAGE` | libiec61850 adapter image | `mms-interop-libiec61850:local` |
 | `IEC61850BEAN_IMAGE` | iec61850bean adapter image | `mms-interop-iec61850bean:local` |
 | `DSCSYSTEMS_IMAGE` | dscsystems adapter image | `mms-interop-dscsystems:local` |
-| `IEC61850_PEER_STACK` | stack behind `TestLibIEC*`: `libiec61850` or `dscsystems` | `libiec61850` |
+| `IEC61850RUST_IMAGE` | iec61850-rust adapter image | `mms-interop-iec61850-rust:local` |
+| `IEC61850_PEER_STACK` | stack behind `TestLibIEC*`: `libiec61850`, `dscsystems` or `iec61850-rust` | `libiec61850` |
 | `IEC61850_SKIP_BEAN` | do not start the shared iec61850bean server | — |
 | `GOOSE_IFACE` | raw interface on the GOOSE Docker network (`goose0`); GOOSE tests skip when unset | — |
 | `GOOSE_NETWORK` | Docker network of the GOOSE adapters | `mms-interop-goose` |
@@ -184,16 +188,18 @@ integer, unsigned, float32, quality, UtcTime, Dbpos, nested structure)
 and `gcbBool`. Frames cross a Docker bridge (`goose0`) that the test opens
 with the `goose` raw transport.
 
-| Capability | Go→libIEC | libIEC→Go | Go→dscsystems | dscsystems→Go |
-|-----------|:---:|:---:|:---:|:---:|
-| Header: gocbRef, datSet, goID, APPID, dst, confRev, flags | ✓ | ✓ | ✓ | ✓ |
-| allData values of all member types (initial state) | ✓ | ✓ | ✓ | ✓ |
-| State change (stNum+1, sqNum 0, new values) | ✓ | ✓ | ✓ | ✓ |
-| Retransmission (sqNum increments) | ✓ | ✓ | ✓ | ✓ |
-| 802.1Q tag (priority 4, VID 0) | — | ✓ | — | ✓ |
-| Subscriber validation from SCL (datSet, goID, confRev, member types) | n/a | ✓ | n/a | ✓ |
-| Supervision timeout after publisher stops | ✓ | ✓ | ✓ | ✓ |
-| IED server GoCB: data change → new state | ✓ | n/a | — | n/a |
+Each row holds for libiec61850, dscsystems and iec61850-rust.
+
+| Capability | Go → stack | stack → Go |
+|-----------|:---:|:---:|
+| Header: gocbRef, datSet, goID, APPID, dst, confRev, flags | ✓ | ✓ |
+| allData values of all member types (initial state) | ✓ | ✓ |
+| State change (stNum+1, sqNum 0, new values) | ✓ | ✓ |
+| Retransmission (sqNum increments) | ✓ | ✓ |
+| 802.1Q tag (priority 4, VID 0) | — | ✓ |
+| Subscriber validation from SCL (datSet, goID, confRev, member types) | n/a | ✓ |
+| Supervision timeout after publisher stops | ✓ | ✓ |
+| IED server GoCB: data change → new state | ✓ | n/a |
 
 The publisher-side VLAN tag is not checked by the adapter subscribers:
 Linux strips it before an `AF_PACKET` socket sees the frame and neither

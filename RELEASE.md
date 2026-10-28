@@ -9,7 +9,7 @@
 
 GOOSE support (new `goose` package and server/client integration), a
 quality pass (per-package coverage gate, fuzz targets, chaos tests,
-dial retry) and a third interop stack (dscsystems/go-iec61850).
+dial retry) and two more interop stacks (dscsystems, iec61850-rust).
 
 ### Added
 
@@ -54,10 +54,12 @@ dial retry) and a third interop stack (dscsystems/go-iec61850).
 
 ### Interop
 
-- dscsystems adapters as third stack (`IEC61850_PEER_STACK=dscsystems`
-  runs the libiec61850 client/server suites against them).
-- GOOSE interop against libiec61850 and dscsystems, both directions, plus
-  Go IED server → libiec61850 subscriber (fixture `goose-v1`).
+- dscsystems and iec61850-rust adapters as further stacks:
+  `IEC61850_PEER_STACK` runs the client/server suites against libiec61850,
+  dscsystems or iec61850-rust; unsupported steps skip with a reason
+  (per-stack matrix in COMPATIBILITY.md).
+- GOOSE interop against libiec61850, dscsystems and iec61850-rust, both
+  directions, plus Go IED server → each subscriber (fixture `goose-v1`).
 
 ---
 

@@ -49,6 +49,7 @@ const (
 var gooseStacks = []peerStack{
 	{"libiec61850", "LIBIEC61850_IMAGE", defaultLibIECImage},
 	{"dscsystems", "DSCSYSTEMS_IMAGE", defaultDSCImage},
+	{"iec61850-rust", "IEC61850RUST_IMAGE", defaultRustImage},
 }
 
 // ---------------------------------------------------------------------------
@@ -295,6 +296,8 @@ type gooseEvent struct {
 	Values            []typedValue `json:"values"`
 	State             string       `json:"state"`
 	Error             string       `json:"error"`
+	Code              string       `json:"code"`
+	Reason            string       `json:"reason"`
 }
 
 type gooseAdapter struct {
@@ -399,6 +402,9 @@ func (a *gooseAdapter) next(t *testing.T, timeout time.Duration, pred func(goose
 				return gooseEvent{}, false
 			}
 			if ev.Event == "error" {
+				if ev.Code == unsupportedError {
+					t.Skipf("%s: unsupported: %s", a.name, ev.Reason)
+				}
 				t.Logf("%s: error event: %s", a.name, ev.Error)
 			}
 			if pred(ev) {
@@ -598,47 +604,51 @@ func TestGOOSE_GoSubscriber(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestGOOSE_GoServer publishes gcbBool from a running go-iec61850 server
-// (Server.EnableGOOSE) and checks that a data change reaches the
-// libiec61850 subscriber as a new state.
+// (Server.EnableGOOSE) and checks that a data change reaches each
+// adapter subscriber as a new state.
 func TestGOOSE_GoServer(t *testing.T) {
 	iface := gooseIface(t)
 	fix := loadGooseFixture(t)
-	_, fx := fix.controlBlock(t, "gcbBool")
-	sub := startGooseAdapter(t, gooseStacks[0], "subscriber", "--app-id", fx.AppID)
-	time.Sleep(time.Second)
+	for _, st := range gooseStacks {
+		t.Run(st.name, func(t *testing.T) {
+			_, fx := fix.controlBlock(t, "gcbBool")
+			sub := startGooseAdapter(t, st, "subscriber", "--app-id", fx.AppID)
+			time.Sleep(time.Second)
 
-	model, err := iec61850.NewServerModelFromSCL(fix.doc, "InteropIED", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv, err := iec61850.NewServer(model, iec61850.ServerOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer srv.Close()
-	tr, err := goose.Open(iface, goose.TransportOptions{})
-	if err != nil {
-		t.Fatalf("open %s: %v", iface, err)
-	}
-	if _, err := srv.EnableGOOSE(iec61850.GOOSEOptions{Transport: tr}); err != nil {
-		t.Fatal(err)
-	}
-	// The server's MMS domain is the bare LD inst, so is the gocbRef.
-	ref := "InteropLD/LLN0$GO$gcbBool"
-	isFrame := func(ev gooseEvent) bool { return ev.Event == "goose" && ev.GocbRef == ref }
-	first, ok := sub.next(t, gooseEventTimeout, isFrame)
-	if !ok {
-		t.Fatal("no frame from the Go server")
-	}
-	if first.AppID != fx.AppID || first.Dst != fx.Dst || first.GoID != fx.GoID || first.NumDatSetEntries != 2 {
-		t.Errorf("frame: %+v", first)
-	}
-	srv.SetValue(context.Background(), "InteropLD/GGIO1$ST$SPS1$stVal", mms.NewBoolean(true))
-	ev, ok := sub.next(t, gooseEventTimeout, func(e gooseEvent) bool { return isFrame(e) && e.StNum == first.StNum+1 })
-	if !ok {
-		t.Fatal("data change did not produce a new state")
-	}
-	if got := canonJSON(t, ev.Values[:1]); got != "b:true" {
-		t.Errorf("SPS1.stVal published as %s", got)
+			model, err := iec61850.NewServerModelFromSCL(fix.doc, "InteropIED", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			srv, err := iec61850.NewServer(model, iec61850.ServerOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer srv.Close()
+			tr, err := goose.Open(iface, goose.TransportOptions{})
+			if err != nil {
+				t.Fatalf("open %s: %v", iface, err)
+			}
+			if _, err := srv.EnableGOOSE(iec61850.GOOSEOptions{Transport: tr}); err != nil {
+				t.Fatal(err)
+			}
+			// The server's MMS domain is the bare LD inst, so is the gocbRef.
+			ref := "InteropLD/LLN0$GO$gcbBool"
+			isFrame := func(ev gooseEvent) bool { return ev.Event == "goose" && ev.GocbRef == ref }
+			first, ok := sub.next(t, gooseEventTimeout, isFrame)
+			if !ok {
+				t.Fatal("no frame from the Go server")
+			}
+			if first.AppID != fx.AppID || first.Dst != fx.Dst || first.GoID != fx.GoID || first.NumDatSetEntries != 2 {
+				t.Errorf("frame: %+v", first)
+			}
+			srv.SetValue(context.Background(), "InteropLD/GGIO1$ST$SPS1$stVal", mms.NewBoolean(true))
+			ev, ok := sub.next(t, gooseEventTimeout, func(e gooseEvent) bool { return isFrame(e) && e.StNum == first.StNum+1 })
+			if !ok {
+				t.Fatal("data change did not produce a new state")
+			}
+			if got := canonJSON(t, ev.Values[:1]); got != "b:true" {
+				t.Errorf("SPS1.stVal published as %s", got)
+			}
+		})
 	}
 }

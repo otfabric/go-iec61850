@@ -21,6 +21,7 @@ jobs:
       LIBIEC61850_IMAGE: ghcr.io/otfabric/mms-interop-libiec61850@sha256:9c29847dbd0523002b113a2fd1806cfb523bdd1610ae2e47f53b6156ec15fde7
       IEC61850BEAN_IMAGE: ghcr.io/otfabric/mms-interop-iec61850bean@sha256:d95a64e2cb801db24ce9836e9dacc1035bf5131056802e241e9de6546861c611
       DSCSYSTEMS_IMAGE: ghcr.io/otfabric/mms-interop-dscsystems:v0.3.0
+      IEC61850RUST_IMAGE: ghcr.io/otfabric/mms-interop-iec61850-rust:v0.3.0
 
     steps:
       - uses: actions/checkout@v4
@@ -39,9 +40,17 @@ jobs:
       - name: Run interop matrix
         run: make interop
 
+      # The TestLibIEC* suites run once per stack with the same adapter
+      # contract; steps a stack does not implement are skipped with the
+      # adapter's reason.
       - name: Run IEC 61850 interop against dscsystems
         env:
           IEC61850_PEER_STACK: dscsystems
+        run: go test -tags=interop -v -timeout 900s -run '^Test(LibIEC|GoServer)' ./interop/...
+
+      - name: Run IEC 61850 interop against iec61850-rust
+        env:
+          IEC61850_PEER_STACK: iec61850-rust
         run: go test -tags=interop -v -timeout 900s -run '^Test(LibIEC|GoServer)' ./interop/...
 
       # GOOSE is raw Ethernet: the adapters run on a Docker bridge network
@@ -53,6 +62,7 @@ jobs:
         run: |
           docker pull -q "$LIBIEC61850_IMAGE"
           docker pull -q "$DSCSYSTEMS_IMAGE"
+          docker pull -q "$IEC61850RUST_IMAGE"
           docker network create -o com.docker.network.bridge.name=goose0 mms-interop-goose
           docker run -d --rm --name goose-carrier --network mms-interop-goose --entrypoint sleep "$LIBIEC61850_IMAGE" infinity
           sleep 2

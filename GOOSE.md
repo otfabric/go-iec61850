@@ -297,7 +297,7 @@ Embed `goose.NopMetrics` to implement only some methods. See
   `GOOSE_TEST_IFACE` elsewhere, e.g. a macOS host-only bridge member
   interface.
 - Fuzz targets: `FuzzDecode`, `FuzzDecodeData`.
-- Interop: `interop/goose_test.go` against libiec61850 and dscsystems
+- Interop: `interop/goose_test.go` against libiec61850, dscsystems and iec61850-rust
   publishers and subscribers on a Docker bridge (see
   [INTEROP.md](INTEROP.md)).
 

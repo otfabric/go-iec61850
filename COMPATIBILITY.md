@@ -57,8 +57,43 @@ renames require a major release.
 
 ## Interoperability
 
-The library is tested against pinned Docker images of libiec61850,
-IEC61850bean and dscsystems/go-iec61850 (MMS and GOOSE). Interoperability with physical IEDs has not yet been formally
+The library is tested against pinned Docker images of
+[mms-interop](https://github.com/otfabric/mms-interop) adapters for four
+independent stacks. The `TestLibIEC*` suites in `interop/` are
+stack-parametrized (`IEC61850_PEER_STACK`); iec61850bean has its own
+`TestBean*` suites; the GOOSE suites run against every stack with GOOSE
+commands. A step the stack does not implement is answered by the adapter
+with `{"event":"error","code":"unsupported"}` (or an `unsupported` step
+error) and the test is skipped with that reason.
+
+### Per-stack matrix
+
+| Area | libiec61850 | iec61850bean | dscsystems | iec61850-rust |
+|---|:---:|:---:|:---:|:---:|
+| License | GPL-3.0 | Apache-2.0 | GPL-3.0 | MIT OR Apache-2.0 |
+| Go client → stack server: browse, read/write, datasets | ✓ | ✓ | ✓ | pending¹ |
+| Stack client → Go server: browse, read/write, datasets | ✓ | ✓ | ✓ | pending¹ |
+| URCB reporting (both directions) | ✓ | ✓ | ✓ | pending¹ |
+| Direct / SBO control | ✓ | ✓ | ✓ | pending¹ |
+| SBOw (enhanced security) | ✓ | skip² | ✓³ | pending¹ |
+| MMS file services | ✓ | ✓ | ✓ | unsupported⁴ |
+| GetNameList from the SCL model | ✓ | ✓ | ✓ | runtime registries⁴ |
+| GOOSE: Go publisher → stack subscriber | ✓ | n/a | ✓ | ✓ |
+| GOOSE: stack publisher → Go subscriber (SCL-validated) | ✓ | n/a | ✓ | ✓ |
+| GOOSE: Go IED server GoCB → stack subscriber | ✓ | n/a | ✓ | ✓ |
+| Sampled Values / R-GOOSE | n/a | n/a | n/a | unsupported⁴ |
+
+¹ The iec61850-rust IED/MMS adapters are part of mms-interop v0.3.0;
+results are recorded once its image is pinned.
+² iec61850bean's server does not expose `SBOw[CO]` as writable.
+³ Requires the server's CommandTermination (added in v1.1.0); the
+dscsystems controller waits for it.
+⁴ Not implemented by iec61850-rust: no MMS file services, no SVCB or
+R-GOOSE; its GetNameList answers from run-time registries rather than the
+SCL. Affected steps are skipped as unsupported.
+
+Stack-specific deviations are listed in mms-interop
+`fixtures/capabilities.json` (`knownLimitations`). Interoperability with physical IEDs has not yet been formally
 established. Corrections required by real-device behaviour may be made in patch
 releases.
 

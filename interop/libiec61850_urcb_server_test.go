@@ -51,7 +51,7 @@ func TestLibIECServer_URCB_DataChange(t *testing.T) {
 	results := collectReporterResults(t, ch)
 
 	// 1. get-rcb must succeed.
-	rcb, ok := findReporterOp(results, "get-rcb")
+	rcb, ok := findReporterOp(t, results, "get-rcb")
 	if !ok {
 		t.Error("get-rcb: not found in reporter output")
 	} else if !rcb.OK {
@@ -61,21 +61,21 @@ func TestLibIECServer_URCB_DataChange(t *testing.T) {
 	}
 
 	// 2. enable-rcb must succeed.
-	if en, ok := findReporterOp(results, "enable-rcb"); !ok {
+	if en, ok := findReporterOp(t, results, "enable-rcb"); !ok {
 		t.Error("enable-rcb: not found")
 	} else if !en.OK {
 		t.Errorf("enable-rcb: ok=false, error=%q", en.Error)
 	}
 
 	// 3. write must succeed.
-	if wr, ok := findReporterOp(results, "write"); !ok {
+	if wr, ok := findReporterOp(t, results, "write"); !ok {
 		t.Error("write: not found")
 	} else if !wr.OK {
 		t.Errorf("write: ok=false, error=%q", wr.Error)
 	}
 
 	// 4. receive-report is the core assertion.
-	rpt, ok := findReporterOp(results, "receive-report")
+	rpt, ok := findReporterOp(t, results, "receive-report")
 	if !ok {
 		t.Fatal("receive-report: not found — reporter timed out waiting for dchg report")
 	}
@@ -132,14 +132,14 @@ func TestLibIECServer_URCB_DataChange(t *testing.T) {
 	}
 
 	// 5. disable-rcb must succeed.
-	if dis, ok := findReporterOp(results, "disable-rcb"); !ok {
+	if dis, ok := findReporterOp(t, results, "disable-rcb"); !ok {
 		t.Error("disable-rcb: not found")
 	} else if !dis.OK {
 		t.Errorf("disable-rcb: ok=false, error=%q", dis.Error)
 	}
 
 	// 6. conclude must succeed.
-	if con, ok := findReporterOp(results, "conclude"); !ok {
+	if con, ok := findReporterOp(t, results, "conclude"); !ok {
 		t.Error("conclude: not found")
 	} else if !con.OK {
 		t.Errorf("conclude: ok=false, error=%q", con.Error)

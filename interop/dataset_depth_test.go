@@ -409,7 +409,7 @@ func TestLibIECServer_DS_GIReport(t *testing.T) {
 	results := collectReporterResults(t, ch)
 
 	// Locate the dchg report result.
-	r, ok := findReporterOp(results, "receive-report")
+	r, ok := findReporterOp(t, results, "receive-report")
 	if !ok {
 		t.Fatal("no 'receive-report' result in reporter output")
 	}
