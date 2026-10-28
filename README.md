@@ -738,7 +738,7 @@ go-iec61850/
 │   └── internal/demoied/       The demo IED (demo.icd) and test helpers
 │
 ├── interop/                    Interoperability tests (build tag: interop)
-│   │                           against mms-interop adapter images of
+│   │                           against iec61850-interop adapter images of
 │   │                           libiec61850, iec61850bean, dscsystems and
 │   │                           iec61850-rust (see interop/README.md)
 │   ├── harness_test.go         Docker-based harness, IEC61850_PEER_STACK
@@ -748,7 +748,7 @@ go-iec61850/
 │   │   cdc_, dataset_*, …      multi-client scenarios
 │   ├── goose_test.go           GOOSE publisher/subscriber/server
 │   ├── sv_test.go              SV publisher/subscriber/server, MSVCB over MMS
-│   └── testdata/               IED, GOOSE and SV fixtures (mms-interop)
+│   └── testdata/               IED, GOOSE and SV fixtures (iec61850-interop)
 │
 ├── scl/                        SCL parsing, validation, code generation
 │   ├── model.go                SCL Go type tree (SCD/ICD/CID/IID)
@@ -796,7 +796,7 @@ go-iec61850/
 ## Interoperability
 
 Every pull request runs the MMS client and server in both directions
-against pinned [mms-interop](https://github.com/otfabric/mms-interop)
+against pinned [iec61850-interop](https://github.com/otfabric/iec61850-interop)
 adapter images of four independent stacks — libiec61850 (C),
 iec61850bean (Java), dscsystems go-iec61850 (Go) and iec61850-rust — and
 GOOSE and Sampled Values against the libiec61850, dscsystems and

@@ -28,11 +28,11 @@ test: ## Run unit tests
 	@echo "Running unit tests"
 	@go test $(PKGS)
 
-interop: ## Run interoperability tests against mms-interop adapter images (-tags=interop).
+interop: ## Run interoperability tests against iec61850-interop adapter images (-tags=interop).
 	@echo "Running interoperability tests"
 	@go test -tags=interop -v -timeout 300s ./interop/...
 
-interop-goose: ## Run GOOSE and SV interop tests (Linux, root; needs the mms-interop-goose network, see interop/README.md)
+interop-goose: ## Run GOOSE and SV interop tests (Linux, root; needs the iec61850-interop-goose network, see interop/README.md)
 	@go test -exec 'sudo -E' -tags=interop -v -timeout 600s -run 'GOOSE|SV_' ./interop/...
 
 test-verbose: ## Run unit tests with verbose output

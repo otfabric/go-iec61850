@@ -4,11 +4,11 @@
 
 package interop
 
-// GOOSE interoperability tests (fixture goose-v1, mms-interop docs/goose.md).
+// GOOSE interoperability tests (fixture goose-v1, iec61850-interop docs/goose.md).
 //
 // GOOSE is raw Ethernet, so the test process and the adapter containers
 // must share a layer-2 segment: a user-defined Docker bridge network
-// (GOOSE_NETWORK, default mms-interop-goose, bridge device goose0) with the
+// (GOOSE_NETWORK, default iec61850-interop-goose, bridge device goose0) with the
 // test opening GOOSE_IFACE (goose0 on a Linux host, eth0 when the test
 // runs in a container on that network). Opening the interface needs
 // CAP_NET_RAW, e.g.:
@@ -40,7 +40,7 @@ import (
 )
 
 const (
-	defaultGooseNetwork = "mms-interop-goose"
+	defaultGooseNetwork = "iec61850-interop-goose"
 	gooseFixtureRev     = "goose-v1"
 	gooseEventTimeout   = 30 * time.Second
 )
