@@ -4,7 +4,7 @@
 
 package interop
 
-// Sampled Values interoperability tests (fixture sv-v1, mms-interop
+// Sampled Values interoperability tests (fixture sv-v1, iec61850-interop
 // docs/sv.md). SV is raw Ethernet like GOOSE and uses the same Docker
 // bridge and GOOSE_IFACE (see goose_test.go):
 //
@@ -38,12 +38,12 @@ const (
 
 // requireSVImages skips unless IEC61850_SV_FIXTURE names the fixture
 // revision the adapter images implement: the sv-* entrypoints and the
-// MSVCBs of the IED servers first ship in mms-interop v0.4.0, and older
+// MSVCBs of the IED servers first ship in iec61850-interop v0.4.0, and older
 // images would fail every SV test rather than skip.
 func requireSVImages(t *testing.T) {
 	t.Helper()
 	if v := os.Getenv("IEC61850_SV_FIXTURE"); v != svFixtureRev {
-		t.Skipf("IEC61850_SV_FIXTURE=%q, want %q: the adapter images predate the SV fixture (mms-interop v0.4.0)", v, svFixtureRev)
+		t.Skipf("IEC61850_SV_FIXTURE=%q, want %q: the adapter images predate the SV fixture (iec61850-interop v0.4.0)", v, svFixtureRev)
 	}
 }
 
@@ -56,12 +56,12 @@ var svStacks = gooseStacks
 var svcbOverMMS = map[string]bool{"libiec61850": true, "dscsystems": true}
 
 // svKnownLimitation returns why a stack subscriber cannot receive a
-// stream, or "" (mms-interop docs/sv.md, "Differences between the
+// stream, or "" (iec61850-interop docs/sv.md, "Differences between the
 // stacks"): libiec61850's SVReceiver drops ASDUs whose smpMod has two
 // octets, as IEC 61850-9-2 (INT16U) and the Go publisher send it.
 func svKnownLimitation(subscriber string, fx svFixtureStream) string {
 	if subscriber == "libiec61850" && fx.OptionalFields["smpMod"] {
-		return "libiec61850-sv-subscriber drops ASDUs with a two-octet smpMod (mms-interop docs/sv.md)"
+		return "libiec61850-sv-subscriber drops ASDUs with a two-octet smpMod (iec61850-interop docs/sv.md)"
 	}
 	return ""
 }

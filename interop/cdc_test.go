@@ -11,7 +11,7 @@
 //     the peer stack's (or iec61850bean's) IED server.
 //   - TestLibIECServer_CDC_* / TestBeanServer_CDC_*: the peer stack's (or
 //     iec61850bean's) ied-client → go-iec61850 server, asserting the
-//     client's read (fixed client script, mms-interop v0.4.1 and later).
+//     client's read (fixed client script, iec61850-interop v0.4.1 and later).
 //
 // Quality and timestamp round trips are in quality_timestamp_test.go.
 package interop
@@ -139,7 +139,7 @@ const (
 // clientCDCRead runs the ied-client adapter (the peer stack's, or
 // iec61850bean's when bean is set) against the Go IED server and returns
 // the value of its read of target. The fixed client scripts read both
-// CDC references since mms-interop v0.4.1.
+// CDC references since iec61850-interop v0.4.1.
 func clientCDCRead(t *testing.T, bean bool, target string) json.RawMessage {
 	t.Helper()
 	srv := startGoIEDServer(t)

@@ -1,13 +1,13 @@
 # go-iec61850 Interoperability
 
-`go-iec61850` decides which capabilities need verification. Tests in `interop/` consume the adapter images published by [mms-interop](https://github.com/otfabric/mms-interop) and assert `go-iec61850` behaviour against live, independent implementations.
+`go-iec61850` decides which capabilities need verification. Tests in `interop/` consume the adapter images published by [iec61850-interop](https://github.com/otfabric/iec61850-interop) and assert `go-iec61850` behaviour against live, independent implementations.
 
-New adapter commands or fixture capabilities are requested from `mms-interop` only when the required external operation does not yet exist there.
+New adapter commands or fixture capabilities are requested from `iec61850-interop` only when the required external operation does not yet exist there.
 
 ## Architecture
 
 ```
-mms-interop
+iec61850-interop
   libiec61850 adapter images
   iec61850bean adapter images
   dscsystems adapter images
@@ -52,24 +52,24 @@ No pre-running containers. No manual steps. Tests are gated behind `-tags=intero
 ## Running
 
 ```bash
-# Build adapter images locally (in mms-interop)
-cd ../mms-interop && make build
+# Build adapter images locally (in iec61850-interop)
+cd ../iec61850-interop && make build
 
 # Run against local images
-LIBIEC61850_IMAGE=mms-interop-libiec61850:local \
-IEC61850BEAN_IMAGE=mms-interop-iec61850bean:local \
+LIBIEC61850_IMAGE=iec61850-interop-libiec61850:local \
+IEC61850BEAN_IMAGE=iec61850-interop-iec61850bean:local \
 make interop
 
 # Run against published images (version tags)
-LIBIEC61850_IMAGE=ghcr.io/otfabric/mms-interop-libiec61850:v0.4.1 \
-IEC61850BEAN_IMAGE=ghcr.io/otfabric/mms-interop-iec61850bean:v0.4.1 \
+LIBIEC61850_IMAGE=ghcr.io/otfabric/iec61850-interop-libiec61850:v1.0.1 \
+IEC61850BEAN_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850bean:v1.0.1 \
 make interop
 
 # The same suites against another stack
 IEC61850_PEER_STACK=dscsystems \
-DSCSYSTEMS_IMAGE=ghcr.io/otfabric/mms-interop-dscsystems:v0.4.1 make interop
+DSCSYSTEMS_IMAGE=ghcr.io/otfabric/iec61850-interop-dscsystems:v1.0.1 make interop
 IEC61850_PEER_STACK=iec61850-rust \
-IEC61850RUST_IMAGE=ghcr.io/otfabric/mms-interop-iec61850-rust:v0.4.1 make interop
+IEC61850RUST_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850-rust:v1.0.1 make interop
 ```
 
 CI pins every image by digest in `.github/workflows/interop.yml`. GOOSE
@@ -80,15 +80,15 @@ and SV need a raw interface on a Docker network and root; see
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LIBIEC61850_IMAGE` | libiec61850 adapter image | `mms-interop-libiec61850:local` |
-| `IEC61850BEAN_IMAGE` | iec61850bean adapter image | `mms-interop-iec61850bean:local` |
-| `DSCSYSTEMS_IMAGE` | dscsystems adapter image | `mms-interop-dscsystems:local` |
-| `IEC61850RUST_IMAGE` | iec61850-rust adapter image | `mms-interop-iec61850-rust:local` |
+| `LIBIEC61850_IMAGE` | libiec61850 adapter image | `iec61850-interop-libiec61850:local` |
+| `IEC61850BEAN_IMAGE` | iec61850bean adapter image | `iec61850-interop-iec61850bean:local` |
+| `DSCSYSTEMS_IMAGE` | dscsystems adapter image | `iec61850-interop-dscsystems:local` |
+| `IEC61850RUST_IMAGE` | iec61850-rust adapter image | `iec61850-interop-iec61850-rust:local` |
 | `IEC61850_PEER_STACK` | stack behind `TestLibIEC*`: `libiec61850`, `dscsystems` or `iec61850-rust` | `libiec61850` |
 | `IEC61850_SKIP_BEAN` | do not start the shared iec61850bean server | — |
 | `GOOSE_IFACE` | raw interface on the GOOSE Docker network (`goose0`); GOOSE tests skip when unset | — |
-| `GOOSE_NETWORK` | Docker network of the GOOSE adapters | `mms-interop-goose` |
-| `IEC61850_FIXTURE_DIR` | Path to `fixtures/iec61850/` from mms-interop (`goose/` and `sv/` hold `fixtures/goose/` and `fixtures/sv/`) | `testdata/` |
+| `GOOSE_NETWORK` | Docker network of the GOOSE adapters | `iec61850-interop-goose` |
+| `IEC61850_FIXTURE_DIR` | Path to `fixtures/iec61850/` from iec61850-interop (`goose/` and `sv/` hold `fixtures/goose/` and `fixtures/sv/`) | `testdata/` |
 | `IEC61850_SV_FIXTURE` | SV fixture revision the images implement (`sv-v1`); SV tests skip unless it matches | — |
 
 ## Test naming
@@ -193,7 +193,7 @@ Sub-topics are appended after a second underscore: `TestLibIECClient_URCB_DataCh
 
 ### GOOSE
 
-Fixture `goose-v1` (mms-interop `fixtures/goose/`, copied to
+Fixture `goose-v1` (iec61850-interop `fixtures/goose/`, copied to
 `interop/testdata/goose/`): `gcbAll` with eight members (boolean,
 integer, unsigned, float32, quality, UtcTime, Dbpos, nested structure)
 and `gcbBool`. Frames cross a Docker bridge (`goose0`) that the test opens
@@ -218,8 +218,8 @@ adapter asks for auxiliary data; the Go subscriber does.
 
 ### Sampled Values
 
-Fixture `sv-v1` (mms-interop `fixtures/sv/`, copied to
-`interop/testdata/sv/`) with the v0.4.1 images: `MSVCB01` (9-2LE, 4000
+Fixture `sv-v1` (iec61850-interop `fixtures/sv/`, copied to
+`interop/testdata/sv/`) with the v1.0.1 images: `MSVCB01` (9-2LE, 4000
 samples/s, one ASDU per frame) and `MSVCB02` (generic dataset, 1000
 samples/s, four ASDUs per frame, every optional field). Each row holds
 for libiec61850, dscsystems and iec61850-rust unless noted.
@@ -444,8 +444,8 @@ Report delivery (InformationReports) and confirmed services (Read, Write, SetRCB
 
 ## Fixtures
 
-`interop/testdata/` holds synchronized copies of the canonical mms-interop
-fixtures, matching the pinned adapter images (mms-interop v0.4.1):
+`interop/testdata/` holds synchronized copies of the canonical iec61850-interop
+fixtures, matching the pinned adapter images (iec61850-interop v1.0.1):
 
 | Path | Fixture revision | Content |
 |---|---|---|

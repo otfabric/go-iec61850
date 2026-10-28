@@ -88,7 +88,7 @@ renames require a major release.
 ## Interoperability
 
 The library is tested against pinned Docker images of
-[mms-interop](https://github.com/otfabric/mms-interop) adapters for four
+[iec61850-interop](https://github.com/otfabric/iec61850-interop) adapters for four
 independent stacks. The `TestLibIEC*` suites in `interop/` are
 stack-parametrized (`IEC61850_PEER_STACK`); iec61850bean has its own
 `TestBean*` suites; the GOOSE suites run against every stack with GOOSE
@@ -98,7 +98,7 @@ error) and the test is skipped with that reason.
 
 ### Per-stack matrix
 
-Results with the mms-interop v0.4.1 images pinned in
+Results with the iec61850-interop v1.0.1 images pinned in
 `.github/workflows/interop.yml`.
 
 | Area | libiec61850 | iec61850bean | dscsystems | iec61850-rust |
@@ -141,7 +141,7 @@ is skipped for that subscriber; the 9-2LE stream is checked. The Go
 subscriber accepts both widths.
 ⁷ iec61850bean has no SV publisher, subscriber or SVCB model.
 
-Stack-specific deviations are listed in mms-interop
+Stack-specific deviations are listed in iec61850-interop
 `fixtures/capabilities.json` (`knownLimitations`). Interoperability with physical IEDs has not yet been formally
 established. Corrections required by real-device behaviour may be made in patch
 releases.
