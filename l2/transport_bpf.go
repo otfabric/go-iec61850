@@ -99,6 +99,7 @@ func openBPF() (int, error) {
 
 func ioctlPtr(fd int, req uint, p unsafe.Pointer) error {
 	// x/sys/unix exports no pointer-argument ioctl for the BPF structs.
+	//lint:ignore SA1019 no libSystem wrapper takes a pointer argument
 	if _, _, e := unix.Syscall(unix.SYS_IOCTL, //nolint:staticcheck // SA1019, see above
 		uintptr(fd), uintptr(req), uintptr(p)); e != 0 {
 		return e
