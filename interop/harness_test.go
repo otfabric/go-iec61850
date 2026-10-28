@@ -4,7 +4,7 @@
 
 // Package interop contains interoperability tests for go-iec61850.
 //
-// Tests start mms-interop adapter containers (or local binaries), wait for the
+// Tests start iec61850-interop adapter containers (or local binaries), wait for the
 // JSON readiness event, exercise the go-iec61850 API, and assert results.
 // They own the full lifecycle: start, wait, run, teardown.
 //
@@ -15,10 +15,10 @@
 // Environment variables (all optional):
 //
 //	IEC61850_PEER_STACK       Stack behind the TestLibIEC* adapters: libiec61850 (default), dscsystems or iec61850-rust
-//	LIBIEC61850_IMAGE         Docker image with libiec61850 adapters (default: mms-interop-libiec61850:local)
-//	DSCSYSTEMS_IMAGE          Docker image with dscsystems adapters (default: mms-interop-dscsystems:local)
-//	IEC61850RUST_IMAGE        Docker image with iec61850-rust adapters (default: mms-interop-iec61850-rust:local)
-//	IEC61850BEAN_IMAGE        Docker image with iec61850bean adapters (default: mms-interop-iec61850bean:local)
+//	LIBIEC61850_IMAGE         Docker image with libiec61850 adapters (default: iec61850-interop-libiec61850:local)
+//	DSCSYSTEMS_IMAGE          Docker image with dscsystems adapters (default: iec61850-interop-dscsystems:local)
+//	IEC61850RUST_IMAGE        Docker image with iec61850-rust adapters (default: iec61850-interop-iec61850-rust:local)
+//	IEC61850BEAN_IMAGE        Docker image with iec61850bean adapters (default: iec61850-interop-iec61850bean:local)
 //	IEC61850_SERVER_BINARY    Path to libiec61850-ied-server binary (skips Docker)
 //	IEC61850_CLIENT_BINARY    Path to libiec61850-ied-client binary (skips Docker)
 //	IEC61850_REPORTER_BINARY  Path to libiec61850-ied-reporter binary (skips Docker)
@@ -51,10 +51,10 @@ import (
 // ---------------------------------------------------------------------------
 
 const (
-	defaultLibIECImage = "mms-interop-libiec61850:local"
-	defaultDSCImage    = "mms-interop-dscsystems:local"
-	defaultRustImage   = "mms-interop-iec61850-rust:local"
-	defaultBeanImage   = "mms-interop-iec61850bean:local"
+	defaultLibIECImage = "iec61850-interop-libiec61850:local"
+	defaultDSCImage    = "iec61850-interop-dscsystems:local"
+	defaultRustImage   = "iec61850-interop-iec61850-rust:local"
+	defaultBeanImage   = "iec61850-interop-iec61850bean:local"
 	defaultFixtureDir  = "testdata"
 	iedReadyTimeout    = 60 * time.Second
 	iedClientTimeout   = 60 * time.Second
@@ -705,7 +705,7 @@ func startSharedBeanServer() (*iedServerHandle, error) {
 	if binary := os.Getenv("IEC61850BEAN_SERVER_BINARY"); binary != "" {
 		cmd = exec.CommandContext(cmdCtx, binary, "--port", port)
 	} else {
-		containerName = "mms-interop-bean-shared"
+		containerName = "iec61850-interop-bean-shared"
 		// Ensure any leftover container from a previous run is removed.
 		_ = exec.Command("docker", "rm", "-f", containerName).Run()
 		image := getEnvOr("IEC61850BEAN_IMAGE", defaultBeanImage)

@@ -1,6 +1,6 @@
 # go-iec61850 interoperability tests
 
-This package contains interoperability tests for `go-iec61850` against independent IEC 61850 implementations provided by [mms-interop](https://github.com/otfabric/mms-interop).
+This package contains interoperability tests for `go-iec61850` against independent IEC 61850 implementations provided by [iec61850-interop](https://github.com/otfabric/iec61850-interop).
 
 ## Test directions
 
@@ -32,17 +32,17 @@ Tests start adapter containers, wait for the readiness event, exercise the `go-i
 ## Running
 
 ```bash
-# Build the adapter images first (in mms-interop)
-cd ../mms-interop && make build
+# Build the adapter images first (in iec61850-interop)
+cd ../iec61850-interop && make build
 
 # Run all interop tests
-LIBIEC61850_IMAGE=mms-interop-libiec61850:local \
-IEC61850BEAN_IMAGE=mms-interop-iec61850bean:local \
+LIBIEC61850_IMAGE=iec61850-interop-libiec61850:local \
+IEC61850BEAN_IMAGE=iec61850-interop-iec61850bean:local \
 make interop
 
 # Or using published images
-LIBIEC61850_IMAGE=ghcr.io/otfabric/mms-interop-libiec61850:v0.1.0 \
-IEC61850BEAN_IMAGE=ghcr.io/otfabric/mms-interop-iec61850bean:v0.1.0 \
+LIBIEC61850_IMAGE=ghcr.io/otfabric/iec61850-interop-libiec61850:v0.4.1 \
+IEC61850BEAN_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850bean:v0.4.1 \
 make interop
 ```
 
@@ -50,11 +50,11 @@ make interop
 
 GOOSE is raw Ethernet (EtherType 0x88B8), so the test opens a network
 interface on the same layer-2 segment as the adapter containers: a Docker
-bridge network with the bridge device `goose0` (mms-interop `docs/goose.md`).
+bridge network with the bridge device `goose0` (iec61850-interop `docs/goose.md`).
 Opening the interface needs `CAP_NET_RAW`, hence `-exec 'sudo -E'`:
 
 ```bash
-docker network create -o com.docker.network.bridge.name=goose0 mms-interop-goose
+docker network create -o com.docker.network.bridge.name=goose0 iec61850-interop-goose
 GOOSE_IFACE=goose0 make interop-goose
 ```
 
@@ -75,7 +75,7 @@ binary for Linux and run it in a container on the network:
 
 ```bash
 CGO_ENABLED=0 GOOS=linux go test -c -tags=interop -o /tmp/interop.test ./interop
-docker run --rm --network mms-interop-goose --cap-add NET_RAW \
+docker run --rm --network iec61850-interop-goose --cap-add NET_RAW \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /tmp/interop.test:/interop.test:ro -v "$PWD/interop/testdata":/testdata:ro \
   -e GOOSE_IFACE=eth0 -e IEC61850_FIXTURE_DIR=/testdata -e IEC61850_SKIP_BEAN=1 \
@@ -87,8 +87,8 @@ docker run --rm --network mms-interop-goose --cap-add NET_RAW \
 SV is raw Ethernet too (EtherType 0x88BA) and uses the same network and
 `GOOSE_IFACE`; `make interop-goose` runs both (`-run 'GOOSE|SV_'`).
 The SV tests also need `IEC61850_SV_FIXTURE=sv-v1`, which says the
-pinned adapter images ship the SV fixture (mms-interop v0.4.0 or later).
-Fixture `sv-v1` (mms-interop `fixtures/sv/`, copied to
+pinned adapter images ship the SV fixture (iec61850-interop v0.4.0 or later).
+Fixture `sv-v1` (iec61850-interop `fixtures/sv/`, copied to
 `interop/testdata/sv/`): `MSVCB01` (9-2LE, 4000 samples/s, one ASDU per
 frame) and `MSVCB02` (generic dataset, 1000 samples/s, four ASDUs per
 frame, every optional field). Against libiec61850, dscsystems and
@@ -97,7 +97,7 @@ iec61850-rust:
 - Go publisher → adapter subscriber, both streams: header and optional
   fields, values, `UpdateSample` reaching the subscriber, and the
   adapter's `stats` (no duplicates, at most 1 % lost or reordered).
-  libiec61850's subscriber drops ASDUs with a two-octet smpMod (mms-interop
+  libiec61850's subscriber drops ASDUs with a two-octet smpMod (iec61850-interop
   `docs/sv.md`), so `MSVCB02` → libiec61850 is checked as a known
   limitation: it must still receive nothing.
 - Adapter publisher → Go subscriber, both streams: the subscription is
@@ -115,15 +115,15 @@ iec61850-rust:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LIBIEC61850_IMAGE` | Docker image for the libiec61850 adapter | `mms-interop-libiec61850:local` |
-| `IEC61850BEAN_IMAGE` | Docker image for the iec61850bean adapter | `mms-interop-iec61850bean:local` |
-| `DSCSYSTEMS_IMAGE` | Docker image for the dscsystems adapter | `mms-interop-dscsystems:local` |
-| `IEC61850RUST_IMAGE` | Docker image for the iec61850-rust adapter | `mms-interop-iec61850-rust:local` |
+| `LIBIEC61850_IMAGE` | Docker image for the libiec61850 adapter | `iec61850-interop-libiec61850:local` |
+| `IEC61850BEAN_IMAGE` | Docker image for the iec61850bean adapter | `iec61850-interop-iec61850bean:local` |
+| `DSCSYSTEMS_IMAGE` | Docker image for the dscsystems adapter | `iec61850-interop-dscsystems:local` |
+| `IEC61850RUST_IMAGE` | Docker image for the iec61850-rust adapter | `iec61850-interop-iec61850-rust:local` |
 | `IEC61850_PEER_STACK` | Stack behind the `TestLibIEC*` tests: `libiec61850`, `dscsystems` or `iec61850-rust` | `libiec61850` |
 | `IEC61850_SKIP_BEAN` | Do not start the shared iec61850bean server | — |
 | `GOOSE_IFACE` | Interface on the GOOSE network (`goose0` on the host, `eth0` in a container); GOOSE tests skip when unset | — |
-| `IEC61850_SV_FIXTURE` | SV fixture revision the adapter images implement (`sv-v1` from mms-interop v0.4.0); SV tests skip unless it matches | — |
-| `GOOSE_NETWORK` | Docker network of the GOOSE adapters (created if missing) | `mms-interop-goose` |
+| `IEC61850_SV_FIXTURE` | SV fixture revision the adapter images implement (`sv-v1` from iec61850-interop v0.4.0); SV tests skip unless it matches | — |
+| `GOOSE_NETWORK` | Docker network of the GOOSE adapters (created if missing) | `iec61850-interop-goose` |
 | `IEC61850_SERVER_BINARY` | Path to `libiec61850-ied-server` binary (skips Docker) | — |
 | `IEC61850_CLIENT_BINARY` | Path to `libiec61850-ied-client` binary (skips Docker) | — |
 | `IEC61850_REPORTER_BINARY` | Path to `libiec61850-ied-reporter` binary (skips Docker) | — |
@@ -133,4 +133,4 @@ iec61850-rust:
 
 `testdata/interop.icd` is the SCL model used by both the adapter servers and the `go-iec61850` server fixture. `testdata/values.json` contains the initial runtime values. `testdata/goose/` holds the `goose-v1` fixture (`interop-goose.cid`, `goose.json`). Both are versioned alongside the pinned adapter images.
 
-See [mms-interop](https://github.com/otfabric/mms-interop) for adapter image publication and the JSON Lines adapter contract.
+See [iec61850-interop](https://github.com/otfabric/iec61850-interop) for adapter image publication and the JSON Lines adapter contract.

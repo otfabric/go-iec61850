@@ -1,5 +1,31 @@
 # go-iec61850 Releases
 
+## v1.2.2
+
+**Date:** 2026-10-28
+**Previous release:** v1.2.1
+
+### Summary
+
+Interop suite moved to the renamed
+[iec61850-interop](https://github.com/otfabric/iec61850-interop) adapter
+images (v1.0.0); go-mms v1.2.2.
+
+### Changed
+
+- Dependency: `github.com/otfabric/go-mms` v1.2.2.
+- Interop: the adapter repository is renamed to
+  `otfabric/iec61850-interop`. CI pins the
+  `ghcr.io/otfabric/iec61850-interop-<stack>` v1.0.0 images; the local
+  default tags are `iec61850-interop-<stack>:local` and the GOOSE network
+  is `iec61850-interop-goose`. Environment variables and adapter command
+  names are unchanged.
+- Interop: the DPS (`GGIO1.DPS1.stVal`) and BCR (`MMTR1.TotVAh.actVal`)
+  reads assert the fixture values in every direction on all four stacks
+  (libiec61850, iec61850bean, dscsystems, iec61850-rust).
+
+---
+
 ## v1.2.1
 
 **Date:** 2026-10-28
