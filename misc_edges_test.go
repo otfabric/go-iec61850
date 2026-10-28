@@ -10,7 +10,7 @@ import (
 	"github.com/otfabric/go-mms"
 )
 
-// Tests targeting functions at 0% coverage to raise overall coverage.
+// Edge-case tests for small helpers.
 
 func TestHasDuplicateRefs(t *testing.T) {
 	r1, _ := ParseRef("LD/LN.DO.DA[ST]")

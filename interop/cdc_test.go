@@ -68,26 +68,90 @@ func TestGoServer_CDC_DPS_Read(t *testing.T) {
 	}
 }
 
-// TestLibIECClient_CDC_DPS_Read is skipped until mms-interop is rebuilt with
-// the DPS1 fixture addition. TODO: remove skip once adapters carry the new ICD.
+// cdcSeedGap lists adapter servers that do not apply the DPS1/TotVAh
+// initial values of values.json (mms-interop v0.3.0): they serve the type
+// defaults, so the read cannot be compared with the fixture.
+var cdcSeedGap = map[string]string{
+	"libiec61850":  "libiec61850-ied-server (mms-interop v0.3.0) does not seed GGIO1.DPS1.stVal / MMTR1.TotVAh.actVal from values.json",
+	"iec61850bean": "iec61850bean-ied-server (mms-interop v0.3.0) does not seed GGIO1.DPS1.stVal / MMTR1.TotVAh.actVal from values.json",
+}
+
+func skipCDCSeedGap(t *testing.T, stack string) {
+	t.Helper()
+	if reason, ok := cdcSeedGap[stack]; ok {
+		t.Skip(reason)
+	}
+}
+
+// checkDPS reads GGIO1.DPS1.stVal through c and compares the Dbpos with
+// the fixture.
+func checkDPS(t *testing.T, ctx context.Context, c *iec61850.Client) {
+	t.Helper()
+	ref, _ := iec61850.ParseRef("InteropLD/GGIO1.DPS1.stVal[ST]")
+	raw, err := c.ReadRaw(ctx, ref)
+	if err != nil {
+		t.Fatalf("ReadRaw DPS1.stVal: %v", err)
+	}
+	bits, ok := raw.BitString()
+	if n, _ := raw.BitStringLength(); !ok || n != 2 || len(bits) == 0 {
+		t.Fatalf("DPS1.stVal: want a 2-bit Dbpos bit-string, got %v", raw)
+	}
+	if got := int64(bits[0] >> 6); got != fixVal.DPS1StVal {
+		t.Errorf("DPS1.stVal: want %d, got %d", fixVal.DPS1StVal, got)
+	}
+}
+
+// checkBCR reads MMTR1.TotVAh.actVal through c and compares it with the
+// fixture. Stacks map INT32U to Unsigned; an Integer is accepted too.
+func checkBCR(t *testing.T, ctx context.Context, c *iec61850.Client) {
+	t.Helper()
+	ref, _ := iec61850.ParseRef("InteropLD/MMTR1.TotVAh.actVal[ST]")
+	raw, err := c.ReadRaw(ctx, ref)
+	if err != nil {
+		t.Fatalf("ReadRaw TotVAh.actVal: %v", err)
+	}
+	u, ok := raw.Uint64()
+	if !ok {
+		i, iok := raw.Int64()
+		if !iok || i < 0 {
+			t.Fatalf("TotVAh.actVal: want an integer, got %v", raw)
+		}
+		u = uint64(i)
+	}
+	if u != fixVal.BCRActVal {
+		t.Errorf("TotVAh.actVal: want %d, got %d", fixVal.BCRActVal, u)
+	}
+}
+
+// TestLibIECClient_CDC_DPS_Read reads DPS1 from the peer stack's server.
 func TestLibIECClient_CDC_DPS_Read(t *testing.T) {
-	t.Skip("TODO: requires mms-interop rebuild for DPS/BCR fixture")
+	skipCDCSeedGap(t, peer().name)
+	h := startIEDServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	c := h.dial(t, ctx)
+	defer c.Close(ctx)
+	checkDPS(t, ctx, c)
 }
 
-// TestBeanClient_CDC_DPS_Read is skipped until mms-interop is rebuilt.
+// TestBeanClient_CDC_DPS_Read reads DPS1 from the iec61850bean server.
 func TestBeanClient_CDC_DPS_Read(t *testing.T) {
-	t.Skip("TODO: requires mms-interop rebuild for DPS/BCR fixture")
+	skipCDCSeedGap(t, "iec61850bean")
+	h := startIEC61850BeanServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	c := h.dial(t, ctx)
+	defer c.Abort(context.Background())
+	checkDPS(t, ctx, c)
 }
 
-// TestLibIECServer_CDC_DPS_Read is skipped until mms-interop is rebuilt.
-func TestLibIECServer_CDC_DPS_Read(t *testing.T) {
-	t.Skip("TODO: requires mms-interop rebuild for DPS/BCR fixture")
-}
+// adapterClientNoCDC is the skip reason of the server-direction CDC
+// tests: the ied-client adapters run a fixed script without these reads.
+const adapterClientNoCDC = "the ied-client adapters have no DPS1/TotVAh read step; the Go server side is covered by TestGoServer_CDC_*"
 
-// TestBeanServer_CDC_DPS_Read is skipped until mms-interop is rebuilt.
-func TestBeanServer_CDC_DPS_Read(t *testing.T) {
-	t.Skip("TODO: requires mms-interop rebuild for DPS/BCR fixture")
-}
+func TestLibIECServer_CDC_DPS_Read(t *testing.T) { t.Skip(adapterClientNoCDC) }
+
+func TestBeanServer_CDC_DPS_Read(t *testing.T) { t.Skip(adapterClientNoCDC) }
 
 // ---------------------------------------------------------------------------
 // Phase C3 — BCR (Binary counter reading)
@@ -125,24 +189,30 @@ func TestGoServer_CDC_BCR_Read(t *testing.T) {
 	}
 }
 
-// TestLibIECClient_CDC_BCR_Read is skipped until mms-interop is rebuilt.
+// TestLibIECClient_CDC_BCR_Read reads TotVAh from the peer stack's server.
 func TestLibIECClient_CDC_BCR_Read(t *testing.T) {
-	t.Skip("TODO: requires mms-interop rebuild for DPS/BCR fixture")
+	skipCDCSeedGap(t, peer().name)
+	h := startIEDServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	c := h.dial(t, ctx)
+	defer c.Close(ctx)
+	checkBCR(t, ctx, c)
 }
 
-// TestBeanClient_CDC_BCR_Read is skipped until mms-interop is rebuilt.
+// TestBeanClient_CDC_BCR_Read reads TotVAh from the iec61850bean server.
 func TestBeanClient_CDC_BCR_Read(t *testing.T) {
-	t.Skip("TODO: requires mms-interop rebuild for DPS/BCR fixture")
+	skipCDCSeedGap(t, "iec61850bean")
+	h := startIEC61850BeanServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	c := h.dial(t, ctx)
+	defer c.Abort(context.Background())
+	checkBCR(t, ctx, c)
 }
 
-// TestLibIECServer_CDC_BCR_Read is skipped until mms-interop is rebuilt.
-func TestLibIECServer_CDC_BCR_Read(t *testing.T) {
-	t.Skip("TODO: requires mms-interop rebuild for DPS/BCR fixture")
-}
+func TestLibIECServer_CDC_BCR_Read(t *testing.T) { t.Skip(adapterClientNoCDC) }
 
-// TestBeanServer_CDC_BCR_Read is skipped until mms-interop is rebuilt.
-func TestBeanServer_CDC_BCR_Read(t *testing.T) {
-	t.Skip("TODO: requires mms-interop rebuild for DPS/BCR fixture")
-}
+func TestBeanServer_CDC_BCR_Read(t *testing.T) { t.Skip(adapterClientNoCDC) }
 
 // Phase C4 quality and timestamp tests are in quality_timestamp_test.go.

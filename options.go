@@ -41,6 +41,20 @@ type DialOptions struct {
 	// device names and prepends it when making MMS requests, so
 	// callers can always use the bare LD instance name.
 	IEDName string
+
+	// Retry controls how [Dial] retries a failed connection attempt; it
+	// is passed to [iso.WithRetry], so one attempt covers the TCP connect,
+	// the COTP handshake and the MMS association, and errors another
+	// attempt cannot fix (see [mms.IsRetryable]) are returned at once.
+	// Each retry is logged at Warn before RetryPolicy.OnRetry is called.
+	// The zero value makes a single attempt; [mms.DefaultRetryPolicy] is
+	// a sensible reconnect policy.
+	Retry mms.RetryPolicy
+
+	// Metrics, when non-nil, receives the MMS request and connection
+	// events of the client (see [mms.Metrics]). It is a convenience field
+	// equivalent to MMS.Metrics, which takes precedence when both are set.
+	Metrics mms.Metrics
 }
 
 // ClientOptions configures an IEC 61850 client created via [NewClient]

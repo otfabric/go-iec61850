@@ -10,6 +10,8 @@ New adapter commands or fixture capabilities are requested from `mms-interop` on
 mms-interop
   libiec61850 adapter images
   iec61850bean adapter images
+  dscsystems adapter images
+  iec61850-rust adapter images
          |
     go-iec61850/interop/
       harness_test.go                lifecycle helpers, fixture loading
@@ -26,7 +28,15 @@ mms-interop
       sbo_test.go                    TestLibIEC*_Control_SBO* / TestBean*_Control_SBO* / TestGoServer_SBO_*
       sbow_test.go                   TestLibIEC*_Control_SBOw* / TestBean*_Control_SBOw* / TestGoServer_SBOw_*
       report_semantics_test.go       TestLibIEC*_URCB_GI* / *MultiMember*
+      goose_test.go                  TestGOOSE_* (libiec61850, dscsystems, iec61850-rust)
 ```
+
+The `TestLibIEC*` tests run twice in CI: against libiec61850 and, with
+`IEC61850_PEER_STACK=dscsystems`, against the
+[dscsystems](https://github.com/dscsystems/go-iec61850) adapters, which
+implement the same commands and JSON Lines contract (`dscsystems-` prefix),
+and with `IEC61850_PEER_STACK=iec61850-rust` against the iec61850-rust
+adapters. See the per-stack matrix in [COMPATIBILITY.md](COMPATIBILITY.md#per-stack-matrix).
 
 Each test:
 1. Starts the adapter container with `docker run`.
@@ -65,7 +75,13 @@ make interop
 |----------|-------------|---------|
 | `LIBIEC61850_IMAGE` | libiec61850 adapter image | `mms-interop-libiec61850:local` |
 | `IEC61850BEAN_IMAGE` | iec61850bean adapter image | `mms-interop-iec61850bean:local` |
-| `IEC61850_FIXTURE_DIR` | Path to `fixtures/iec61850/` from mms-interop | `testdata/` |
+| `DSCSYSTEMS_IMAGE` | dscsystems adapter image | `mms-interop-dscsystems:local` |
+| `IEC61850RUST_IMAGE` | iec61850-rust adapter image | `mms-interop-iec61850-rust:local` |
+| `IEC61850_PEER_STACK` | stack behind `TestLibIEC*`: `libiec61850`, `dscsystems` or `iec61850-rust` | `libiec61850` |
+| `IEC61850_SKIP_BEAN` | do not start the shared iec61850bean server | — |
+| `GOOSE_IFACE` | raw interface on the GOOSE Docker network (`goose0`); GOOSE tests skip when unset | — |
+| `GOOSE_NETWORK` | Docker network of the GOOSE adapters | `mms-interop-goose` |
+| `IEC61850_FIXTURE_DIR` | Path to `fixtures/iec61850/` from mms-interop (`goose/` holds `fixtures/goose/`) | `testdata/` |
 
 ## Test naming
 
@@ -151,6 +167,7 @@ Sub-topics are appended after a second underscore: `TestLibIECClient_URCB_DataCh
 | SBO enhanced (SBOw) | ✓ | ✓ | ✓ | n/a¹ |
 | SBOw — operate without select rejected | n/a | n/a | n/a | ✓ |
 | SBOw — cancel clears select | n/a | n/a | n/a | ✓ |
+| SBOw — CommandTermination+ after operate | n/a | ✓² | n/a | — |
 | Cancel | ✓ | ✓ | — | — |
 
 **Notes:**
@@ -158,6 +175,35 @@ Sub-topics are appended after a second underscore: `TestLibIECClient_URCB_DataCh
 - BRCB is implemented and covered by Go client/server integration tests (`interop/brcb_*.go`). External BRCB interoperability against libiec61850 and IEC61850bean is not yet part of the adapter matrix.
 - `TestBeanClient_*` (go→bean) tests use `client.Abort` for teardown because iec61850bean's server does not respond to MMS Conclude requests.
 - ¹ `TestBeanClient_Control_SBOwOperate` is skipped: `iec61850bean` server does not expose `SBOw[CO]` as a writable MMS attribute; direct SBOw select is a known gap in that stack.
+- ² The dscsystems controller waits for CommandTermination after an
+  enhanced-security operate; the Go server sends it since v1.1.0.
+- The same libiec61850 columns also pass against dscsystems
+  (`IEC61850_PEER_STACK=dscsystems`).
+
+### GOOSE
+
+Fixture `goose-v1` (mms-interop `fixtures/goose/`, copied to
+`interop/testdata/goose/`): `gcbAll` with eight members (boolean,
+integer, unsigned, float32, quality, UtcTime, Dbpos, nested structure)
+and `gcbBool`. Frames cross a Docker bridge (`goose0`) that the test opens
+with the `goose` raw transport.
+
+Each row holds for libiec61850, dscsystems and iec61850-rust.
+
+| Capability | Go → stack | stack → Go |
+|-----------|:---:|:---:|
+| Header: gocbRef, datSet, goID, APPID, dst, confRev, flags | ✓ | ✓ |
+| allData values of all member types (initial state) | ✓ | ✓ |
+| State change (stNum+1, sqNum 0, new values) | ✓ | ✓ |
+| Retransmission (sqNum increments) | ✓ | ✓ |
+| 802.1Q tag (priority 4, VID 0) | — | ✓ |
+| Subscriber validation from SCL (datSet, goID, confRev, member types) | n/a | ✓ |
+| Supervision timeout after publisher stops | ✓ | ✓ |
+| IED server GoCB: data change → new state | ✓ | n/a |
+
+The publisher-side VLAN tag is not checked by the adapter subscribers:
+Linux strips it before an `AF_PACKET` socket sees the frame and neither
+adapter asks for auxiliary data; the Go subscriber does.
 
 ---
 
@@ -206,13 +252,15 @@ Sub-topics are appended after a second underscore: `TestLibIECClient_URCB_DataCh
 | SetFile | — | ✓ | |
 | DeleteFile | ✓ | ✓ | |
 | GetFileAttributeValues | ✓ | ✓ | |
-| SendGSSEMessage | — | — | GOOSE out of scope |
+| SendGOOSEMessage | ✓ | ✓ | [GOOSE.md](GOOSE.md); `goose` package and `Server.EnableGOOSE` |
+| GetGoCBValues / SetGoCBValues | ✓ | ✓ | `Client.GetGoCB` / `SetGoCB`; GoEna, GoID, DatSet writable |
+| SendGSSEMessage | — | — | GSSE not supported |
 | SendMSVMessage | — | — | Sampled Values out of scope |
 | Select | ✓ | ✓ | SBO normal |
 | SelectWithValue | ✓ | ✓ | SBOw enhanced |
 | Cancel | ✓ | ✓ | |
 | Operate | ✓ | ✓ | direct and SBO/SBOw |
-| CommandTermination | — | — | |
+| CommandTermination | — | ✓ | positive termination after enhanced-security operate |
 | TimeActivatedOperate | — | — | |
 
 ### Common Data Classes (IEC 61850-7-3)
@@ -259,10 +307,10 @@ Sub-topics are appended after a second underscore: `TestLibIECClient_URCB_DataCh
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| GOOSE | not implemented | out of scope |
+| GOOSE security (IEC 62351-6), fixed-offset encoding | not implemented | see [GOOSE.md](GOOSE.md#limitations) |
 | Sampled Values | not implemented | out of scope |
 | Dynamic dataset creation | not implemented | deferred |
-| CommandTermination | not implemented | deferred |
+| CommandTermination− (negative), client-side termination handling | not implemented | deferred |
 | TimeActivatedOperate | not implemented | deferred |
 | iec61850bean SBOw | known gap (upstream) | iec61850bean does not expose `SBOw[CO]` |
 | Edition 2.1 extensions | partial | not all 2007B4 features validated |

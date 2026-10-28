@@ -55,6 +55,10 @@ type LogicalNode struct {
 	// Logs are the log control block definitions for this LN.
 	Logs []LogDef
 
+	// GoCBs are the GOOSE control blocks defined under this LN. Only
+	// valid on LLN0.
+	GoCBs []GoCBDef
+
 	// SettingGroup, when non-nil, defines the setting group control
 	// block (SGCB) for this LN. Only valid on LLN0.
 	SettingGroup *SettingGroupDef
@@ -286,6 +290,20 @@ func validateLD(ld *LogicalDevice) []error {
 				if m.FC == "" {
 					errs = append(errs, fmt.Errorf("model: LD %q LN %q: dataset %q member %d: empty FC", ld.Name, ln.Name, ds.Name, k))
 				}
+			}
+		}
+
+		gocbNames := make(map[string]bool)
+		for _, g := range ln.GoCBs {
+			if g.Name == "" {
+				errs = append(errs, fmt.Errorf("model: LD %q LN %q: GoCB with empty name", ld.Name, ln.Name))
+			}
+			if gocbNames[g.Name] {
+				errs = append(errs, fmt.Errorf("model: LD %q LN %q: duplicate GoCB %q", ld.Name, ln.Name, g.Name))
+			}
+			gocbNames[g.Name] = true
+			if g.DatSet != "" && !dsNames[g.DatSet] {
+				errs = append(errs, fmt.Errorf("model: LD %q LN %q: GoCB %q references non-existent dataset %q", ld.Name, ln.Name, g.Name, g.DatSet))
 			}
 		}
 

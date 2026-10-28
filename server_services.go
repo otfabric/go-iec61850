@@ -64,6 +64,9 @@ type ServiceCapabilities struct {
 	// (runtime-enabled, not just present in the model).
 	Journals bool
 
+	// GOOSE is true when [Server.EnableGOOSE] has been called.
+	GOOSE bool
+
 	// Files is true when a [mms.FileProvider] was configured.
 	Files bool
 
@@ -100,6 +103,7 @@ func (s *Server) Capabilities() ServiceCapabilities {
 		Controls:      hasControls,
 		SettingGroups: s.sgEngine != nil,
 		Journals:      s.journalEngine != nil,
+		GOOSE:         s.gooseEngine != nil,
 		Files:         s.hasFileProvider,
 		Identify:      s.hasIdentity,
 	}
@@ -151,6 +155,9 @@ func (c ServiceCapabilities) String() string {
 	}
 	if c.Journals {
 		services = append(services, "journals")
+	}
+	if c.GOOSE {
+		services = append(services, "goose")
 	}
 	if c.Files {
 		services = append(services, "files")

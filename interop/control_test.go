@@ -39,7 +39,7 @@ func TestLibIECServer_Control_DirectOperate(t *testing.T) {
 	results := collectControllerResults(t, ch)
 
 	// 1. read-ctlmodel: value must be 1 (direct-with-normal-security).
-	r, ok := findControllerOp(results, "read-ctlmodel")
+	r, ok := findControllerOp(t, results, "read-ctlmodel")
 	if !ok {
 		t.Fatal("read-ctlmodel result missing")
 	}
@@ -55,7 +55,7 @@ func TestLibIECServer_Control_DirectOperate(t *testing.T) {
 	}
 
 	// 2. operate: must succeed and report ctlval=true.
-	r, ok = findControllerOp(results, "operate")
+	r, ok = findControllerOp(t, results, "operate")
 	if !ok {
 		t.Fatal("operate result missing")
 	}
@@ -67,7 +67,7 @@ func TestLibIECServer_Control_DirectOperate(t *testing.T) {
 	}
 
 	// 3. read-stval: must equal the commanded value (true).
-	r, ok = findControllerOp(results, "read-stval")
+	r, ok = findControllerOp(t, results, "read-stval")
 	if !ok {
 		t.Fatal("read-stval result missing")
 	}
@@ -83,7 +83,7 @@ func TestLibIECServer_Control_DirectOperate(t *testing.T) {
 	}
 
 	// 4. conclude: clean disconnect.
-	r, ok = findControllerOp(results, "conclude")
+	r, ok = findControllerOp(t, results, "conclude")
 	if !ok {
 		t.Fatal("conclude result missing")
 	}
@@ -169,7 +169,7 @@ func TestBeanServer_Control_DirectOperate(t *testing.T) {
 	results := collectControllerResults(t, ch)
 
 	// 1. read-ctlmodel.
-	r, ok := findControllerOp(results, "read-ctlmodel")
+	r, ok := findControllerOp(t, results, "read-ctlmodel")
 	if !ok {
 		t.Fatal("read-ctlmodel result missing")
 	}
@@ -185,7 +185,7 @@ func TestBeanServer_Control_DirectOperate(t *testing.T) {
 	}
 
 	// 2. operate.
-	r, ok = findControllerOp(results, "operate")
+	r, ok = findControllerOp(t, results, "operate")
 	if !ok {
 		t.Fatal("operate result missing")
 	}
@@ -197,7 +197,7 @@ func TestBeanServer_Control_DirectOperate(t *testing.T) {
 	}
 
 	// 3. read-stval.
-	r, ok = findControllerOp(results, "read-stval")
+	r, ok = findControllerOp(t, results, "read-stval")
 	if !ok {
 		t.Fatal("read-stval result missing")
 	}

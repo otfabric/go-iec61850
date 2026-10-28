@@ -70,11 +70,18 @@ type Server struct {
 	sgEngine           *SettingGroupEngine
 	journalEngine      *JournalEngine
 	mmsJournalProvider *MemoryJournalProvider
+	gooseEngine        *GOOSEEngine
 
 	hasFileProvider bool
 	hasIdentity     bool
 	onConnect       func(ConnectionEvent)
 	onDisconnect    func(ConnectionEvent)
+
+	// hookListeners are the listeners of the hook-routing accept loop,
+	// closed by Shutdown (mms.Server only tracks its own listeners).
+	lnMu          sync.Mutex
+	hookListeners map[mms.TransportListener]struct{}
+	shutdown      bool
 }
 
 // ServerOptions configures the IEC 61850 server.
@@ -111,6 +118,11 @@ type ServerOptions struct {
 	// fully closed regardless of how it ended).
 	OnDisconnect func(ConnectionEvent)
 
+	// Metrics, when non-nil, receives the MMS request and connection
+	// events of the server (see [mms.Metrics]). It is a convenience field
+	// equivalent to MMS.Metrics, which takes precedence when both are set.
+	Metrics mms.Metrics
+
 	// MMS holds the underlying MMS server options. Fields set here
 	// take precedence over convenience fields above (FileProvider,
 	// Authenticate) when both are set.
@@ -143,6 +155,9 @@ func NewServer(model *servermodel.Model, opts ServerOptions) (*Server, error) {
 
 	if opts.FileProvider != nil && mmsOpts.FileProvider == nil {
 		mmsOpts.FileProvider = opts.FileProvider
+	}
+	if opts.Metrics != nil && mmsOpts.Metrics == nil {
+		mmsOpts.Metrics = opts.Metrics
 	}
 	if opts.Authenticate != nil && mmsOpts.Authenticate == nil {
 		mmsOpts.Authenticate = opts.Authenticate
@@ -206,7 +221,7 @@ func (s *Server) ValueStore() *servermodel.ValueStore {
 }
 
 // SetValue updates a data attribute value in the store and notifies
-// the report engine (if enabled) of the change. The storeKey follows
+// the report and GOOSE engines (if enabled) of the change. The storeKey follows
 // the format "ldName/itemID" (see [servermodel.StoreKey]).
 //
 // This is the primary way to inject process values into a running
@@ -218,6 +233,9 @@ func (s *Server) SetValue(ctx context.Context, storeKey string, val *mms.Value) 
 	}
 	if s.journalEngine != nil {
 		s.journalEngine.LogValueWrite(ctx, storeKey, time.Now())
+	}
+	if s.gooseEngine != nil {
+		s.gooseEngine.notify(storeKey)
 	}
 }
 
@@ -267,6 +285,12 @@ func (s *Server) installWriteInterceptor() {
 			}
 		}
 
+		if s.gooseEngine != nil && strings.Contains(itemID, "$GO$") {
+			if handled, err := s.gooseEngine.handleWrite(storeKey, val); handled {
+				return true, err
+			}
+		}
+
 		// CO functional-constraint write — dispatch to the control handler.
 		// Store key format: "lnName$CO$doPath...$subAttr"
 		// e.g. "GGIO1$CO$SPCSO1$Oper" or "GGIO1$CO$SPCSO1$Oper$ctlVal"
@@ -280,6 +304,9 @@ func (s *Server) installWriteInterceptor() {
 		// before calling the interceptor, so only the notification is
 		// needed here. The engine compares prevValues with the new store
 		// contents to suppress reports for unchanged values.
+		if s.gooseEngine != nil {
+			s.gooseEngine.notify(storeKey)
+		}
 		if s.reportEngine != nil {
 			s.reportEngine.NotifyValueChanged(ctx, storeKey)
 			return true, nil
@@ -362,7 +389,8 @@ func parseSGCBStoreKey(itemID string) (subfield string, ok bool) {
 }
 
 // Close performs an orderly shutdown of the server's runtime engines.
-// It stops the report engine (integrity timers, delivery goroutines)
+// It stops the report engine (integrity timers, delivery goroutines),
+// the GOOSE engine (publishers)
 // and clears references to the journal and setting group engines.
 // Close is idempotent and safe to call multiple times.
 //
@@ -375,9 +403,30 @@ func (s *Server) Close() {
 	if s.reportEngine != nil {
 		s.reportEngine.Stop()
 	}
+	if s.gooseEngine != nil {
+		s.gooseEngine.Stop()
+	}
 	s.journalEngine = nil
 	s.sgEngine = nil
 	s.logger.Info("iec61850: server closed")
+}
+
+// Shutdown stops the server gracefully: it closes the listeners of
+// [Server.ListenAndServe], lets in-flight requests finish, concludes every
+// association (see [mms.Server.Shutdown]) and then stops the report and
+// GOOSE engines like [Server.Close]. When ctx ends first, the remaining
+// connections are aborted and ctx's error is returned.
+// ListenAndServe then returns [mms.ErrServerClosed].
+func (s *Server) Shutdown(ctx context.Context) error {
+	s.lnMu.Lock()
+	s.shutdown = true
+	for ln := range s.hookListeners {
+		_ = ln.Close()
+	}
+	s.lnMu.Unlock()
+	err := s.mms.Shutdown(ctx)
+	s.Close()
+	return err
 }
 
 // MMS returns the underlying MMS server for advanced configuration
@@ -422,13 +471,35 @@ func (s *Server) ListenAndServe(ctx context.Context, ln mms.TransportListener) e
 // listenAndServeWithHooks implements a custom accept loop that routes
 // through [Server.Serve] so connection hooks are invoked.
 func (s *Server) listenAndServeWithHooks(ctx context.Context, ln mms.TransportListener) error {
-	defer func() { _ = ln.Close() }()
+	s.lnMu.Lock()
+	if s.shutdown {
+		s.lnMu.Unlock()
+		_ = ln.Close()
+		return mms.ErrServerClosed
+	}
+	if s.hookListeners == nil {
+		s.hookListeners = make(map[mms.TransportListener]struct{})
+	}
+	s.hookListeners[ln] = struct{}{}
+	s.lnMu.Unlock()
+	defer func() {
+		s.lnMu.Lock()
+		delete(s.hookListeners, ln)
+		s.lnMu.Unlock()
+		_ = ln.Close()
+	}()
 
 	for {
 		transport, err := ln.Accept(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
+			}
+			s.lnMu.Lock()
+			down := s.shutdown
+			s.lnMu.Unlock()
+			if down {
+				return mms.ErrServerClosed
 			}
 			s.logger.Error("iec61850: accept error", "error", err)
 			return err

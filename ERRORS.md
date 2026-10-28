@@ -34,6 +34,13 @@ Use `errors.Is(err, iec61850.ErrXxx)` for category classification.
 | `ErrOperateFailed` | Operate step of a control failed |
 | `ErrCancelFailed` | Cancel step of a control failed |
 | `ErrNotControllable` | Target data object has no controllable model |
+| `ErrGOOSE` | Server GOOSE engine: already enabled, no transport, engine stopped, GoCB without address |
+
+The `goose` package has its own sentinels (`goose.ErrInvalidFrame`,
+`goose.ErrValidation`, `goose.ErrPermission`, ...) and typed errors
+(`*goose.DecodeError`, `*goose.ValidationError`, `*goose.ConfigError`,
+`*goose.EncodeError`, `*goose.TransportError`); see
+[GOOSE.md](GOOSE.md#errors).
 
 ---
 
@@ -167,7 +174,16 @@ Operations that communicate with the server can return errors from the MMS
 layer. These are wrapped and typically match one of:
 
 - `mms.ErrClosed` — transport connection lost
-- `mms.ServiceError` — server returned a ConfirmedError PDU
+- `mms.ErrInvokeTimeout` — `MMS.RequestTimeout` elapsed (also matches
+  `context.DeadlineExceeded`)
+- `mms.ErrAssociationFailed`, `mms.ErrConnectionRejected` —
+  [`Dial`](API.md#dialoptions) could not associate
+- `*mms.RejectError` — the peer answered with an MMS Reject PDU
+- `mms.ErrServerClosed` — returned by `Server.ListenAndServe` after
+  `Server.Shutdown`
+- `mms.ServiceError` — server returned a ConfirmedError PDU (`CodeName()`
+  names the class/code; since go-mms v1.2.0 `Error()` ends with it, so do
+  not compare error strings)
 - `mms.ProtocolError` — wire-level protocol violation
 - `mms.DecodeError` — received PDU could not be parsed
 

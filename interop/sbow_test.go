@@ -45,7 +45,7 @@ func TestLibIECServer_Control_SBOwOperate(t *testing.T) {
 	results := collectControllerResults(t, ch)
 
 	// 1. read-ctlmodel — must be 4 (sbo-with-enhanced-security).
-	r, ok := findControllerOp(results, "read-ctlmodel")
+	r, ok := findControllerOp(t, results, "read-ctlmodel")
 	if !ok {
 		t.Fatal("read-ctlmodel result missing")
 	}
@@ -54,7 +54,7 @@ func TestLibIECServer_Control_SBOwOperate(t *testing.T) {
 	}
 
 	// 2. select-with-value — must succeed.
-	r, ok = findControllerOp(results, "select-with-value")
+	r, ok = findControllerOp(t, results, "select-with-value")
 	if !ok {
 		t.Fatal("select-with-value result missing")
 	}
@@ -63,7 +63,7 @@ func TestLibIECServer_Control_SBOwOperate(t *testing.T) {
 	}
 
 	// 3. operate — must succeed.
-	r, ok = findControllerOp(results, "operate")
+	r, ok = findControllerOp(t, results, "operate")
 	if !ok {
 		t.Fatal("operate result missing")
 	}
@@ -75,7 +75,7 @@ func TestLibIECServer_Control_SBOwOperate(t *testing.T) {
 	}
 
 	// 4. read-stval — must reflect the operated value.
-	r, ok = findControllerOp(results, "read-stval")
+	r, ok = findControllerOp(t, results, "read-stval")
 	if !ok {
 		t.Fatal("read-stval result missing")
 	}
@@ -161,7 +161,7 @@ func TestBeanServer_Control_SBOwOperate(t *testing.T) {
 	results := collectControllerResults(t, ch)
 
 	// 1. read-ctlmodel.
-	r, ok := findControllerOp(results, "read-ctlmodel")
+	r, ok := findControllerOp(t, results, "read-ctlmodel")
 	if !ok {
 		t.Fatal("read-ctlmodel result missing")
 	}
@@ -170,7 +170,7 @@ func TestBeanServer_Control_SBOwOperate(t *testing.T) {
 	}
 
 	// 2. select-with-value.
-	r, ok = findControllerOp(results, "select-with-value")
+	r, ok = findControllerOp(t, results, "select-with-value")
 	if !ok {
 		t.Fatal("select-with-value result missing")
 	}
@@ -179,7 +179,7 @@ func TestBeanServer_Control_SBOwOperate(t *testing.T) {
 	}
 
 	// 3. operate.
-	r, ok = findControllerOp(results, "operate")
+	r, ok = findControllerOp(t, results, "operate")
 	if !ok {
 		t.Fatal("operate result missing")
 	}
@@ -188,7 +188,7 @@ func TestBeanServer_Control_SBOwOperate(t *testing.T) {
 	}
 
 	// 4. read-stval.
-	r, ok = findControllerOp(results, "read-stval")
+	r, ok = findControllerOp(t, results, "read-stval")
 	if !ok {
 		t.Fatal("read-stval result missing")
 	}

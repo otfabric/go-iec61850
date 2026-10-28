@@ -18,8 +18,13 @@ library at the current development stage.
   APIs (`Operate`, `Select`, `SelectWithValue`, `Cancel`), but
   command termination monitoring and timed-command scheduling are
   not yet fully implemented.
-- **No GOOSE/SV subscription** — only MMS InformationReport-based reports are
-  supported.
+- **No Sampled Values** — GOOSE is supported (see [GOOSE.md](GOOSE.md)),
+  SV (IEC 61850-9-2) is not.
+- **GOOSE limitations** — no IEC 62351-6 security, no fixed-offset
+  encoding, no GSSE or GOOSE management APDUs, no Windows raw transport;
+  received GOOSE values are not mapped into a server model (no `InRef`
+  binding). Raw sockets need `CAP_NET_RAW` (Linux) or `/dev/bpf*` access
+  (macOS/BSD).
 - **No automatic model discovery caching persistence** — the client cache is
   in-memory only and does not survive process restarts.
 - **Report subscription assumes single-client ownership** — the library does
@@ -41,8 +46,15 @@ library at the current development stage.
   implemented.
 - **Server-side control hooks are initial** — control handlers
   (`RegisterControl`) support select/operate/cancel dispatch with
-  SBO timeout tracking, but interlocking, synchrocheck, and
-  command termination are application-responsibility via callbacks.
+  SBO timeout tracking, but interlocking and synchrocheck are
+  application-responsibility via callbacks. After a successful
+  enhanced-security operate the server sends a positive
+  CommandTermination; negative termination (an operate that fails after
+  it was accepted) is not generated.
+- **GOOSE references use the server's MMS domain** — the server's MMS
+  domain is the bare LD instance, so GoCB references and the published
+  gocbRef/datSet are `LD/LLN0$...` rather than the IED-name-prefixed form
+  used by IEDs that name domains `<IED><LD>`.
 - **Setting group engine is initial** — the server supports SGCB
   registration, active/edit group selection, confirmation, handler
   callbacks, and automatic dispatch from MMS client writes. However,

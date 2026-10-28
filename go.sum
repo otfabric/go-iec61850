@@ -1,10 +1,10 @@
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
-github.com/otfabric/go-cotp v1.0.4 h1:HV/8f4SmrHj5BxbAfwTWdqcoar03j39TZl7huipFTu0=
-github.com/otfabric/go-cotp v1.0.4/go.mod h1:PAwJZD+yhoo4jbd9Iy6ZdAOeDBW0UxHNpr8VsysBSDg=
-github.com/otfabric/go-mms v1.1.0 h1:2m+r3NtHgttb86ZDGiCW9ZZ/QqXvfqaVmWyB8siyYac=
-github.com/otfabric/go-mms v1.1.0/go.mod h1:v+Apdy03bNsG7/dc31ZXs73WV5/R1cAYhmoFBLyIE0E=
+github.com/otfabric/go-cotp v1.1.0 h1:wMBwur0LnhMMstZYpw/r4iZfalEKcKJSA+XqfUjCGfQ=
+github.com/otfabric/go-cotp v1.1.0/go.mod h1:PAwJZD+yhoo4jbd9Iy6ZdAOeDBW0UxHNpr8VsysBSDg=
+github.com/otfabric/go-mms v1.2.1 h1:UVlznlXIxr1XpFl5kU4XB5F0Ox1JnKDV360d3pksuw8=
+github.com/otfabric/go-mms v1.2.1/go.mod h1:fkT3WO5SVRTfN0+U5pnv3UyykW91FBaSFhA4O04BguY=
 github.com/otfabric/go-tpkt v1.0.1 h1:utCnT14ndultnxPrrHf5txkT9U/EMzYBCoSjSeiAJRk=
 github.com/otfabric/go-tpkt v1.0.1/go.mod h1:9d3Ydrkerj5OTQQ9KZ12rgkpR4lU/9ULoTOYlijGsLE=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
@@ -15,4 +15,6 @@ github.com/spf13/pflag v1.0.9/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An
 go.yaml.in/yaml/v3 v3.0.4/go.mod h1:DhzuOOF2ATzADvBadXxruRBLzYTpT36CKvDb3+aBEFg=
 golang.org/x/sync v0.19.0 h1:vV+1eWNmZ5geRlYjzm2adRgW2/mcpevXNg50YZtPCE4=
 golang.org/x/sync v0.19.0/go.mod h1:9KTHXmSnoGruLpwFjVSX0lNNA75CykiMECbovNTZqGI=
+golang.org/x/sys v0.41.0 h1:Ivj+2Cp/ylzLiEU89QhWblYnOE9zerudt9Ftecq2C6k=
+golang.org/x/sys v0.41.0/go.mod h1:OgkHotnGiDImocRcuBABYBEXf8A9a87e/uXjp9XT3ks=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=

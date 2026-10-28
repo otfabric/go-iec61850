@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/otfabric/go-mms"
 	"github.com/otfabric/go-mms/transport/iso"
@@ -65,6 +66,9 @@ func dialMMSOptions(opts DialOptions, logger *slog.Logger) mms.DialOptions {
 	if mmsOpts.Logger == nil {
 		mmsOpts.Logger = logger
 	}
+	if mmsOpts.Metrics == nil {
+		mmsOpts.Metrics = opts.Metrics
+	}
 	return mmsOpts
 }
 
@@ -81,8 +85,17 @@ func Dial(ctx context.Context, addr string, opts DialOptions) (*Client, error) {
 
 	logger.Info("iec61850: dialing", "addr", addr)
 
+	retry := opts.Retry
+	userOnRetry := retry.OnRetry
+	retry.OnRetry = func(attempt int, err error, d time.Duration) {
+		logger.Warn("iec61850: dial failed, retrying", "addr", addr, "attempt", attempt, "backoff", d, "error", err)
+		if userOnRetry != nil {
+			userOnRetry(attempt, err, d)
+		}
+	}
 	mmsClient, err := iso.Dial(ctx, addr,
 		iso.WithClientDialOptions(dialMMSOptions(opts, logger)),
+		iso.WithRetry(retry),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("iec61850: dial %s: %w", addr, err)

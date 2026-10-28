@@ -266,6 +266,12 @@ func registerLN(srv *mms.Server, vs *ValueStore, ldName string, ln *LogicalNode)
 		}
 	}
 
+	for i := range ln.GoCBs {
+		if err := registerGoCB(srv, vs, ldName, ln.Name, &ln.GoCBs[i]); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -451,6 +457,14 @@ func registerLNHierarchy(srv *mms.Server, vs *ValueStore, ldName string, ln *Log
 		}); err != nil {
 			return fmt.Errorf("register RCB FC group %s: %w", fcItemID, err)
 		}
+	}
+
+	// ---- Phase 2c: GO FC group (GOOSE control blocks) ----
+	if elem, read, ok, err := registerGOGroup(srv, vs, ldName, ln); err != nil {
+		return err
+	} else if ok {
+		lnElems = append(lnElems, elem)
+		lnReads = append(lnReads, read)
 	}
 
 	// Register LN variable (bare name)

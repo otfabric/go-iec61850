@@ -84,6 +84,7 @@ Logging is integrated across all runtime subsystems:
 | Server | Server startup, connection handling, identify/status |
 | Report engine | RCB enable/disable, report generation, buffer management |
 | Journal engine | Entry creation, query results, overflow |
+| GOOSE | Publisher start/stop and send failures, subscriber stream state changes and validation failures, GoCB enable/disable and writes |
 
 ## SCL diagnostics
 
@@ -94,9 +95,30 @@ values with severity, code, path, and message fields. See the
 
 ## Metrics
 
-The library does not currently emit metrics (counters, gauges, histograms).
-Applications that need metrics can instrument at the boundary by wrapping
-Client methods or processing log output.
+GOOSE publishers and subscribers report to a `goose.Metrics`
+implementation (`PublisherConfig.Metrics`, `SubscriberConfig.Metrics`,
+`GOOSEOptions.Metrics` for the server engine):
+
+| Method | Called when |
+|--------|-------------|
+| `FrameSent(gocbRef, retransmission)` | a frame was put on the wire |
+| `SendError(gocbRef, err)` | the transport rejected a frame |
+| `FrameReceived(gocbRef)` | a GOOSE frame was decoded |
+| `FrameDropped(reason)` | a frame was dropped: `decode`, `simulation`, `filtered` |
+| `Event(gocbRef, kind, dropped)` | a subscription event was produced (dropped when the queue was full) |
+
+Embed `goose.NopMetrics` to implement a subset; a nil `Metrics` costs
+nothing. Adapters to Prometheus or OpenTelemetry are left to the
+application. Publisher and subscriber state is also available as
+snapshots (`Publisher.State`, `Subscription.Supervision`).
+
+The MMS client and server report to an `mms.Metrics` implementation
+(go-mms v1.2.0+) set with `DialOptions.Metrics` / `ServerOptions.Metrics`
+(or `MMS.Metrics`, which takes precedence): `ObserveRequest` once per
+confirmed request with service, duration and error, `ObserveConnection`
+when an association is established, rejected or ends. Embed
+`mms.NopMetrics` to implement a subset. Dial retries are logged at Warn
+(`iec61850: dial failed, retrying` with `attempt`, `backoff`, `error`).
 
 ## Tracing
 

@@ -184,7 +184,9 @@ func TestServerOptions_ConnectionHooks(t *testing.T) {
 	}
 	_ = mmsClient.Close(ctx)
 
-	<-done
+	if err := <-done; err != nil {
+		t.Logf("server returned: %v", err)
+	}
 
 	if got := connectCount.Load(); got != 1 {
 		t.Errorf("OnConnect called %d times, want 1", got)
