@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/otfabric/go-iec61850/scl"
+	"github.com/otfabric/go-iec61850/scl/index"
 )
 
 // FromSCL builds a server [Model] from the first Server element found
@@ -37,9 +38,10 @@ func FromSCL(s *scl.SCL, iedName, apName string) (*Model, error) {
 		return nil, fmt.Errorf("servermodel: no Server in IED %q", iedName)
 	}
 
-	dotIdx := indexDOTypes(s)
-	datIdx := indexDATypes(s)
-	enumIdx := indexEnumTypes(s)
+	// Type templates by ID. Duplicate IDs (last one wins) are reported
+	// by scl/validate, not here.
+	tmpl, _ := index.Build(s)
+	dotIdx, datIdx, enumIdx := tmpl.DOTypes, tmpl.DATypes, tmpl.EnumTypes
 
 	m := &Model{}
 	var warnings []string
@@ -109,33 +111,6 @@ func gseIndex(s *scl.SCL, iedName, apName string) (map[string]*scl.GSEAddress, m
 		}
 	}
 	return idx, smv
-}
-
-func indexDOTypes(s *scl.SCL) map[string]*scl.DOType {
-	idx := make(map[string]*scl.DOType, len(s.DataTypeTemplates.DOTypes))
-	for i := range s.DataTypeTemplates.DOTypes {
-		dot := &s.DataTypeTemplates.DOTypes[i]
-		idx[dot.ID] = dot
-	}
-	return idx
-}
-
-func indexDATypes(s *scl.SCL) map[string]*scl.DAType {
-	idx := make(map[string]*scl.DAType, len(s.DataTypeTemplates.DATypes))
-	for i := range s.DataTypeTemplates.DATypes {
-		dat := &s.DataTypeTemplates.DATypes[i]
-		idx[dat.ID] = dat
-	}
-	return idx
-}
-
-func indexEnumTypes(s *scl.SCL) map[string]*scl.EnumType {
-	idx := make(map[string]*scl.EnumType, len(s.DataTypeTemplates.EnumTypes))
-	for i := range s.DataTypeTemplates.EnumTypes {
-		et := &s.DataTypeTemplates.EnumTypes[i]
-		idx[et.ID] = et
-	}
-	return idx
 }
 
 func convertLD(s *scl.SCL, sclLD *scl.LDevice, dotIdx map[string]*scl.DOType, datIdx map[string]*scl.DAType, enumIdx map[string]*scl.EnumType, gse map[string]*scl.GSEAddress, smv map[string]*scl.SMVAddress, warnings *[]string) (*LogicalDevice, error) {
