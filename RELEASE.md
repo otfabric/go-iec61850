@@ -77,6 +77,8 @@ GOOSE and SV.
   and the transport sentinels are shared with `l2`. Code using them by
   name compiles unchanged (verified with iec61850ctl v0.3.0).
 
+---
+
 ## v1.1.0
 
 **Date:** 2026-10-28
