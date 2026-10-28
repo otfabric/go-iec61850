@@ -61,15 +61,20 @@ IEC61850BEAN_IMAGE=mms-interop-iec61850bean:local \
 make interop
 
 # Run against published images (version tags)
-LIBIEC61850_IMAGE=ghcr.io/otfabric/mms-interop-libiec61850:v0.1.0 \
-IEC61850BEAN_IMAGE=ghcr.io/otfabric/mms-interop-iec61850bean:v0.1.0 \
+LIBIEC61850_IMAGE=ghcr.io/otfabric/mms-interop-libiec61850:v0.4.0 \
+IEC61850BEAN_IMAGE=ghcr.io/otfabric/mms-interop-iec61850bean:v0.4.0 \
 make interop
 
-# CI — digest pinned
-LIBIEC61850_IMAGE=ghcr.io/otfabric/mms-interop-libiec61850@sha256:<digest> \
-IEC61850BEAN_IMAGE=ghcr.io/otfabric/mms-interop-iec61850bean@sha256:<digest> \
-make interop
+# The same suites against another stack
+IEC61850_PEER_STACK=dscsystems \
+DSCSYSTEMS_IMAGE=ghcr.io/otfabric/mms-interop-dscsystems:v0.4.0 make interop
+IEC61850_PEER_STACK=iec61850-rust \
+IEC61850RUST_IMAGE=ghcr.io/otfabric/mms-interop-iec61850-rust:v0.4.0 make interop
 ```
+
+CI pins every image by digest in `.github/workflows/interop.yml`. GOOSE
+and SV need a raw interface on a Docker network and root; see
+[interop/README.md](interop/README.md) and `make interop-goose`.
 
 ## Environment variables
 
@@ -83,7 +88,8 @@ make interop
 | `IEC61850_SKIP_BEAN` | do not start the shared iec61850bean server | — |
 | `GOOSE_IFACE` | raw interface on the GOOSE Docker network (`goose0`); GOOSE tests skip when unset | — |
 | `GOOSE_NETWORK` | Docker network of the GOOSE adapters | `mms-interop-goose` |
-| `IEC61850_FIXTURE_DIR` | Path to `fixtures/iec61850/` from mms-interop (`goose/` holds `fixtures/goose/`) | `testdata/` |
+| `IEC61850_FIXTURE_DIR` | Path to `fixtures/iec61850/` from mms-interop (`goose/` and `sv/` hold `fixtures/goose/` and `fixtures/sv/`) | `testdata/` |
+| `IEC61850_SV_FIXTURE` | SV fixture revision the images implement (`sv-v1`); SV tests skip unless it matches | — |
 
 ## Test naming
 
@@ -93,6 +99,9 @@ make interop
 | `TestLibIECServer_` | IEC 61850 server | `libiec61850-ied-client` |
 | `TestBeanClient_` | IEC 61850 client | `iec61850bean-ied-server` |
 | `TestBeanServer_` | IEC 61850 server | `iec61850bean-ied-client` |
+| `TestGoServer_` | IEC 61850 server | client of the peer stack |
+| `TestGOOSE_` | GOOSE publisher / subscriber / server | `<stack>-goose-subscriber` / `-goose-publisher` |
+| `TestSV_` | SV publisher / subscriber / server | `<stack>-sv-subscriber` / `-sv-publisher` |
 
 Sub-topics are appended after a second underscore: `TestLibIECClient_URCB_DataChange`.
 
@@ -433,135 +442,16 @@ Report delivery (InformationReports) and confirmed services (Read, Write, SetRCB
 
 ---
 
-## Roadmap
-
-Phases are driven by `go-iec61850` implementation priorities. Adapter infrastructure is requested from `mms-interop` only when a required command or fixture capability is absent.
-
-### Phase 2D — URCB parity with iec61850bean ✅
-
-Prove that reporting works across both independent IEC 61850 stacks.
-
-**Direction 1:** go-iec61850 client → iec61850bean IED server ✅
-
-- Subscribe to `urcb01` (ReserveURCB, AutoEnable).
-- Write `GGIO1.SPS1.stVal` to trigger dchg.
-- Receive and validate: RptID, SeqNum, Inclusion[0]=true/[1]=false, Value, ReasonDataChanged.
-- Close subscription; verify RptEna=false.
-
-**Direction 2:** iec61850bean IED client → go-iec61850 server ✅
-
-- iec61850bean client enables URCB, writes to trigger dchg, receives report via Java listener.
-- Adapter emits report fields as JSON Lines.
-- Go test validates.
-
-**Completed.** Both directions work. Key fixes required:
-1. `registerLNHierarchy` now includes RP/BR FC groups in LN TypeSpec so
-   `iec61850bean.retrieveModel()` discovers URCBs via `GetVariableAccessAttributes`.
-2. `buildRCBFields` now stores DatSet as fully-qualified `domain/LNName$dsName`
-   so `iec61850bean.processReport` can look up the DataSet from its `ServerModel`.
-3. SCL `ctlModel` DAI values use enum name strings (`direct-with-normal-security`)
-   rather than ordinals for compatibility with `iec61850bean` SCL parser.
-
-Scope: one URCB, one dataset, dchg, one changed member.
-
-**Adapter:** `iec61850bean-ied-reporter` command implemented in mms-interop.
-
-Test names: `TestBeanClient_URCB_*`, `TestBeanServer_URCB_*`.
-
----
-
-### Phase 2E — direct control ✅
-
-The ICD already contains `GGIO1.SPCSO1` (direct-control, `ctlModel=1`). No fixture change required.
-
-Four directions, all passing:
-
-| Test | Direction |
-|------|-----------|
-| `TestLibIECServer_Control_DirectOperate` | libiec61850 client → go server |
-| `TestLibIECClient_Control_DirectOperate` | go client → libiec61850 server |
-| `TestBeanServer_Control_DirectOperate`   | iec61850bean client → go server |
-| `TestBeanClient_Control_DirectOperate`   | go client → iec61850bean server |
-
----
-
-### Phase 2F — compact negative suite ✅
-
-One focused negative test per error category. Tests for Go→libIEC and Go→Bean directions use the shared adapter servers; Go-server-side (libIEC→Go, bean→Go) tests use `TestGoServer_Neg_*`.
-
-| Scenario | Test(s) |
-|----------|---------|
-| Unknown logical device | `TestLibIECClient_Neg_UnknownLD`, `TestBeanClient_Neg_UnknownLD`, `TestGoServer_Neg_UnknownLD` |
-| Unknown logical node | `TestLibIECClient_Neg_UnknownLN`, `TestBeanClient_Neg_UnknownLN`, `TestGoServer_Neg_UnknownLN` |
-| Unknown data object | `TestLibIECClient_Neg_UnknownDO`, `TestBeanClient_Neg_UnknownDO` |
-| Write read-only attribute | `TestLibIECClient_Neg_WriteReadOnly`, `TestBeanClient_Neg_WriteReadOnly`, `TestGoServer_Neg_WriteReadOnly` |
-| Invalid dataset reference | `TestLibIECClient_Neg_InvalidDataSet`, `TestBeanClient_Neg_InvalidDataSet`, `TestGoServer_Neg_InvalidDataSet` |
-| Double-reserve URCB | `TestLibIECClient_Neg_URCBDoubleReserve`, `TestBeanClient_Neg_URCBDoubleReserve` |
-
----
-
-### Phase 2G — dataset depth ✅
-
-| Scenario | Test(s) |
-|----------|---------|
-| Member discovery (ordered refs) | `TestLibIECClient_DS_MemberDiscovery`, `TestBeanClient_DS_MemberDiscovery` |
-| Mixed ST + MX members in one read | `TestLibIECClient_DS_ReadMixedFC`, `TestBeanClient_DS_ReadMixedFC` |
-| Multi-value dataset read | `TestLibIECClient_DS_ReadAllMembers`, `TestBeanClient_DS_ReadAllMembers` |
-| GI → full dataset in report | `TestLibIECServer_DS_GIReport` |
-| Two simultaneous writes → multi-member dchg | `TestLibIECServer_DS_MultiWrite` |
-
-Dynamic dataset creation deferred (ownership and lifecycle complexity).
-
----
-
-### Phase 2H — report semantics expansion ✅ (partial)
-
-**2H-a General interrogation** ✅ — `TestLibIECClient_URCB_GIReport`, `TestLibIECServer_URCB_GIReport`, `TestBeanServer_URCB_GIReport`.
-
-**2H-b Integrity** — configure short integrity period; receive periodic complete report; assert `ReasonIntegrity`. Not yet started.
-
-**2H-c Multiple data changes** ✅ — `TestLibIECServer_URCB_MultiMemberDchg`.
-
-**2H-d Buffered reporting** — separate phase; requires decisions on entry IDs, buffer time, reconnect, purge-buffer, overflow and replay-after-disconnect.
-
----
-
-### Phase 2I — SBO controls ✅
-
-Five tests covering SBO normal security (`ctlModel=2`, `GGIO1.SPCSO2`) in all four directions plus a negative case:
-
-| Test | Direction |
-|------|-----------|
-| `TestLibIECServer_Control_SBOOperate`   | libiec61850 client → go server |
-| `TestLibIECClient_Control_SBOOperate`   | go client → libiec61850 server |
-| `TestBeanServer_Control_SBOOperate`     | iec61850bean client → go server |
-| `TestBeanClient_Control_SBOOperate`     | go client → iec61850bean server |
-| `TestGoServer_SBO_OperateWithoutSelect` | operate rejected when no prior select |
-
-**Remaining (not yet tested):** SBO enhanced (SBOw / `ctlModel=4`), cancel, select timeout, wrong ctlNum, second-client contention.
-
----
-
-### Phase 2J — SBOw (enhanced security) controls ✅
-
-Select-before-operate with enhanced security (`ctlModel=4`, `GGIO1.SPCSO3`, `SelectWithValue`):
-
-| Test | Direction |
-|------|-----------|
-| `TestLibIECServer_Control_SBOwOperate`   | libiec61850 client → go server |
-| `TestLibIECClient_Control_SBOwOperate`   | go client → libiec61850 server |
-| `TestBeanServer_Control_SBOwOperate`     | iec61850bean client → go server |
-| `TestBeanClient_Control_SBOwOperate`     | _(skipped — known iec61850bean gap)_ |
-| `TestGoServer_SBOw_OperateWithoutSelect` | operate rejected when no prior SBOw select |
-| `TestGoServer_SBOw_CancelClearsSelect`   | select, cancel, then operate rejected |
-
-Key findings:
-- `ctlNum` must be identical across `SelectWithValue` and `Operate`; both the `libiec61850` and `go-iec61850` servers enforce this.
-- `libiec61850-ied-controller` performs select+operate atomically on the same `ControlObjectClient` instance to guarantee `ctlNum` consistency.
-- `iec61850bean` server does not expose `SBOw[CO]` as a writable MMS object; go→bean SBOw is a known gap.
-
----
-
 ## Fixtures
 
-`interop/testdata/interop.icd` and `interop/testdata/values.json` are synchronized copies of the canonical fixtures from mms-interop. They must be updated alongside the pinned adapter image version when the fixture contract changes.
+`interop/testdata/` holds synchronized copies of the canonical mms-interop
+fixtures, matching the pinned adapter images (mms-interop v0.4.0):
+
+| Path | Fixture revision | Content |
+|---|---|---|
+| `interop.icd`, `values.json` | `iec61850-v3` | IED model and initial values |
+| `goose/` | `goose-v1` | `interop-goose.cid`, `goose.json` (GoCBs `gcbAll`, `gcbBool`) |
+| `sv/` | `sv-v1` | `interop-sv.cid`, `sv.json` (MSVCB01 9-2LE, MSVCB02 generic) |
+
+Update them together with the image digests in
+`.github/workflows/interop.yml` when the fixture contract changes.

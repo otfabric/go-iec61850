@@ -139,6 +139,8 @@ sclparse validate --max-errors 10 station.scd # stop after 10 errors
 | `--json` | Emit diagnostics as JSON |
 | `--strict` | Treat warnings as errors (exit code 3) |
 | `--max-errors N` | Stop after N errors (0 = unlimited) |
+| `--warnings-as-errors` | Promote warnings to errors |
+| `--no-warnings` | Suppress warning output |
 
 Validation checks include:
 
@@ -295,6 +297,16 @@ List all data type templates: `LNodeType`, `DOType`, `DAType`, and `EnumType`.
 ```bash
 sclparse list-types station.scd
 sclparse list-types --json station.scd
+```
+
+---
+
+#### version
+
+Print the build version.
+
+```bash
+sclparse version
 ```
 
 ---
