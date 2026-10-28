@@ -547,7 +547,7 @@ func TestSubscriberFiltersAndSimulation(t *testing.T) {
 	// Non-GOOSE and undecodable frames.
 	var decodeErrs int
 	h.s.cfg.OnDecodeError = func([]byte, error) { decodeErrs++ }
-	h.s.HandleFrame(make([]byte, 60))                                                              // EtherType 0: ignored
+	h.s.HandleFrame(make([]byte, 60))                                                               // EtherType 0: ignored
 	h.s.HandleFrame([]byte{1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6, 0x88, 0xb8, 0, 1, 0, 9, 0, 0, 0, 0}) // bad
 	if decodeErrs != 1 {
 		t.Errorf("decode errors = %d", decodeErrs)

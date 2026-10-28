@@ -405,7 +405,7 @@ type stream struct {
 	gen      uint64
 	simSeen  bool
 	lastT    time.Time // T of the last accepted message
-	lastSent Status // last status reported via EventSupervision
+	lastSent Status    // last status reported via EventSupervision
 }
 
 // Events returns the event channel. It is closed by
