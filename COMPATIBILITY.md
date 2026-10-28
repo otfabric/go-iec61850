@@ -111,6 +111,7 @@ Results with the mms-interop v0.4.0 images pinned in
 | Direct / SBO control (both directions) | ✓ | ✓ | ✓ | ✓ |
 | SBOw (enhanced security) | ✓ | skip³ | ✓⁴ | ✓ |
 | CDC reads DPS (Dbpos) / BCR from the stack server | skip⁵ | skip⁵ | ✓ | ✓ |
+| CDC reads DPS / BCR by the stack client from the Go server | skip⁹ | skip⁹ | skip⁹ | skip⁹ |
 | MMS file services | ✓ | ✓ | ✓ | unsupported⁶ |
 | GetNameList from the SCL model | ✓ | ✓ | ✓ | run-time registries⁶ |
 | GOOSE: Go publisher → stack subscriber | ✓ | n/a | ✓ | ✓ |
@@ -143,6 +144,10 @@ libiec61850's own) sends, so the generic stream (MSVCB02, with smpMod)
 is skipped for that subscriber; the 9-2LE stream is checked. The Go
 subscriber accepts both widths.
 ⁸ iec61850bean has no SV publisher, subscriber or SVCB model.
+⁹ The ied-client adapters run a fixed script (`--host`/`--port` only)
+without a read of `GGIO1.DPS1.stVal` or `MMTR1.TotVAh.actVal`; the tests
+assert the read as soon as a script includes it. The Go server side is
+covered by `TestGoServer_CDC_*`.
 
 Stack-specific deviations are listed in mms-interop
 `fixtures/capabilities.json` (`knownLimitations`). Interoperability with physical IEDs has not yet been formally

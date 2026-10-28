@@ -775,7 +775,6 @@ go-iec61850/
 │
 ├── internal/
 │   ├── mapping/                IEC 61850 ↔ MMS name mapping utilities
-│   ├── sclindex/               Lightweight SCL cross-reference index
 │   └── servermodel/            Server-side MMS registration and value store
 │
 ├── scripts/covergate.go         Per-package coverage gate used by CI
