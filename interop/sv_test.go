@@ -399,7 +399,10 @@ func TestSV_GoPublisher(t *testing.T) {
 				ps := pub.State()
 				t.Logf("publisher %d samples (%d skipped, %d late); subscriber received %d, lost %d, duplicates %d, out of order %d",
 					ps.Samples, ps.Skipped, ps.Late, stats.Received, stats.Lost, stats.Duplicates, stats.OutOfOrder)
-				if stats.Received == 0 || stats.Duplicates != 0 || stats.Lost*100 > stats.Received || stats.OutOfOrder*100 > stats.Received {
+				// Samples the Go publisher skipped (it fell a whole sample
+				// behind schedule) were never sent: not the subscriber's loss.
+				lost := stats.Lost - min(stats.Lost, int64(ps.Skipped))
+				if stats.Received == 0 || stats.Duplicates != 0 || lost*100 > stats.Received || stats.OutOfOrder*100 > stats.Received {
 					t.Errorf("stats: %+v", stats)
 				}
 			})
@@ -521,6 +524,11 @@ func TestSV_GoSubscriber(t *testing.T) {
 				next(func(s sv.Sample) bool { return decodeCanon(t, cb, s.ASDU.Sample) == want })
 
 				time.Sleep(2 * time.Second)
+				// The rate drops to 0 on the timeout after the stop: sample it now.
+				var rate float64
+				if st := sub.Stats(); len(st) == 1 {
+					rate = st[0].Rate
+				}
 				pub.send(t, map[string]any{"cmd": "stop"})
 				stopped, ok := pub.next(t, 10*time.Second, func(e svEvent) bool { return e.Event == "stopped" })
 				deadline := time.After(5 * time.Second)
@@ -542,15 +550,15 @@ func TestSV_GoSubscriber(t *testing.T) {
 				}
 				st0 := stats[0]
 				t.Logf("publisher stopped after %d samples; Go subscriber %d ASDUs, lost %d, duplicates %d, out of order %d, rate %.0f/s",
-					stopped.Samples, st0.ASDUs, st0.Lost, st0.Duplicates, st0.OutOfOrder, st0.Rate)
+					stopped.Samples, st0.ASDUs, st0.Lost, st0.Duplicates, st0.OutOfOrder, rate)
 				if st0.Invalid != 0 || st0.Duplicates != 0 || st0.Lost*100 > st0.ASDUs || st0.OutOfOrder*100 > st0.ASDUs {
 					t.Errorf("stats: %+v", st0)
 				}
 				if ok && stopped.Samples > 0 && (st0.ASDUs+st0.Lost)*100 < uint64(stopped.Samples)*99 {
 					t.Errorf("received %d + lost %d of %d published samples", st0.ASDUs, st0.Lost, stopped.Samples)
 				}
-				if r := float64(fx.SamplesPerSecond); st0.Rate < 0.9*r || st0.Rate > 1.1*r {
-					t.Errorf("measured rate %.0f/s, want %.0f/s", st0.Rate, r)
+				if r := float64(fx.SamplesPerSecond); rate < 0.9*r || rate > 1.1*r {
+					t.Errorf("measured rate %.0f/s, want %.0f/s", rate, r)
 				}
 				_ = sub2.Close()
 			})

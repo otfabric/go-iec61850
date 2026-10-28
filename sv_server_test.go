@@ -303,6 +303,16 @@ func TestDecodeMSVCB(t *testing.T) {
 	if err != nil || cb.SmpMod != sv.SmpPerSec || cb.NoASDU != 2 {
 		t.Fatalf("unsigned SmpMod %+v %v", cb, err)
 	}
+	// libiec61850: ConfRev, SmpRate, SmpMod and noASDU as Integer.
+	lib := []*mms.Value{mms.NewBoolean(false), mms.NewVisibleString("id"), mms.NewVisibleString("ds"), mms.NewInteger(1), mms.NewInteger(1000), opt,
+		mms.NewInteger(1), mms.NewStructure([]*mms.Value{mms.NewOctetString(make([]byte, 6)), mms.NewInteger(4), mms.NewInteger(0), mms.NewInteger(0x4001)}), mms.NewInteger(4)}
+	cb, err = decodeMSVCB("r", mms.NewStructure(lib))
+	if err != nil || cb.ConfRev != 1 || cb.SmpRate != 1000 || cb.SmpMod != sv.SmpPerSec || cb.NoASDU != 4 || cb.DstAddress.Priority != 4 || cb.DstAddress.AppID != 0x4001 {
+		t.Fatalf("integer attributes %+v %v", cb, err)
+	}
+	if _, ok := cbUint(mms.NewInteger(-1)); ok {
+		t.Error("negative Integer accepted")
+	}
 	mut := []func(e []*mms.Value) *mms.Value{
 		func(e []*mms.Value) *mms.Value { return mms.NewBoolean(true) },
 		func(e []*mms.Value) *mms.Value { e[1] = mms.NewInteger(1); return mms.NewStructure(append(e, addr)) },
