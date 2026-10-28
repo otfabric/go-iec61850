@@ -18,7 +18,7 @@ func TestRun(t *testing.T) {
 	if err := run(ctx, addr, demoied.LD, &out); err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range []string{"LD1/LLN0.dsGoose (3 members", "created LD1/LLN0$dsExample", "LD1/GGIO1.Ind1.stVal[ST] = false", "deleted ", "object-non-existent, as expected"} {
+	for _, s := range []string{"LD1/LLN0.dsGoose (3 members", "created LD1/LLN0$dsExample", "LD1/GGIO1.Ind1.stVal[ST] = false", "deleted ", "not found (object-non-existent), as expected"} {
 		out.WaitFor(t, s, 0)
 	}
 	t.Log("\n" + out.String())

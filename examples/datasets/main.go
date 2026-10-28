@@ -92,13 +92,14 @@ func run(ctx context.Context, addr, ld string, out io.Writer) error {
 	}
 	fmt.Fprintf(out, "deleted %s/%s\n", ld, dyn)
 
-	// The data set is gone now: the server rejects the request with an
-	// MMS service error (class access, object-non-existent).
+	// The data set is gone now: GetDataSet wraps iec61850.ErrNotFound
+	// (and the server's *mms.ServiceError, class access,
+	// object-non-existent).
 	_, err = c.GetDataSet(ctx, ld, dyn)
 	var se *mms.ServiceError
 	switch {
-	case errors.As(err, &se) && se.CodeName() == "object-non-existent":
-		fmt.Fprintf(out, "%s/%s: object-non-existent, as expected\n", ld, dyn)
+	case errors.Is(err, iec61850.ErrNotFound) && errors.As(err, &se):
+		fmt.Fprintf(out, "%s/%s: not found (%s), as expected\n", ld, dyn, se.CodeName())
 	case err != nil:
 		return err
 	default:

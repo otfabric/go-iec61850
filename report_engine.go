@@ -1127,9 +1127,15 @@ func bytesEqual(a, b []byte) bool {
 // DPS, INS, MV, etc.). This is a pragmatic approximation, not a
 // semantically complete quality comparison for all possible CDC
 // structures.
+//
+// A missing value (never set) on one side is a quality change only when
+// the other side carries a quality.
 func qualityChanged(prev, curr *mms.Value) bool {
 	if prev == nil || curr == nil {
-		return prev != curr
+		if prev == nil {
+			return hasQuality(curr)
+		}
+		return hasQuality(prev)
 	}
 
 	if prev.Type() == mms.ValueTypeBitString && curr.Type() == mms.ValueTypeBitString {
@@ -1149,6 +1155,19 @@ func qualityChanged(prev, curr *mms.Value) bool {
 	}
 
 	return false
+}
+
+// hasQuality reports whether v is a quality bit-string or a structure
+// with one at position 1 (the layout qualityChanged inspects).
+func hasQuality(v *mms.Value) bool {
+	if v == nil {
+		return false
+	}
+	if v.Type() == mms.ValueTypeBitString {
+		return true
+	}
+	m, ok := v.Structure()
+	return ok && len(m) >= 2 && m[1] != nil && m[1].Type() == mms.ValueTypeBitString
 }
 
 // decodeTrgOps and decodeOptFlds are defined in report.go.

@@ -267,6 +267,10 @@ func (c *Client) CreateDataSet(ctx context.Context, ld, dsName string, members [
 func (c *Client) DeleteDataSet(ctx context.Context, ld, dsName string) error
 ```
 
+`GetDataSet` wraps `ErrNotFound` when the server answers that the data set
+does not exist (MMS access/object-non-existent or definition/object-undefined);
+the `*mms.ServiceError` stays in the chain.
+
 ### DataSet
 
 ```go
