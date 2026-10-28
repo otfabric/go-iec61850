@@ -19,7 +19,7 @@ COMMIT     ?= $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "")
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS    := -s -w -X main.version=$(VERSION) -X main.tag=$(TAG) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
 
-.PHONY: coverage-gate help test test-race test-verbose vet lint fmt fuzz bench tidy check clean coverage coverage-html coverage-clean interop scl-generate scl-check-generate build build-all release-all install ai-print-all ai-print-test ai-print ai-diff ai-digest ai-context vuln
+.PHONY: interop-goose coverage-gate help test test-race test-verbose vet lint fmt fuzz bench tidy check clean coverage coverage-html coverage-clean interop scl-generate scl-check-generate build build-all release-all install ai-print-all ai-print-test ai-print ai-diff ai-digest ai-context vuln
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "}; /^[a-zA-Z0-9_.-]+:.*## / {printf "%-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -31,6 +31,9 @@ test: ## Run unit tests
 interop: ## Run interoperability tests against mms-interop adapter images (-tags=interop).
 	@echo "Running interoperability tests"
 	@go test -tags=interop -v -timeout 300s ./interop/...
+
+interop-goose: ## Run GOOSE interop tests (Linux, root; needs the mms-interop-goose network, see interop/README.md)
+	@go test -exec 'sudo -E' -tags=interop -v -timeout 300s -run GOOSE ./interop/...
 
 test-verbose: ## Run unit tests with verbose output
 	@echo "Running tests with verbose output"
