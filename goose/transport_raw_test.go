@@ -54,9 +54,9 @@ func TestRawTransportRoundTrip(t *testing.T) {
 		t.Skip("set GOOSE_TEST_IFACE to run raw transport tests")
 	}
 	tx := openOrSkip(t, iface, TransportOptions{Multicast: []MAC{testDst}})
-	defer tx.Close()
+	defer func() { _ = tx.Close() }()
 	rx := openOrSkip(t, iface, TransportOptions{Promiscuous: true, ReceiveLocal: true})
-	defer rx.Close()
+	defer func() { _ = rx.Close() }()
 
 	s, _ := NewSubscriber(rx, SubscriberConfig{})
 	sub, _ := s.Subscribe(SubscriptionConfig{GocbRef: "RAW/LLN0$GO$gcb1"})

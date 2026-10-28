@@ -321,7 +321,7 @@ func (s *Subscriber) Run(ctx context.Context) error {
 		raw, err := s.t.Recv(ctx)
 		if err != nil {
 			if ctx.Err() != nil || errors.Is(err, ErrClosed) {
-				return nil
+				return nil //nolint:nilerr // cancellation and Close are a normal stop
 			}
 			return err
 		}
@@ -736,6 +736,8 @@ func MatchesType(v *mms.Value, ts mms.TypeSpec) bool {
 		if ts.Size > 0 && n != ts.Size {
 			return false
 		}
+	default:
+		// Scalars: the type check above is sufficient.
 	}
 	return true
 }

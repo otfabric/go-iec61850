@@ -214,18 +214,18 @@ func EncodePDU(p *PDU) ([]byte, error) {
 	}
 	c := make([]byte, 0, 64+len(p.GocbRef)+len(p.DatSet)+len(p.GoID)+len(allData))
 	c = appendTLV(c, tagGocbRef, []byte(p.GocbRef))
-	c = appendTLV(c, tagTAL, appendUnsigned(nil, uint64(p.TimeAllowedToLive)))
+	c = appendTLV(c, tagTAL, encodeUnsigned(uint64(p.TimeAllowedToLive)))
 	c = appendTLV(c, tagDatSet, []byte(p.DatSet))
 	if p.GoID != "" {
 		c = appendTLV(c, tagGoID, []byte(p.GoID))
 	}
 	c = appendTLV(c, tagT, encodeUTCTime(p.T, p.TimeQuality))
-	c = appendTLV(c, tagStNum, appendUnsigned(nil, uint64(p.StNum)))
-	c = appendTLV(c, tagSqNum, appendUnsigned(nil, uint64(p.SqNum)))
+	c = appendTLV(c, tagStNum, encodeUnsigned(uint64(p.StNum)))
+	c = appendTLV(c, tagSqNum, encodeUnsigned(uint64(p.SqNum)))
 	c = appendTLV(c, tagSimulation, []byte{boolOctet(p.Test)})
-	c = appendTLV(c, tagConfRev, appendUnsigned(nil, uint64(p.ConfRev)))
+	c = appendTLV(c, tagConfRev, encodeUnsigned(uint64(p.ConfRev)))
 	c = appendTLV(c, tagNdsCom, []byte{boolOctet(p.NdsCom)})
-	c = appendTLV(c, tagNumEntries, appendUnsigned(nil, uint64(n)))
+	c = appendTLV(c, tagNumEntries, encodeUnsigned(uint64(n)))
 	c = appendTLV(c, tagAllData, allData)
 	if p.Security != nil {
 		c = appendTLV(c, tagSecurity, p.Security)

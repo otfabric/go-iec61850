@@ -46,7 +46,7 @@ func (t *faultTransport) Receive(ctx context.Context) ([]byte, error) {
 		if t.closeAfter > 0 && n > t.closeAfter {
 			t.mu.Unlock()
 			t.injected.Add(1)
-			_ = t.Transport.Close()
+			_ = t.Close()
 			return nil, errors.New("fault: connection reset")
 		}
 		if n <= t.skip || len(b) == 0 {

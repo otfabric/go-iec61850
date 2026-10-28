@@ -10,18 +10,18 @@ import (
 
 // runWithArgs drives the run() seam used by main with the given args after
 // resetting flag state via executeCmd's reset logic.
-func runWithArgs(t *testing.T, args ...string) (int, string, string) {
+func runWithArgs(t *testing.T, args ...string) (int, string) {
 	t.Helper()
 	var code int
 	var stderr bytes.Buffer
-	out := captureStdout(t, func() {
+	_ = captureStdout(t, func() {
 		// executeCmd resets all flag globals; run it with "version" first so
 		// the reset happens, then run the real args through run().
 		_ = executeCmd("version")
 		rootCmd.SetArgs(args)
 		code = run(&stderr)
 	})
-	return code, out, stderr.String()
+	return code, stderr.String()
 }
 
 func TestRun_ExitCodes(t *testing.T) {
@@ -40,7 +40,7 @@ func TestRun_ExitCodes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			code, _, stderr := runWithArgs(t, tt.args...)
+			code, stderr := runWithArgs(t, tt.args...)
 			if code != tt.wantCode {
 				t.Errorf("exit code = %d, want %d (stderr=%q)", code, tt.wantCode, stderr)
 			}
@@ -55,7 +55,7 @@ func TestRun_ExitCodes(t *testing.T) {
 }
 
 func TestRun_UsageErrorHasNoPrefix(t *testing.T) {
-	_, _, stderr := runWithArgs(t, "detect")
+	_, stderr := runWithArgs(t, "detect")
 	if strings.HasPrefix(stderr, "sclparse: ") {
 		t.Errorf("cobra usage errors must not carry the exitError prefix: %q", stderr)
 	}

@@ -73,7 +73,7 @@ func openBPF() (int, error) {
 	if err == nil {
 		return fd, nil
 	}
-	var last error = err
+	last := err
 	for i := 0; i < 256; i++ {
 		fd, err := unix.Open(fmt.Sprintf("/dev/bpf%d", i), unix.O_RDWR|unix.O_CLOEXEC, 0)
 		if err == nil {
@@ -94,7 +94,9 @@ func openBPF() (int, error) {
 }
 
 func ioctlPtr(fd int, req uint, p unsafe.Pointer) error {
-	if _, _, e := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), uintptr(req), uintptr(p)); e != 0 {
+	// x/sys/unix exports no pointer-argument ioctl for the BPF structs.
+	if _, _, e := unix.Syscall(unix.SYS_IOCTL, //nolint:staticcheck // SA1019, see above
+		uintptr(fd), uintptr(req), uintptr(p)); e != 0 {
 		return e
 	}
 	return nil

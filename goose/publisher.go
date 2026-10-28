@@ -480,6 +480,8 @@ func SameShape(a, b *mms.Value) bool {
 				return false
 			}
 		}
+	default:
+		// Scalars: equal types are the same shape.
 	}
 	return true
 }

@@ -64,9 +64,10 @@ func appendSigned(b []byte, v int64) []byte {
 	return b
 }
 
-// appendUnsigned appends the minimal non-negative INTEGER encoding of v
+// encodeUnsigned returns the minimal non-negative INTEGER encoding of v
 // (a leading zero octet is added when the high bit would be set).
-func appendUnsigned(b []byte, v uint64) []byte {
+func encodeUnsigned(v uint64) []byte {
+	var b []byte
 	n := 1
 	for n < 8 && v>>(8*n) != 0 {
 		n++

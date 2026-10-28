@@ -175,7 +175,8 @@ func TestListenAndServe_WithoutHooksDelegatesToMMS(t *testing.T) {
 
 	cancel()
 	select {
-	case <-done:
+	case err := <-done:
+		_ = err // any shutdown result is fine; only the return matters
 	case <-time.After(5 * time.Second):
 		t.Fatal("ListenAndServe did not return after cancel")
 	}

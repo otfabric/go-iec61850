@@ -46,9 +46,12 @@ func TestParseGSEAddress(t *testing.T) {
 }
 
 func TestParseMillis(t *testing.T) {
-	for in, want := range map[string]uint32{"": 0, "10": 10, " 2.6 ": 3} {
-		if got, err := parseMillis(in); err != nil || got != want {
-			t.Errorf("%q: %d %v", in, got, err)
+	for _, tc := range []struct {
+		in   string
+		want uint32
+	}{{"", 0}, {"10", 10}, {" 2.6 ", 3}} {
+		if got, err := parseMillis(tc.in); err != nil || got != tc.want {
+			t.Errorf("%q: %d %v", tc.in, got, err)
 		}
 	}
 	for _, in := range []string{"-1", "x", "1e12"} {

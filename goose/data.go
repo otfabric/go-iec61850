@@ -71,7 +71,7 @@ func appendData(b []byte, v *mms.Value, depth int) ([]byte, error) {
 		return appendTLV(b, tagInteger, appendSigned(nil, x)), nil
 	case mms.ValueTypeUnsigned:
 		x, _ := v.Uint64()
-		return appendTLV(b, tagUnsigned, appendUnsigned(nil, x)), nil
+		return appendTLV(b, tagUnsigned, encodeUnsigned(x)), nil
 	case mms.ValueTypeFloat:
 		f, _ := v.Float64()
 		if f32 := float32(f); float64(f32) == f || math.IsNaN(f) {
