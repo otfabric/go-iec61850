@@ -45,8 +45,8 @@ Breaking public API changes are reserved for a future v2 major release.
 ## Minimum supported Go version
 
 The minimum supported Go version tracks the two most recent stable releases.
-The current minimum is recorded in `go.mod` (Go 1.24); CI tests Go 1.24,
-1.25 and 1.26, with and without the race detector.
+The current minimum is recorded in `go.mod` (Go 1.25); CI tests Go 1.25
+and 1.26, with and without the race detector.
 
 ## Supported platforms
 

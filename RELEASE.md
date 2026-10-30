@@ -1,5 +1,16 @@
 # go-iec61850 Releases
 
+## v1.4.0
+
+**Date:** 2026-10-30
+**Previous release:** v1.3.0
+
+### Dependencies
+
+- `golang.org/x/sys` → v0.44.0 (govulncheck). **The minimum Go version rises from 1.24 to 1.25**, which that version requires.
+
+---
+
 ## v1.3.0
 
 **Date:** 2026-10-30
