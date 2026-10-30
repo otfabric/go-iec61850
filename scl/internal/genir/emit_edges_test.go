@@ -278,3 +278,16 @@ func TestHasAnyElementAndAttr(t *testing.T) {
 		t.Fatal("plain attr should be false")
 	}
 }
+
+func TestEmitComplexType_PrivateKeepsInnerXML(t *testing.T) {
+	e := NewEmitter(&Resolved{Schema: &Schema{Bundle: "b", Version: "v", Namespace: "ns"}}, t.TempDir(), "pkg")
+	var withField, without strings.Builder
+	e.emitComplexType(&withField, &ComplexType{Name: "tPrivate"})
+	e.emitComplexType(&without, &ComplexType{Name: "tOther"})
+	if !strings.Contains(withField.String(), "`xml:\",innerxml\"`") {
+		t.Fatalf("tPrivate has no InnerXML field:\n%s", withField.String())
+	}
+	if strings.Contains(without.String(), "InnerXML") {
+		t.Fatalf("unexpected InnerXML field:\n%s", without.String())
+	}
+}

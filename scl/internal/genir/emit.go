@@ -204,6 +204,11 @@ func (e *Emitter) emitComplexType(b *strings.Builder, ct *ComplexType) {
 		}
 	}
 
+	// tPrivate is mixed content that the scl package keeps verbatim.
+	if ct.Name == "tPrivate" {
+		fmt.Fprintf(b, "\tInnerXML string `xml:\",innerxml\"`\n")
+	}
+
 	// xs:any capture
 	if e.hasAnyElement(ct) {
 		fmt.Fprintf(b, "\tExtraElements []xml.Token `xml:\",any\"`\n")
