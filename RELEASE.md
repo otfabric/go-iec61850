@@ -1,5 +1,16 @@
 # go-iec61850 Releases
 
+## v1.4.1
+
+**Date:** 2026-10-30
+**Previous release:** v1.4.0
+
+### Fixed
+
+- `sclgen` and `sclparse` binaries are published again. Their nested modules still declared Go 1.24, so the builds for v1.4.0 failed and that release has no binaries. The library is unchanged.
+
+---
+
 ## v1.4.0
 
 **Date:** 2026-10-30
