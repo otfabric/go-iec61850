@@ -1,6 +1,6 @@
 # go-iec61850
 
-[![Go](https://img.shields.io/badge/Go-1.24%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![Go](https://img.shields.io/badge/Go-1.25%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![Go Reference](https://pkg.go.dev/badge/github.com/otfabric/go-iec61850.svg)](https://pkg.go.dev/github.com/otfabric/go-iec61850)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/otfabric/go-iec61850/actions/workflows/ci.yml/badge.svg)](https://github.com/otfabric/go-iec61850/actions/workflows/ci.yml)
@@ -9,7 +9,7 @@
 
 A pure-Go IEC 61850 stack: **MMS client and server**, **GOOSE** and
 **Sampled Values** publishers and subscribers, and **SCL** parsing and
-validation. No cgo, Go 1.24+.
+validation. No cgo, Go 1.25+.
 
 Logical devices, logical nodes, data objects and attributes, functional
 constraints, datasets, report, GOOSE and SV control blocks, quality and
@@ -35,7 +35,7 @@ with raw MMS domain names, item IDs, BER or Ethernet frames.
   included ([per-stack matrix](COMPATIBILITY.md#per-stack-matrix),
   [INTEROP.md](INTEROP.md)).
 - **Quality gates** — ≥ 90 % statement coverage per package, race
-  detector on Go 1.24–1.26, fuzz targets for the MMS value, GOOSE, SV and
+  detector on Go 1.25–1.26, fuzz targets for the MMS value, GOOSE, SV and
   SCL decoders, chaos tests, golangci-lint.
 - **Not certified** — no UCA conformance certification and no formal
   validation against physical IEDs yet; see
@@ -124,7 +124,7 @@ helpers; CLI tools `sclparse` and `sclgen`
 go get github.com/otfabric/go-iec61850
 ```
 
-Requires Go 1.24 or later.
+Requires Go 1.25 or later.
 
 The CLI tools: Pre-built binaries are attached to every
 [release](https://github.com/otfabric/go-iec61850/releases). In a checkout,

@@ -2,7 +2,7 @@
 
 ## Development setup
 
-- Go 1.24 or later (see [go.mod](go.mod)).
+- Go 1.25 or later (see [go.mod](go.mod)).
 - [staticcheck](https://staticcheck.dev/), [golangci-lint](https://golangci-lint.run/) and [govulncheck](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck) for `make check`.
 - Docker for the interop suites only. The GOOSE and SV interop suite needs Linux and root, see [interop/README.md](interop/README.md).
 

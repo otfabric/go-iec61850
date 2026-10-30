@@ -1,11 +1,11 @@
 module github.com/otfabric/go-iec61850
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/otfabric/go-mms v1.2.2
 	golang.org/x/sync v0.19.0
-	golang.org/x/sys v0.41.0
+	golang.org/x/sys v0.44.0
 )
 
 require (
