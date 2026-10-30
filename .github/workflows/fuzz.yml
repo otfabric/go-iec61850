@@ -23,7 +23,40 @@ on:
         default: "5m"
 
 jobs:
+  # Targets are discovered, never listed, so a new Fuzz function runs without a
+  # workflow change.
+  discover:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      targets: ${{ steps.list.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: List Fuzz targets
+        id: list
+        run: |
+          set -euo pipefail
+          mod=$(go list -m)
+          targets=$(for pkg in $(go list ./...); do
+            for target in $(go test -list '^Fuzz' "$pkg" | grep '^Fuzz' || true); do
+              jq -cn --arg pkg ".${pkg#"$mod"}" --arg target "$target" '{pkg: $pkg, target: $target}'
+            done
+          done | jq -cs .)
+          if [ "$targets" = "[]" ]; then
+            echo "::error::no Fuzz targets found"
+            exit 1
+          fi
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+
   fuzz:
+    needs: discover
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -31,20 +64,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { pkg: ".", target: FuzzParseRef }
-          - { pkg: ".", target: FuzzParseFC }
-          - { pkg: ".", target: FuzzDecodeQuality }
-          - { pkg: ".", target: FuzzNewValue }
-          - { pkg: ".", target: FuzzDecodeReportIndication }
-          - { pkg: ".", target: FuzzDecodeOptFlds }
-          - { pkg: ".", target: FuzzDecodeTrgOps }
-          - { pkg: ".", target: FuzzDecodeReportIndication_NilValues }
-          - { pkg: ".", target: FuzzDecodeGoCB }
-          - { pkg: "./scl", target: FuzzParse }
-          - { pkg: "./goose", target: FuzzDecode }
-          - { pkg: "./goose", target: FuzzDecodeData }
-          - { pkg: "./internal/servermodel", target: FuzzParseGSEAddress }
+        include: ${{ fromJSON(needs.discover.outputs.targets) }}
 
     steps:
       - uses: actions/checkout@v4
@@ -57,14 +77,16 @@ jobs:
       - name: Fuzz ${{ matrix.pkg }} ${{ matrix.target }}
         env:
           FUZZ_TIME: ${{ github.event.inputs.fuzztime || '5m' }}
+          FUZZ_PKG: ${{ matrix.pkg }}
+          FUZZ_TARGET: ${{ matrix.target }}
         run: |
           FUZZ_SECS=$(echo "${FUZZ_TIME}" | sed 's/h/*3600/;s/m/*60/;s/s//' | bc)
           TIMEOUT_SECS=$((FUZZ_SECS + 120))
-          go test -run=^$ \
-            -fuzz=^${{ matrix.target }}$ \
-            -fuzztime=${FUZZ_TIME} \
-            -timeout=${TIMEOUT_SECS}s \
-            ${{ matrix.pkg }}
+          go test -run='^$' \
+            -fuzz="^${FUZZ_TARGET}\$" \
+            -fuzztime="${FUZZ_TIME}" \
+            -timeout="${TIMEOUT_SECS}s" \
+            "${FUZZ_PKG}"
 
       - name: Upload failing corpus entry
         if: failure()
