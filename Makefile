@@ -11,8 +11,6 @@ DIST     := dist
 CMDS     := sclgen sclparse
 # The tools are nested modules (ADR-0009): ./... of this module does not reach them.
 CLI_DIRS := $(CMDS:%=scl/cmd/%)
-# From the repository root they are reached through go.work.
-CLI_GO   := GOWORK=$(CURDIR)/go.work go
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
 PREFIX   ?= /usr/local
@@ -123,11 +121,11 @@ tidy: ## Tidy and verify module files
 
 scl-generate: ## Generate SCL raw types from XSD schemas
 	@echo "Generating SCL raw types from XSD schemas"
-	@$(CLI_GO) run ./scl/cmd/sclgen generate --spec-root ./scl/specs --out ./scl/internal/raw
+	@go -C scl/cmd/sclgen run . generate --spec-root $(CURDIR)/scl/specs --out $(CURDIR)/scl/internal/raw
 
 scl-check-generate: ## Verify generated SCL code is up to date
 	@echo "Verifying generated SCL code is up to date"
-	@$(CLI_GO) run ./scl/cmd/sclgen check --spec-root ./scl/specs --out ./scl/internal/raw
+	@go -C scl/cmd/sclgen run . check --spec-root $(CURDIR)/scl/specs --out $(CURDIR)/scl/internal/raw
 
 build: ## Build all commands for the current platform
 	@echo "Building all commands for the current platform"

@@ -9,7 +9,6 @@
   Library import paths and the exported API are unchanged.
   - Release binaries are published as before.
   - Build from a checkout with `make build`, or `cd scl/cmd/<tool> && go build .`.
-    `go build ./scl/cmd/<tool>` from the root also works, through `go.work`.
   - `go install github.com/otfabric/go-iec61850/scl/cmd/<tool>@<version>` works
     up to v1.2.2 and not after it, while the nested modules' `replace` is in place.
 
