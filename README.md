@@ -772,6 +772,7 @@ go-iec61850/
 ├── scripts/covergate.go         Per-package coverage gate used by CI
 │
 ├── API.md                      Complete public API reference
+├── ARCHITECTURE.md             Layers, goroutines, ownership, backends
 ├── COMPATIBILITY.md            Versioning policy, platforms, per-stack matrix
 ├── ERRORS.md                   Error taxonomy and usage patterns
 ├── GOOSE.md                    GOOSE guide
@@ -780,6 +781,8 @@ go-iec61850/
 ├── OBSERVABILITY.md            Logging fields and metrics
 ├── SECURITY.md                 Vulnerability reporting, deployment guidance
 ├── SV.md                       Sampled Values guide
+├── TESTING.md                  Test tiers, coverage policy, fuzz regressions
+├── docs/FEATURE-STATUS.md      Test and independent evidence per feature
 └── RELEASE.md                  Changelog
 ```
 
@@ -817,6 +820,7 @@ controllers, merging units) has not yet been formally established.
 ```bash
 make test           # unit tests
 make test-race      # with the race detector
+make e2e            # client against server on loopback TCP, every example
 make lint-ci        # golangci-lint
 make coverage-gate  # >= 90 % statement coverage per package
 make fuzz           # every fuzz target, FUZZTIME each (default 15s)
@@ -845,6 +849,9 @@ CI runs them as root. Releases are cut by the `release.yml` workflow;
 | [OBSERVABILITY.md](OBSERVABILITY.md) | Logging fields and metrics hooks |
 | [COMPATIBILITY.md](COMPATIBILITY.md) | Versioning policy, supported platforms, per-stack matrix |
 | [INTEROP.md](INTEROP.md) | Interoperability tests and service matrix |
+| [docs/FEATURE-STATUS.md](docs/FEATURE-STATUS.md) | Each feature: how it is tested, which independent stacks exchanged it |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Package layers, goroutines and ownership, platform backends |
+| [TESTING.md](TESTING.md) | Test tiers, prerequisites, coverage policy, fuzz regressions |
 | [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) | Unsupported features and constraints |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting and deployment guidance |
 | [RELEASE.md](RELEASE.md) | Release notes |
