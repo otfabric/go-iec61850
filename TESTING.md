@@ -7,7 +7,7 @@ How to run each test tier. What the tests show per feature is in
 
 | Tier | Command | Needs | CI |
 |---|---|---|---|
-| Unit | `make test` | nothing | `ci.yml`, Go 1.24–1.26 |
+| Unit | `make test` | nothing | `ci.yml`, Go 1.25–1.26 |
 | Race | `make test-race` | nothing | `ci.yml` |
 | End-to-end | `make e2e` | nothing | the same tests run in `ci.yml`, see below |
 | Raw sockets | `sudo -E go test ./l2 ./goose` | root on Linux, or `GOOSE_TEST_IFACE` | `coverage-gate` job, as root |
