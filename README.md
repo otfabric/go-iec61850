@@ -79,7 +79,8 @@ with raw MMS domain names, item IDs, BER or Ethernet frames.
 - **Datasets** — list, inspect, read, create and delete
 - **Reports** — full BRCB/URCB lifecycle: configure, subscribe, GI,
   reserve/release, integrity period, segmented report reassembly,
-  overflow callback, BRCB resume by EntryID
+  overflow callback, BRCB resume by EntryID (BRCB is tested against this
+  library's own server only, see [Interoperability](#interoperability))
 - **Controls** — direct, SBO and SBOw (normal and enhanced security)
 - **Setting groups, journals, files**
 - **Resilience** — connection retry with back-off, `slog` logging, metrics
@@ -795,11 +796,16 @@ GOOSE and Sampled Values against the libiec61850, dscsystems and
 iec61850-rust publishers and subscribers on a Docker bridge.
 
 The suites in `interop/` (build tag `interop`) cover browsing, reads and
-writes, datasets, URCB/BRCB reporting (EntryID resume, overflow,
-reservation), CDC reads, quality and timestamps, direct/SBO/SBOw
-controls, files, multi-client concurrency, negative cases, GOOSE header,
-values, retransmission and supervision, and SV headers, optional fields,
-values, loss accounting and MSVCB access over MMS.
+writes, datasets, URCB reporting, CDC reads, quality and timestamps,
+direct/SBO/SBOw controls, files, multi-client concurrency, negative cases,
+GOOSE header, values, retransmission and supervision, and SV headers,
+optional fields, values, loss accounting and MSVCB access over MMS.
+
+BRCB reporting (EntryID, replay, purge, overflow, EntryID resume) has no
+independent peer yet: `interop/brcb_*_test.go` runs this library's client
+against this library's server, and the adapter matrix does not include BRCB
+([INTEROP.md](INTEROP.md)). The Go server's URCB reservation suite
+(`interop/urcb_reservation_test.go`) is the same kind of test.
 
 | Where | What |
 |---|---|
