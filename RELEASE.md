@@ -1,6 +1,9 @@
 # go-iec61850 Releases
 
-## Unreleased
+## v1.3.0
+
+**Date:** 2026-10-30
+**Previous release:** v1.2.2
 
 ### Changed
 
