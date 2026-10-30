@@ -29,22 +29,24 @@ jobs:
 
   release-sclgen-binary:
     needs: release-package
-    uses: otfabric/.github/.github/workflows/go-binary-release.yml@v2
+    uses: otfabric/.github/.github/workflows/go-binary-release.yml@v3.1.0
     with:
       bump: none
       binary-name: sclgen
-      main-path: ./scl/cmd/sclgen
+      module-dir: scl/cmd/sclgen
+      main-path: .
       ldflags: "-s -w -X main.version=${VERSION} -X main.tag=${TAG} -X main.commit=${COMMIT} -X main.buildDate=${BUILD_DATE}"
       run-tests: false
     secrets: inherit
 
   release-sclparse-binary:
     needs: release-package
-    uses: otfabric/.github/.github/workflows/go-binary-release.yml@v2
+    uses: otfabric/.github/.github/workflows/go-binary-release.yml@v3.1.0
     with:
       bump: none
       binary-name: sclparse
-      main-path: ./scl/cmd/sclparse
+      module-dir: scl/cmd/sclparse
+      main-path: .
       ldflags: "-s -w -X main.version=${VERSION} -X main.tag=${TAG} -X main.commit=${COMMIT} -X main.buildDate=${BUILD_DATE}"
       run-tests: false
     secrets: inherit
