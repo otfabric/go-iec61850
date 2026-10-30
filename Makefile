@@ -134,7 +134,7 @@ build-all: ## Cross-compile all commands for all platforms
 			ext=""; [ "$$os" = "windows" ] && ext=".exe"; \
 			out=$(DIST)/$$cmd-$$os-$$arch$$ext; \
 			echo "  BUILD $$cmd $(VERSION) $$target -> $$out"; \
-			GOOS=$$os GOARCH=$$arch @go build -ldflags '$(LDFLAGS)' -o $$out ./scl/cmd/$$cmd || exit 1; \
+			GOOS=$$os GOARCH=$$arch go build -ldflags '$(LDFLAGS)' -o $$out ./scl/cmd/$$cmd || exit 1; \
 		done; \
 	done
 	@echo "Built $$(ls $(DIST)/ | wc -l | tr -d ' ') binaries in $(DIST)/"
