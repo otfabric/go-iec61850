@@ -1,9 +1,9 @@
 module github.com/otfabric/go-iec61850/scl/cmd/sclgen
 
-go 1.24.0
+go 1.25.0
 
 require (
-	github.com/otfabric/go-iec61850 v1.3.0
+	github.com/otfabric/go-iec61850 v1.4.0
 	github.com/spf13/cobra v1.10.2
 )
 
