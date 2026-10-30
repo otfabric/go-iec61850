@@ -23,6 +23,30 @@ jobs:
       go-versions: '["1.24", "1.25", "1.26"]'
     secrets: inherit
 
+  # The tools are nested modules (ADR-0009): the root run does not reach them.
+  sclparse:
+    uses: otfabric/.github/.github/workflows/go-ci.yml@v2.1.0
+    with:
+      module-dir: scl/cmd/sclparse
+      test-exclude-regex: "/example(s)?($|/)"
+      run-govulncheck: true
+      coverage-min: "90"
+      run-codecov: false
+      go-versions: '["1.24", "1.25", "1.26"]'
+    secrets: inherit
+
+  # sclgen has no tests of its own; this keeps tidy, vet, lint and the matrix
+  # build on it.
+  sclgen:
+    uses: otfabric/.github/.github/workflows/go-ci.yml@v2.1.0
+    with:
+      module-dir: scl/cmd/sclgen
+      test-exclude-regex: "/example(s)?($|/)"
+      run-govulncheck: true
+      run-codecov: false
+      go-versions: '["1.24", "1.25", "1.26"]'
+    secrets: inherit
+
   # Per-package coverage gate. Test binaries run as root so the GOOSE
   # AF_PACKET transport tests exercise the real raw socket on lo.
   coverage-gate:

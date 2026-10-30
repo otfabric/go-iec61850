@@ -9,7 +9,7 @@
 
 A pure-Go IEC 61850 stack: **MMS client and server**, **GOOSE** and
 **Sampled Values** publishers and subscribers, and **SCL** parsing and
-validation. No cgo, one module, Go 1.24+.
+validation. No cgo, Go 1.24+.
 
 Logical devices, logical nodes, data objects and attributes, functional
 constraints, datasets, report, GOOSE and SV control blocks, quality and
@@ -126,12 +126,10 @@ go get github.com/otfabric/go-iec61850
 
 Requires Go 1.24 or later.
 
-Install the CLI tools:
-
-```bash
-go install github.com/otfabric/go-iec61850/scl/cmd/sclparse@latest
-go install github.com/otfabric/go-iec61850/scl/cmd/sclgen@latest
-```
+The CLI tools: Pre-built binaries are attached to every
+[release](https://github.com/otfabric/go-iec61850/releases). In a checkout,
+`make build` writes them to `bin/`. Each tool is a nested module, so the library
+does not require cobra.
 
 ---
 
@@ -580,9 +578,6 @@ CID, IID). It supports schema editions v1.7 through 2007C5 and auto-detects
 the version.
 
 ```bash
-# Install
-go install github.com/otfabric/go-iec61850/scl/cmd/sclparse@latest
-
 # Quick overview of a file
 sclparse summary station.scd
 
@@ -623,9 +618,6 @@ See [scl/README.md](scl/README.md) for detailed usage and examples.
 XSD schemas. It is a developer tool — ordinary users do not need it.
 
 ```bash
-# Install
-go install github.com/otfabric/go-iec61850/scl/cmd/sclgen@latest
-
 # Regenerate Go types for all supported schema editions
 sclgen generate --spec-root ./scl/specs --out ./scl/internal/raw
 
@@ -764,8 +756,8 @@ go-iec61850/
 │   │   ├── genir/              XSD-to-Go code generator (used by sclgen)
 │   │   └── raw/                Generated XSD bindings (v17, 2007B, …)
 │   └── cmd/
-│       ├── sclparse/           CLI: inspect, validate, summarize SCL files
-│       └── sclgen/             CLI: regenerate Go types from XSD schemas
+│       ├── sclparse/           CLI: inspect, validate, summarize SCL files (nested module)
+│       └── sclgen/             CLI: regenerate Go types from XSD schemas (nested module)
 │
 ├── goose/                      GOOSE codec, publisher, subscriber, SCL binding
 ├── sv/                         Sampled Values codec, 9-2LE, publisher,

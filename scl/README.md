@@ -79,11 +79,7 @@ configuration file without writing code.
 
 ### Installation
 
-```bash
-go install github.com/otfabric/go-iec61850/scl/cmd/sclparse@latest
-```
-
-Or build from source:
+Download a binary from the [releases](https://github.com/otfabric/go-iec61850/releases), or build from a checkout. `sclparse` is a nested module:
 
 ```bash
 cd scl/cmd/sclparse
@@ -339,9 +335,7 @@ repository under `scl/internal/raw/`.
 
 ### Installation
 
-```bash
-go install github.com/otfabric/go-iec61850/scl/cmd/sclgen@latest
-```
+Download a binary from the [releases](https://github.com/otfabric/go-iec61850/releases), or run `make build` in a checkout. `sclgen` is a nested module.
 
 ### Subcommands
 
