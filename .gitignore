@@ -29,3 +29,6 @@ coverage.*
 # Local reference material and AI working files (never commit)
 /sources/
 /ai/
+
+# Local workspace checksums (go.work is committed for the release build)
+/go.work.sum

@@ -1,5 +1,20 @@
 # go-iec61850 Releases
 
+## Unreleased
+
+### Changed
+
+- **`scl/cmd/sclgen` and `scl/cmd/sclparse` are now nested modules.** The
+  library's `go.mod` no longer requires cobra, so consumers stop inheriting it.
+  Library import paths and the exported API are unchanged.
+  - Release binaries are published as before.
+  - Build from a checkout with `make build`, or `cd scl/cmd/<tool> && go build .`.
+    `go build ./scl/cmd/<tool>` from the root also works, through `go.work`.
+  - `go install github.com/otfabric/go-iec61850/scl/cmd/<tool>@<version>` works
+    up to v1.2.2 and not after it, while the nested modules' `replace` is in place.
+
+---
+
 ## v1.2.2
 
 **Date:** 2026-10-28

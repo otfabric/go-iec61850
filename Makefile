@@ -9,6 +9,10 @@ FUZZTIME ?= 15s
 DIST     := dist
 
 CMDS     := sclgen sclparse
+# The tools are nested modules (ADR-0009): ./... of this module does not reach them.
+CLI_DIRS := $(CMDS:%=scl/cmd/%)
+# From the repository root they are reached through go.work.
+CLI_GO   := GOWORK=$(CURDIR)/go.work go
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
 PREFIX   ?= /usr/local
@@ -27,6 +31,7 @@ help: ## Show available targets
 test: ## Run unit tests
 	@echo "Running unit tests"
 	@go test $(PKGS)
+	@for d in $(CLI_DIRS); do (cd $$d && go test ./...) || exit 1; done
 
 interop: ## Run interoperability tests against iec61850-interop adapter images (-tags=interop).
 	@echo "Running interoperability tests"
@@ -42,22 +47,27 @@ test-verbose: ## Run unit tests with verbose output
 test-race: ## Run tests with race detector
 	@echo "Running tests with race detector"
 	@go test -race $(PKGS)
+	@for d in $(CLI_DIRS); do (cd $$d && go test -race ./...) || exit 1; done
 
 vet: ## Run go vet
 	@echo "Running go vet"
 	@go vet $(PKGS)
+	@for d in $(CLI_DIRS); do (cd $$d && go vet ./...) || exit 1; done
 
 lint: ## Run staticcheck
 	@echo "Running staticcheck"
 	@staticcheck $(PKGS)
+	@for d in $(CLI_DIRS); do (cd $$d && staticcheck ./...) || exit 1; done
 
 lint-ci: ## Run golangci-lint
 	@echo "Running golangci-lint"
 	@golangci-lint run $(PKGS)
+	@for d in $(CLI_DIRS); do (cd $$d && golangci-lint run ./...) || exit 1; done
 
 vuln: ## Run govulncheck
 	@echo "Running govulncheck"
 	@govulncheck $(PKGS)
+	@for d in $(CLI_DIRS); do (cd $$d && govulncheck ./...) || exit 1; done
 
 fmt: ## Format all Go source files
 	@echo "Running gofmt"
@@ -106,23 +116,25 @@ bench: ## Run all benchmarks
 tidy: ## Tidy and verify module files
 	@echo "Running go mod tidy"
 	@go mod tidy
+	@for d in $(CLI_DIRS); do (cd $$d && go mod tidy) || exit 1; done
 	@echo "Running go mod verify"
 	@go mod verify
+	@for d in $(CLI_DIRS); do (cd $$d && go mod verify) || exit 1; done
 
 scl-generate: ## Generate SCL raw types from XSD schemas
 	@echo "Generating SCL raw types from XSD schemas"
-	@go run ./scl/cmd/sclgen generate --spec-root ./scl/specs --out ./scl/internal/raw
+	@$(CLI_GO) run ./scl/cmd/sclgen generate --spec-root ./scl/specs --out ./scl/internal/raw
 
 scl-check-generate: ## Verify generated SCL code is up to date
 	@echo "Verifying generated SCL code is up to date"
-	@go run ./scl/cmd/sclgen check --spec-root ./scl/specs --out ./scl/internal/raw
+	@$(CLI_GO) run ./scl/cmd/sclgen check --spec-root ./scl/specs --out ./scl/internal/raw
 
 build: ## Build all commands for the current platform
 	@echo "Building all commands for the current platform"
 	@mkdir -p bin
 	@for cmd in $(CMDS); do \
 		echo "  BUILD $$cmd $(VERSION) -> bin/$$cmd"; \
-		go build -ldflags '$(LDFLAGS)' -o bin/$$cmd ./scl/cmd/$$cmd || exit 1; \
+		(cd scl/cmd/$$cmd && go build -ldflags '$(LDFLAGS)' -o $(CURDIR)/bin/$$cmd .) || exit 1; \
 	done
 
 build-all: ## Cross-compile all commands for all platforms
@@ -134,7 +146,7 @@ build-all: ## Cross-compile all commands for all platforms
 			ext=""; [ "$$os" = "windows" ] && ext=".exe"; \
 			out=$(DIST)/$$cmd-$$os-$$arch$$ext; \
 			echo "  BUILD $$cmd $(VERSION) $$target -> $$out"; \
-			GOOS=$$os GOARCH=$$arch @go build -ldflags '$(LDFLAGS)' -o $$out ./scl/cmd/$$cmd || exit 1; \
+			(cd scl/cmd/$$cmd && GOOS=$$os GOARCH=$$arch go build -ldflags '$(LDFLAGS)' -o $(CURDIR)/$$out .) || exit 1; \
 		done; \
 	done
 	@echo "Built $$(ls $(DIST)/ | wc -l | tr -d ' ') binaries in $(DIST)/"
