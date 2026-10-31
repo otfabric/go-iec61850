@@ -1,7 +1,7 @@
 github.com/otfabric/go-cotp v1.1.1 h1:M9fdPvOz06v6gxYM+RII6Xw63qXETqAqvJtjS6/iEY4=
 github.com/otfabric/go-cotp v1.1.1/go.mod h1:6zaQsPHcas3a2+zjksucC7dbmLehkIojRuupfgDOZ8g=
-github.com/otfabric/go-mms v1.2.3 h1:QB9IOaXrQENYXamR/oh/y7Qo6Wswgxx3os5ZAE1W1qQ=
-github.com/otfabric/go-mms v1.2.3/go.mod h1:UXmCHKA+7SureEWLnYUXe/5cRK/YYmHexmWkyAXP58E=
+github.com/otfabric/go-mms v1.2.4 h1:SUSCexnwEDi+IeRAzID5vfvBwJIkUYeHYlC2YTR47Kg=
+github.com/otfabric/go-mms v1.2.4/go.mod h1:UXmCHKA+7SureEWLnYUXe/5cRK/YYmHexmWkyAXP58E=
 github.com/otfabric/go-tpkt v1.0.2 h1:4PoZigb7dWwedaAZ50JULfp9jMCXSGmC2PuAszum7DU=
 github.com/otfabric/go-tpkt v1.0.2/go.mod h1:9d3Ydrkerj5OTQQ9KZ12rgkpR4lU/9ULoTOYlijGsLE=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
