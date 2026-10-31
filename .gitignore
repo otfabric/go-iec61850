@@ -29,3 +29,5 @@ coverage.*
 # Local reference material and AI working files (never commit)
 /sources/
 /ai/
+/scl/cmd/sclgen/sclgen
+/scl/cmd/sclparse/sclparse
