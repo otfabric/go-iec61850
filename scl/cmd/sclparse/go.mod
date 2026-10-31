@@ -3,7 +3,7 @@ module github.com/otfabric/go-iec61850/scl/cmd/sclparse
 go 1.25.0
 
 require (
-	github.com/otfabric/go-iec61850 v1.4.2
+	github.com/otfabric/go-iec61850 v1.4.4
 	github.com/spf13/cobra v1.10.2
 )
 
