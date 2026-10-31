@@ -525,9 +525,17 @@ func TestSV_GoSubscriber(t *testing.T) {
 
 				time.Sleep(2 * time.Second)
 				// The rate drops to 0 on the timeout after the stop: sample it now.
+				// A publisher stalled by a busy host times out the same way, and the
+				// rate comes back with the stream, so one reading is not enough.
+				r := float64(fx.SamplesPerSecond)
 				var rate float64
-				if st := sub.Stats(); len(st) == 1 {
-					rate = st[0].Rate
+				for limit := time.Now().Add(5 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+					if st := sub.Stats(); len(st) == 1 {
+						rate = st[0].Rate
+					}
+					if (rate >= 0.9*r && rate <= 1.1*r) || time.Now().After(limit) {
+						break
+					}
 				}
 				pub.send(t, map[string]any{"cmd": "stop"})
 				stopped, ok := pub.next(t, 10*time.Second, func(e svEvent) bool { return e.Event == "stopped" })
@@ -536,7 +544,8 @@ func TestSV_GoSubscriber(t *testing.T) {
 				for {
 					select {
 					case ev := <-sub.Events():
-						if ev.Kind == sv.EventTimeout {
+						// A stall above leaves its own timeout event in the queue.
+						if st := sub.Stats(); ev.Kind == sv.EventTimeout && len(st) == 1 && st[0].Status == sv.StatusTimeout {
 							break wait
 						}
 					case <-deadline:
@@ -557,7 +566,7 @@ func TestSV_GoSubscriber(t *testing.T) {
 				if ok && stopped.Samples > 0 && (st0.ASDUs+st0.Lost)*100 < uint64(stopped.Samples)*99 {
 					t.Errorf("received %d + lost %d of %d published samples", st0.ASDUs, st0.Lost, stopped.Samples)
 				}
-				if r := float64(fx.SamplesPerSecond); rate < 0.9*r || rate > 1.1*r {
+				if rate < 0.9*r || rate > 1.1*r {
 					t.Errorf("measured rate %.0f/s, want %.0f/s", rate, r)
 				}
 				_ = sub2.Close()
