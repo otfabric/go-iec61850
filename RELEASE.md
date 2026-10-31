@@ -1,5 +1,16 @@
 # go-iec61850 Releases
 
+## v1.4.5
+
+**Date:** 2026-10-31
+**Previous release:** v1.4.4
+
+### Changed
+
+- The bundled command-line tools are built on v1.4.4. Library code is the same as v1.4.4.
+
+---
+
 ## v1.4.4
 
 **Date:** 2026-10-31
