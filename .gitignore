@@ -31,3 +31,27 @@ coverage.*
 /ai/
 /scl/cmd/sclgen/sclgen
 /scl/cmd/sclparse/sclparse
+
+# Build artefacts live in /bin/ and /release/ (otfabric/engineering REPO-005)
+/release/
+coverage.out
+
+# Output of a bare `go build`, anchored so it can never hide a source folder
+/examples/basic-client/basic-client
+/examples/browse-tree/browse-tree
+/examples/control/control
+/examples/datasets/datasets
+/examples/files/files
+/examples/goose-client/goose-client
+/examples/goose-publisher/goose-publisher
+/examples/goose-server/goose-server
+/examples/goose-subscriber/goose-subscriber
+/examples/ied-client/ied-client
+/examples/ied-server/ied-server
+/examples/journal/journal
+/examples/reports/reports
+/examples/resilient-client/resilient-client
+/examples/setting-groups/setting-groups
+/examples/sv-publisher/sv-publisher
+/examples/sv-subscriber/sv-subscriber
+/examples/svcb-client/svcb-client

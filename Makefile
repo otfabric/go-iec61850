@@ -6,7 +6,7 @@ export GOWORK := off
 PKGS     := ./...
 FUZZTIME ?= 15s
 
-DIST     := dist
+DIST     := release
 
 CMDS     := sclgen sclparse
 # The tools are nested modules (ADR-0009): ./... of this module does not reach them.
@@ -194,7 +194,7 @@ install: build ## Install commands to PREFIX/bin (default /usr/local/bin)
 
 check: fmt tidy vet lint lint-ci vuln test test-race coverage ## Run all pre-commit checks
 
-clean: coverage-clean ## Clean test cache, coverage, and dist artifacts
-	@echo "Cleaning test cache, coverage, and dist artifacts"
+clean: coverage-clean ## Clean test cache, coverage, and release artifacts
+	@echo "Cleaning test cache, coverage, and release artifacts"
 	@go clean -testcache
 	rm -rf bin $(DIST)
