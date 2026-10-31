@@ -1,5 +1,17 @@
 # go-iec61850 Releases
 
+## v1.4.2
+
+**Date:** 2026-10-31
+**Previous release:** v1.4.1
+
+### Changed
+
+- Tests, CI and documents only. `make coverage-gate` is now `make coverage-pkg-check`, and `make build-all` writes to `release/`.
+- Built on go-mms v1.2.3, go-cotp v1.1.1, go-tpkt v1.0.2.
+
+---
+
 ## v1.4.1
 
 **Date:** 2026-10-30
