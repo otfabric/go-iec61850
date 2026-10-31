@@ -37,19 +37,67 @@ Use `errors.Is(err, iec61850.ErrXxx)` for category classification.
 | `ErrGOOSE` | Server GOOSE engine: already enabled, no transport, engine stopped, GoCB without address |
 | `ErrSV` | Server SV engine: already enabled, no transport, engine stopped, MSVCB sample not encodable |
 
-The `goose` package has its own sentinels (`goose.ErrInvalidFrame`,
-`goose.ErrValidation`, `goose.ErrPermission`, ...) and typed errors
-(`*goose.DecodeError`, `*goose.ValidationError`, `*goose.ConfigError`,
-`*goose.EncodeError`, `*goose.TransportError`); see
+### Package `goose`
+
+Use `errors.Is(err, goose.ErrXxx)`. Decoder failures are `*goose.DecodeError`
+values that unwrap to one of the decode sentinels. `*goose.ValidationError`
+unwraps to `ErrValidation` and to the specific mismatch sentinel. See
 [GOOSE.md](GOOSE.md#errors).
 
-The `sv` package likewise has its own sentinels (`sv.ErrInvalidFrame`,
-`sv.ErrInvalidPDU`, `sv.ErrValidation`, `sv.ErrConfRevMismatch`, ...) and
-typed errors (`*sv.DecodeError`, `*sv.ValidationError`,
-`*sv.ConfigError`, `*sv.TransportError`); see [SV.md](SV.md#errors).
-The transport sentinels (`ErrClosed`, `ErrPermission`,
-`ErrInterfaceNotFound`, `ErrUnsupportedPlatform`, `ErrInvalidConfig`) are
-the same values in `goose`, `sv` and `l2`.
+| Sentinel | Meaning |
+|----------|---------|
+| `ErrInvalidFrame` | Ethernet frame cannot carry a GOOSE message: too short, wrong EtherType, or a malformed 802.1Q tag |
+| `ErrNotGOOSE` | Well-formed Ethernet frame whose EtherType is not 0x88B8 |
+| `ErrInvalidLength` | GOOSE header length field inconsistent with the frame or the encoded PDU |
+| `ErrInvalidPDU` | BER structure error in the goosePdu: bad tag or length, missing mandatory field, duplicate or out-of-order field, out-of-range value |
+| `ErrUnsupportedPDU` | GOOSE APDU choice other than goosePdu, for example a GSE management PDU |
+| `ErrInvalidData` | Malformed or unsupported MMS Data element in allData |
+| `ErrLimitExceeded` | Decoder or encoder limit exceeded: nesting depth, entry count, frame size |
+| `ErrInvalidValue` | Value cannot be encoded: nil element, unsupported type, out of range |
+| `ErrSCL` | A control block could not be built from an SCL document |
+| `ErrNotFound` | Requested control block, dataset or stream does not exist |
+| `ErrValidation` | Base sentinel of subscriber validation failures |
+| `ErrConfRevMismatch` | Received confRev differs from the expected configuration revision |
+| `ErrDatSetMismatch` | Received datSet reference differs from the expected one |
+| `ErrGoIDMismatch` | Received goID differs from the expected one |
+| `ErrMemberMismatch` | numDatSetEntries, the allData element count or an element type does not match the expected dataset layout |
+| `ErrNeedsCommissioning` | Received message has ndsCom set |
+
+### Package `sv`
+
+Use `errors.Is(err, sv.ErrXxx)`. Decoder failures are `*sv.DecodeError` values
+that unwrap to one of the decode sentinels. `*sv.ValidationError` unwraps to
+`ErrValidation` and to the specific mismatch sentinel. See [SV.md](SV.md#errors).
+
+| Sentinel | Meaning |
+|----------|---------|
+| `ErrInvalidFrame` | Ethernet frame cannot carry an SV message: too short or a malformed 802.1Q tag |
+| `ErrNotSV` | Well-formed Ethernet frame whose EtherType is not 0x88BA |
+| `ErrInvalidLength` | SV header length field inconsistent with the frame or the encoded APDU |
+| `ErrInvalidPDU` | BER structure error in the savPdu: bad tag or length, missing mandatory field, duplicate or out-of-order field, wrong field size, or noASDU not matching the ASDU count |
+| `ErrInvalidData` | Sample does not match its dataset layout: wrong size or an undecodable member |
+| `ErrLimitExceeded` | Decoder or encoder limit exceeded: ASDU count, sample size, frame size |
+| `ErrInvalidValue` | Value cannot be encoded in a sample: nil, wrong type, out of range |
+| `ErrSCL` | A control block could not be built from an SCL document |
+| `ErrNotFound` | Requested control block or stream does not exist |
+| `ErrValidation` | Base sentinel of subscriber validation failures |
+| `ErrConfRevMismatch` | Received confRev differs from the expected configuration revision |
+| `ErrDatSetMismatch` | Received datSet reference differs from the expected one |
+| `ErrSmpRateMismatch` | Received smpRate or smpMod differs from the expected one |
+| `ErrSampleSizeMismatch` | Sample length differs from the expected dataset layout |
+
+### Transport sentinels
+
+These are the same values in `goose`, `sv` and `l2`, so `errors.Is` matches
+across the three packages.
+
+| Sentinel | Meaning |
+|----------|---------|
+| `ErrClosed` | Operation on a closed publisher, subscriber or transport |
+| `ErrPermission` | Opening a raw Ethernet socket was denied: `CAP_NET_RAW` on Linux, read and write access to `/dev/bpf*` on macOS and BSD |
+| `ErrInterfaceNotFound` | The named network interface does not exist |
+| `ErrUnsupportedPlatform` | No raw Ethernet transport on this operating system |
+| `ErrInvalidConfig` | Invalid publisher, subscriber or transport configuration; `*ConfigError` unwraps to it |
 
 ---
 

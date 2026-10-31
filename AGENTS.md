@@ -21,7 +21,7 @@ This repository follows **otfabric/engineering policy 1.1**, profile **protocol-
 
 ## Hard rules
 
-1. Never lower the coverage minimum (90 per package, `scripts/covergate.go`; 90 in total, go-ci), add lint suppressions, or skip/delete tests to make CI pass.
+1. Never lower the coverage minimum (`COVER_PKG_MIN`, 90 per package, `scripts/covergate.go`; 90 in total, go-ci), add lint suppressions, or skip/delete tests to make CI pass.
 2. Never invent protocol semantics; cite the specification clause.
 3. Interop claims only from passing runs against the pinned iec61850-interop images.
 4. Follow semantic versioning for every non-internal package: this library stays on v0 or v1.
@@ -33,7 +33,7 @@ This repository follows **otfabric/engineering policy 1.1**, profile **protocol-
 | When you change… | Run |
 |---|---|
 | anything | `make check` |
-| coverage-relevant code | `make coverage-gate` |
+| coverage-relevant code | `make coverage-pkg-check` |
 | a decoder | `make fuzz` |
 | the generator or `scl/specs` | `make scl-generate scl-check-generate` |
 | interop-relevant behaviour | `make interop`, `make interop-goose` (Docker; see interop/README.md) |
