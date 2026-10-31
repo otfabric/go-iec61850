@@ -22,6 +22,9 @@ on:
         required: false
         default: "5m"
 
+permissions:
+  contents: read
+
 jobs:
   # Targets are discovered, never listed, so a new Fuzz function runs without a
   # workflow change.

@@ -828,7 +828,7 @@ make test           # unit tests
 make test-race      # with the race detector
 make e2e            # client against server on loopback TCP, every example
 make lint-ci        # golangci-lint
-make coverage-gate  # >= 90 % statement coverage per package
+make coverage-pkg-check  # >= 90 % statement coverage per package
 make fuzz           # every fuzz target, FUZZTIME each (default 15s)
 make interop        # MMS interop against the adapter images (Docker)
 make interop-goose  # GOOSE and SV interop (Linux, root, Docker network)

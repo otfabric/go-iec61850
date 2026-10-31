@@ -10,8 +10,8 @@ How to run each test tier. What the tests show per feature is in
 | Unit | `make test` | nothing | `ci.yml`, Go 1.25–1.26 |
 | Race | `make test-race` | nothing | `ci.yml` |
 | End-to-end | `make e2e` | nothing | the same tests run in `ci.yml`, see below |
-| Raw sockets | `sudo -E go test ./l2 ./goose` | root on Linux, or `GOOSE_TEST_IFACE` | `coverage-gate` job, as root |
-| Coverage | `make coverage-gate` | root for the raw socket tests | `ci.yml` |
+| Raw sockets | `sudo -E go test ./l2 ./goose` | root on Linux, or `GOOSE_TEST_IFACE` | `coverage-pkg-check` job, as root |
+| Coverage | `make coverage-check`, `make coverage-pkg-check` | root for the raw socket tests | `ci.yml` |
 | Fuzz | `make fuzz` | nothing | seconds in `ci.yml`, 5 minutes per target nightly (`fuzz.yml`) |
 | Benchmarks | `make bench` | nothing | no |
 | Interop | `make interop` | Docker and adapter images | `interop.yml` |
@@ -19,7 +19,7 @@ How to run each test tier. What the tests show per feature is in
 | Generated code | `make scl-check-generate` | nothing | `ci.yml`, `generated` job |
 
 `make check` is the pre-commit set: it formats, tidies, then runs vet, lint,
-`vuln`, tests, race and coverage. It does not run `coverage-gate`, `e2e`,
+`vuln`, tests, race and coverage. It does not run `coverage-pkg-check`, `e2e`,
 `fuzz` or interop.
 
 ## End-to-end
@@ -39,7 +39,7 @@ Peers in `make e2e` are this repository's own code: it proves nothing about
 interoperability.
 
 `ci.yml`'s shared job excludes examples through `test-exclude-regex`; the
-`coverage-gate` job runs `./...` and so runs them.
+`coverage-pkg-check` job runs `./...` and so runs them.
 
 ## Interop
 
@@ -78,7 +78,7 @@ Run with `make test`:
 
 ## Coverage policy
 
-- At least 90 % of statements per package: `make coverage-gate`, enforced by
+- At least 90 % of statements per package: `make coverage-pkg-check`, enforced by
   `scripts/covergate.go`. CI runs it as root so that the `AF_PACKET` tests
   count; without root, the raw socket code is not covered.
 - At least 90 % in total for the module and for `scl/cmd/sclparse`:

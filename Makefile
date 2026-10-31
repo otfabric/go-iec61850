@@ -21,7 +21,7 @@ COMMIT     ?= $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "")
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS    := -s -w -X main.version=$(VERSION) -X main.tag=$(TAG) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
 
-.PHONY: e2e interop-goose coverage-gate help test test-race test-verbose vet lint fmt fuzz bench tidy check clean coverage coverage-html coverage-clean interop scl-generate scl-check-generate build build-all release-all install ai-print-all ai-print-test ai-print ai-diff ai-digest ai-context vuln
+.PHONY: e2e interop-goose coverage-check coverage-pkg-check help test test-race test-verbose vet lint fmt fuzz bench tidy check clean coverage coverage-html coverage-clean interop scl-generate scl-check-generate build build-all release-all install ai-print-all ai-print-test ai-print ai-diff ai-digest ai-context vuln
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "}; /^[a-zA-Z0-9_.-]+:.*## / {printf "%-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -83,9 +83,22 @@ coverage: ## Run tests with coverage profile and text summary
 	@go test -coverprofile=coverage.out $(PKGS)
 	@go tool cover -func=coverage.out | tee coverage.txt
 
-coverage-gate: ## Enforce >=90% statement coverage per package
-	@go test -covermode=atomic -coverprofile=coverage.out $(PKGS)
-	@go run scripts/covergate.go -min 90 coverage.out
+# Same total as coverage-min in ci.yml; examples are not counted, as there.
+COVER_MIN := 90
+
+coverage-check: ## Fail when total coverage is below COVER_MIN
+	@go test -covermode=atomic -coverprofile=coverage.out $$(go list $(PKGS) | grep -Ev '/examples?(/|$$)')
+	@total=$$(go tool cover -func=coverage.out | awk '/^total:/ {sub("%","",$$3); print $$3}'); \
+	awk -v t="$$total" -v m="$(COVER_MIN)" 'BEGIN { if (t+0 < m+0) { printf "coverage %.1f%% < %s%%\n", t, m; exit 1 } else printf "coverage %.1f%% >= %s%%\n", t, m }'
+
+# Per-package floor (TEST-012). Lowest package when set: l2, 91.0 %. CI passes
+# COVER_FLAGS="-exec sudo -race" so that the raw socket tests run.
+COVER_PKG_MIN := 90
+COVER_FLAGS ?=
+
+coverage-pkg-check: ## Fail when a package is below COVER_PKG_MIN
+	@go test $(COVER_FLAGS) -covermode=atomic -coverprofile=coverage.out $(PKGS)
+	@go run scripts/covergate.go -min $(COVER_PKG_MIN) coverage.out
 
 coverage-html: coverage ## Generate HTML coverage report
 	@echo "Generating HTML coverage report"

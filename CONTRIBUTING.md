@@ -17,7 +17,7 @@ Run `make help` for the list of targets.
 ## Tests
 
 - `make test`, `make test-race`: unit tests.
-- `make coverage-gate`: fails below 90% per package. CI runs this gate as root so that the GOOSE raw socket tests run; do not lower it.
+- `make coverage-pkg-check`: fails below 90% per package. CI runs this gate as root so that the GOOSE raw socket tests run; do not lower it.
 - `make fuzz`: fuzz targets for `FUZZTIME` (default 15s).
 - `make interop`, `make interop-goose`: tests against independent stacks, see [INTEROP.md](INTEROP.md).
 
