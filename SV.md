@@ -269,7 +269,9 @@ and `noASDU`. `SvEna`, `MsvID`, `DatSet`, `SmpRate`, `OptFlds` and
 `SmpMod` are writable; all but `SvEna` only while `SvEna` is false
 (temporarily-unavailable otherwise). A `DatSet` change increments
 `ConfRev`. Invalid values (empty `MsvID`, zero `SmpRate`, `SmpMod`
-outside 0–2, an unknown dataset) are rejected with object-value-invalid.
+outside 0–2, an unknown dataset, a `SmpRate` above 65535) are rejected with
+object-value-invalid. A publisher does not start while a stored `ConfRev`,
+`SmpRate`, `noASDU` or `SmpMod` is outside its type.
 `Capabilities().SV` reports the engine.
 
 ## Client MSVCB access
@@ -281,7 +283,9 @@ err = client.SetMSVCB(ctx, "MU01", "LLN0$MS$MSVCB01", iec61850.MSVCBUpdate{SmpRa
 ```
 
 `SetMSVCB` writes `SvEna` last. `GetMSVCB` also decodes Edition 1
-MSVCBs without `SmpMod`.
+MSVCBs without `SmpMod`. An attribute outside its IEC 61850-7-2 type
+(`ConfRev` INT32U; `SmpRate`, `VID`, `APPID`, `noASDU` INT16U; `PRIORITY`
+INT8U; negative `SmpMod`) is an `ErrProtocol`, not truncated.
 
 ## Errors
 

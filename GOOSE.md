@@ -234,7 +234,8 @@ srv.SetValue(ctx, "LD0/GGIO1$ST$Ind1$stVal", mms.NewBoolean(true)) // -> new GOO
   MaxTime and FixedOffs (IEC 61850-8-1 GoCB). GoEna, GoID and DatSet are
   writable; GoID and DatSet only while GoEna is false
   (temporarily-unavailable otherwise); a new DatSet must exist
-  (object-value-invalid) and increments ConfRev. Other attributes are
+  (object-value-invalid) and increments ConfRev; once ConfRev would pass
+  2^32-1 the GoCB cannot be enabled (object-value-invalid). Other attributes are
   read-only (object-access-denied). A GoCB without a GSE address has
   NdsCom true and cannot be enabled.
 - `GOOSEEngine.ControlBlocks()`, `Publisher(ref)`, `SetEnabled(ref, on)`
@@ -252,8 +253,10 @@ err = client.SetGoCB(ctx, "LD0", "LLN0$GO$gcb1", iec61850.GoCBUpdate{DatSet: &ds
 ```
 
 `GetGoCB` decodes the GoCB structure into `GoCB` (MinTime/MaxTime and
-FixedOffs are optional, `HasTimes` tells). `SetGoCB` writes the selected
-attributes, GoEna last.
+FixedOffs are optional, `HasTimes` tells); an attribute outside its IEC
+61850-7-2 type (ConfRev, MinTime, MaxTime INT32U; VID, APPID INT16U;
+PRIORITY INT8U) is an `ErrProtocol`, not truncated. `SetGoCB` writes the
+selected attributes, GoEna last.
 
 ## Errors
 
