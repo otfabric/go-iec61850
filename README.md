@@ -189,6 +189,11 @@ func readMeasurement(ctx context.Context, addr string) error {
 }
 ```
 
+`Dial` sends the ISO addressing IEDs expect (T-selector `0001`, TPDU size
+1024, S-selector `0001`, P-selector `00000001`, AP-titles `1.1.1.999` /
+`1.1.1.999.1`, AE-qualifier 12). For an IED configured otherwise set
+`MMS.Transport.RemoteTSelector` and `MMS.ISO.Remote*`, or take them from its
+SCL ConnectedAP with `ApplySCLAddress` ([API.md](API.md#iso-addressing)).
 `DialOptions` also takes `Metrics` (an `mms.Metrics`), a model `Cache`
 and the `IEDName` prefix of Edition 1 servers. Examples:
 [basic-client](examples/basic-client), [ied-client](examples/ied-client)

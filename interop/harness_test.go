@@ -619,26 +619,28 @@ func startIEDServer(t *testing.T) *iedServerHandle {
 // libiec61850 IED client (server-direction tests)
 // ---------------------------------------------------------------------------
 
-func startIEDClientAdapter(t *testing.T, port int) <-chan iedClientResult {
+// startIEDClientAdapter runs the peer's ied-client against port; extra
+// arguments (for example --remote-tsel) are appended to its command line.
+func startIEDClientAdapter(t *testing.T, port int, extra ...string) <-chan iedClientResult {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), iedClientTimeout)
 
 	var cmd *exec.Cmd
 	if binary := os.Getenv("IEC61850_CLIENT_BINARY"); binary != "" {
-		cmd = exec.CommandContext(ctx, binary,
+		cmd = exec.CommandContext(ctx, binary, append([]string{
 			"--host", "127.0.0.1",
 			"--port", fmt.Sprintf("%d", port),
-		)
+		}, extra...)...)
 	} else {
 		image := peer().dockerImage()
-		cmd = exec.CommandContext(ctx, "docker", "run", "--rm",
+		cmd = exec.CommandContext(ctx, "docker", append([]string{"run", "--rm",
 			"--add-host=host.docker.internal:host-gateway",
 			"--entrypoint", peer().cmd("client"),
 			image,
 			"--host", "host.docker.internal",
 			"--port", fmt.Sprintf("%d", port),
-		)
+		}, extra...)...)
 	}
 
 	stdout, err := cmd.StdoutPipe()
@@ -874,26 +876,28 @@ func startIEC61850BeanServer(t *testing.T) *iedServerHandle {
 	}
 }
 
-func startIEC61850BeanClientAdapter(t *testing.T, port int) <-chan iedClientResult {
+// startIEC61850BeanClientAdapter runs iec61850bean-ied-client against
+// port; extra arguments are appended to its command line.
+func startIEC61850BeanClientAdapter(t *testing.T, port int, extra ...string) <-chan iedClientResult {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), iedClientTimeout)
 
 	var cmd *exec.Cmd
 	if binary := os.Getenv("IEC61850BEAN_CLIENT_BINARY"); binary != "" {
-		cmd = exec.CommandContext(ctx, binary,
+		cmd = exec.CommandContext(ctx, binary, append([]string{
 			"--host", "127.0.0.1",
 			"--port", fmt.Sprintf("%d", port),
-		)
+		}, extra...)...)
 	} else {
 		image := getEnvOr("IEC61850BEAN_IMAGE", defaultBeanImage)
-		cmd = exec.CommandContext(ctx, "docker", "run", "--rm",
+		cmd = exec.CommandContext(ctx, "docker", append([]string{"run", "--rm",
 			"--add-host=host.docker.internal:host-gateway",
 			"--entrypoint", "iec61850bean-ied-client",
 			image,
 			"--host", "host.docker.internal",
 			"--port", fmt.Sprintf("%d", port),
-		)
+		}, extra...)...)
 	}
 
 	stdout, err := cmd.StdoutPipe()
@@ -1024,6 +1028,13 @@ type goIEDServer struct {
 
 func startGoIEDServer(t *testing.T) *goIEDServer {
 	t.Helper()
+	return startGoIEDServerOpts(t)
+}
+
+// startGoIEDServerOpts is startGoIEDServer with ISO listener options (for
+// example iso.WithCalledTSelector for a strict server).
+func startGoIEDServerOpts(t *testing.T, lnOpts ...iso.Option) *goIEDServer {
+	t.Helper()
 
 	sclData, err := scl.ParseFile(icdPath(t))
 	if err != nil {
@@ -1051,7 +1062,7 @@ func startGoIEDServer(t *testing.T) *goIEDServer {
 
 	setGoIEDInitialValues(t, srv)
 
-	ln, err := iso.Listen("0.0.0.0:0")
+	ln, err := iso.Listen("0.0.0.0:0", lnOpts...)
 	if err != nil {
 		t.Fatalf("iso.Listen: %v", err)
 	}

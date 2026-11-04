@@ -261,6 +261,21 @@ first five.
 | TCP | `net` stdlib | ✓ |
 | TLS (optional) | `crypto/tls` | ✓ |
 
+COTP transport selectors (`interop/tsap_test.go`, otfabric/go-iec61850#28):
+
+| Direction | Scenario | Result |
+|---|---|---|
+| go client → strict gate → peer IED server | default client (T-selector `0001`/`0001`, TPDU size 1024) | associates, reads through the gate |
+| go client → strict gate | called T-selector omitted (the v1.5.0 default) | refused, DR reason 3 (address unknown) |
+| go client → strict gate requiring `00000001` | default `0001` / configured `00000001` | refused / associates |
+| peer client → go server requiring its T-selector | stack defaults; `01`; `00000001` via `--local-tsel`/`--remote-tsel` | associates (dscsystems: flags unsupported, skipped) |
+| peer client → go server requiring `0002` | called `0001` | association refused |
+
+The gate is a test-side proxy in front of the peer server that refuses a CR
+without the required called T-selector or without a TPDU size, as some IEDs do.
+It is our code, not an independent stack, so it lives in this suite and not
+in iec61850-interop.
+
 ### IEC 61850-7-2 services
 
 | Service | Client | Server | Notes |

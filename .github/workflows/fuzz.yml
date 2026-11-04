@@ -35,9 +35,9 @@ jobs:
     outputs:
       targets: ${{ steps.list.outputs.targets }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -70,9 +70,9 @@ jobs:
         include: ${{ fromJSON(needs.discover.outputs.targets) }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -93,7 +93,7 @@ jobs:
 
       - name: Upload failing corpus entry
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-failure-${{ matrix.target }}-${{ github.run_id }}
           path: ${{ matrix.pkg }}/testdata/fuzz/${{ matrix.target }}/

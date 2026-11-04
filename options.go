@@ -55,6 +55,12 @@ type DialOptions struct {
 	// events of the client (see [mms.Metrics]). It is a convenience field
 	// equivalent to MMS.Metrics, which takes precedence when both are set.
 	Metrics mms.Metrics
+
+	// MaxTPDULength is the COTP TPDU size proposed in the connection
+	// request, passed to [iso.WithMaxTPDULength]. Zero means the go-mms
+	// default, 1024 octets; 65531 omits the parameter (the RFC 1006
+	// default). Valid values are 128..65531.
+	MaxTPDULength int
 }
 
 // ClientOptions configures an IEC 61850 client created via [NewClient]

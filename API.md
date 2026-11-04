@@ -69,6 +69,7 @@ type DialOptions struct {
     IEDName    string
     Retry      mms.RetryPolicy // passed to iso.WithRetry; zero value: one attempt
     Metrics    mms.Metrics     // used when MMS.Metrics is nil
+    MaxTPDULength int          // COTP TPDU size proposed; 0 → 1024, 65531 → omitted
 }
 ```
 
@@ -78,6 +79,30 @@ retry is logged at Warn, then `Retry.OnRetry` is called.
 `mms.DefaultRetryPolicy()` is a reasonable reconnect policy. Per-request
 timeouts are set with `MMS.RequestTimeout`; `Client.MMS().Done()` and
 `Err()` report the end of the association.
+
+### ISO addressing
+
+`Dial` sends the addressing IEC 61850 IEDs expect (go-mms v1.4.0 defaults, the
+values libiec61850 sends): T-selector `0001`/`0001` and TPDU size 1024 in the
+COTP CR, S-selector `0001`, P-selector `00000001`, AP-titles `1.1.1.999` /
+`1.1.1.999.1`, AE-qualifier 12. An IED configured otherwise is reached by
+setting `MMS.Transport.RemoteTSelector` and `MMS.ISO.Remote*`, or from its SCL:
+
+```go
+const (
+    PTypeOSITSEL, PTypeOSISSEL, PTypeOSIPSEL = "OSI-TSEL", "OSI-SSEL", "OSI-PSEL"
+    PTypeOSIAPTitle, PTypeOSIAEQualifier     = "OSI-AP-Title", "OSI-AE-Qualifier"
+)
+
+func ParseSelector(s string) ([]byte, error)         // "0001" → 00 01; "" → omit
+func ParseAPTitle(s string) (mms.APTitle, error)     // "1,3,9999,23" or "1.3.9999.23"
+func ApplySCLAddress(opts *mms.DialOptions, ap scl.ConnectedAP) error
+```
+
+`ApplySCLAddress` copies the ConnectedAP's OSI-TSEL, OSI-SSEL, OSI-PSEL,
+OSI-AP-Title and OSI-AE-Qualifier (IEC 61850-8-1 Table 132) into the remote
+(called) options; absent P-types keep the defaults. A non-nil empty selector or
+AP-title omits the parameter. Errors match `ErrInvalidArgument`.
 
 ### ClientOptions
 
