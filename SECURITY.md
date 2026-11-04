@@ -35,6 +35,11 @@ following are in scope for this policy:
   should not have access to.
 - Incorrect URCB/BRCB reservation enforcement allowing unauthorised report
   enabling.
+- A client changing data it may only read: status (ST), measurands (MX),
+  setting-group values (SG), service responses (SR), operate-received (OR)
+  and extended definitions (EX) answer client writes with
+  object-access-denied; the application changes them with
+  `Server.SetValue`.
 - Data races exposed by the race detector.
 - Any defect that allows a remote peer to crash or deadlock the server.
 
