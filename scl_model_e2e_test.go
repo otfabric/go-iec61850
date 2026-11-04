@@ -197,10 +197,10 @@ func TestE2E_SCLModelRejectsHostileWrites(t *testing.T) {
 		item string
 		v    *mms.Value
 	}{
-		{"GGIO1$ST$SPCSO1$stVal", mms.NewBoolean(true)},                    // status
-		{"LLN0$ST$Mod$stVal", mms.NewInteger(5)},                           // status
+		{"GGIO1$ST$SPCSO1$stVal", mms.NewBoolean(true)},                     // status
+		{"LLN0$ST$Mod$stVal", mms.NewInteger(5)},                            // status
 		{"GGIO1$ST$SPCSO1$q", mms.NewBitStringWithLength([]byte{0, 0}, 13)}, // quality
-		{"LLN0$ST$Mod$t", mms.NewUTCTime(time.Unix(1, 0))},                 // timestamp
+		{"LLN0$ST$Mod$t", mms.NewUTCTime(time.Unix(1, 0))},                  // timestamp
 	} {
 		before := read(tc.item)
 		if err := write(tc.item, tc.v); err == nil {

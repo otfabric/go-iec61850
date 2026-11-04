@@ -435,13 +435,13 @@ func TestBERHelpers(t *testing.T) {
 		}
 	}
 	for _, v := range []int64{0, 1, -1, 127, 128, -128, -129, 1 << 40, math.MinInt64, math.MaxInt64} {
-		b := appendSigned(nil, v)
+		b := signedBytes(v)
 		x := int64(int8(b[0]))
 		for _, o := range b[1:] {
 			x = x<<8 | int64(o)
 		}
 		if x != v {
-			t.Errorf("appendSigned(%d) = %x", v, b)
+			t.Errorf("signedBytes(%d) = %x", v, b)
 		}
 	}
 }

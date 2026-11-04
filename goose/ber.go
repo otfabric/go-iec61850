@@ -54,8 +54,9 @@ func appendTLV(b []byte, tag byte, content []byte) []byte {
 	return append(b, content...)
 }
 
-// appendSigned appends the minimal two's-complement encoding of v.
-func appendSigned(b []byte, v int64) []byte {
+// signedBytes returns the minimal two's-complement encoding of v.
+func signedBytes(v int64) []byte {
+	var b []byte
 	n := 8
 	for n > 1 {
 		hi := byte(v >> (8 * (n - 1)) & 0xff)

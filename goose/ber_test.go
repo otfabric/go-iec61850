@@ -66,8 +66,8 @@ func TestAppendSignedWidths(t *testing.T) {
 		{math.MaxInt64, []byte{0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}},
 		{math.MinInt64, []byte{0x80, 0, 0, 0, 0, 0, 0, 0}},
 	} {
-		if got := appendSigned(nil, tc.v); !bytes.Equal(got, tc.want) {
-			t.Errorf("appendSigned(%d) = % x, want % x", tc.v, got, tc.want)
+		if got := signedBytes(tc.v); !bytes.Equal(got, tc.want) {
+			t.Errorf("signedBytes(%d) = % x, want % x", tc.v, got, tc.want)
 		}
 		// Integer round trip through the Data decoder (sign extension).
 		b, err := EncodeData(mms.NewInteger(tc.v))

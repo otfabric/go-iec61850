@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"errors"
 	"math"
+	"slices"
 	"testing"
 	"time"
 
@@ -41,7 +42,7 @@ func TestBERLengthForms(t *testing.T) {
 		if c.n > 0x10000 {
 			continue // keep the buffer small
 		}
-		buf := append(h, make([]byte, c.n)...)
+		buf := slices.Concat(h, make([]byte, c.n))
 		e, err := readTLV(buf, 0, 0, "x")
 		if err != nil || len(e.content) != c.n || e.next != len(buf) {
 			t.Errorf("readTLV %#x: %v len %d next %d", c.n, err, len(e.content), e.next)

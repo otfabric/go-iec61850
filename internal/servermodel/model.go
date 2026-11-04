@@ -12,9 +12,10 @@
 // the variable registry, named variable lists, and report hooks.
 package servermodel
 
-import "strings"
-
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Model is the top-level container for an IEC 61850 server data model.
 // It holds the complete logical structure served by a single MMS server

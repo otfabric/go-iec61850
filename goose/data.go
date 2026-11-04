@@ -68,7 +68,7 @@ func appendData(b []byte, v *mms.Value, depth int) ([]byte, error) {
 		return append(b, tagBoolean, 1, c), nil
 	case mms.ValueTypeInteger:
 		x, _ := v.Int64()
-		return appendTLV(b, tagInteger, appendSigned(nil, x)), nil
+		return appendTLV(b, tagInteger, signedBytes(x)), nil
 	case mms.ValueTypeUnsigned:
 		x, _ := v.Uint64()
 		return appendTLV(b, tagUnsigned, encodeUnsigned(x)), nil
@@ -122,7 +122,7 @@ func appendData(b []byte, v *mms.Value, depth int) ([]byte, error) {
 		if x < 0 {
 			return b, errValue("negative BCD %d", x)
 		}
-		return appendTLV(b, tagBCD, appendSigned(nil, x)), nil
+		return appendTLV(b, tagBCD, signedBytes(x)), nil
 	case mms.ValueTypeObjectIdentifier:
 		oid, _ := v.ObjectIdentifier()
 		c, err := encodeOID(oid)
