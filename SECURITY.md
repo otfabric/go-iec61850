@@ -39,7 +39,8 @@ following are in scope for this policy:
   setting-group values (SG), service responses (SR), operate-received (OR)
   and extended definitions (EX) answer client writes with
   object-access-denied; the application changes them with
-  `Server.SetValue`.
+  `Server.SetValue`. `ServerOptions.AllowReadOnlyFCWrites` turns this off
+  for simulators and test fixtures; never set it on a device.
 - Data races exposed by the race detector.
 - Any defect that allows a remote peer to crash or deadlock the server.
 

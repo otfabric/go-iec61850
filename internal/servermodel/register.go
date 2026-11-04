@@ -97,6 +97,9 @@ type ValueStore struct {
 	mu            sync.RWMutex
 	values        map[string]*mms.Value
 	defensiveCopy bool
+	// allowReadOnlyFCWrites lets clients write read-only FCs; see
+	// ValueStoreOptions.AllowReadOnlyFCWrites.
+	allowReadOnlyFCWrites bool
 
 	interceptorMu sync.RWMutex
 	interceptor   WriteInterceptor
@@ -104,6 +107,12 @@ type ValueStore struct {
 
 // ValueStoreOptions configures [ValueStore] behavior.
 type ValueStoreOptions struct {
+	// AllowReadOnlyFCWrites, when true, lets clients write data
+	// attributes of the read-only functional constraints (ST, MX, SG,
+	// SR, OR, EX) when the model is registered with this store. Only
+	// for simulators and test fixtures; see clientWritableFC.
+	AllowReadOnlyFCWrites bool
+
 	// DefensiveCopy, when true, causes Get and Set to perform a
 	// shallow struct-level copy (*mms.Value is copied by value, not
 	// by pointer). This prevents the most common aliasing bug where
@@ -128,8 +137,9 @@ func NewValueStore() *ValueStore {
 // options.
 func NewValueStoreWithOptions(opts ValueStoreOptions) *ValueStore {
 	return &ValueStore{
-		values:        make(map[string]*mms.Value),
-		defensiveCopy: opts.DefensiveCopy,
+		values:                make(map[string]*mms.Value),
+		defensiveCopy:         opts.DefensiveCopy,
+		allowReadOnlyFCWrites: opts.AllowReadOnlyFCWrites,
 	}
 }
 
@@ -679,7 +689,7 @@ func registerDAWithFC(srv *mms.Server, vs *ValueStore, ldName, lnName string, pa
 	itemID := lnName + "$" + attr.FC + "$" + strings.Join(fullPath, "$")
 	storeKey := StoreKey(ldName, itemID)
 	var write func(context.Context, *mms.Value) error
-	if clientWritableFC(attr.FC) {
+	if vs.allowReadOnlyFCWrites || clientWritableFC(attr.FC) {
 		write = func(ctx context.Context, val *mms.Value) error {
 			// Store the compound value so the interceptor can read it if needed.
 			vs.Set(storeKey, val)
@@ -793,7 +803,7 @@ func registerDA(srv *mms.Server, vs *ValueStore, ldName, lnName string, path []s
 			return nil
 		},
 	}
-	if !clientWritableFC(attr.FC) {
+	if !vs.allowReadOnlyFCWrites && !clientWritableFC(attr.FC) {
 		v.Write = nil // go-mms answers object-access-denied
 	}
 

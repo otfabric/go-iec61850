@@ -8,7 +8,7 @@
 ### Breaking
 
 - Requires Go 1.26 (was 1.25). Built on go-mms v1.3.1, go-cotp v1.2.0 and go-tpkt v1.1.0. CI tests Go 1.26 and 1.27.
-- A server built from a model refuses client writes to read-only functional constraints: ST, MX, SG, SR, OR and EX answer object-access-denied (IEC 61850-7-2). Before, any MMS client could overwrite status and measurements, for example a breaker's `Pos.stVal`. The application changes them with `Server.SetValue`.
+- A server built from a model refuses client writes to read-only functional constraints: ST, MX, SG, SR, OR and EX answer object-access-denied (IEC 61850-7-2). Before, any MMS client could overwrite status and measurements, for example a breaker's `Pos.stVal`. The application changes them with `Server.SetValue`; a simulator or test fixture whose peers drive status over MMS sets `ServerOptions.AllowReadOnlyFCWrites` (the interop suite does).
 
 ### Fixed
 

@@ -122,6 +122,17 @@ type ServerOptions struct {
 	// fully closed regardless of how it ended).
 	OnDisconnect func(ConnectionEvent)
 
+	// AllowReadOnlyFCWrites, when true, lets MMS clients write data
+	// attributes of the read-only functional constraints: status (ST),
+	// measurands (MX), setting-group values (SG), service responses
+	// (SR), operate-received (OR) and extended definitions (EX). IEC
+	// 61850-7-2 makes them read-only to clients, and by default a write
+	// is answered with object-access-denied; the application changes
+	// them with [Server.SetValue]. Set it only for a simulator or a test
+	// fixture whose peers drive status values over MMS. It is not
+	// conformant and lets any associated client change process data.
+	AllowReadOnlyFCWrites bool
+
 	// Metrics, when non-nil, receives the MMS request and connection
 	// events of the server (see [mms.Metrics]). It is a convenience field
 	// equivalent to MMS.Metrics, which takes precedence when both are set.
@@ -177,7 +188,9 @@ func NewServer(model *servermodel.Model, opts ServerOptions) (*Server, error) {
 
 	mmsSrv := mms.NewServer(mmsOpts)
 
-	vs, err := servermodel.RegisterModel(mmsSrv, model, nil)
+	vs, err := servermodel.RegisterModel(mmsSrv, model, servermodel.NewValueStoreWithOptions(servermodel.ValueStoreOptions{
+		AllowReadOnlyFCWrites: opts.AllowReadOnlyFCWrites,
+	}))
 	if err != nil {
 		return nil, fmt.Errorf("iec61850: register model: %w", err)
 	}

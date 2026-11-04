@@ -1036,6 +1036,9 @@ func startGoIEDServer(t *testing.T) *goIEDServer {
 	}
 
 	srv, err := iec61850.NewServer(model, iec61850.ServerOptions{
+		// The interop fixtures drive status values (dchg reports,
+		// dataset writes) by writing ST attributes over MMS.
+		AllowReadOnlyFCWrites: true,
 		Identity: &iec61850.ServerIdentity{
 			Vendor:   "OTFabric",
 			Model:    "go-iec61850-interop",
@@ -1079,6 +1082,9 @@ func startGoIEDServerWithReports(t *testing.T) *goIEDServer {
 	}
 
 	srv, err := iec61850.NewServer(model, iec61850.ServerOptions{
+		// The interop fixtures drive status values (dchg reports,
+		// dataset writes) by writing ST attributes over MMS.
+		AllowReadOnlyFCWrites: true,
 		Identity: &iec61850.ServerIdentity{
 			Vendor:   "OTFabric",
 			Model:    "go-iec61850-interop",
@@ -1423,6 +1429,9 @@ func startGoIEDServerWithControls(t *testing.T) *goIEDServer {
 	}
 
 	srv, err := iec61850.NewServer(model, iec61850.ServerOptions{
+		// The interop fixtures drive status values (dchg reports,
+		// dataset writes) by writing ST attributes over MMS.
+		AllowReadOnlyFCWrites: true,
 		Identity: &iec61850.ServerIdentity{
 			Vendor:   "OTFabric",
 			Model:    "go-iec61850-interop",
@@ -1506,7 +1515,7 @@ func startGoIEDServerWithShortSBOTimeout(t *testing.T, timeout time.Duration) *g
 		t.Fatalf("NewServerModelFromSCL: %v", err)
 	}
 
-	srv, err := iec61850.NewServer(model, iec61850.ServerOptions{})
+	srv, err := iec61850.NewServer(model, iec61850.ServerOptions{AllowReadOnlyFCWrites: true}) // fixtures write ST
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}

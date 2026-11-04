@@ -986,3 +986,46 @@ func TestRegister_ReadOnlyFCRejectsWrites(t *testing.T) {
 		t.Error("CO must stay writable: controls are writes of Oper, SBOw and Cancel")
 	}
 }
+
+// AllowReadOnlyFCWrites is the explicit opt-in for simulators and test
+// fixtures: with it, a client may write ST and MX.
+func TestRegister_AllowReadOnlyFCWrites(t *testing.T) {
+	srv := mms.NewServer(mms.ServerOptions{
+		MMS: mms.ServerMMSOptions{
+			MaxPDUSize: 65000, MaxOutstandingCalling: 5, MaxOutstandingCalled: 5,
+			DataStructureNestingLevel: 10,
+		},
+	})
+	m := &Model{LogicalDevices: []LogicalDevice{{
+		Name: "LD1",
+		LogicalNodes: []LogicalNode{{
+			Name: "GGIO1", LNClass: "GGIO",
+			DataObjects: []DataObject{{Name: "Do1", Attributes: []DataAttribute{
+				{Name: "stVal", FC: "ST", BType: "INT32"},
+				{Name: "mag", FC: "MX", Children: []DataAttribute{{Name: "i", BType: "INT32"}}},
+			}}},
+		}},
+	}}}
+	vs, err := RegisterModel(srv, m, NewValueStoreWithOptions(ValueStoreOptions{AllowReadOnlyFCWrites: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	clientT, serverT := loopbackPair()
+	go func() { _ = srv.Serve(ctx, serverT) }()
+	client, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close(ctx) })
+	if _, err := client.Write(ctx, mms.WriteRequest{DomainID: "LD1", ItemID: "GGIO1$ST$Do1$stVal", Value: mms.NewInteger(7)}); err != nil {
+		t.Fatalf("ST write with opt-in: %v", err)
+	}
+	if got, _ := vs.Get(StoreKey("LD1", "GGIO1$ST$Do1$stVal")).Int64(); got != 7 {
+		t.Errorf("stVal = %d, want 7", got)
+	}
+	if _, err := client.Write(ctx, mms.WriteRequest{DomainID: "LD1", ItemID: "GGIO1$MX$Do1$mag",
+		Value: mms.NewStructure([]*mms.Value{mms.NewInteger(1)})}); err != nil {
+		t.Fatalf("MX compound write with opt-in: %v", err)
+	}
+}
