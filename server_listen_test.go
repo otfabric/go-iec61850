@@ -87,7 +87,7 @@ func TestListenAndServe_WithHooksServesAndFiresCallbacks(t *testing.T) {
 	go func() { done <- srv.ListenAndServe(ctx, ln) }()
 
 	// Two sequential connections through the hooked accept loop.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		clientT, serverT := loopbackPair()
 		ln.conns <- serverT
 		mmsClient, err := mms.NewClient(ctx, clientT, mms.DialOptions{})

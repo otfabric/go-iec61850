@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -153,12 +154,7 @@ func (re *ReportEngine) isConnActive(conn *mms.ServerConn) bool {
 	if conn == nil || re.mmsSrv == nil {
 		return false
 	}
-	for _, c := range re.mmsSrv.Connections() {
-		if c == conn {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(re.mmsSrv.Connections(), conn)
 }
 
 func (re *ReportEngine) registerRCBRuntime(ldName, lnName string, rpt *servermodel.ReportDef) {
@@ -391,11 +387,9 @@ func (re *ReportEngine) enableRCB(_ context.Context, rt *rcbRuntime, conn *mms.S
 		confRev := rt.confRev
 		datSet := rt.datSet
 		rcbItemID := rt.rcbItemID
-		re.wg.Add(1)
-		go func() {
-			defer re.wg.Done()
+		re.wg.Go(func() {
 			re.replayBRCBEntries(rcbItemID, rptID, optFlds, confRev, datSet, replayEntries, conn)
-		}()
+		})
 	}
 
 startIntegrity:
@@ -780,9 +774,7 @@ func (re *ReportEngine) sendReport(_ context.Context, rt *rcbRuntime, seqNum uin
 	// (e.g. libiec61850) to receive the report while still waiting for the
 	// write confirmation, which can cause the report to be discarded.
 	if !buffered && enableConn != nil {
-		re.wg.Add(1)
-		go func() {
-			defer re.wg.Done()
+		re.wg.Go(func() {
 			// Small yield to let the current confirmed response be sent first.
 			time.Sleep(100 * time.Millisecond)
 			re.logger.Info("iec61850: sending URCB report", "rcb", rt.rcbItemID)
@@ -793,22 +785,20 @@ func (re *ReportEngine) sendReport(_ context.Context, rt *rcbRuntime, seqNum uin
 			} else {
 				re.logger.Info("iec61850: URCB report sent", "rcb", rt.rcbItemID)
 			}
-		}()
+		})
 		return
 	}
 
 	conns := re.mmsSrv.Connections()
 	for _, conn := range conns {
 		c := conn
-		re.wg.Add(1)
-		go func() {
-			defer re.wg.Done()
+		re.wg.Go(func() {
 			time.Sleep(100 * time.Millisecond)
 			if err := c.SendInformationReport(context.Background(), req); err != nil {
 				re.logger.Debug("iec61850: report send failed",
 					"rcb", rt.rcbItemID, "error", err)
 			}
-		}()
+		})
 	}
 }
 

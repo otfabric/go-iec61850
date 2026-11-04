@@ -167,7 +167,7 @@ func EncodeQuality(q Quality) *mms.Value {
 // Quality value where bit 0 = first quality bit (matching IEC 61850).
 func decodeQualityBits(data []byte) Quality {
 	var q uint16
-	for bit := 0; bit < qualityBitLength; bit++ {
+	for bit := range qualityBitLength {
 		byteIdx := bit / 8
 		if byteIdx >= len(data) {
 			break
@@ -184,7 +184,7 @@ func decodeQualityBits(data []byte) Quality {
 // (MSB-first).
 func encodeQualityBits(q Quality) []byte {
 	data := make([]byte, 2)
-	for bit := 0; bit < qualityBitLength; bit++ {
+	for bit := range qualityBitLength {
 		if q&Quality(1<<uint(bit)) != 0 {
 			byteIdx := bit / 8
 			bitInByte := uint(7 - (bit % 8))

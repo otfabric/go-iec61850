@@ -77,8 +77,7 @@ func run(stderr io.Writer) int {
 	if err == nil {
 		return exitOK
 	}
-	var ee *exitError
-	if errors.As(err, &ee) {
+	if ee, ok := errors.AsType[*exitError](err); ok {
 		_, _ = fmt.Fprintln(stderr, "sclparse: "+ee.msg)
 		return ee.code
 	}

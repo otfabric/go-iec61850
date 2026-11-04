@@ -118,8 +118,8 @@ func ParseRef(s string) (Ref, error) {
 		return Ref{}, &ReferenceError{Input: s, Reason: "empty content after '/'"}
 	}
 
-	dotIdx := strings.Index(rest, ".")
-	if dotIdx < 0 {
+	before, after, ok := strings.Cut(rest, ".")
+	if !ok {
 		ref := Ref{LD: ld, LN: rest, FC: fc}
 		if err := ref.Validate(); err != nil {
 			return Ref{}, err
@@ -127,12 +127,12 @@ func ParseRef(s string) (Ref, error) {
 		return ref, nil
 	}
 
-	ln := rest[:dotIdx]
+	ln := before
 	if ln == "" {
 		return Ref{}, &ReferenceError{Input: s, Reason: "empty logical node name"}
 	}
 
-	pathStr := rest[dotIdx+1:]
+	pathStr := after
 	if pathStr == "" {
 		return Ref{}, &ReferenceError{Input: s, Reason: "empty path after logical node"}
 	}

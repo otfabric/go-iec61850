@@ -92,10 +92,7 @@ func (p *memFileProvider) Read(_ context.Context, handle mms.FileHandle, maxByte
 		return nil, false, nil
 	}
 
-	n := remaining
-	if n > maxBytes {
-		n = maxBytes
-	}
+	n := min(remaining, maxBytes)
 
 	chunk := h.data[h.offset : h.offset+n]
 	h.offset += n

@@ -5,6 +5,7 @@ package iec61850
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -639,13 +640,13 @@ func (s *Server) installSBONormalReadHandler(ldName, doRef string, reg *controlR
 	}
 	// Build the MMS itemID for the SBO leaf: LNName$CO$DOName$SBO
 	// doRef is "GGIO1.SPCSO1" → lnName="GGIO1", doPath=["SPCSO1"]
-	dot := strings.Index(doRef, ".")
-	if dot < 0 {
+	before, after, ok := strings.Cut(doRef, ".")
+	if !ok {
 		s.logger.Warn("iec61850: installSBOReadHandler: invalid doRef", "doRef", doRef)
 		return
 	}
-	lnName := doRef[:dot]
-	doPath := strings.ReplaceAll(doRef[dot+1:], ".", "$")
+	lnName := before
+	doPath := strings.ReplaceAll(after, ".", "$")
 	sboItemID := lnName + "$CO$" + doPath + "$SBO"
 	ctlRef := ldName + "/" + doRef
 
@@ -691,14 +692,14 @@ func pathWithoutSuffix(path []string, suffix string) []string {
 
 // joinDotPath joins path components with ".".
 func joinDotPath(parts []string) string {
-	result := ""
+	var result strings.Builder
 	for i, p := range parts {
 		if i > 0 {
-			result += "."
+			result.WriteString(".")
 		}
-		result += p
+		result.WriteString(p)
 	}
-	return result
+	return result.String()
 }
 
 // controlStoreKey derives a ValueStore key for a controllable DO's
@@ -733,12 +734,7 @@ func (s *Server) isConnActive(conn *mms.ServerConn) bool {
 	if conn == nil || s.mms == nil {
 		return false
 	}
-	for _, c := range s.mms.Connections() {
-		if c == conn {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(s.mms.Connections(), conn)
 }
 
 // mmsValuesEqual returns true if a and b are both non-nil and encode to

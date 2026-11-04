@@ -124,7 +124,7 @@ func TestSubscriberWrapLearningAndRate(t *testing.T) {
 	s, _ := NewSubscriber(nil, SubscriberConfig{Now: clk.Now})
 	sub, _ := s.Subscribe(SubscriptionConfig{})
 	// 4000 samples per second, wrapping at 4000; no smpRate on the wire.
-	for i := 0; i < 4100; i++ {
+	for i := range 4100 {
 		clk.Add(250 * time.Microsecond)
 		s.HandleFrame(frameWith(t, nil, uint16(i%4000)))
 	}
@@ -236,7 +236,7 @@ func TestSubscriberSimulationAndChannels(t *testing.T) {
 	clk := newFakeClock()
 	s, _ := NewSubscriber(nil, SubscriberConfig{Now: clk.Now, AcceptSimulation: true})
 	sub, _ := s.Subscribe(SubscriptionConfig{SampleQueue: 2, EventQueue: 1})
-	for c := uint16(0); c < 4; c++ {
+	for c := range uint16(4) {
 		s.HandleFrame(frameWith(t, func(f *Frame) { f.Simulation = true; f.PDU.Security = []byte{1} }, c, c+10))
 	}
 	smp := <-sub.Samples()

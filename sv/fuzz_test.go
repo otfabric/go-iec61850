@@ -12,7 +12,7 @@ func fuzzSeedFrame(f *testing.F, noASDU int) []byte {
 	f.Helper()
 	fr := &Frame{Dst: testDst, Src: testSrc, VLAN: &VLAN{Priority: 4, ID: 1}, AppID: 0x4000, Simulation: true}
 	fr.PDU.Security = []byte{1, 2}
-	for i := 0; i < noASDU; i++ {
+	for i := range noASDU {
 		fr.PDU.ASDUs = append(fr.PDU.ASDUs, ASDU{
 			SvID: "MU01", DatSet: "IED1MU/LLN0$PhsMeas1", SmpCnt: uint16(i), ConfRev: 1,
 			RefrTm: time.Unix(1700000000, 0), HasRefrTm: true, SmpSynch: 2, SmpRate: 80, HasSmpRate: true,

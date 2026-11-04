@@ -348,13 +348,13 @@ func TestValueStore_Concurrent(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			vs.Set("key", mms.NewInteger(int64(i)))
 		}
 		close(done)
 	}()
 
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		vs.Get("key")
 	}
 	<-done

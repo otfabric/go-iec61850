@@ -88,8 +88,7 @@ func TestRead_NoFC(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for ref without FC")
 	}
-	var refErr *ReferenceError
-	if !errors.As(err, &refErr) {
+	if _, ok := errors.AsType[*ReferenceError](err); !ok {
 		t.Errorf("expected ReferenceError, got %T: %v", err, err)
 	}
 }
@@ -155,8 +154,7 @@ func TestReadComponent_NotObject(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for non-object ref")
 	}
-	var refErr *ReferenceError
-	if !errors.As(err, &refErr) {
+	if _, ok := errors.AsType[*ReferenceError](err); !ok {
 		t.Errorf("expected ReferenceError, got %T: %v", err, err)
 	}
 }

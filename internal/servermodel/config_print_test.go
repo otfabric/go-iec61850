@@ -109,7 +109,7 @@ func TestGenerateMMS_PropagatesWriterErrors(t *testing.T) {
 	}
 	// Each Fprintf emits exactly one line, so failing at every line index
 	// walks every error-return branch in GenerateMMS/printDO/printDA/printRCB.
-	for i := 0; i < total; i++ {
+	for i := range total {
 		w := &failAfterWriter{n: i}
 		if err := GenerateMMS(w, m); !errors.Is(err, errWriteFailed) {
 			t.Fatalf("fail at write %d: err = %v, want errWriteFailed", i, err)

@@ -302,13 +302,11 @@ func (s *Subscriber) Subscribe(cfg SubscriptionConfig) (*Subscription, error) {
 	s.subs = append(s.subs, sub)
 	s.mu.Unlock()
 	if cfg.Handler != nil {
-		sub.wg.Add(1)
-		go func() {
-			defer sub.wg.Done()
+		sub.wg.Go(func() {
 			for ev := range sub.events {
 				cfg.Handler(ev)
 			}
-		}()
+		})
 	}
 	s.logger.Info("goose: subscription created", "gocbRef", cfg.GocbRef, "dst", cfg.Dst.String(), "appIDs", cfg.AppIDs)
 	return sub, nil

@@ -133,7 +133,7 @@ func TestMemoryJournalProvider_MaxEntries(t *testing.T) {
 	p := NewMemoryJournalProvider(WithMaxEntries(3))
 
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		p.AddEntry("LD1", "j1", t0.Add(time.Duration(i)*time.Second), nil)
 	}
 
@@ -169,7 +169,7 @@ func TestMemoryJournalProvider_ReadTimeRange(t *testing.T) {
 	p := NewMemoryJournalProvider()
 
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		p.AddEntry("LD1", "j1", t0.Add(time.Duration(i)*time.Second), []mms.JournalVariable{
 			{Tag: "val", Value: mms.NewInteger(int64(i))},
 		})
@@ -192,7 +192,7 @@ func TestMemoryJournalProvider_ReadTimeRange_MoreFollows(t *testing.T) {
 	p := NewMemoryJournalProvider()
 
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		p.AddEntry("LD1", "j1", t0.Add(time.Duration(i)*time.Second), nil)
 	}
 
@@ -226,7 +226,7 @@ func TestMemoryJournalProvider_ReadStartAfter(t *testing.T) {
 
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	var ids [][]byte
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		id := p.AddEntry("LD1", "j1", t0.Add(time.Duration(i)*time.Second), nil)
 		ids = append(ids, id)
 	}
@@ -252,7 +252,7 @@ func TestMemoryJournalProvider_ReadStartAfter_MoreFollows(t *testing.T) {
 
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	var ids [][]byte
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		id := p.AddEntry("LD1", "j1", t0.Add(time.Duration(i)*time.Second), nil)
 		ids = append(ids, id)
 	}
@@ -289,7 +289,7 @@ func TestMemoryJournalProvider_PaginationNoDuplicatesNoSkips(t *testing.T) {
 
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	totalEntries := 25
-	for i := 0; i < totalEntries; i++ {
+	for i := range totalEntries {
 		p.AddEntry("LD1", "j1", t0.Add(time.Duration(i)*time.Second), []mms.JournalVariable{
 			{Tag: "seq", Value: mms.NewInteger(int64(i))},
 		})
@@ -343,7 +343,7 @@ func TestMemoryJournalProvider_SameTimestampPaging(t *testing.T) {
 
 	sameTime := time.Date(2026, 3, 19, 12, 0, 0, 0, time.UTC)
 	totalEntries := 15
-	for i := 0; i < totalEntries; i++ {
+	for i := range totalEntries {
 		p.AddEntry("LD1", "j1", sameTime, []mms.JournalVariable{
 			{Tag: "seq", Value: mms.NewInteger(int64(i))},
 		})
@@ -524,7 +524,7 @@ func TestJournalEngine_WithJournalMaxEntries(t *testing.T) {
 	srv := newTestJournalServer(t)
 	engine := srv.EnableJournals(WithJournalMaxEntries(5))
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		engine.LogEvent("LD1", "LLN0$log1", time.Now(), nil)
 	}
 
@@ -706,7 +706,7 @@ func TestMemoryJournalProvider_ReadTimeRange_ExactPageNoMoreFollows(t *testing.T
 	p := NewMemoryJournalProvider()
 
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		p.AddEntry("LD1", "j1", t0.Add(time.Duration(i)*time.Second), nil)
 	}
 
@@ -728,7 +728,7 @@ func TestMemoryJournalProvider_ReadStartAfter_ExactPageNoMoreFollows(t *testing.
 
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	var ids [][]byte
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		id := p.AddEntry("LD1", "j1", t0.Add(time.Duration(i)*time.Second), nil)
 		ids = append(ids, id)
 	}
@@ -808,7 +808,7 @@ func TestMemoryJournalProvider_ReadStartAfter_WireCursor(t *testing.T) {
 	p := NewMemoryJournalProvider()
 	base := time.Date(2026, 1, 2, 3, 4, 5, 123456789, time.UTC)
 	var ids [][]byte
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		ids = append(ids, p.AddEntry("LD", "LLN0$log", base.Add(time.Duration(i)*time.Microsecond), nil))
 	}
 	res, err := p.ReadStartAfter(context.Background(), "LD", "LLN0$log", ids[1], base.Truncate(time.Millisecond), 0)

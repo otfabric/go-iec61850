@@ -143,7 +143,7 @@ func newChaosServer(t *testing.T) *Server {
 // timeout. It fails the test if an operation hangs past the deadline.
 func chaosOps(t *testing.T, c *Client, n int) (ok, failed int) {
 	t.Helper()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		start := time.Now()
 		var err error
@@ -201,8 +201,7 @@ func TestChaosMMSClientFaultyResponses(t *testing.T) {
 // still works.
 func TestChaosMMSServerFaultyRequests(t *testing.T) {
 	srv := newChaosServer(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	clientT, serverT := pipePair()
 	ft := &faultTransport{Transport: serverT, rng: rand.New(rand.NewSource(7)), skip: 1, corrupt: 0.3, truncate: 0.2}
@@ -230,8 +229,7 @@ func TestChaosMMSServerFaultyRequests(t *testing.T) {
 // and later operations fail promptly instead of hanging.
 func TestChaosMMSConnectionDrop(t *testing.T) {
 	srv := newChaosServer(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	clientT, serverT := pipePair()
 	go func() { _ = srv.Serve(ctx, serverT) }()
 	ft := &faultTransport{Transport: clientT, rng: rand.New(rand.NewSource(1)), closeAfter: 5}
@@ -259,8 +257,7 @@ func TestDialRetry(t *testing.T) {
 	_ = l.Close()
 
 	srv := newChaosServer(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		time.Sleep(150 * time.Millisecond)
 		ln, err := iso.Listen(addr)

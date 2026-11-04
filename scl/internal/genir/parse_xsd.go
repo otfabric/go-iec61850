@@ -474,8 +474,8 @@ func stripNSPrefix(name string) string {
 	if strings.HasPrefix(name, "xs:") {
 		return name
 	}
-	if i := strings.IndexByte(name, ':'); i >= 0 {
-		return name[i+1:]
+	if _, after, ok := strings.Cut(name, ":"); ok {
+		return after
 	}
 	return name
 }

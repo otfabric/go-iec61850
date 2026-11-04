@@ -111,7 +111,7 @@ func readTLV(buf []byte, pos, base int, field string) (tlv, error) {
 			return tlv{}, decodeErr(ErrInvalidPDU, field, base+p, "truncated length")
 		}
 		l = 0
-		for i := 0; i < nb; i++ {
+		for i := range nb {
 			l = l<<8 | int(buf[p+i])
 		}
 		p += nb
@@ -144,10 +144,9 @@ func decodeUint(c []byte, field string, off int) (uint32, error) {
 // seconds since 1970, a 24-bit fraction of a second and TimeQuality.
 func appendUTCTime(b []byte, t time.Time, quality uint8) []byte {
 	b = binary.BigEndian.AppendUint32(b, uint32(t.Unix()))
-	frac := (uint64(t.Nanosecond())<<24 + 5e8) / 1e9 // round to nearest
-	if frac > 0xffffff {
-		frac = 0xffffff
-	}
+	frac := min(
+		// round to nearest
+		(uint64(t.Nanosecond())<<24+5e8)/1e9, 0xffffff)
 	return append(b, byte(frac>>16), byte(frac>>8), byte(frac), quality)
 }
 

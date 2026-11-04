@@ -166,10 +166,7 @@ func encodeUTCTime(t time.Time, quality uint8) []byte {
 	c := make([]byte, 8)
 	binary.BigEndian.PutUint32(c[0:4], uint32(t.Unix()))
 	// Round to nearest so that decode/encode is stable.
-	frac := (uint64(t.Nanosecond())<<24 + 5e8) / 1e9
-	if frac > 0xffffff {
-		frac = 0xffffff
-	}
+	frac := min((uint64(t.Nanosecond())<<24+5e8)/1e9, 0xffffff)
 	c[4], c[5], c[6] = byte(frac>>16), byte(frac>>8), byte(frac)
 	c[7] = quality
 	return c
@@ -374,8 +371,8 @@ func (d *dataDecoder) decodeOne(e tlv, base, depth int) (*mms.Value, error) {
 
 func parseGeneralizedTime(s string) (time.Time, error) {
 	layouts := []string{"20060102150405Z0700", "20060102150405.999999999Z0700", "20060102150405", "20060102150405.999999999"}
-	if strings.HasSuffix(s, "Z") {
-		s = strings.TrimSuffix(s, "Z") + "+0000"
+	if before, ok := strings.CutSuffix(s, "Z"); ok {
+		s = before + "+0000"
 	}
 	var err error
 	for _, l := range layouts {

@@ -5,6 +5,7 @@ package sv
 import (
 	"encoding/binary"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/otfabric/go-iec61850/l2"
@@ -683,10 +684,11 @@ func clone(b []byte) []byte {
 
 // String returns a short description of the frame for logs.
 func (f *Frame) String() string {
-	s := "SV " + f.Src.String() + " > " + f.Dst.String() + " appid=0x" + strconv.FormatUint(uint64(f.AppID), 16)
+	var s strings.Builder
+	s.WriteString("SV " + f.Src.String() + " > " + f.Dst.String() + " appid=0x" + strconv.FormatUint(uint64(f.AppID), 16))
 	for i := range f.PDU.ASDUs {
 		a := &f.PDU.ASDUs[i]
-		s += " [" + a.SvID + " smpCnt=" + strconv.Itoa(int(a.SmpCnt)) + "]"
+		s.WriteString(" [" + a.SvID + " smpCnt=" + strconv.Itoa(int(a.SmpCnt)) + "]")
 	}
-	return s
+	return s.String()
 }

@@ -5,6 +5,7 @@ package servermodel
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -740,13 +741,7 @@ func registerDA(srv *mms.Server, vs *ValueStore, ldName, lnName string, path []s
 		}
 		if attr.BType == "Enum" && len(attr.EnumValues) > 0 {
 			if i, ok := iv.Int64(); ok {
-				valid := false
-				for _, ord := range attr.EnumValues {
-					if int(i) == ord {
-						valid = true
-						break
-					}
-				}
+				valid := slices.Contains(attr.EnumValues, int(i))
 				if !valid {
 					return fmt.Errorf("initial value for %s/%s: enum ordinal %d not in EnumType", ldName, itemID, i)
 				}
@@ -1275,7 +1270,7 @@ func hexDecode(s string) ([]byte, error) {
 		s = "0" + s
 	}
 	data := make([]byte, len(s)/2)
-	for i := 0; i < len(data); i++ {
+	for i := range data {
 		hi, err := hexNibble(s[i*2])
 		if err != nil {
 			return nil, err
@@ -1349,7 +1344,7 @@ func encodeTrgOpsDef(t TrgOpsDef) *mms.Value {
 		raw |= 1 << 5
 	}
 	data := []byte{0}
-	for bit := 0; bit < 6; bit++ {
+	for bit := range 6 {
 		if raw&(1<<uint(bit)) != 0 {
 			bitInByte := uint(7 - (bit % 8))
 			data[0] |= 1 << bitInByte

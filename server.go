@@ -337,12 +337,12 @@ func (s *Server) installWriteInterceptor() {
 // name and all sub-path segments, and subAttr is the last segment (the control
 // service identifier: Oper, SBO, SBOw, or Cancel).
 func parseCOStoreKey(itemID string) (lnName string, path []string, subAttr string, ok bool) {
-	i := strings.Index(itemID, "$CO$")
-	if i < 0 {
+	before, after0, ok := strings.Cut(itemID, "$CO$")
+	if !ok {
 		return "", nil, "", false
 	}
-	lnName = itemID[:i]
-	after := itemID[i+4:] // everything after "$CO$"
+	lnName = before
+	after := after0 // everything after "$CO$"
 	if after == "" {
 		return "", nil, "", false
 	}
@@ -394,11 +394,11 @@ func parseRCBStoreKey(itemID string) (rcbItemID, subfield string, ok bool) {
 // write. SGCB item IDs follow the pattern "LNName$SP$SGCB$subfield".
 func parseSGCBStoreKey(itemID string) (subfield string, ok bool) {
 	const sgcbMarker = "$SP$SGCB$"
-	i := strings.Index(itemID, sgcbMarker)
-	if i < 0 {
+	_, after, ok := strings.Cut(itemID, sgcbMarker)
+	if !ok {
 		return "", false
 	}
-	return itemID[i+len(sgcbMarker):], true
+	return after, true
 }
 
 // Close performs an orderly shutdown of the server's runtime engines.

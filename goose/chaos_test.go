@@ -3,7 +3,6 @@
 package goose
 
 import (
-	"context"
 	"sync"
 	"testing"
 	"time"
@@ -44,8 +43,7 @@ func TestChaosLossReorderDuplicate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() { _ = s.Run(ctx) }()
 
 	c := pubConfig()
@@ -118,14 +116,13 @@ func TestChaosCorruption(t *testing.T) {
 	m := newCountingMetrics()
 	s, _ := NewSubscriber(hub.NewPort(MAC{}), SubscriberConfig{Metrics: m})
 	sub, _ := s.Subscribe(SubscriptionConfig{GocbRef: "LD/LLN0$GO$gcb1", QueueSize: 4096})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() { _ = s.Run(ctx) }()
 	c := pubConfig()
 	c.MinTime, c.MaxTime = time.Millisecond, 2*time.Millisecond
 	p, _ := NewPublisher(hub.NewPort(MAC{}), c)
 	go func() { _ = p.Run(ctx) }()
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		_ = p.Publish([]*mms.Value{mms.NewBoolean(i%2 == 0), mms.NewInteger(int64(i))})
 		time.Sleep(time.Millisecond)
 	}

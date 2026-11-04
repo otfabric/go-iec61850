@@ -93,7 +93,7 @@ func (r *rms) add(le *sv.LESample) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.n++
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		a, v := sv.Amps(le.Current[i].Value), sv.Volts(le.Voltage[i].Value)
 		r.sum[i] += a * a
 		r.sum[4+i] += v * v

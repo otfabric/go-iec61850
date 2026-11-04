@@ -222,8 +222,7 @@ func TestGetDataSet_NotFound(t *testing.T) {
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("got %v, want ErrNotFound", err)
 	}
-	var se *mms.ServiceError
-	if !errors.As(err, &se) {
+	if _, ok := errors.AsType[*mms.ServiceError](err); !ok {
 		t.Errorf("%v does not keep the MMS ServiceError", err)
 	}
 }

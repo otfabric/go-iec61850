@@ -198,7 +198,7 @@ func TestHub(t *testing.T) {
 	_ = a.Send(f)
 	h.SetFaults(Faults{Duplicate: 1, Seed: 1})
 	_ = a.Send(f)
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if _, err := b.Recv(ctx); err != nil {
 			t.Fatal(err)
 		}
@@ -242,7 +242,7 @@ func TestHubOverflow(t *testing.T) {
 	h := NewHub()
 	a, b := h.NewPort(MAC{}), h.NewPort(MAC{})
 	f := testFrame(Broadcast, a.HardwareAddr(), EtherTypeGOOSE, false, nil)
-	for i := 0; i < 1100; i++ {
+	for range 1100 {
 		_ = a.Send(f)
 	}
 	if h.Stats().Overflow == 0 {
@@ -337,7 +337,7 @@ func TestDemux(t *testing.T) {
 	}
 
 	// Overflow on a port whose receiver does not read (queue 2).
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		_ = tx.Send(testFrame(Broadcast, tx.HardwareAddr(), EtherTypeGOOSE, false, nil))
 	}
 	for d.Stats().Overflow < 3 && time.Now().Before(deadline) {
@@ -473,7 +473,7 @@ func TestHubBehaviour(t *testing.T) {
 	}
 	// Overflow: fill b's queue.
 	hub.SetFaults(Faults{})
-	for i := 0; i < 1100; i++ {
+	for range 1100 {
 		_ = a.Send([]byte{5})
 	}
 	if hub.Stats().Overflow == 0 {

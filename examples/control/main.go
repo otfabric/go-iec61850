@@ -95,8 +95,7 @@ func run(ctx context.Context, addr, do string, value bool, out io.Writer) error 
 // report explains a failed control service: the error class, and the
 // server's LastApplError when it sent one.
 func report(ctx context.Context, client *iec61850.Client, ref iec61850.Ref, op string, err error, out io.Writer) error {
-	var ce *iec61850.ControlError
-	if errors.As(err, &ce) {
+	if ce, ok := errors.AsType[*iec61850.ControlError](err); ok {
 		fmt.Fprintf(out, "%s refused: AddCause %s\n", op, ce.AddCause)
 	}
 	if lae, lerr := client.ReadLastApplError(ctx, ref); lerr == nil {

@@ -47,7 +47,7 @@ type Waveform struct {
 // Sample returns the 9-2LE sample at time t (seconds since the start).
 func (w Waveform) Sample(t float64) sv.LESample {
 	var s sv.LESample
-	for ph := 0; ph < 3; ph++ {
+	for ph := range 3 {
 		angle := 2*math.Pi*w.Freq*t - float64(ph)*2*math.Pi/3
 		s.Current[ph].Value = sv.AmpsCount(w.Amps * math.Sqrt2 * math.Sin(angle-math.Pi/6)) // 30° lagging
 		s.Voltage[ph].Value = sv.VoltsCount(w.Volts * math.Sqrt2 * math.Sin(angle))

@@ -639,7 +639,7 @@ func decodeTrgOpsStrict(v *mms.Value) (TrgOps, error) {
 		return 0, fmt.Errorf("TrgOps BitString too short (%d bits, need 6)", bl)
 	}
 	var t uint8
-	for bit := 0; bit < 6; bit++ {
+	for bit := range 6 {
 		byteIdx := bit / 8
 		if byteIdx >= len(data) {
 			break
@@ -672,7 +672,7 @@ func decodeTrgOpsStrict(v *mms.Value) (TrgOps, error) {
 //	bit 9: segmentation         → OptFldSegmentation (internal bit 8)
 func encodeOptFlds(o OptFlds) *mms.Value {
 	data := make([]byte, 2)
-	for internalBit := 0; internalBit < 9; internalBit++ {
+	for internalBit := range 9 {
 		if o&OptFlds(1<<uint(internalBit)) != 0 {
 			wireBit := internalBit + 1 // IEC 61850 bit 0 is reserved
 			byteIdx := wireBit / 8
@@ -687,7 +687,7 @@ func encodeOptFlds(o OptFlds) *mms.Value {
 func encodeTrgOps(t TrgOps) *mms.Value {
 	data := make([]byte, 1)
 	shifted := uint8(t) << 1
-	for bit := 0; bit < 6; bit++ {
+	for bit := range 6 {
 		if shifted&(1<<uint(bit)) != 0 {
 			bitInByte := uint(7 - (bit % 8))
 			data[0] |= 1 << bitInByte
@@ -1031,7 +1031,7 @@ func decodeReportIndication(values []*mms.Value, logger *slog.Logger) (*ReportIn
 		if ok {
 			bitLen, _ := v.BitStringLength()
 			ri.Inclusion = make([]bool, bitLen)
-			for i := 0; i < bitLen; i++ {
+			for i := range bitLen {
 				byteIdx := i / 8
 				if byteIdx < len(data) {
 					bitInByte := uint(7 - (i % 8))
@@ -1105,7 +1105,7 @@ func decodeReasonCode(v *mms.Value) ReasonCode {
 		return 0
 	}
 	var r uint8
-	for bit := 0; bit < 7; bit++ {
+	for bit := range 7 {
 		byteIdx := bit / 8
 		if byteIdx >= len(data) {
 			break

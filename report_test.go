@@ -616,8 +616,7 @@ func TestDecodeRCB_ShortBRCB(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for short BRCB structure")
 	}
-	var re *ReportError
-	if !errors.As(err, &re) {
+	if _, ok := errors.AsType[*ReportError](err); !ok {
 		t.Fatalf("expected *ReportError, got %T: %v", err, err)
 	}
 }
@@ -634,8 +633,7 @@ func TestDecodeRCB_ShortURCB(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for short URCB structure")
 	}
-	var re *ReportError
-	if !errors.As(err, &re) {
+	if _, ok := errors.AsType[*ReportError](err); !ok {
 		t.Fatalf("expected *ReportError, got %T: %v", err, err)
 	}
 }
@@ -820,7 +818,7 @@ func TestSubscribeReport_QueueOverflow(t *testing.T) {
 	}
 
 	// Send 5 reports into a queue of size 2; at least some must be dropped.
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if err := srv.Broadcast(ctx, makeReport(uint64(i))); err != nil {
 			t.Fatalf("Broadcast %d: %v", i, err)
 		}
@@ -1097,7 +1095,7 @@ func TestSubscribeReport_OverflowDropOldest(t *testing.T) {
 		Scope: mms.ObjectScopeDomain, Domain: "testLD", ItemID: "LLN0$BR$brcb01",
 	}
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		_ = srv.Broadcast(ctx, &mms.InformationReportRequest{
 			ListName: &rptListName,
 			Values: []*mms.Value{
@@ -1149,7 +1147,7 @@ func TestSubscribeReport_OverflowCallback(t *testing.T) {
 		Scope: mms.ObjectScopeDomain, Domain: "testLD", ItemID: "LLN0$BR$brcb01",
 	}
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		_ = srv.Broadcast(ctx, &mms.InformationReportRequest{
 			ListName: &rptListName,
 			Values: []*mms.Value{
@@ -1803,8 +1801,7 @@ func TestDecodeRCB_RequiredFieldTypeMismatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for wrong type on required RptID field")
 	}
-	var re *ReportError
-	if !errors.As(err, &re) {
+	if _, ok := errors.AsType[*ReportError](err); !ok {
 		t.Errorf("expected ReportError, got %T", err)
 	}
 }
@@ -1833,8 +1830,7 @@ func TestDecodeRCB_OptFldsTrgOpsStrict(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error for OptFlds type mismatch")
 		}
-		var re *ReportError
-		if !errors.As(err, &re) {
+		if _, ok := errors.AsType[*ReportError](err); !ok {
 			t.Errorf("expected ReportError, got %T", err)
 		}
 	})
@@ -1845,8 +1841,7 @@ func TestDecodeRCB_OptFldsTrgOpsStrict(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error for TrgOps type mismatch")
 		}
-		var re *ReportError
-		if !errors.As(err, &re) {
+		if _, ok := errors.AsType[*ReportError](err); !ok {
 			t.Errorf("expected ReportError, got %T", err)
 		}
 	})

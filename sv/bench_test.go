@@ -16,7 +16,7 @@ func (discard) HardwareAddr() MAC { return testSrc }
 
 func benchFrame(b testing.TB, noASDU int) []byte {
 	f := &Frame{Dst: testDst, Src: testSrc, AppID: 0x4000}
-	for i := 0; i < noASDU; i++ {
+	for i := range noASDU {
 		f.PDU.ASDUs = append(f.PDU.ASDUs, ASDU{SvID: "MU01", DatSet: "IED1MU/LLN0$PhsMeas1", SmpCnt: uint16(i), ConfRev: 1, SmpSynch: 1, Sample: leSample(int32(i))})
 	}
 	raw, err := Encode(f)
@@ -75,7 +75,7 @@ func BenchmarkSubscriber(b *testing.B) {
 		b.Run(fmt.Sprintf("streams=%d", streams), func(b *testing.B) {
 			frames := make([][][]byte, streams)
 			for s := range frames {
-				for c := 0; c < 4000; c++ {
+				for c := range 4000 {
 					f := &Frame{Dst: testDst, Src: MAC{2, 0, 0, 0, byte(s >> 8), byte(s)}, AppID: 0x4000 + uint16(s)}
 					f.PDU.ASDUs = []ASDU{{SvID: fmt.Sprintf("MU%02d", s), SmpCnt: uint16(c), ConfRev: 1, SmpSynch: 1, Sample: leSample(int32(c))}}
 					raw, _ := Encode(f)

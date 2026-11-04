@@ -187,7 +187,7 @@ func TestEncodeDataErrors(t *testing.T) {
 		}
 	}
 	deep := mms.NewInteger(1)
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		deep = mms.NewStructure([]*mms.Value{deep})
 	}
 	if _, err := EncodeData(deep); !errors.Is(err, ErrLimitExceeded) {
@@ -359,7 +359,7 @@ func TestDecodeDataErrors(t *testing.T) {
 
 func TestDecodeLimits(t *testing.T) {
 	v := mms.NewInteger(1)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		v = mms.NewStructure([]*mms.Value{v})
 	}
 	f := &Frame{Dst: Broadcast, PDU: PDU{GocbRef: "g", DatSet: "d", T: time.Unix(0, 0), AllData: []*mms.Value{v, mms.NewBoolean(true)}}}

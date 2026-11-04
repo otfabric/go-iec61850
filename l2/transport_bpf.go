@@ -78,7 +78,7 @@ func openBPF() (int, error) {
 		return fd, nil
 	}
 	last := err
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		fd, err := unix.Open(fmt.Sprintf("/dev/bpf%d", i), unix.O_RDWR|unix.O_CLOEXEC, 0)
 		if err == nil {
 			return fd, nil
@@ -213,10 +213,7 @@ func nextRecord(buf []byte) (f, rest []byte, ok bool) {
 	if end > len(buf) || start < bpfHdrMin {
 		return nil, nil, false
 	}
-	next := (end + unix.BPF_ALIGNMENT - 1) &^ (unix.BPF_ALIGNMENT - 1)
-	if next > len(buf) {
-		next = len(buf)
-	}
+	next := min((end+unix.BPF_ALIGNMENT-1)&^(unix.BPF_ALIGNMENT-1), len(buf))
 	if h.Caplen != h.Datalen {
 		return nil, buf[next:], true
 	}

@@ -324,14 +324,12 @@ func (rt *svcbRuntime) setEnabled(on bool) error {
 	ctx, cancel := context.WithCancel(rt.e.ctx)
 	rt.pub, rt.stop = pub, cancel
 	rt.e.s.store.Set(rt.key("SvEna"), mms.NewBoolean(true))
-	rt.e.wg.Add(1)
-	go func() {
-		defer rt.e.wg.Done()
+	rt.e.wg.Go(func() {
 		if err := pub.Run(ctx); err != nil {
 			rt.e.log.Warn("iec61850: SV publisher stopped", "svcbRef", rt.prefix, "error", err)
 		}
 		_ = pub.Close()
-	}()
+	})
 	rt.e.log.Info("iec61850: SvCB enabled", "svcbRef", rt.prefix, "svID", cfg.SvID, "leaves", len(rt.layout))
 	return nil
 }

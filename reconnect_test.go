@@ -162,7 +162,7 @@ func TestClientReconnect_MultipleSequential(t *testing.T) {
 	_, addr, _ := startIECServer(t, sclData)
 
 	const rounds = 5
-	for i := 0; i < rounds; i++ {
+	for i := range rounds {
 		client, err := Dial(ctx, addr, DialOptions{})
 		if err != nil {
 			t.Fatalf("round %d Dial: %v", i, err)
@@ -222,7 +222,7 @@ func TestClient_NoGoroutineLeakOnConnectDisconnect(t *testing.T) {
 	_, addr, _ := startIECServer(t, sclData)
 
 	// Warm up: two rounds to allow any once-per-process goroutines to start.
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		c, err := Dial(ctx, addr, DialOptions{})
 		if err != nil {
 			t.Fatalf("warmup Dial: %v", err)
@@ -235,7 +235,7 @@ func TestClient_NoGoroutineLeakOnConnectDisconnect(t *testing.T) {
 
 	// Exercise: ten more connect/close cycles.
 	const rounds = 10
-	for i := 0; i < rounds; i++ {
+	for i := range rounds {
 		c, err := Dial(ctx, addr, DialOptions{})
 		if err != nil {
 			t.Fatalf("round %d Dial: %v", i, err)

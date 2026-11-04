@@ -205,7 +205,7 @@ func (c *Client) cachedLDs(ctx context.Context) ([]LogicalDevice, error) {
 	}
 
 	if c.cache != nil {
-		v, err, _ := c.cache.sflight.Do("_lds", func() (interface{}, error) {
+		v, err, _ := c.cache.sflight.Do("_lds", func() (any, error) {
 			return c.doFetchLDs(ctx)
 		})
 		if err != nil {
@@ -236,7 +236,7 @@ func (c *Client) cachedItems(ctx context.Context, ld string) ([]string, error) {
 	}
 
 	if c.cache != nil {
-		v, err, _ := c.cache.sflight.Do("items:"+ld, func() (interface{}, error) {
+		v, err, _ := c.cache.sflight.Do("items:"+ld, func() (any, error) {
 			return c.doFetchItems(ctx, ld)
 		})
 		if err != nil {

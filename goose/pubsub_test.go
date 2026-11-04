@@ -83,7 +83,7 @@ func TestPublisherRetransmissionCurve(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- p.Run(ctx) }()
 
-	for i := 0; i < 7; i++ {
+	for i := range 7 {
 		f := nextFrame(t, frames)
 		if f.PDU.StNum != 1 || f.PDU.SqNum != uint32(i) {
 			t.Fatalf("frame %d: stNum=%d sqNum=%d", i, f.PDU.StNum, f.PDU.SqNum)
@@ -176,8 +176,7 @@ func TestPublisherPublishErrorsAndFlags(t *testing.T) {
 	t.Parallel()
 	hub := NewHub()
 	tx, rx := hub.NewPort(MAC{}), hub.NewPort(MAC{})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	frames := recvFrames(ctx, t, rx)
 	c := pubConfig()
 	c.Values = nil

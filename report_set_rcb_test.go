@@ -46,7 +46,6 @@ func newRCBWriteRecorder(t *testing.T) (*Client, *rcbWriteRecorder) {
 		"ResvTms":  {Type: mms.ValueTypeInteger, Size: 16},
 	}
 	for name, ts := range attrs {
-		name, ts := name, ts
 		if err := srv.RegisterVariable(mms.Variable{
 			Name:     mms.ObjectName{Scope: mms.ObjectScopeDomain, Domain: "LD1", ItemID: mms.ItemID("LLN0$BR$brcb01$" + name)},
 			TypeSpec: ts,

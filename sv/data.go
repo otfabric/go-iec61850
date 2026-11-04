@@ -476,7 +476,7 @@ func DecodeLE(sample []byte, s *LESample) error {
 	if len(sample) != LESampleSize {
 		return fmt.Errorf("%w: 9-2LE sample of %d octets, want %d", ErrInvalidData, len(sample), LESampleSize)
 	}
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		p := Point{
 			Value: int32(binary.BigEndian.Uint32(sample[i*8:])),
 			Q:     Quality(binary.BigEndian.Uint32(sample[i*8+4:])),

@@ -304,12 +304,10 @@ func (rt *gocbRuntime) setEnabled(on bool) error {
 	ctx, cancel := context.WithCancel(rt.e.ctx)
 	rt.pub, rt.stop, rt.last = pub, cancel, cfg.Values
 	rt.e.s.store.Set(rt.key("GoEna"), mms.NewBoolean(true))
-	rt.e.wg.Add(1)
-	go func() {
-		defer rt.e.wg.Done()
+	rt.e.wg.Go(func() {
 		_ = pub.Run(ctx)
 		_ = pub.Close()
-	}()
+	})
 	rt.e.logger.Info("iec61850: GoCB enabled", "gocbRef", rt.ref(), "members", len(rt.members))
 	return nil
 }

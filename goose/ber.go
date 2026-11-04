@@ -117,7 +117,7 @@ func readTLV(buf []byte, pos, base int, field string) (tlv, error) {
 			return tlv{}, decodeErr(ErrInvalidPDU, field, base+p, "truncated length")
 		}
 		l = 0
-		for i := 0; i < nb; i++ {
+		for i := range nb {
 			l = l<<8 | int(buf[p+i])
 		}
 		p += nb

@@ -77,7 +77,7 @@ func TestDeterminism(t *testing.T) {
 
 	// Generate twice to temp dirs and compare
 	var outputs [2]map[string][]byte
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		schema, err := genir.ParseBundle(dir, "v2007c5")
 		if err != nil {
 			t.Fatalf("ParseBundle: %v", err)

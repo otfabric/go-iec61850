@@ -133,8 +133,7 @@ func TestDecodeQuality_Nil(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for nil value")
 	}
-	var de *DecodeError
-	if !errors.As(err, &de) {
+	if de, ok := errors.AsType[*DecodeError](err); !ok {
 		t.Errorf("expected DecodeError, got %T: %v", err, de)
 	}
 }

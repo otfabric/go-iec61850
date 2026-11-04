@@ -513,7 +513,7 @@ func (p *Publisher) encodeAt(dst []byte, cnt uint16, t0 time.Time, k uint64, syn
 	if p.cfg.Source != nil {
 		p.src = p.src[:0]
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		ti := p.at(t0, k+uint64(i))
 		c := uint16((uint64(cnt) + uint64(i)) % uint64(p.wrap))
 		a := &f.PDU.ASDUs[i]
@@ -538,7 +538,7 @@ func (p *Publisher) encodeAt(dst []byte, cnt uint16, t0 time.Time, k uint64, syn
 	if p.cfg.Source != nil {
 		// Slice only after all appends: p.src may have been reallocated.
 		p.offs[n] = len(p.src)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			f.PDU.ASDUs[i].Sample = p.src[p.offs[i]:p.offs[i+1]]
 		}
 	}

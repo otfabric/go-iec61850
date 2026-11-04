@@ -18,11 +18,11 @@ jobs:
     timeout-minutes: 60
     env:
       GOWORK: "off"
-      LIBIEC61850_IMAGE: ghcr.io/otfabric/iec61850-interop-libiec61850@sha256:c90b97fb41905983ad8e3db258aee03621348c53cbc50ac9d44dafb72df601e4
-      IEC61850BEAN_IMAGE: ghcr.io/otfabric/iec61850-interop-iec61850bean@sha256:5545f059848ac19178fa934a5018c815978081af002ca7db6479d4bfd527e864
-      DSCSYSTEMS_IMAGE: ghcr.io/otfabric/iec61850-interop-dscsystems@sha256:9c9a48eb3608c75e45a359b7c4614eb1cd7c3da9197dfbc18710b87647d7cf67
-      IEC61850RUST_IMAGE: ghcr.io/otfabric/iec61850-interop-iec61850-rust@sha256:77dc11a2580f784dcdb9f06f3420c0fe7cfa264e73bc881d6f2fe26bb79f6795
-      # The pinned images (iec61850-interop v1.0.1) implement the SV fixture.
+      LIBIEC61850_IMAGE: ghcr.io/otfabric/iec61850-interop-libiec61850@sha256:be48749244ff3a019e0a61062134ed0fa69225b93e86fe50dde085ac2ee9b356
+      IEC61850BEAN_IMAGE: ghcr.io/otfabric/iec61850-interop-iec61850bean@sha256:e8d3327eb783d10ebe9e34773368470d4f0ddda3abe8492bf787874e6e08e898
+      DSCSYSTEMS_IMAGE: ghcr.io/otfabric/iec61850-interop-dscsystems@sha256:ea4b19da85ffcfb3fadd9ecd65cec3f5688763cdf950f0d16e5b239eb3b825f9
+      IEC61850RUST_IMAGE: ghcr.io/otfabric/iec61850-interop-iec61850-rust@sha256:859fd8eced8cf57d97682b994994f85e125294341f302f307058575cf663e720
+      # The pinned images (iec61850-interop v1.1.1) implement the SV fixture.
       IEC61850_SV_FIXTURE: sv-v1
 
     steps:
@@ -30,7 +30,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25.x"
+          go-version: "1.26.x"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3

@@ -336,7 +336,7 @@ func TestReportEngine_BufferedQueue(t *testing.T) {
 	storeKey := servermodel.StoreKey("LD1", "LLN0$ST$Mod$stVal")
 
 	// Generate 5 data changes.
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		srv.SetValue(ctx, storeKey, mms.NewInteger(int64(i+1)))
 	}
 
@@ -371,7 +371,7 @@ func TestReportEngine_BufferOverflow(t *testing.T) {
 	storeKey := servermodel.StoreKey("LD1", "LLN0$ST$Mod$stVal")
 
 	// Generate 5 data changes, buffer should cap at 3.
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		srv.SetValue(ctx, storeKey, mms.NewInteger(int64(i+100)))
 	}
 
@@ -629,7 +629,7 @@ func TestReportEngine_SequenceNumbering(t *testing.T) {
 
 	storeKey := servermodel.StoreKey("LD1", "LLN0$ST$Mod$stVal")
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		srv.SetValue(ctx, storeKey, mms.NewInteger(int64(i*100)))
 	}
 
