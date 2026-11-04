@@ -32,6 +32,13 @@ There is no `e2e/` directory. `make e2e` selects the tests that run a real
 against the demo IED ([examples/README.md](examples/README.md)). The GOOSE and
 SV examples use the in-memory `Hub`.
 
+`TestE2E_*` (in `scl_model_e2e_test.go`, over `loopbackPair`) serve models
+built from SCL: `TestE2E_SCLCorpusReadEveryFC` serves every IED of every SCL
+file under `scl/testdata` and `interop/testdata` (vendor CIDs included) and
+reads each `LN$FC` before anything is written, and
+`TestE2E_SCLModelRejectsHostileWrites` checks that client writes to status
+attributes and writes of the wrong type are refused and change nothing.
+
 Most other client tests in the root package use an in-memory transport pair
 (`loopbackPair`), which skips ISO/TCP but runs the same MMS encoding.
 

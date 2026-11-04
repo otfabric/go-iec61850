@@ -33,7 +33,7 @@ test: ## Run unit tests
 
 e2e: ## Client against server on loopback TCP, and every example in-process (no Docker, no privileges)
 	@echo "Running end-to-end tests"
-	@go test -count=1 -race -run '^(TestClientReconnect|TestServerShutdown|TestListenAndServe|TestConcurrent|TestResourceExhaust)' .
+	@go test -count=1 -race -run '^(TestClientReconnect|TestServerShutdown|TestListenAndServe|TestConcurrent|TestResourceExhaust|TestE2E_)' .
 	@go test -count=1 -race ./examples/...
 
 interop: ## Run interoperability tests against iec61850-interop adapter images (-tags=interop).
