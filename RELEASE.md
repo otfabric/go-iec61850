@@ -1,5 +1,30 @@
 # go-iec61850 Releases
 
+## v1.6.0
+
+**Date:** 2026-11-04
+**Previous release:** v1.5.0
+
+### Fixed
+
+- **A client is accepted by IEDs that require transport selectors** (otfabric/go-iec61850#28, an ABB REB500 that answered `iec61850ctl` with "cotp: connection refused (reason 3)"). The COTP CR carried no calling or called T-selector and no TPDU size, and some IEDs refuse such a CR with a Disconnect Request, reason 3 (address unknown). With go-mms v1.4.0, `Dial` sends the addressing libiec61850 sends: T-selector `0001`/`0001` and TPDU size 1024 in the CR, S-selector `0001`, P-selector `00000001`, AP-titles `1.1.1.999` / `1.1.1.999.1` and AE-qualifier 12. A non-nil empty value in `DialOptions.MMS` omits a parameter again. A CC whose responding T-selector differs from the called one is accepted (X.224 §13.3.4), and a server returns the CR's T-selectors in the CC.
+
+### Added
+
+- `ParseSelector`, `ParseAPTitle` and `ApplySCLAddress`: dial an IED with the OSI-TSEL, OSI-SSEL, OSI-PSEL, OSI-AP-Title and OSI-AE-Qualifier of its SCL ConnectedAP (IEC 61850-8-1 Table 132). Constants `PTypeOSITSEL`, `PTypeOSISSEL`, `PTypeOSIPSEL`, `PTypeOSIAPTitle`, `PTypeOSIAEQualifier`.
+- `DialOptions.MaxTPDULength`: the COTP TPDU size proposed in the CR (default 1024; 65531 omits it).
+
+### Tests
+
+- Interop (`interop/tsap_test.go`): a strict COTP gate in front of each peer IED server accepts the default client and refuses one without a called T-selector with reason 3, reproducing #28; a gate requiring `00000001` refuses the default and accepts a configured client. Independent clients (libiec61850, iec61850-rust, iec61850bean; iec61850-interop v1.2.0 `--local-tsel`/`--remote-tsel`) with their default, 1-octet and 4-octet T-selectors against a go server that requires its selector, and a mismatch refused.
+- Unit tests for the selector and AP-title parsers and the SCL address mapping (the ConnectedAP example of IEC 61850-8-1).
+
+### Dependencies
+
+- go-mms v1.4.0, go-cotp v1.3.0.
+
+---
+
 ## v1.5.0
 
 **Date:** 2026-11-04

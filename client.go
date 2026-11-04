@@ -93,10 +93,14 @@ func Dial(ctx context.Context, addr string, opts DialOptions) (*Client, error) {
 			userOnRetry(attempt, err, d)
 		}
 	}
-	mmsClient, err := iso.Dial(ctx, addr,
+	isoOpts := []iso.Option{
 		iso.WithClientDialOptions(dialMMSOptions(opts, logger)),
 		iso.WithRetry(retry),
-	)
+	}
+	if opts.MaxTPDULength != 0 {
+		isoOpts = append(isoOpts, iso.WithMaxTPDULength(opts.MaxTPDULength))
+	}
+	mmsClient, err := iso.Dial(ctx, addr, isoOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("iec61850: dial %s: %w", addr, err)
 	}
