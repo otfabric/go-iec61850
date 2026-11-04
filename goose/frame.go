@@ -4,6 +4,7 @@ package goose
 
 import (
 	"encoding/binary"
+	"math"
 	"strconv"
 	"time"
 
@@ -203,16 +204,17 @@ func AppendFrame(dst []byte, f *Frame) ([]byte, error) {
 // EncodePDU returns the BER encoding of the goosePdu APDU
 // ([APPLICATION 1]).
 func EncodePDU(p *PDU) ([]byte, error) {
-	var allData []byte
-	var err error
-	for i, v := range p.AllData {
-		if allData, err = appendData(allData, v, 1); err != nil {
-			return nil, &EncodeError{Field: "allData", Index: i, Err: err}
-		}
+	allData, err := encodeAllData(p.AllData)
+	if err != nil {
+		return nil, err
 	}
 	n := p.NumDatSetEntries
 	if n == 0 {
-		n = uint32(len(p.AllData))
+		cnt := int64(len(p.AllData))
+		if cnt > math.MaxUint32 {
+			return nil, errLimit("%d data entries exceed numDatSetEntries range", cnt)
+		}
+		n = uint32(cnt)
 	}
 	c := make([]byte, 0, 64+len(p.GocbRef)+len(p.DatSet)+len(p.GoID)+len(allData))
 	c = appendTLV(c, tagGocbRef, []byte(p.GocbRef))
@@ -221,7 +223,11 @@ func EncodePDU(p *PDU) ([]byte, error) {
 	if p.GoID != "" {
 		c = appendTLV(c, tagGoID, []byte(p.GoID))
 	}
-	c = appendTLV(c, tagT, encodeUTCTime(p.T, p.TimeQuality))
+	t, err := encodeUTCTime(p.T, p.TimeQuality)
+	if err != nil {
+		return nil, err
+	}
+	c = appendTLV(c, tagT, t)
 	c = appendTLV(c, tagStNum, encodeUnsigned(uint64(p.StNum)))
 	c = appendTLV(c, tagSqNum, encodeUnsigned(uint64(p.SqNum)))
 	c = appendTLV(c, tagSimulation, []byte{boolOctet(p.Test)})
@@ -234,6 +240,19 @@ func EncodePDU(p *PDU) ([]byte, error) {
 	}
 	out := make([]byte, 0, 1+lengthSize(len(c))+len(c))
 	return appendTLV(out, tagGoosePDU, c), nil
+}
+
+// encodeAllData returns the concatenated Data encodings of values (the
+// allData content).
+func encodeAllData(values []*mms.Value) ([]byte, error) {
+	var out []byte
+	var err error
+	for i, v := range values {
+		if out, err = appendData(out, v, 1); err != nil {
+			return nil, &EncodeError{Field: "allData", Index: i, Err: err}
+		}
+	}
+	return out, nil
 }
 
 // EncodeError reports which part of a PDU could not be encoded.

@@ -4,6 +4,7 @@ package goose
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 	"time"
 
@@ -75,6 +76,46 @@ func FuzzDecodeData(f *testing.F) {
 		}
 		if _, err := EncodeData(v); err != nil {
 			t.Logf("decoded value not re-encodable: %v", err)
+		}
+	})
+}
+
+// FuzzDecodePDU checks the goosePdu decoder on its own (no Ethernet
+// header): it never panics, errors are typed, and every accepted APDU
+// re-encodes to an APDU that decodes to the same encoding.
+func FuzzDecodePDU(f *testing.F) {
+	pdu, err := EncodePDU(&PDU{
+		GocbRef: "IEDLD/LLN0$GO$g", TimeAllowedToLive: 2000, DatSet: "IEDLD/LLN0$ds", GoID: "id",
+		T: time.Unix(1700000000, 0), StNum: 1, SqNum: 2, ConfRev: 1, Security: []byte{1},
+		AllData: []*mms.Value{mms.NewBoolean(true), mms.NewInteger(-129), mms.NewUnsigned(1 << 40)},
+	})
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(pdu)
+	f.Add([]byte{0x61, 0x00})
+	f.Add([]byte{0x61, 0x84, 0xff, 0xff, 0xff, 0xff})
+	f.Add([]byte{0x61, 0x80, 0x00, 0x00})
+	f.Fuzz(func(t *testing.T, b []byte) {
+		p, err := DecodePDU(b)
+		if err != nil {
+			var de *DecodeError
+			if !errors.As(err, &de) {
+				t.Fatalf("untyped error %T: %v", err, err)
+			}
+			return
+		}
+		enc, err := EncodePDU(p)
+		if err != nil {
+			return // e.g. values that only exist on decode
+		}
+		p2, err := DecodePDU(enc)
+		if err != nil {
+			t.Fatalf("re-decode: %v", err)
+		}
+		enc2, err := EncodePDU(p2)
+		if err != nil || !bytes.Equal(enc, enc2) {
+			t.Fatalf("APDU not stable across round trip: %v", err)
 		}
 	})
 }

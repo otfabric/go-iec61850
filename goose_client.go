@@ -5,6 +5,7 @@ package iec61850
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/otfabric/go-mms"
 
@@ -130,15 +131,22 @@ func decodeGoCB(ref string, v *mms.Value) (*GoCB, error) {
 	get(ok)
 	cb.DatSet, ok = e[2].VisibleString()
 	get(ok)
-	var u uint64
-	u, ok = cbUint(e[3])
-	cb.ConfRev = uint32(u)
+	var confRev uint64
+	confRev, ok = cbUint(e[3])
 	get(ok)
 	cb.NdsCom, ok = e[4].Bool()
 	get(ok)
 	if !okAll {
 		return nil, bad("unexpected attribute types")
 	}
+	// IEC 61850-7-2 GoCB attribute types: ConfRev INT32U,
+	// DstAddress.PRIORITY INT8U, VID and APPID INT16U, MinTime and
+	// MaxTime INT32U. Out-of-range values are a peer error, not
+	// something to truncate.
+	if confRev > math.MaxUint32 {
+		return nil, bad("ConfRev %d exceeds INT32U", confRev)
+	}
+	cb.ConfRev = uint32(confRev)
 	dst, ok := e[5].Structure()
 	if !ok || len(dst) < 4 {
 		return nil, bad("DstAddress: expected structure of 4 elements")
@@ -154,11 +162,17 @@ func decodeGoCB(ref string, v *mms.Value) (*GoCB, error) {
 	if !ok1 || !ok2 || !ok3 {
 		return nil, bad("DstAddress: unexpected attribute types")
 	}
+	if p > math.MaxUint8 || vid > math.MaxUint16 || app > math.MaxUint16 {
+		return nil, bad("DstAddress: PRIORITY %d / VID %d / APPID %d out of range", p, vid, app)
+	}
 	cb.DstAddress.Priority, cb.DstAddress.VID, cb.DstAddress.AppID = uint8(p), uint16(vid), uint16(app)
 	if len(e) >= 8 {
 		mn, ok1 := cbUint(e[6])
 		mx, ok2 := cbUint(e[7])
 		if ok1 && ok2 {
+			if mn > math.MaxUint32 || mx > math.MaxUint32 {
+				return nil, bad("MinTime %d / MaxTime %d exceed INT32U", mn, mx)
+			}
 			cb.MinTime, cb.MaxTime, cb.HasTimes = uint32(mn), uint32(mx), true
 		}
 	}

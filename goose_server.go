@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -292,6 +293,12 @@ func (rt *gocbRuntime) setEnabled(on bool) error {
 		cfg.MinTime = cfg.MaxTime
 	}
 	if cr, ok := rt.get("ConfRev").Uint64(); ok {
+		// ConfRev is INT32U (IEC 61850-7-2); a value past it (only
+		// reachable by incrementing from 2^32-1 on a DatSet change)
+		// cannot be published without wrapping.
+		if cr > math.MaxUint32 {
+			return &mms.DataAccessError{Code: mms.DataAccessErrorObjectValueInvalid}
+		}
 		cfg.ConfRev = uint32(cr)
 	}
 	if rt.def.HasVLAN {

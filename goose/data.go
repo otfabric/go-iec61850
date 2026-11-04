@@ -102,7 +102,11 @@ func appendData(b []byte, v *mms.Value, depth int) ([]byte, error) {
 		return appendTLV(b, tagMMSString, []byte(x)), nil
 	case mms.ValueTypeUTCTime:
 		t, _ := v.UTCTime()
-		return appendTLV(b, tagUTCTime, encodeUTCTime(t, v.UTCTimeQuality())), nil
+		c, err := encodeUTCTime(t, v.UTCTimeQuality())
+		if err != nil {
+			return b, err
+		}
+		return appendTLV(b, tagUTCTime, c), nil
 	case mms.ValueTypeBinaryTime:
 		ms, _ := v.BinaryTime()
 		c, err := encodeBinaryTime(ms)
@@ -154,7 +158,7 @@ func appendBits(b []byte, tag byte, bits []byte, n int) ([]byte, error) {
 	}
 	nb := (n + 7) / 8
 	c := make([]byte, 1+nb)
-	c[0] = byte(nb*8 - n)
+	c[0] = byte((nb*8 - n) & 0x07) // unused bits, 0..7 (X.690 8.6.2.2)
 	copy(c[1:], bits[:nb])
 	if nb > 0 && c[0] != 0 {
 		c[nb] &^= byte(1<<c[0]) - 1 // clear unused trailing bits
@@ -162,14 +166,29 @@ func appendBits(b []byte, tag byte, bits []byte, n int) ([]byte, error) {
 	return appendTLV(b, tag, c), nil
 }
 
-func encodeUTCTime(t time.Time, quality uint8) []byte {
+// encodeUTCTime encodes an IEC 61850-8-1 UtcTime (the IEC 61850-7-2
+// TimeStamp): SecondSinceEpoch as a 32-bit unsigned count of seconds since
+// 1970-01-01T00:00:00Z, a 24-bit FractionOfSecond and the TimeQuality
+// octet. A zero time.Time (an unset timestamp) is encoded as the epoch,
+// as go-mms and the SV package do. Any other instant outside
+// 1970-01-01..2106-02-07T06:28:15Z cannot be represented and is
+// rejected rather than wrapped.
+func encodeUTCTime(t time.Time, quality uint8) ([]byte, error) {
+	if t.IsZero() {
+		return []byte{0, 0, 0, 0, 0, 0, 0, quality}, nil
+	}
+	secs := t.Unix()
+	if secs < 0 || secs > math.MaxUint32 {
+		return nil, errValue("UTC time %s outside 1970-01-01..2106-02-07", t.UTC().Format(time.RFC3339))
+	}
 	c := make([]byte, 8)
-	binary.BigEndian.PutUint32(c[0:4], uint32(t.Unix()))
+	binary.BigEndian.PutUint32(c[0:4], uint32(secs))
 	// Round to nearest so that decode/encode is stable.
-	frac := min((uint64(t.Nanosecond())<<24+5e8)/1e9, 0xffffff)
-	c[4], c[5], c[6] = byte(frac>>16), byte(frac>>8), byte(frac)
+	ns := uint64(max(t.Nanosecond(), 0)) // Nanosecond is in [0, 1e9)
+	frac := min((ns<<24+5e8)/1e9, 0xffffff)
+	c[4], c[5], c[6] = byte(frac>>16&0xff), byte(frac>>8&0xff), byte(frac&0xff)
 	c[7] = quality
-	return c
+	return c, nil
 }
 
 func decodeUTCTime(c []byte) (time.Time, uint8) {
@@ -180,15 +199,17 @@ func decodeUTCTime(c []byte) (time.Time, uint8) {
 }
 
 func encodeBinaryTime(ms int64) ([]byte, error) {
-	minMs := epoch1984.UnixMilli()
-	maxMs := epoch1984.AddDate(0, 0, 0x10000).UnixMilli() - 1
-	if ms < minMs || ms > maxMs {
+	// TimeOfDay (IEC 61850-8-1 / ISO 9506-2): milliseconds of the day
+	// and a 16-bit day count since 1984-01-01. The day-count bound below
+	// is exactly the representable range 1984-01-01..2163-06-05.
+	d := ms - epoch1984.UnixMilli()
+	msOfDay := d % 86400000
+	days := d / 86400000
+	if msOfDay < 0 || days < 0 || days > math.MaxUint16 {
 		return nil, errValue("binary time outside 1984-01-01..2163-06-05")
 	}
-	d := ms - minMs
-	days := d / 86400000
 	c := make([]byte, 6)
-	binary.BigEndian.PutUint32(c[0:4], uint32(d%86400000))
+	binary.BigEndian.PutUint32(c[0:4], uint32(msOfDay))
 	binary.BigEndian.PutUint16(c[4:6], uint16(days))
 	return c, nil
 }
@@ -280,7 +301,10 @@ func (d *dataDecoder) decodeOne(e tlv, base, depth int) (*mms.Value, error) {
 		if len(c) == 0 || len(c) > 8 {
 			return nil, bad("integer of %d octets", len(c))
 		}
-		x := int64(int8(c[0]))
+		x := int64(c[0])
+		if x&0x80 != 0 {
+			x -= 0x100 // sign-extend the leading octet (X.690 8.3.3)
+		}
 		for _, o := range c[1:] {
 			x = x<<8 | int64(o)
 		}
