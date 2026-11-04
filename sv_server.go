@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -289,14 +290,21 @@ func (rt *svcbRuntime) setEnabled(on bool) error {
 	}
 	opts, _ := servermodel.SvOptFldsFromValue(rt.get("OptFlds"))
 	smpMod, _ := rt.get("SmpMod").Int64()
+	confRev, smpRate, noASDU := rt.uint("ConfRev"), rt.uint("SmpRate"), rt.uint("noASDU")
+	// IEC 61850-7-2 MSVCB: ConfRev INT32U, SmpRate and noASDU INT16U,
+	// SmpMod ENUMERATED. handleWrite keeps client writes in range; this
+	// also covers values set directly in the store.
+	if confRev > math.MaxUint32 || smpRate > math.MaxUint16 || noASDU > math.MaxUint16 || smpMod < 0 || smpMod > math.MaxUint16 {
+		return fmt.Errorf("%w: %s: ConfRev %d / SmpRate %d / SmpMod %d / noASDU %d out of range", ErrSV, rt.prefix, confRev, smpRate, smpMod, noASDU)
+	}
 	cfg := sv.PublisherConfig{
 		Dst:              sv.MAC(rt.def.DstAddr),
 		AppID:            rt.def.AppID,
 		SvID:             rt.str("MsvID"),
-		ConfRev:          uint32(rt.uint("ConfRev")),
-		SmpRate:          uint16(rt.uint("SmpRate")),
+		ConfRev:          uint32(confRev),
+		SmpRate:          uint16(smpRate),
 		SmpMod:           sv.SmpMod(smpMod),
-		NoASDU:           int(rt.uint("noASDU")),
+		NoASDU:           int(noASDU),
 		NominalFrequency: rt.e.opts.NominalFrequency,
 		SmpSynch:         rt.e.opts.SmpSynch,
 		RefrTm:           opts.RefreshTime,
@@ -324,14 +332,12 @@ func (rt *svcbRuntime) setEnabled(on bool) error {
 	ctx, cancel := context.WithCancel(rt.e.ctx)
 	rt.pub, rt.stop = pub, cancel
 	rt.e.s.store.Set(rt.key("SvEna"), mms.NewBoolean(true))
-	rt.e.wg.Add(1)
-	go func() {
-		defer rt.e.wg.Done()
+	rt.e.wg.Go(func() {
 		if err := pub.Run(ctx); err != nil {
 			rt.e.log.Warn("iec61850: SV publisher stopped", "svcbRef", rt.prefix, "error", err)
 		}
 		_ = pub.Close()
-	}()
+	})
 	rt.e.log.Info("iec61850: SvCB enabled", "svcbRef", rt.prefix, "svID", cfg.SvID, "leaves", len(rt.layout))
 	return nil
 }
@@ -383,7 +389,8 @@ func (e *SVEngine) handleWrite(storeKey string, val *mms.Value) (bool, error) {
 			return true, invalid
 		}
 	case "SmpRate":
-		if r, _ := val.Uint64(); r == 0 {
+		// INT16U (IEC 61850-7-2 MSVCB SmpRate).
+		if r, _ := val.Uint64(); r == 0 || r > math.MaxUint16 {
 			return true, invalid
 		}
 	case "SmpMod":

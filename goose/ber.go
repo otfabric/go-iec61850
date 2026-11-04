@@ -2,24 +2,32 @@
 
 package goose
 
+import "math"
+
 // Minimal BER (ITU-T X.690) helpers for the GOOSE APDU. Only the
 // subset used by IEC 61850-8-1 is supported: single-octet tags and
 // definite lengths of at most four octets. Indefinite lengths are
 // rejected.
 
-// appendLength appends a definite BER length.
+// appendLength appends a definite BER length (X.690 8.1.3.4 short form
+// below 128, 8.1.3.5 long form otherwise). Lengths are content sizes
+// and therefore non-negative; the encoder never produces content beyond
+// four length octets because an encoded frame is bounded by
+// [MaxPayload], so n is clamped to the four-octet maximum rather than
+// letting the shifts below silently drop high bits.
 func appendLength(b []byte, n int) []byte {
+	u := uint32(min(max(int64(n), 0), math.MaxUint32))
 	switch {
-	case n < 0x80:
-		return append(b, byte(n))
-	case n <= 0xff:
-		return append(b, 0x81, byte(n))
-	case n <= 0xffff:
-		return append(b, 0x82, byte(n>>8), byte(n))
-	case n <= 0xffffff:
-		return append(b, 0x83, byte(n>>16), byte(n>>8), byte(n))
+	case u < 0x80:
+		return append(b, byte(u))
+	case u <= 0xff:
+		return append(b, 0x81, byte(u))
+	case u <= 0xffff:
+		return append(b, 0x82, byte(u>>8&0xff), byte(u&0xff))
+	case u <= 0xffffff:
+		return append(b, 0x83, byte(u>>16&0xff), byte(u>>8&0xff), byte(u&0xff))
 	default:
-		return append(b, 0x84, byte(n>>24), byte(n>>16), byte(n>>8), byte(n))
+		return append(b, 0x84, byte(u>>24), byte(u>>16&0xff), byte(u>>8&0xff), byte(u&0xff))
 	}
 }
 
@@ -46,12 +54,13 @@ func appendTLV(b []byte, tag byte, content []byte) []byte {
 	return append(b, content...)
 }
 
-// appendSigned appends the minimal two's-complement encoding of v.
-func appendSigned(b []byte, v int64) []byte {
+// signedBytes returns the minimal two's-complement encoding of v.
+func signedBytes(v int64) []byte {
+	var b []byte
 	n := 8
 	for n > 1 {
-		hi := byte(v >> (8 * (n - 1)))
-		next := byte(v >> (8 * (n - 2)))
+		hi := byte(v >> (8 * (n - 1)) & 0xff)
+		next := byte(v >> (8 * (n - 2)) & 0xff)
 		if (hi == 0x00 && next&0x80 == 0) || (hi == 0xff && next&0x80 != 0) {
 			n--
 			continue
@@ -59,7 +68,7 @@ func appendSigned(b []byte, v int64) []byte {
 		break
 	}
 	for i := n - 1; i >= 0; i-- {
-		b = append(b, byte(v>>(8*i)))
+		b = append(b, byte(v>>(8*i)&0xff))
 	}
 	return b
 }
@@ -72,11 +81,11 @@ func encodeUnsigned(v uint64) []byte {
 	for n < 8 && v>>(8*n) != 0 {
 		n++
 	}
-	if byte(v>>(8*(n-1)))&0x80 != 0 {
+	if v>>(8*(n-1))&0x80 != 0 {
 		b = append(b, 0)
 	}
 	for i := n - 1; i >= 0; i-- {
-		b = append(b, byte(v>>(8*i)))
+		b = append(b, byte(v>>(8*i)&0xff))
 	}
 	return b
 }
@@ -117,7 +126,7 @@ func readTLV(buf []byte, pos, base int, field string) (tlv, error) {
 			return tlv{}, decodeErr(ErrInvalidPDU, field, base+p, "truncated length")
 		}
 		l = 0
-		for i := 0; i < nb; i++ {
+		for i := range nb {
 			l = l<<8 | int(buf[p+i])
 		}
 		p += nb
@@ -142,6 +151,9 @@ func decodeUint32(c []byte, field string, off int) (uint32, error) {
 	var v uint64
 	for _, x := range c {
 		v = v<<8 | uint64(x)
+	}
+	if v > math.MaxUint32 {
+		return 0, decodeErr(ErrInvalidPDU, field, off, "value exceeds 32 bits")
 	}
 	return uint32(v), nil
 }

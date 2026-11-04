@@ -244,7 +244,7 @@ func FuzzDecodeReportIndication_NilValues(f *testing.F) {
 		}
 		for i, m := range []uint8{nilMask1, nilMask2, nilMask3} {
 			base := i * 3
-			for bit := uint8(0); bit < 3; bit++ {
+			for bit := range uint8(3) {
 				idx := base + int(bit)
 				if idx < len(values) && (m>>bit)&1 == 1 {
 					values[idx] = nil

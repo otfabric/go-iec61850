@@ -382,8 +382,7 @@ func TestOperate_WriteFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected write failure")
 	}
-	var ce *ControlError
-	if !errors.As(err, &ce) {
+	if _, ok := errors.AsType[*ControlError](err); !ok {
 		t.Errorf("expected ControlError, got %T: %v", err, err)
 	}
 }
@@ -993,8 +992,7 @@ func TestControlHandler_PanicContainment_Select(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from panicking OnSelect, got nil")
 	}
-	var ce *ControlError
-	if !errors.As(err, &ce) {
+	if _, ok := errors.AsType[*ControlError](err); !ok {
 		t.Fatalf("expected *ControlError, got %T: %v", err, err)
 	}
 }
@@ -1089,8 +1087,7 @@ func TestExecuteSelectWithValue_NonEnhancedModel(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for non-enhanced ctlModel, got nil")
 	}
-	var ce *ControlError
-	if !errors.As(err, &ce) {
+	if _, ok := errors.AsType[*ControlError](err); !ok {
 		t.Fatalf("want *ControlError, got %T", err)
 	}
 }

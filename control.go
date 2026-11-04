@@ -27,11 +27,11 @@ import (
 // or sessions. Production systems using enhanced security SHOULD
 // set [OperateParams].CtlNum explicitly to maintain correct
 // select/operate correlation.
-var ctlNumCounter uint32
+var ctlNumCounter atomic.Uint32
 
 func nextCtlNum() uint8 {
-	n := atomic.AddUint32(&ctlNumCounter, 1)
-	return uint8(n)
+	n := ctlNumCounter.Add(1)
+	return uint8(n & 0xff) // wraps by design, see above
 }
 
 // Operate performs a direct-operate control command on the specified

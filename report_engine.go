@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +47,11 @@ type ReportEngine struct {
 	stopOnce sync.Once
 	stopCh   chan struct{}
 	wg       sync.WaitGroup
+
+	// life ends when Stop is called; every background report send
+	// derives its context from it (see sendContext).
+	life     context.Context
+	stopLife context.CancelFunc
 }
 
 // rcbRuntime holds the live state for a single report control block.
@@ -115,6 +121,7 @@ func (s *Server) EnableReports() *ReportEngine {
 		rcbs:   make(map[string]*rcbRuntime),
 		stopCh: make(chan struct{}),
 	}
+	engine.life, engine.stopLife = context.WithCancel(context.Background())
 
 	for i := range s.model.LogicalDevices {
 		ld := &s.model.LogicalDevices[i]
@@ -137,6 +144,9 @@ func (s *Server) EnableReports() *ReportEngine {
 // and disabling all RCBs.
 func (re *ReportEngine) Stop() {
 	re.stopOnce.Do(func() {
+		if re.stopLife != nil {
+			re.stopLife()
+		}
 		close(re.stopCh)
 		re.mu.RLock()
 		for _, rt := range re.rcbs {
@@ -147,18 +157,49 @@ func (re *ReportEngine) Stop() {
 	})
 }
 
+// lifeContext returns the engine's lifetime context, which ends on Stop.
+// An engine not created by EnableReports never stops on its own.
+func (re *ReportEngine) lifeContext() context.Context {
+	if re.life != nil {
+		return re.life
+	}
+	return context.Background()
+}
+
+// sendContext returns the context for one background report send: it
+// ends when the engine stops or after unsolicitedSendTimeout, so a peer
+// that stops reading cannot hold a delivery goroutine (and Stop) forever.
+func (re *ReportEngine) sendContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(re.lifeContext(), unsolicitedSendTimeout)
+}
+
+// pause waits for d and reports true, or returns false as soon as the
+// engine stops.
+func (re *ReportEngine) pause(d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return true
+	case <-re.lifeContext().Done():
+		return false
+	}
+}
+
+// send delivers one InformationReport within sendContext.
+func (re *ReportEngine) send(conn *mms.ServerConn, req *mms.InformationReportRequest) error {
+	ctx, cancel := re.sendContext()
+	defer cancel()
+	return conn.SendInformationReport(ctx, req)
+}
+
 // isConnActive reports whether conn is still registered with the MMS server.
 // A nil conn is never considered active.
 func (re *ReportEngine) isConnActive(conn *mms.ServerConn) bool {
 	if conn == nil || re.mmsSrv == nil {
 		return false
 	}
-	for _, c := range re.mmsSrv.Connections() {
-		if c == conn {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(re.mmsSrv.Connections(), conn)
 }
 
 func (re *ReportEngine) registerRCBRuntime(ldName, lnName string, rpt *servermodel.ReportDef) {
@@ -391,11 +432,9 @@ func (re *ReportEngine) enableRCB(_ context.Context, rt *rcbRuntime, conn *mms.S
 		confRev := rt.confRev
 		datSet := rt.datSet
 		rcbItemID := rt.rcbItemID
-		re.wg.Add(1)
-		go func() {
-			defer re.wg.Done()
+		re.wg.Go(func() {
 			re.replayBRCBEntries(rcbItemID, rptID, optFlds, confRev, datSet, replayEntries, conn)
-		}()
+		})
 	}
 
 startIntegrity:
@@ -447,7 +486,9 @@ func (re *ReportEngine) replayBRCBEntries(
 	// Small delay so the client's RptEna write response arrives before the
 	// replayed reports, giving the client time to register its subscription
 	// channel before the first replayed report is delivered.
-	time.Sleep(150 * time.Millisecond)
+	if !re.pause(150 * time.Millisecond) {
+		return
+	}
 
 	for i, entry := range entries {
 		reportValues := encodeReportValuesEx(reportParams{
@@ -470,7 +511,7 @@ func (re *ReportEngine) replayBRCBEntries(
 			Values: reportValues,
 		}
 
-		if err := conn.SendInformationReport(context.Background(), req); err != nil {
+		if err := re.send(conn, req); err != nil {
 			re.logger.Debug("iec61850: BRCB replay send failed",
 				"rcb", rcbItemID, "entry", i, "error", err)
 			return
@@ -685,7 +726,7 @@ func (re *ReportEngine) integrityLoop(rt *rcbRuntime, tickC <-chan time.Time, st
 			seqNum := rt.seqNum
 			rt.mu.Unlock()
 
-			re.sendReport(context.Background(), rt, seqNum, inclusion, reasons, currentValues)
+			re.sendReport(re.lifeContext(), rt, seqNum, inclusion, reasons, currentValues)
 
 		case <-stopC:
 			return
@@ -780,35 +821,35 @@ func (re *ReportEngine) sendReport(_ context.Context, rt *rcbRuntime, seqNum uin
 	// (e.g. libiec61850) to receive the report while still waiting for the
 	// write confirmation, which can cause the report to be discarded.
 	if !buffered && enableConn != nil {
-		re.wg.Add(1)
-		go func() {
-			defer re.wg.Done()
+		re.wg.Go(func() {
 			// Small yield to let the current confirmed response be sent first.
-			time.Sleep(100 * time.Millisecond)
+			if !re.pause(100 * time.Millisecond) {
+				return
+			}
 			re.logger.Info("iec61850: sending URCB report", "rcb", rt.rcbItemID)
 
-			if err := enableConn.SendInformationReport(context.Background(), req); err != nil {
+			if err := re.send(enableConn, req); err != nil {
 				re.logger.Warn("iec61850: URCB report send to enableConn failed",
 					"rcb", rt.rcbItemID, "error", err)
 			} else {
 				re.logger.Info("iec61850: URCB report sent", "rcb", rt.rcbItemID)
 			}
-		}()
+		})
 		return
 	}
 
 	conns := re.mmsSrv.Connections()
 	for _, conn := range conns {
 		c := conn
-		re.wg.Add(1)
-		go func() {
-			defer re.wg.Done()
-			time.Sleep(100 * time.Millisecond)
-			if err := c.SendInformationReport(context.Background(), req); err != nil {
+		re.wg.Go(func() {
+			if !re.pause(100 * time.Millisecond) {
+				return
+			}
+			if err := re.send(c, req); err != nil {
 				re.logger.Debug("iec61850: report send failed",
 					"rcb", rt.rcbItemID, "error", err)
 			}
-		}()
+		})
 	}
 }
 

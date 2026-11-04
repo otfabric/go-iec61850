@@ -113,8 +113,7 @@ func TestParseRef_Invalid(t *testing.T) {
 				t.Fatalf("ParseRef(%q) expected error, got nil", tc.input)
 			}
 			if !errors.Is(err, ErrInvalidReference) {
-				var refErr *ReferenceError
-				if !errors.As(err, &refErr) {
+				if _, ok := errors.AsType[*ReferenceError](err); !ok {
 					t.Fatalf("ParseRef(%q) error type = %T, want *ReferenceError", tc.input, err)
 				}
 			}

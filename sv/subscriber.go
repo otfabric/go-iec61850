@@ -566,7 +566,7 @@ func (sub *Subscription) handleASDU(f *Frame, idx int, a *ASDU, now time.Time, s
 		switch kind {
 		case EventGap:
 			lost = n
-			st.st.Lost += uint64(n)
+			st.st.Lost += uint64(max(n, 0)) // sequence reports gaps as 1..w/2
 			ev := base
 			ev.Kind, ev.Lost = EventGap, n
 			evs[ne] = ev

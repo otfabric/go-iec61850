@@ -5,6 +5,7 @@ package iec61850
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -123,6 +124,11 @@ func (e *SettingGroupEngine) handleActSGWrite(ctx context.Context, rt *sgcbRunti
 	if !ok {
 		return fmt.Errorf("iec61850: ActSG write: expected unsigned")
 	}
+	// ActSG is INT8U (IEC 61850-7-2 clause 16): reject instead of
+	// truncating, which would select a different group (256 -> 0, 257 -> 1).
+	if u > math.MaxUint8 {
+		return fmt.Errorf("iec61850: ActSG write: group %d out of range", u)
+	}
 	newSG := uint8(u)
 
 	rt.mu.Lock()
@@ -149,6 +155,11 @@ func (e *SettingGroupEngine) handleEditSGWrite(ctx context.Context, rt *sgcbRunt
 	u, ok := val.Uint32()
 	if !ok {
 		return fmt.Errorf("iec61850: EditSG write: expected unsigned")
+	}
+	// EditSG is INT8U (IEC 61850-7-2 clause 16): reject instead of
+	// truncating, which would select a different group (256 -> 0, 257 -> 1).
+	if u > math.MaxUint8 {
+		return fmt.Errorf("iec61850: EditSG write: group %d out of range", u)
 	}
 	editSG := uint8(u)
 

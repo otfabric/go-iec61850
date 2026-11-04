@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 
 	"github.com/otfabric/go-iec61850/scl"
 	"github.com/spf13/cobra"
@@ -60,7 +61,7 @@ func runDumpJSON(_ *cobra.Command, args []string) error {
 
 	w := os.Stdout
 	if dumpJSONOutput != "" {
-		f, err := os.Create(dumpJSONOutput)
+		f, err := os.Create(filepath.Clean(dumpJSONOutput)) // the -o file named on the command line
 		if err != nil {
 			return exitErr(exitParseFail, "create %s: %v", dumpJSONOutput, err)
 		}

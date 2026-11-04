@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"path"
 	"sort"
 	"strings"
@@ -639,7 +640,7 @@ func decodeTrgOpsStrict(v *mms.Value) (TrgOps, error) {
 		return 0, fmt.Errorf("TrgOps BitString too short (%d bits, need 6)", bl)
 	}
 	var t uint8
-	for bit := 0; bit < 6; bit++ {
+	for bit := range 6 {
 		byteIdx := bit / 8
 		if byteIdx >= len(data) {
 			break
@@ -672,7 +673,7 @@ func decodeTrgOpsStrict(v *mms.Value) (TrgOps, error) {
 //	bit 9: segmentation         → OptFldSegmentation (internal bit 8)
 func encodeOptFlds(o OptFlds) *mms.Value {
 	data := make([]byte, 2)
-	for internalBit := 0; internalBit < 9; internalBit++ {
+	for internalBit := range 9 {
 		if o&OptFlds(1<<uint(internalBit)) != 0 {
 			wireBit := internalBit + 1 // IEC 61850 bit 0 is reserved
 			byteIdx := wireBit / 8
@@ -687,7 +688,7 @@ func encodeOptFlds(o OptFlds) *mms.Value {
 func encodeTrgOps(t TrgOps) *mms.Value {
 	data := make([]byte, 1)
 	shifted := uint8(t) << 1
-	for bit := 0; bit < 6; bit++ {
+	for bit := range 6 {
 		if shifted&(1<<uint(bit)) != 0 {
 			bitInByte := uint(7 - (bit % 8))
 			data[0] |= 1 << bitInByte
@@ -1031,7 +1032,7 @@ func decodeReportIndication(values []*mms.Value, logger *slog.Logger) (*ReportIn
 		if ok {
 			bitLen, _ := v.BitStringLength()
 			ri.Inclusion = make([]bool, bitLen)
-			for i := 0; i < bitLen; i++ {
+			for i := range bitLen {
 				byteIdx := i / 8
 				if byteIdx < len(data) {
 					bitInByte := uint(7 - (i % 8))
@@ -1105,7 +1106,7 @@ func decodeReasonCode(v *mms.Value) ReasonCode {
 		return 0
 	}
 	var r uint8
-	for bit := 0; bit < 7; bit++ {
+	for bit := range 7 {
 		byteIdx := bit / 8
 		if byteIdx >= len(data) {
 			break
@@ -1766,7 +1767,19 @@ func (s *ReportSubscription) handleSegment(ri *ReportIndication) *ReportIndicati
 		return nil
 	}
 
-	expectedSubSeq := uint32(len(s.segBuf))
+	// SubSeqNum is INT16U (IEC 61850-7-2 clause 17, report format), so a
+	// report has at most 65536 segments. A peer that keeps sending
+	// MoreSegments beyond that cannot grow the buffer without bound:
+	// the partial report is dropped.
+	n := len(s.segBuf)
+	if n > math.MaxUint16 {
+		s.client.logger.Warn("iec61850: segmented report exceeds 65536 segments (dropped)",
+			"rptID", ri.RptID, "seqNum", ri.SeqNum)
+		s.segBuf = nil
+		s.segActive = false
+		return nil
+	}
+	expectedSubSeq := uint32(n)
 	if ri.SubSeqNum != expectedSubSeq {
 		s.client.logger.Warn("iec61850: non-contiguous SubSeqNum",
 			"rptID", ri.RptID, "expected", expectedSubSeq, "got", ri.SubSeqNum)

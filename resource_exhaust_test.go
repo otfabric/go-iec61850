@@ -24,7 +24,7 @@ func TestResourceExhaust_ManyConnections(t *testing.T) {
 	_, addr, _ := startIECServer(t, testServerSCLWithURCB())
 
 	const rounds = 50
-	for i := 0; i < rounds; i++ {
+	for i := range rounds {
 		c, err := Dial(context.Background(), addr, DialOptions{})
 		if err != nil {
 			t.Fatalf("round %d Dial: %v", i, err)
@@ -52,7 +52,7 @@ func TestResourceExhaust_ConcurrentConnections(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make([]error, clients)
 
-	for i := 0; i < clients; i++ {
+	for i := range clients {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -148,7 +148,7 @@ func TestResourceExhaust_ReportBackpressure(t *testing.T) {
 
 	// Flood the server with GI triggers — do not consume from the report channel.
 	const floods = 30
-	for i := 0; i < floods; i++ {
+	for range floods {
 		_ = c.SetReportControlBlock(context.Background(), "LD1", "LLN0$RP$urcb01", RCBUpdate{
 			Fields: RCBFieldGI,
 			GI:     true,
@@ -206,11 +206,11 @@ func TestResourceExhaust_ValueStoreUnderLoad(t *testing.T) {
 	ctx := context.Background()
 	storeKey := "LD1/LLN0$ST$Mod$stVal"
 
-	for i := 0; i < setters; i++ {
+	for i := range setters {
 		setWG.Add(1)
 		go func(base int) {
 			defer setWG.Done()
-			for j := 0; j < itersPerSetter; j++ {
+			for j := range itersPerSetter {
 				srv.SetValue(ctx, storeKey, mms.NewInteger(int64(base+j)))
 			}
 		}(i * itersPerSetter)
@@ -230,10 +230,8 @@ func TestResourceExhaust_ValueStoreUnderLoad(t *testing.T) {
 	ref, _ := ParseRef("LD1/LLN0.Mod.stVal[ST]")
 	var readErrors atomic.Int64
 	var readWG sync.WaitGroup
-	readWG.Add(1)
-	go func() {
-		defer readWG.Done()
-		for i := 0; i < 100; i++ {
+	readWG.Go(func() {
+		for range 100 {
 			readCtx, readCancel := context.WithTimeout(context.Background(), 1*time.Second)
 			_, e := c.Read(readCtx, ref)
 			readCancel()
@@ -242,7 +240,7 @@ func TestResourceExhaust_ValueStoreUnderLoad(t *testing.T) {
 			}
 			time.Sleep(time.Millisecond)
 		}
-	}()
+	})
 
 	setWG.Wait()
 	readWG.Wait()

@@ -65,8 +65,16 @@ func run(ctx context.Context, addr, dir, get, outDir string, out io.Writer) erro
 		return nil
 	}
 
-	path := filepath.Join(outDir, safeName(get))
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	// The local name comes from the server: reduce it to a base name and
+	// open it through an os.Root so it cannot leave the -out directory.
+	root, err := os.OpenRoot(outDir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	name := safeName(get)
+	path := filepath.Join(outDir, name)
+	f, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if errors.Is(err, fs.ErrExist) {
 		return fmt.Errorf("%s exists; not overwriting", path)
 	} else if err != nil {
@@ -77,7 +85,7 @@ func run(ctx context.Context, addr, dir, get, outDir string, out io.Writer) erro
 		err = cerr
 	}
 	if err != nil {
-		_ = os.Remove(path)
+		_ = root.Remove(name)
 		return fmt.Errorf("download %s: %w", get, err)
 	}
 	fmt.Fprintf(out, "downloaded %s (%d bytes) to %s\n", get, entry.Size, path)

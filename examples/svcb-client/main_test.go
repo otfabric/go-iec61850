@@ -63,3 +63,17 @@ func TestRun(t *testing.T) {
 		t.Fatal("no ASDU with smpRate")
 	}
 }
+
+func TestParseRate(t *testing.T) {
+	for _, r := range []uint{0, 96, 4800, 65535} {
+		if got, err := parseRate(r); err != nil || uint(got) != r {
+			t.Errorf("parseRate(%d) = %d, %v", r, got, err)
+		}
+	}
+	// 65536 used to be sent as smpRate 0, 70000 as 4464.
+	for _, r := range []uint{65536, 70000} {
+		if _, err := parseRate(r); err == nil {
+			t.Errorf("parseRate(%d) accepted", r)
+		}
+	}
+}

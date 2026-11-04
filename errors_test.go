@@ -75,8 +75,7 @@ func TestDecodeError_Unwrap(t *testing.T) {
 		t.Error("DecodeError should wrap ErrTypeMismatch")
 	}
 
-	var decErr *DecodeError
-	if !errors.As(err, &decErr) {
+	if _, ok := errors.AsType[*DecodeError](err); !ok {
 		t.Error("errors.As should extract *DecodeError")
 	}
 }

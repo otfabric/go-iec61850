@@ -5,6 +5,7 @@ package iec61850
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/otfabric/go-mms"
 
@@ -144,10 +145,8 @@ func decodeMSVCB(ref string, v *mms.Value) (*MSVCB, error) {
 	cb.DatSet, ok = e[2].VisibleString()
 	get(ok)
 	cr, ok := cbUint(e[3])
-	cb.ConfRev = uint32(cr)
 	get(ok)
 	sr, ok := cbUint(e[4])
-	cb.SmpRate = uint16(sr)
 	get(ok)
 	opts, ok := servermodel.SvOptFldsFromValue(e[5])
 	cb.OptFlds = sv.OptFlds(opts)
@@ -155,13 +154,27 @@ func decodeMSVCB(ref string, v *mms.Value) (*MSVCB, error) {
 	if !okAll {
 		return nil, bad("unexpected attribute types")
 	}
+	// IEC 61850-7-2 MSVCB attribute types: ConfRev INT32U, SmpRate
+	// INT16U, SmpMod ENUMERATED (a non-negative code; sv.SmpMod holds
+	// 16 bits), DstAddress PRIORITY INT8U, VID and APPID INT16U, noASDU
+	// INT16U. A value outside its type is a malformed response, not
+	// something to truncate.
+	if cr > math.MaxUint32 {
+		return nil, bad("ConfRev %d exceeds INT32U", cr)
+	}
+	if sr > math.MaxUint16 {
+		return nil, bad("SmpRate %d exceeds INT16U", sr)
+	}
+	cb.ConfRev, cb.SmpRate = uint32(cr), uint16(sr)
 	i := 6
-	if m, ok := e[i].Int64(); ok {
+	if m, ok := cbUint(e[i]); ok {
+		if m > math.MaxUint16 {
+			return nil, bad("SmpMod %d out of range", m)
+		}
 		cb.SmpMod, cb.HasSmpMod = sv.SmpMod(m), true
 		i++
-	} else if m, ok := e[i].Uint64(); ok {
-		cb.SmpMod, cb.HasSmpMod = sv.SmpMod(m), true
-		i++
+	} else if _, ok := e[i].Int64(); ok {
+		return nil, bad("negative SmpMod")
 	}
 	if i >= len(e) {
 		return nil, bad("missing DstAddress")
@@ -181,9 +194,15 @@ func decodeMSVCB(ref string, v *mms.Value) (*MSVCB, error) {
 	if !ok1 || !ok2 || !ok3 {
 		return nil, bad("DstAddress: unexpected attribute types")
 	}
+	if p > math.MaxUint8 || vid > math.MaxUint16 || app > math.MaxUint16 {
+		return nil, bad("DstAddress: PRIORITY %d / VID %d / APPID %d out of range", p, vid, app)
+	}
 	cb.DstAddress.Priority, cb.DstAddress.VID, cb.DstAddress.AppID = uint8(p), uint16(vid), uint16(app)
 	if i+1 < len(e) {
 		n, _ := cbUint(e[i+1])
+		if n > math.MaxUint16 {
+			return nil, bad("noASDU %d exceeds INT16U", n)
+		}
 		cb.NoASDU = uint16(n)
 	}
 	return cb, nil

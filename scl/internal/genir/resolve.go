@@ -4,6 +4,7 @@ package genir
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -213,8 +214,8 @@ func (r *Resolved) AllSequenceElements(ct *ComplexType) []*Element {
 	var result []*Element
 
 	// Base elements first (from most base to derived)
-	for i := len(chain) - 1; i >= 0; i-- {
-		result = append(result, chain[i].Sequence...)
+	for _, c := range slices.Backward(chain) {
+		result = append(result, c.Sequence...)
 	}
 	// Then own elements
 	result = append(result, ct.Sequence...)

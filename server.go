@@ -83,6 +83,9 @@ type Server struct {
 	lnMu          sync.Mutex
 	hookListeners map[mms.TransportListener]struct{}
 	shutdown      bool
+
+	// bg tracks background sends (CommandTermination) stopped by Close.
+	bg backgroundTasks
 }
 
 // ServerOptions configures the IEC 61850 server.
@@ -118,6 +121,17 @@ type ServerOptions struct {
 	// connection's [Server.Serve] call returns (the connection is
 	// fully closed regardless of how it ended).
 	OnDisconnect func(ConnectionEvent)
+
+	// AllowReadOnlyFCWrites, when true, lets MMS clients write data
+	// attributes of the read-only functional constraints: status (ST),
+	// measurands (MX), setting-group values (SG), service responses
+	// (SR), operate-received (OR) and extended definitions (EX). IEC
+	// 61850-7-2 makes them read-only to clients, and by default a write
+	// is answered with object-access-denied; the application changes
+	// them with [Server.SetValue]. Set it only for a simulator or a test
+	// fixture whose peers drive status values over MMS. It is not
+	// conformant and lets any associated client change process data.
+	AllowReadOnlyFCWrites bool
 
 	// Metrics, when non-nil, receives the MMS request and connection
 	// events of the server (see [mms.Metrics]). It is a convenience field
@@ -174,7 +188,9 @@ func NewServer(model *servermodel.Model, opts ServerOptions) (*Server, error) {
 
 	mmsSrv := mms.NewServer(mmsOpts)
 
-	vs, err := servermodel.RegisterModel(mmsSrv, model, nil)
+	vs, err := servermodel.RegisterModel(mmsSrv, model, servermodel.NewValueStoreWithOptions(servermodel.ValueStoreOptions{
+		AllowReadOnlyFCWrites: opts.AllowReadOnlyFCWrites,
+	}))
 	if err != nil {
 		return nil, fmt.Errorf("iec61850: register model: %w", err)
 	}
@@ -337,12 +353,12 @@ func (s *Server) installWriteInterceptor() {
 // name and all sub-path segments, and subAttr is the last segment (the control
 // service identifier: Oper, SBO, SBOw, or Cancel).
 func parseCOStoreKey(itemID string) (lnName string, path []string, subAttr string, ok bool) {
-	i := strings.Index(itemID, "$CO$")
-	if i < 0 {
+	before, after0, ok := strings.Cut(itemID, "$CO$")
+	if !ok {
 		return "", nil, "", false
 	}
-	lnName = itemID[:i]
-	after := itemID[i+4:] // everything after "$CO$"
+	lnName = before
+	after := after0 // everything after "$CO$"
 	if after == "" {
 		return "", nil, "", false
 	}
@@ -394,16 +410,16 @@ func parseRCBStoreKey(itemID string) (rcbItemID, subfield string, ok bool) {
 // write. SGCB item IDs follow the pattern "LNName$SP$SGCB$subfield".
 func parseSGCBStoreKey(itemID string) (subfield string, ok bool) {
 	const sgcbMarker = "$SP$SGCB$"
-	i := strings.Index(itemID, sgcbMarker)
-	if i < 0 {
+	_, after, ok := strings.Cut(itemID, sgcbMarker)
+	if !ok {
 		return "", false
 	}
-	return itemID[i+len(sgcbMarker):], true
+	return after, true
 }
 
 // Close performs an orderly shutdown of the server's runtime engines.
-// It stops the report engine (integrity timers, delivery goroutines),
-// the GOOSE engine (publishers)
+// It stops pending CommandTermination sends, the report engine
+// (integrity timers, delivery goroutines), the GOOSE engine (publishers)
 // and clears references to the journal and setting group engines.
 // Close is idempotent and safe to call multiple times.
 //
@@ -413,6 +429,7 @@ func parseSGCBStoreKey(itemID string) (subfield string, ok bool) {
 // stateless (no background goroutines), so they only need reference
 // clearing for garbage collection.
 func (s *Server) Close() {
+	s.bg.stop()
 	if s.reportEngine != nil {
 		s.reportEngine.Stop()
 	}

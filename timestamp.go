@@ -120,6 +120,6 @@ func encodeTimeQuality(tq TimeQuality) uint8 {
 	if tq.ClockNotSynchronized {
 		qb |= 0x20
 	}
-	qb |= uint8(tq.TimeAccuracy) & 0x1F
+	qb |= uint8(tq.TimeAccuracy & 0x1F)
 	return qb
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -79,7 +80,7 @@ func DetectVersion(data []byte) (VersionInfo, error) {
 // DetectFile is a convenience wrapper that reads a file and detects
 // its SCL schema version.
 func DetectFile(path string) (VersionInfo, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filepath.Clean(path)) // the caller names the file to read
 	if err != nil {
 		return VersionInfo{}, fmt.Errorf("scl: read %q: %w", path, err)
 	}

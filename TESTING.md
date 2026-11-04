@@ -7,7 +7,7 @@ How to run each test tier. What the tests show per feature is in
 
 | Tier | Command | Needs | CI |
 |---|---|---|---|
-| Unit | `make test` | nothing | `ci.yml`, Go 1.25–1.26 |
+| Unit | `make test` | nothing | `ci.yml`, Go 1.26–1.27 |
 | Race | `make test-race` | nothing | `ci.yml` |
 | End-to-end | `make e2e` | nothing | the same tests run in `ci.yml`, see below |
 | Raw sockets | `sudo -E go test ./l2 ./goose` | root on Linux, or `GOOSE_TEST_IFACE` | `coverage-pkg-check` job, as root |
@@ -31,6 +31,13 @@ There is no `e2e/` directory. `make e2e` selects the tests that run a real
 `TestRun` smoke test of every example, which runs the program in-process
 against the demo IED ([examples/README.md](examples/README.md)). The GOOSE and
 SV examples use the in-memory `Hub`.
+
+`TestE2E_*` (in `scl_model_e2e_test.go`, over `loopbackPair`) serve models
+built from SCL: `TestE2E_SCLCorpusReadEveryFC` serves every IED of every SCL
+file under `scl/testdata` and `interop/testdata` (vendor CIDs included) and
+reads each `LN$FC` before anything is written, and
+`TestE2E_SCLModelRejectsHostileWrites` checks that client writes to status
+attributes and writes of the wrong type are refused and change nothing.
 
 Most other client tests in the root package use an in-memory transport pair
 (`loopbackPair`), which skips ISO/TCP but runs the same MMS encoding.
@@ -72,6 +79,11 @@ Run with `make test`:
   from fixed seeds, and drop the connection.
 - GOOSE: `TestChaosLossReorderDuplicate`, `TestChaosCorruption`.
 - SV: `TestChaosAccounting`, `TestChaosMutation`.
+- Hostile clients: `TestChaosHostileClientsAgainstSCLModel`
+  (`chaos_hostile_test.go`) has four clients write random values of random
+  types (oversized strings, out-of-range ctlNum, read-only FCs) to an
+  SCL-built server while the application updates status; the model must stay
+  intact and serve every LN$FC afterwards.
 - Goroutine leaks: `TestClient_NoGoroutineLeakOnConnectDisconnect`,
   `TestConcurrent_TimeoutDoesNotLeakGoroutines`.
 - `readme_test.go` checks the README's code snippets.

@@ -5,6 +5,7 @@ package servermodel
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -51,6 +52,8 @@ var btypeToMMS = map[string]mms.TypeSpec{
 	"VisString64":  {Type: mms.ValueTypeVisibleString, Size: 64},
 	"VisString65":  {Type: mms.ValueTypeVisibleString, Size: 65},
 	"VisString129": {Type: mms.ValueTypeVisibleString, Size: 129},
+	// ObjectReference is mapped to VISIBLE STRING129 (IEC 61850-8-1, ObjRef).
+	"ObjRef":       {Type: mms.ValueTypeVisibleString, Size: 129},
 	"VisString255": {Type: mms.ValueTypeVisibleString, Size: 255},
 	"Unicode255":   {Type: mms.ValueTypeMmsString, Size: 255},
 	"Octet6":       {Type: mms.ValueTypeOctetString, Size: 6},
@@ -94,6 +97,9 @@ type ValueStore struct {
 	mu            sync.RWMutex
 	values        map[string]*mms.Value
 	defensiveCopy bool
+	// allowReadOnlyFCWrites lets clients write read-only FCs; see
+	// ValueStoreOptions.AllowReadOnlyFCWrites.
+	allowReadOnlyFCWrites bool
 
 	interceptorMu sync.RWMutex
 	interceptor   WriteInterceptor
@@ -101,6 +107,12 @@ type ValueStore struct {
 
 // ValueStoreOptions configures [ValueStore] behavior.
 type ValueStoreOptions struct {
+	// AllowReadOnlyFCWrites, when true, lets clients write data
+	// attributes of the read-only functional constraints (ST, MX, SG,
+	// SR, OR, EX) when the model is registered with this store. Only
+	// for simulators and test fixtures; see clientWritableFC.
+	AllowReadOnlyFCWrites bool
+
 	// DefensiveCopy, when true, causes Get and Set to perform a
 	// shallow struct-level copy (*mms.Value is copied by value, not
 	// by pointer). This prevents the most common aliasing bug where
@@ -125,8 +137,9 @@ func NewValueStore() *ValueStore {
 // options.
 func NewValueStoreWithOptions(opts ValueStoreOptions) *ValueStore {
 	return &ValueStore{
-		values:        make(map[string]*mms.Value),
-		defensiveCopy: opts.DefensiveCopy,
+		values:                make(map[string]*mms.Value),
+		defensiveCopy:         opts.DefensiveCopy,
+		allowReadOnlyFCWrites: opts.AllowReadOnlyFCWrites,
 	}
 }
 
@@ -675,6 +688,17 @@ func registerDAWithFC(srv *mms.Server, vs *ValueStore, ldName, lnName string, pa
 	fullPath := append(append([]string(nil), path...), attr.Name)
 	itemID := lnName + "$" + attr.FC + "$" + strings.Join(fullPath, "$")
 	storeKey := StoreKey(ldName, itemID)
+	var write func(context.Context, *mms.Value) error
+	if vs.allowReadOnlyFCWrites || clientWritableFC(attr.FC) {
+		write = func(ctx context.Context, val *mms.Value) error {
+			// Store the compound value so the interceptor can read it if needed.
+			vs.Set(storeKey, val)
+			if handled, err := vs.callInterceptor(ctx, storeKey, val); handled || err != nil {
+				return err
+			}
+			return nil
+		}
+	}
 	if err := srv.RegisterVariable(mms.Variable{
 		Name: mms.ObjectName{
 			Scope:  mms.ObjectScopeDomain,
@@ -683,14 +707,7 @@ func registerDAWithFC(srv *mms.Server, vs *ValueStore, ldName, lnName string, pa
 		},
 		TypeSpec: elem.Type,
 		Read:     read,
-		Write: func(ctx context.Context, val *mms.Value) error {
-			// Store the compound value so the interceptor can read it if needed.
-			vs.Set(storeKey, val)
-			if handled, err := vs.callInterceptor(ctx, storeKey, val); handled || err != nil {
-				return err
-			}
-			return nil
-		},
+		Write:    write,
 	}); err != nil {
 		return fmt.Errorf("register compound DA %s: %w", itemID, err)
 	}
@@ -740,13 +757,7 @@ func registerDA(srv *mms.Server, vs *ValueStore, ldName, lnName string, path []s
 		}
 		if attr.BType == "Enum" && len(attr.EnumValues) > 0 {
 			if i, ok := iv.Int64(); ok {
-				valid := false
-				for _, ord := range attr.EnumValues {
-					if int(i) == ord {
-						valid = true
-						break
-					}
-				}
+				valid := slices.Contains(attr.EnumValues, int(i))
 				if !valid {
 					return fmt.Errorf("initial value for %s/%s: enum ordinal %d not in EnumType", ldName, itemID, i)
 				}
@@ -792,8 +803,26 @@ func registerDA(srv *mms.Server, vs *ValueStore, ldName, lnName string, path []s
 			return nil
 		},
 	}
+	if !vs.allowReadOnlyFCWrites && !clientWritableFC(attr.FC) {
+		v.Write = nil // go-mms answers object-access-denied
+	}
 
 	return srv.RegisterVariable(v)
+}
+
+// clientWritableFC reports whether a client may write data attributes of
+// functional constraint fc with SetDataValues. Status (ST), measurands
+// (MX), setting-group values (SG, edited through SE and the SGCB),
+// service responses (SR), operate-received (OR) and extended definitions
+// (EX) are read-only to clients (IEC 61850-7-2, functional constraints);
+// the server application changes them with Server.SetValue. Before this
+// check any client could overwrite, for example, a breaker's Pos.stVal.
+func clientWritableFC(fc string) bool {
+	switch fc {
+	case "ST", "MX", "SG", "SR", "OR", "EX":
+		return false
+	}
+	return true
 }
 
 func registerDataSet(srv *mms.Server, ldName, lnName string, ds *DataSetDef) error {
@@ -1155,15 +1184,16 @@ func parseInitialValue(btype, val string, enumNames map[string]int) (*mms.Value,
 		return mms.NewInteger(i), nil
 
 	case "Enum":
-		// Accept numeric ordinal strings ("1") or SCL enum value names
-		// ("direct-with-normal-security"). Name lookup requires enumNames.
+		// The SCL value of an enumerated attribute is the EnumVal literal
+		// (IEC 61850-6, Val of an Enum DA), e.g. "direct-with-normal-security".
+		// Literals can be numbers ("9600" of a baud-rate EnumType whose
+		// ordinal is 6), so the literal is looked up first; a numeric string
+		// that is no literal is taken as the ordinal.
+		if ord, ok := enumNames[val]; ok {
+			return mms.NewInteger(int64(ord)), nil
+		}
 		if i, err := strconv.ParseInt(val, 10, 64); err == nil {
 			return mms.NewInteger(i), nil
-		}
-		if enumNames != nil {
-			if ord, ok := enumNames[val]; ok {
-				return mms.NewInteger(int64(ord)), nil
-			}
 		}
 		return nil, fmt.Errorf("invalid integer value %q for %s: not a valid ordinal or enum name", val, btype)
 
@@ -1181,7 +1211,7 @@ func parseInitialValue(btype, val string, enumNames map[string]int) (*mms.Value,
 		}
 		return mms.NewFloat(f), nil
 
-	case "VisString32", "VisString64", "VisString65", "VisString129", "VisString255":
+	case "VisString32", "VisString64", "VisString65", "VisString129", "VisString255", "ObjRef":
 		return mms.NewVisibleString(val), nil
 
 	case "Unicode255":
@@ -1190,7 +1220,16 @@ func parseInitialValue(btype, val string, enumNames map[string]int) (*mms.Value,
 	case "Quality":
 		return parseInitialBitString(val, 13)
 
-	case "Dbpos", "Check":
+	case "Dbpos":
+		// SCL gives a double point as its literal (IEC 61850-7-3 DPS
+		// stVal); on the wire it is BIT STRING(2), intermediate-state 00,
+		// off 01, on 10, bad-state 11 (IEC 61850-8-1), as DpCtlVal writes.
+		if b, ok := dbposLiterals[val]; ok {
+			return mms.NewBitStringWithLength([]byte{b}, 2), nil
+		}
+		return parseInitialBitString(val, 2)
+
+	case "Check":
 		return parseInitialBitString(val, 2)
 
 	case "OptFlds":
@@ -1225,6 +1264,15 @@ func parseInitialValue(btype, val string, enumNames map[string]int) (*mms.Value,
 // parseInitialBitString parses an integer string into a bit string of
 // the specified bit length. The integer value populates the bits in
 // MSB-first order.
+// dbposLiterals maps the Dbpos literals to their two-bit encoding,
+// first bit in the high bit of the octet.
+var dbposLiterals = map[string]byte{
+	"intermediate-state": 0x00,
+	"off":                0x40,
+	"on":                 0x80,
+	"bad-state":          0xc0,
+}
+
 func parseInitialBitString(val string, bits int) (*mms.Value, error) {
 	u, err := strconv.ParseUint(val, 0, 64)
 	if err != nil {
@@ -1275,7 +1323,7 @@ func hexDecode(s string) ([]byte, error) {
 		s = "0" + s
 	}
 	data := make([]byte, len(s)/2)
-	for i := 0; i < len(data); i++ {
+	for i := range data {
 		hi, err := hexNibble(s[i*2])
 		if err != nil {
 			return nil, err
@@ -1349,7 +1397,7 @@ func encodeTrgOpsDef(t TrgOpsDef) *mms.Value {
 		raw |= 1 << 5
 	}
 	data := []byte{0}
-	for bit := 0; bit < 6; bit++ {
+	for bit := range 6 {
 		if raw&(1<<uint(bit)) != 0 {
 			bitInByte := uint(7 - (bit % 8))
 			data[0] |= 1 << bitInByte

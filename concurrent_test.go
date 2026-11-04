@@ -65,7 +65,7 @@ func TestConcurrent_ContextCancelReleasesInflightReads(t *testing.T) {
 	reqCtx, reqCancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	errs := make([]error, workers)
-	for i := 0; i < workers; i++ {
+	for i := range workers {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -191,13 +191,11 @@ func TestConcurrent_ReportsDuringOutstandingRequests(t *testing.T) {
 
 	var readWG sync.WaitGroup
 	const readers = 6
-	for i := 0; i < readers; i++ {
-		readWG.Add(1)
-		go func() {
-			defer readWG.Done()
+	for range readers {
+		readWG.Go(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
-			for j := 0; j < 10; j++ {
+			for range 10 {
 				ref, _ := ParseRef("LD1/LLN0.Mod.stVal[ST]")
 				_, e := c.Read(ctx, ref)
 				if e == nil {
@@ -205,7 +203,7 @@ func TestConcurrent_ReportsDuringOutstandingRequests(t *testing.T) {
 				}
 				time.Sleep(5 * time.Millisecond)
 			}
-		}()
+		})
 	}
 
 	// Drain reports concurrently.
@@ -248,15 +246,13 @@ func TestConcurrent_ManyWritesThenClose(t *testing.T) {
 
 	var wg sync.WaitGroup
 	const workers = 20
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range workers {
+		wg.Go(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			ref, _ := ParseRef("LD1/LLN0.Mod.stVal[ST]")
 			_ = c.Write(ctx, ref, mms.NewInteger(1))
-		}()
+		})
 	}
 
 	// Close while writes are flying.
@@ -315,7 +311,7 @@ func TestConcurrent_TimeoutDoesNotLeakGoroutines(t *testing.T) {
 	ref, _ := ParseRef("LD1/LLN0.Mod.stVal[ST]")
 
 	// Warm-up.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		tCtx, tCancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 		_, _ = c.Read(tCtx, ref)
 		tCancel()
@@ -324,7 +320,7 @@ func TestConcurrent_TimeoutDoesNotLeakGoroutines(t *testing.T) {
 	runtime.GC()
 	before := runtime.NumGoroutine()
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		tCtx, tCancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 		_, _ = c.Read(tCtx, ref)
 		tCancel()

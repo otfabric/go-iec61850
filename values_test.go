@@ -45,8 +45,7 @@ func TestValue_NilAccessors(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected error for nil *Value")
 			}
-			var de *DecodeError
-			if !errors.As(err, &de) {
+			if _, ok := errors.AsType[*DecodeError](err); !ok {
 				t.Errorf("expected DecodeError, got %T: %v", err, err)
 			}
 		})
@@ -105,8 +104,7 @@ func TestValue_Bool(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for non-bool")
 	}
-	var de *DecodeError
-	if !errors.As(err, &de) {
+	if _, ok := errors.AsType[*DecodeError](err); !ok {
 		t.Errorf("expected DecodeError, got %T", err)
 	}
 }

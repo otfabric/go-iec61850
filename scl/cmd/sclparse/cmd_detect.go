@@ -37,7 +37,7 @@ func init() {
 func runDetect(_ *cobra.Command, args []string) error {
 	path := args[0]
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filepath.Clean(path)) // the file named on the command line
 	if err != nil {
 		return exitErr(exitParseFail, "read %s: %v", path, err)
 	}

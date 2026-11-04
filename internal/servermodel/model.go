@@ -12,7 +12,10 @@
 // the variable registry, named variable lists, and report hooks.
 package servermodel
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Model is the top-level container for an IEC 61850 server data model.
 // It holds the complete logical structure served by a single MMS server
@@ -393,12 +396,12 @@ func validateDOs(ldName, lnName string, dos []DataObject, parentPath ...string) 
 }
 
 func joinPath(parts []string) string {
-	result := ""
+	var result strings.Builder
 	for i, p := range parts {
 		if i > 0 {
-			result += "."
+			result.WriteString(".")
 		}
-		result += p
+		result.WriteString(p)
 	}
-	return result
+	return result.String()
 }

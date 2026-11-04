@@ -30,7 +30,7 @@ func NewEmitter(r *Resolved, outDir, pkgName string) *Emitter {
 
 // Emit generates all Go source files.
 func (e *Emitter) Emit() error {
-	if err := os.MkdirAll(e.outDir, 0o755); err != nil {
+	if err := os.MkdirAll(e.outDir, 0o750); err != nil {
 		return err
 	}
 
@@ -608,11 +608,11 @@ func (e *Emitter) writeFile(name, content string) error {
 	if err != nil {
 		// Write unformatted for debugging, then return the error.
 		path := filepath.Join(e.outDir, name)
-		_ = os.WriteFile(path, []byte(content), 0o644)
+		_ = os.WriteFile(path, []byte(content), 0o600)
 		return fmt.Errorf("gofmt %s: %w", name, err)
 	}
 	path := filepath.Join(e.outDir, name)
-	return os.WriteFile(path, formatted, 0o644)
+	return os.WriteFile(path, formatted, 0o600)
 }
 
 // --- Naming helpers ---

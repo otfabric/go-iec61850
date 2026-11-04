@@ -187,7 +187,7 @@ func TestEncodeDataErrors(t *testing.T) {
 		}
 	}
 	deep := mms.NewInteger(1)
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		deep = mms.NewStructure([]*mms.Value{deep})
 	}
 	if _, err := EncodeData(deep); !errors.Is(err, ErrLimitExceeded) {
@@ -359,7 +359,7 @@ func TestDecodeDataErrors(t *testing.T) {
 
 func TestDecodeLimits(t *testing.T) {
 	v := mms.NewInteger(1)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		v = mms.NewStructure([]*mms.Value{v})
 	}
 	f := &Frame{Dst: Broadcast, PDU: PDU{GocbRef: "g", DatSet: "d", T: time.Unix(0, 0), AllData: []*mms.Value{v, mms.NewBoolean(true)}}}
@@ -435,13 +435,13 @@ func TestBERHelpers(t *testing.T) {
 		}
 	}
 	for _, v := range []int64{0, 1, -1, 127, 128, -128, -129, 1 << 40, math.MinInt64, math.MaxInt64} {
-		b := appendSigned(nil, v)
+		b := signedBytes(v)
 		x := int64(int8(b[0]))
 		for _, o := range b[1:] {
 			x = x<<8 | int64(o)
 		}
 		if x != v {
-			t.Errorf("appendSigned(%d) = %x", v, b)
+			t.Errorf("signedBytes(%d) = %x", v, b)
 		}
 	}
 }

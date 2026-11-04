@@ -30,7 +30,7 @@ func TestReportEngine_ConcurrentSetValue(t *testing.T) {
 	storeKey := servermodel.StoreKey("LD1", "LLN0$ST$Mod$stVal")
 
 	var wg sync.WaitGroup
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		wg.Add(1)
 		go func(val int) {
 			defer wg.Done()
@@ -58,7 +58,7 @@ func TestReportEngine_ConcurrentEnableDisable(t *testing.T) {
 	ctx := context.Background()
 
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -81,12 +81,10 @@ func TestReportEngine_ConcurrentGI(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 20 {
+		wg.Go(func() {
 			_ = engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "GI", mms.NewBoolean(true))
-		}()
+		})
 	}
 	wg.Wait()
 }
@@ -113,7 +111,7 @@ func TestControl_ConcurrentSBOOperate(t *testing.T) {
 	ctx := context.Background()
 
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -153,7 +151,7 @@ func TestSettingGroup_ConcurrentWrites(t *testing.T) {
 	ctx := context.Background()
 
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -178,7 +176,7 @@ func TestJournalProvider_ConcurrentAddRead(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -188,12 +186,10 @@ func TestJournalProvider_ConcurrentAddRead(t *testing.T) {
 		}(i)
 	}
 
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 10 {
+		wg.Go(func() {
 			_, _ = p.ReadTimeRange(ctx, "LD1", "journal1", now.Add(-time.Second), now.Add(time.Minute), 50)
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -222,7 +218,7 @@ func TestReportEngine_BufferOverflow_Concurrent(t *testing.T) {
 	storeKey := servermodel.StoreKey("LD1", "LLN0$ST$Mod$stVal")
 
 	var wg sync.WaitGroup
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		wg.Add(1)
 		go func(v int) {
 			defer wg.Done()
@@ -297,7 +293,7 @@ func TestReportEngine_EnableDisableRapid(t *testing.T) {
 
 	ctx := context.Background()
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		_ = engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "RptEna", mms.NewBoolean(true))
 		_ = engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "RptEna", mms.NewBoolean(false))
 	}
@@ -432,7 +428,7 @@ func TestJournalProvider_Overflow(t *testing.T) {
 	p.RegisterJournal("LD1", "j1")
 
 	now := time.Now()
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		p.AddEntry("LD1", "j1", now.Add(time.Duration(i)*time.Millisecond), []mms.JournalVariable{
 			{Tag: "v", Value: mms.NewInteger(int64(i))},
 		})

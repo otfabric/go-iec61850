@@ -437,8 +437,7 @@ func TestSettingGroups_ClientServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() { _ = srv.ListenAndServe(ctx, ln) }()
 	defer srv.Close()
 	c, err := Dial(ctx, ln.Addr().String(), DialOptions{})

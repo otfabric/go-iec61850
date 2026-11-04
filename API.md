@@ -1027,6 +1027,9 @@ type ServerOptions struct {
     OnConnect    func(ConnectionEvent)
     OnDisconnect func(ConnectionEvent)
     Metrics      mms.Metrics // used when MMS.Metrics is nil
+    // AllowReadOnlyFCWrites lets clients write ST, MX, SG, SR, OR and
+    // EX (simulators, test fixtures only); default: object-access-denied.
+    AllowReadOnlyFCWrites bool
     MMS          mms.ServerOptions // incl. AssociationTimeout
 }
 
@@ -2492,6 +2495,7 @@ type Diagnostic struct {
 | `unresolved-fcda` | warning | FCDA references nonexistent LDevice |
 | `unresolved-topology-lnode` | error/warning | Topology LNode references nonexistent IED/LD/LN |
 | `invalid-count` | warning | Numeric attribute could not be parsed |
+| `invalid-setting-control` | error | SettingControl `numOfSGs` or `actSG` exceeds 255 (INT8U); the field is left 0 |
 
 ### Usage patterns
 

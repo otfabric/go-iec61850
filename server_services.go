@@ -4,6 +4,7 @@ package iec61850
 
 import (
 	"context"
+	"strings"
 
 	"github.com/otfabric/go-mms"
 )
@@ -175,13 +176,14 @@ func (c ServiceCapabilities) String() string {
 	if len(services) == 0 {
 		return "ServiceCapabilities(none)"
 	}
-	result := "ServiceCapabilities("
+	var result strings.Builder
+	result.WriteString("ServiceCapabilities(")
 	for i, svc := range services {
 		if i > 0 {
-			result += ", "
+			result.WriteString(", ")
 		}
-		result += svc
+		result.WriteString(svc)
 	}
-	result += ")"
-	return result
+	result.WriteString(")")
+	return result.String()
 }

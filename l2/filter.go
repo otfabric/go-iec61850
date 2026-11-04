@@ -2,6 +2,8 @@
 
 package l2
 
+import "math"
+
 // bpfInsn is a classic BPF instruction, converted to the OS-specific
 // type by each raw backend.
 type bpfInsn struct {
@@ -56,19 +58,30 @@ func etherTypeFilter(types []uint16) []bpfInsn {
 	prog = append(prog, bpfInsn{code: bpfLdhAbs, k: 12})
 	for _, et := range types {
 		pc := len(prog)
-		prog = append(prog, bpfInsn{code: bpfJeqK, jt: uint8(accept - pc - 1), k: uint32(et)})
+		prog = append(prog, bpfInsn{code: bpfJeqK, jt: jumpOffset(accept - pc - 1), k: uint32(et)})
 	}
 	pc := len(prog)
-	prog = append(prog, bpfInsn{code: bpfJeqK, jf: uint8(reject - pc - 1), k: uint32(EtherTypeVLAN)})
+	prog = append(prog, bpfInsn{code: bpfJeqK, jf: jumpOffset(reject - pc - 1), k: uint32(EtherTypeVLAN)})
 	prog = append(prog, bpfInsn{code: bpfLdhAbs, k: 16})
 	for i, et := range types {
 		pc := len(prog)
 		jf := uint8(0)
 		if i == n-1 {
-			jf = uint8(reject - pc - 1)
+			jf = jumpOffset(reject - pc - 1)
 		}
-		prog = append(prog, bpfInsn{code: bpfJeqK, jt: uint8(accept - pc - 1), jf: jf, k: uint32(et)})
+		prog = append(prog, bpfInsn{code: bpfJeqK, jt: jumpOffset(accept - pc - 1), jf: jf, k: uint32(et)})
 	}
 	prog = append(prog, bpfInsn{code: bpfRetK, k: 0}, bpfInsn{code: bpfRetK, k: 0xffff})
 	return prog
+}
+
+// jumpOffset converts a relative classic-BPF jump to the 8-bit jt/jf
+// field. etherTypes caps the list at maxEtherTypes, so the largest
+// offset etherTypeFilter produces is 2*maxEtherTypes+3; anything outside
+// [0, 255] is a programming error in the filter layout, never input.
+func jumpOffset(d int) uint8 {
+	if d < 0 || d > math.MaxUint8 {
+		panic("l2: BPF jump offset out of range")
+	}
+	return uint8(d)
 }

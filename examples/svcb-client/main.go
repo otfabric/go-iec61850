@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"os"
 	"os/signal"
 	"syscall"
@@ -45,9 +46,22 @@ func main() {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	if err := run(ctx, *addr, *ld, *msvcb, uint16(*rate), os.Stdout); err != nil {
+	smpRate, err := parseRate(*rate)
+	if err != nil {
 		log.Fatal(err)
 	}
+	if err := run(ctx, *addr, *ld, *msvcb, smpRate, os.Stdout); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// parseRate checks the -rate flag: SmpRate is INT16U, so a larger value
+// is rejected instead of being truncated to a different rate.
+func parseRate(rate uint) (uint16, error) {
+	if rate > math.MaxUint16 {
+		return 0, fmt.Errorf("-rate %d exceeds %d", rate, math.MaxUint16)
+	}
+	return uint16(rate), nil
 }
 
 func run(ctx context.Context, addr, ld, msvcb string, rate uint16, out io.Writer) error {

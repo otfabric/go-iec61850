@@ -4,6 +4,7 @@ package servermodel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -348,13 +349,13 @@ func TestValueStore_Concurrent(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			vs.Set("key", mms.NewInteger(int64(i)))
 		}
 		close(done)
 	}()
 
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		vs.Get("key")
 	}
 	<-done
@@ -763,7 +764,7 @@ func TestRegisterDAWithFC_Compound(t *testing.T) {
 					Name: "AnIn1",
 					Attributes: []DataAttribute{{
 						Name: "mag",
-						FC:   "MX",
+						FC:   "SP", // writable; MX is read-only (TestRegister_ReadOnlyFCRejectsWrites)
 						Children: []DataAttribute{
 							{Name: "f", BType: "FLOAT32", InitialValue: "3.14"},
 							{Name: "nested", FC: "", Children: []DataAttribute{
@@ -779,10 +780,10 @@ func TestRegisterDAWithFC_Compound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RegisterModel: %v", err)
 	}
-	if vs.Get(StoreKey("LD1", "MMXU1$MX$AnIn1$mag$f")) == nil {
+	if vs.Get(StoreKey("LD1", "MMXU1$SP$AnIn1$mag$f")) == nil {
 		t.Fatal("expected mag$f")
 	}
-	if vs.Get(StoreKey("LD1", "MMXU1$MX$AnIn1$mag$nested$i")) == nil {
+	if vs.Get(StoreKey("LD1", "MMXU1$SP$AnIn1$mag$nested$i")) == nil {
 		t.Fatal("expected mag$nested$i")
 	}
 
@@ -796,29 +797,29 @@ func TestRegisterDAWithFC_Compound(t *testing.T) {
 	t.Cleanup(func() { _ = client.Close(ctx) })
 
 	// Compound DA read/write path via registerDAWithFC.
-	compound, err := client.Read(ctx, mms.ReadRequest{DomainID: "LD1", ItemID: "MMXU1$MX$AnIn1$mag"})
+	compound, err := client.Read(ctx, mms.ReadRequest{DomainID: "LD1", ItemID: "MMXU1$SP$AnIn1$mag"})
 	if err != nil || compound == nil || compound.Value == nil {
 		t.Fatalf("compound read: %v", err)
 	}
 	if _, err := client.Write(ctx, mms.WriteRequest{
-		DomainID: "LD1", ItemID: "MMXU1$MX$AnIn1$mag", Value: compound.Value,
+		DomainID: "LD1", ItemID: "MMXU1$SP$AnIn1$mag", Value: compound.Value,
 	}); err != nil {
 		t.Fatalf("compound write: %v", err)
 	}
 
 	// Leaf write validation / interceptor paths on registerDA.
 	if _, err := client.Write(ctx, mms.WriteRequest{
-		DomainID: "LD1", ItemID: "MMXU1$MX$AnIn1$mag$f", Value: mms.NewFloat(1.0),
+		DomainID: "LD1", ItemID: "MMXU1$SP$AnIn1$mag$f", Value: mms.NewFloat(1.0),
 	}); err != nil {
 		t.Fatalf("leaf write: %v", err)
 	}
 	if _, err := client.Write(ctx, mms.WriteRequest{
-		DomainID: "LD1", ItemID: "MMXU1$MX$AnIn1$mag$f", Value: mms.NewBoolean(true),
+		DomainID: "LD1", ItemID: "MMXU1$SP$AnIn1$mag$f", Value: mms.NewBoolean(true),
 	}); err == nil {
 		t.Fatal("expected type mismatch")
 	}
 	if _, err := client.Write(ctx, mms.WriteRequest{
-		DomainID: "LD1", ItemID: "MMXU1$MX$AnIn1$mag$f", Value: nil,
+		DomainID: "LD1", ItemID: "MMXU1$SP$AnIn1$mag$f", Value: nil,
 	}); err == nil {
 		t.Fatal("expected nil value error")
 	}
@@ -827,7 +828,7 @@ func TestRegisterDAWithFC_Compound(t *testing.T) {
 		return true, fmt.Errorf("denied")
 	})
 	if _, err := client.Write(ctx, mms.WriteRequest{
-		DomainID: "LD1", ItemID: "MMXU1$MX$AnIn1$mag$f", Value: mms.NewFloat(2.0),
+		DomainID: "LD1", ItemID: "MMXU1$SP$AnIn1$mag$f", Value: mms.NewFloat(2.0),
 	}); err == nil {
 		t.Fatal("expected interceptor denial")
 	}
@@ -917,5 +918,114 @@ func TestBuildAttrElemAndRead_Unsupported(t *testing.T) {
 	}
 	if _, ok := v.Structure(); !ok {
 		t.Fatal("expected structure")
+	}
+}
+
+// Clients must not write status, measurands, setting-group values,
+// service responses, operate-received or extended definitions (IEC
+// 61850-7-2 functional constraints): the leaf and compound variables of
+// those FCs answer object-access-denied and keep their value. Writable
+// FCs still accept writes.
+func TestRegister_ReadOnlyFCRejectsWrites(t *testing.T) {
+	srv := mms.NewServer(mms.ServerOptions{
+		MMS: mms.ServerMMSOptions{
+			MaxPDUSize: 65000, MaxOutstandingCalling: 5, MaxOutstandingCalled: 5,
+			DataStructureNestingLevel: 10,
+		},
+	})
+	var attrs []DataAttribute
+	for _, fc := range []string{"ST", "MX", "SG", "SR", "OR", "EX", "SP", "CF", "DC", "SV", "SE", "BL"} {
+		attrs = append(attrs,
+			DataAttribute{Name: "leaf" + fc, FC: fc, BType: "INT32", InitialValue: "1"},
+			DataAttribute{Name: "cmp" + fc, FC: fc, Children: []DataAttribute{{Name: "i", BType: "INT32", InitialValue: "1"}}},
+		)
+	}
+	m := &Model{LogicalDevices: []LogicalDevice{{
+		Name: "LD1",
+		LogicalNodes: []LogicalNode{{
+			Name: "GGIO1", LNClass: "GGIO",
+			DataObjects: []DataObject{{Name: "Do1", Attributes: attrs}},
+		}},
+	}}}
+	vs, err := RegisterModel(srv, m, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	clientT, serverT := loopbackPair()
+	go func() { _ = srv.Serve(ctx, serverT) }()
+	client, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close(ctx) })
+
+	for _, fc := range []string{"ST", "MX", "SG", "SR", "OR", "EX", "SP", "CF", "DC", "SV", "SE", "BL"} {
+		writable := clientWritableFC(fc)
+		leaf := "GGIO1$" + fc + "$Do1$leaf" + fc
+		_, err := client.Write(ctx, mms.WriteRequest{DomainID: "LD1", ItemID: mms.ItemID(leaf), Value: mms.NewInteger(9)})
+		var dae *mms.DataAccessError
+		switch {
+		case writable && err != nil:
+			t.Errorf("%s: write refused: %v", leaf, err)
+		case !writable && (!errors.As(err, &dae) || dae.Code != mms.DataAccessErrorObjectAccessDenied):
+			t.Errorf("%s: write err = %v, want object-access-denied", leaf, err)
+		}
+		got, _ := vs.Get(StoreKey("LD1", leaf)).Int64()
+		if want := map[bool]int64{true: 9, false: 1}[writable]; got != want {
+			t.Errorf("%s = %d after write, want %d", leaf, got, want)
+		}
+		cmp := "GGIO1$" + fc + "$Do1$cmp" + fc
+		_, err = client.Write(ctx, mms.WriteRequest{DomainID: "LD1", ItemID: mms.ItemID(cmp),
+			Value: mms.NewStructure([]*mms.Value{mms.NewInteger(9)})})
+		if writable != (err == nil) {
+			t.Errorf("%s: compound write err = %v, writable %v", cmp, err, writable)
+		}
+	}
+	if !clientWritableFC("CO") {
+		t.Error("CO must stay writable: controls are writes of Oper, SBOw and Cancel")
+	}
+}
+
+// AllowReadOnlyFCWrites is the explicit opt-in for simulators and test
+// fixtures: with it, a client may write ST and MX.
+func TestRegister_AllowReadOnlyFCWrites(t *testing.T) {
+	srv := mms.NewServer(mms.ServerOptions{
+		MMS: mms.ServerMMSOptions{
+			MaxPDUSize: 65000, MaxOutstandingCalling: 5, MaxOutstandingCalled: 5,
+			DataStructureNestingLevel: 10,
+		},
+	})
+	m := &Model{LogicalDevices: []LogicalDevice{{
+		Name: "LD1",
+		LogicalNodes: []LogicalNode{{
+			Name: "GGIO1", LNClass: "GGIO",
+			DataObjects: []DataObject{{Name: "Do1", Attributes: []DataAttribute{
+				{Name: "stVal", FC: "ST", BType: "INT32"},
+				{Name: "mag", FC: "MX", Children: []DataAttribute{{Name: "i", BType: "INT32"}}},
+			}}},
+		}},
+	}}}
+	vs, err := RegisterModel(srv, m, NewValueStoreWithOptions(ValueStoreOptions{AllowReadOnlyFCWrites: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	clientT, serverT := loopbackPair()
+	go func() { _ = srv.Serve(ctx, serverT) }()
+	client, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close(ctx) })
+	if _, err := client.Write(ctx, mms.WriteRequest{DomainID: "LD1", ItemID: "GGIO1$ST$Do1$stVal", Value: mms.NewInteger(7)}); err != nil {
+		t.Fatalf("ST write with opt-in: %v", err)
+	}
+	if got, _ := vs.Get(StoreKey("LD1", "GGIO1$ST$Do1$stVal")).Int64(); got != 7 {
+		t.Errorf("stVal = %d, want 7", got)
+	}
+	if _, err := client.Write(ctx, mms.WriteRequest{DomainID: "LD1", ItemID: "GGIO1$MX$Do1$mag",
+		Value: mms.NewStructure([]*mms.Value{mms.NewInteger(1)})}); err != nil {
+		t.Fatalf("MX compound write with opt-in: %v", err)
 	}
 }

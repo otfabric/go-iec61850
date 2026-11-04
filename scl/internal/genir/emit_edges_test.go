@@ -291,3 +291,57 @@ func TestEmitComplexType_PrivateKeepsInnerXML(t *testing.T) {
 		t.Fatalf("unexpected InnerXML field:\n%s", without.String())
 	}
 }
+
+// TestEmit_OutputPermissions: new output directories are created 0750
+// and generated files 0600 (before: 0755 and 0644).
+func TestEmit_OutputPermissions(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "pkg")
+	e := NewEmitter(&Resolved{Schema: &Schema{Bundle: "b", Version: "v", Namespace: "ns"}}, out, "pkg")
+	if err := e.Emit(); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm()&^0o750 != 0 {
+		t.Errorf("dir mode %v", fi.Mode().Perm())
+	}
+	entries, err := os.ReadDir(out)
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("no output: %v", err)
+	}
+	for _, en := range entries {
+		info, err := en.Info()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != 0o600 {
+			t.Errorf("%s mode %v", en.Name(), info.Mode().Perm())
+		}
+	}
+}
+
+// TestParseBundle_IncludeConfined: xs:include is resolved inside the
+// bundle directory; a location that climbs out of it is refused.
+func TestParseBundle_IncludeConfined(t *testing.T) {
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "bundle")
+	if err := os.Mkdir(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	outside := `<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"/>`
+	if err := os.WriteFile(filepath.Join(parent, "outside.xsd"), []byte(outside), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scl := `<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:include schemaLocation="../outside.xsd"/></xs:schema>`
+	if err := os.WriteFile(filepath.Join(dir, "SCL.xsd"), []byte(scl), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseBundle(dir, "v"); err == nil || !strings.Contains(err.Error(), "outside.xsd") {
+		t.Fatalf("include outside the bundle: err = %v", err)
+	}
+	if _, err := ParseBundle(filepath.Join(parent, "missing"), "v"); err == nil {
+		t.Fatal("missing bundle accepted")
+	}
+}

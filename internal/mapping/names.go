@@ -5,6 +5,7 @@
 package mapping
 
 import (
+	"slices"
 	"sort"
 	"strings"
 )
@@ -60,10 +61,8 @@ func ParseItemID(itemID string) (ParsedVariable, bool) {
 	var path []string
 	if len(parts) > 2 {
 		path = parts[2:]
-		for _, p := range path {
-			if p == "" {
-				return ParsedVariable{}, false
-			}
+		if slices.Contains(path, "") {
+			return ParsedVariable{}, false
 		}
 	}
 

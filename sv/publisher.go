@@ -147,7 +147,8 @@ type Publisher struct {
 	t       Transport
 	cfg     PublisherConfig
 	period  float64 // ns per sample
-	wrap    int
+	wrap    uint64  // smpCnt modulus, 1..65536
+	noASDU  uint64  // samples per frame, 1..65535 (cfg.NoASDU)
 	logger  *slog.Logger
 	metrics Metrics
 
@@ -200,8 +201,9 @@ func NewPublisher(t Transport, cfg PublisherConfig) (*Publisher, error) {
 	if cfg.NoASDU == 0 {
 		cfg.NoASDU = 1
 	}
-	if cfg.NoASDU < 0 || cfg.NoASDU > 0xffff {
-		return nil, configErr("NoASDU", "%d out of range", cfg.NoASDU)
+	noASDU := cfg.NoASDU
+	if noASDU < 0 || noASDU > 0xffff {
+		return nil, configErr("NoASDU", "%d out of range", noASDU)
 	}
 	if cfg.VLAN != nil {
 		if _, ok := cfg.VLAN.TCI(); !ok {
@@ -238,7 +240,7 @@ func NewPublisher(t Transport, cfg PublisherConfig) (*Publisher, error) {
 		return nil, configErr("Sample", "%d octets, layout needs %d", len(sample), cfg.Layout.Size())
 	}
 	p := &Publisher{
-		t: t, cfg: cfg, period: 1e9 / rate, wrap: wrap,
+		t: t, cfg: cfg, period: 1e9 / rate, wrap: uint64(wrap), noASDU: uint64(noASDU),
 		logger:  orDiscard(cfg.Logger).With("svID", cfg.SvID),
 		metrics: orNop(cfg.Metrics),
 		sample:  sample, enabled: !cfg.Disabled, smpSynch: cfg.SmpSynch, sim: cfg.Simulation,
@@ -399,7 +401,7 @@ func (p *Publisher) Run(ctx context.Context) error {
 		}
 		var k uint64 // next sample index relative to t0
 		for p.isEnabled() {
-			due := p.at(t0, k+uint64(p.cfg.NoASDU)-1)
+			due := p.at(t0, k+p.noASDU-1)
 			if d := due.Sub(p.cfg.Now()); d > 0 {
 				timer.Reset(d)
 				select {
@@ -424,7 +426,7 @@ func (p *Publisher) Run(ctx context.Context) error {
 			}
 			now := p.cfg.Now()
 			for n := 0; n < p.cfg.MaxBurst; n++ {
-				last := k + uint64(p.cfg.NoASDU) - 1
+				last := k + p.noASDU - 1
 				if p.at(t0, last).After(now) {
 					break
 				}
@@ -434,15 +436,15 @@ func (p *Publisher) Run(ctx context.Context) error {
 				if err := p.sendFrame(t0, k); errors.Is(err, ErrClosed) {
 					return err
 				}
-				k += uint64(p.cfg.NoASDU)
+				k += p.noASDU
 			}
 			// Still behind after a full burst: skip to the present.
-			if behind := p.index(t0, now); behind > k+uint64(p.cfg.NoASDU) {
+			if behind := p.index(t0, now); behind > k+p.noASDU {
 				skip := behind - k
-				skip -= skip % uint64(p.cfg.NoASDU)
+				skip -= skip % p.noASDU
 				p.skipped.Add(skip)
 				p.mu.Lock()
-				p.nextCnt = uint16((uint64(p.nextCnt) + skip) % uint64(p.wrap))
+				p.nextCnt = nextSmpCnt(uint64(p.nextCnt)+skip, p.wrap)
 				p.mu.Unlock()
 				k += skip
 				p.logger.Warn("sv: publisher behind schedule, samples skipped", "skipped", skip)
@@ -450,6 +452,11 @@ func (p *Publisher) Run(ctx context.Context) error {
 		}
 	}
 }
+
+// nextSmpCnt reduces x modulo the smpCnt wrap w (1..65536, checked by
+// NewPublisher), so the result always fits the 16-bit smpCnt (INT16U
+// in the IEC 61850-9-2 savPdu); the mask only makes that explicit.
+func nextSmpCnt(x, w uint64) uint16 { return uint16((x % w) & 0xffff) }
 
 func (p *Publisher) isEnabled() bool {
 	p.mu.Lock()
@@ -474,7 +481,7 @@ func (p *Publisher) index(t0, now time.Time) uint64 {
 func (p *Publisher) sendFrame(t0 time.Time, k uint64) error {
 	p.mu.Lock()
 	cnt := p.nextCnt
-	p.nextCnt = uint16((uint64(cnt) + uint64(p.cfg.NoASDU)) % uint64(p.wrap))
+	p.nextCnt = nextSmpCnt(uint64(cnt)+p.noASDU, p.wrap)
 	if p.cfg.Source == nil {
 		p.cur = append(p.cur[:0], p.sample...)
 	}
@@ -496,7 +503,7 @@ func (p *Publisher) sendFrame(t0 time.Time, k uint64) error {
 		return err
 	}
 	p.frames.Add(1)
-	p.samples.Add(uint64(p.cfg.NoASDU))
+	p.samples.Add(p.noASDU)
 	p.metrics.FrameSent(p.cfg.SvID, p.cfg.NoASDU)
 	return nil
 }
@@ -513,9 +520,9 @@ func (p *Publisher) encodeAt(dst []byte, cnt uint16, t0 time.Time, k uint64, syn
 	if p.cfg.Source != nil {
 		p.src = p.src[:0]
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		ti := p.at(t0, k+uint64(i))
-		c := uint16((uint64(cnt) + uint64(i)) % uint64(p.wrap))
+		c := nextSmpCnt(uint64(cnt)+uint64(i), p.wrap)
 		a := &f.PDU.ASDUs[i]
 		*a = ASDU{SvID: p.cfg.SvID, DatSet: p.cfg.DatSet, SmpCnt: c, ConfRev: p.cfg.ConfRev, SmpSynch: synch, Sample: p.cur}
 		if p.cfg.RefrTm {
@@ -538,7 +545,7 @@ func (p *Publisher) encodeAt(dst []byte, cnt uint16, t0 time.Time, k uint64, syn
 	if p.cfg.Source != nil {
 		// Slice only after all appends: p.src may have been reallocated.
 		p.offs[n] = len(p.src)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			f.PDU.ASDUs[i].Sample = p.src[p.offs[i]:p.offs[i+1]]
 		}
 	}

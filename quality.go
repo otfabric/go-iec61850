@@ -84,8 +84,11 @@ func (q Quality) Has(flag Quality) bool {
 }
 
 // WithValidity returns a copy of the quality with the given validity.
+// Validity is the 2-bit field of the Quality type (IEC 61850-7-3
+// clause 6.2); only the low two bits of v are used, so an out-of-range
+// value cannot set detail-quality flags.
 func (q Quality) WithValidity(v Validity) Quality {
-	return (q &^ validityMask) | Quality(v)
+	return (q &^ validityMask) | Quality(v&Validity(validityMask))
 }
 
 // String returns a human-readable representation of the quality.
@@ -167,7 +170,7 @@ func EncodeQuality(q Quality) *mms.Value {
 // Quality value where bit 0 = first quality bit (matching IEC 61850).
 func decodeQualityBits(data []byte) Quality {
 	var q uint16
-	for bit := 0; bit < qualityBitLength; bit++ {
+	for bit := range qualityBitLength {
 		byteIdx := bit / 8
 		if byteIdx >= len(data) {
 			break
@@ -184,7 +187,7 @@ func decodeQualityBits(data []byte) Quality {
 // (MSB-first).
 func encodeQualityBits(q Quality) []byte {
 	data := make([]byte, 2)
-	for bit := 0; bit < qualityBitLength; bit++ {
+	for bit := range qualityBitLength {
 		if q&Quality(1<<uint(bit)) != 0 {
 			byteIdx := bit / 8
 			bitInByte := uint(7 - (bit % 8))

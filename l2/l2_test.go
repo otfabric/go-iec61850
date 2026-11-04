@@ -198,7 +198,7 @@ func TestHub(t *testing.T) {
 	_ = a.Send(f)
 	h.SetFaults(Faults{Duplicate: 1, Seed: 1})
 	_ = a.Send(f)
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if _, err := b.Recv(ctx); err != nil {
 			t.Fatal(err)
 		}
@@ -242,7 +242,7 @@ func TestHubOverflow(t *testing.T) {
 	h := NewHub()
 	a, b := h.NewPort(MAC{}), h.NewPort(MAC{})
 	f := testFrame(Broadcast, a.HardwareAddr(), EtherTypeGOOSE, false, nil)
-	for i := 0; i < 1100; i++ {
+	for range 1100 {
 		_ = a.Send(f)
 	}
 	if h.Stats().Overflow == 0 {
@@ -337,7 +337,7 @@ func TestDemux(t *testing.T) {
 	}
 
 	// Overflow on a port whose receiver does not read (queue 2).
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		_ = tx.Send(testFrame(Broadcast, tx.HardwareAddr(), EtherTypeGOOSE, false, nil))
 	}
 	for d.Stats().Overflow < 3 && time.Now().Before(deadline) {
@@ -473,7 +473,7 @@ func TestHubBehaviour(t *testing.T) {
 	}
 	// Overflow: fill b's queue.
 	hub.SetFaults(Faults{})
-	for i := 0; i < 1100; i++ {
+	for range 1100 {
 		_ = a.Send([]byte{5})
 	}
 	if hub.Stats().Overflow == 0 {
@@ -495,4 +495,43 @@ func TestHubBehaviour(t *testing.T) {
 		t.Errorf("send closed: %v", err)
 	}
 	c.deliver([]byte{1}, hub) // no panic after close
+}
+
+func TestJumpOffsetBounds(t *testing.T) {
+	for _, d := range []int{0, 1, 2*maxEtherTypes + 3, 255} {
+		if got := jumpOffset(d); int(got) != d {
+			t.Errorf("jumpOffset(%d) = %d", d, got)
+		}
+	}
+	for _, d := range []int{-1, 256, 1 << 20} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("jumpOffset(%d) did not panic", d)
+				}
+			}()
+			jumpOffset(d)
+		}()
+	}
+	// Every jump of the largest program stays inside the program and
+	// within a byte: the first jeq of a full list jumps furthest.
+	many := make([]uint16, maxEtherTypes)
+	for i := range many {
+		many[i] = 0x9000 + uint16(i)
+	}
+	prog := etherTypeFilter(many)
+	if len(prog) != 2*maxEtherTypes+5 {
+		t.Fatalf("program length %d", len(prog))
+	}
+	if got, want := int(prog[1].jt), 2*maxEtherTypes+2; got != want {
+		t.Errorf("first jt = %d, want %d", got, want)
+	}
+	for pc, in := range prog {
+		if in.code == bpfRetK {
+			continue
+		}
+		if pc+1+int(in.jt) >= len(prog) || pc+1+int(in.jf) >= len(prog) {
+			t.Errorf("insn %d jumps outside the program", pc)
+		}
+	}
 }

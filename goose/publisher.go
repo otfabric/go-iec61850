@@ -5,6 +5,7 @@ package goose
 import (
 	"context"
 	"log/slog"
+	"math"
 	"sync"
 	"time"
 
@@ -201,7 +202,7 @@ func NewPublisher(t Transport, cfg PublisherConfig) (*Publisher, error) {
 	if cfg.Values != nil {
 		p.values = cloneValues(cfg.Values)
 		// Validate encodability up front.
-		if _, err := EncodePDU(&PDU{AllData: p.values}); err != nil {
+		if _, err := encodeAllData(p.values); err != nil {
 			return nil, err
 		}
 	}
@@ -248,7 +249,7 @@ func (p *Publisher) Publish(values []*mms.Value) error {
 			}
 		}
 	}
-	if _, err := EncodePDU(&PDU{AllData: vals}); err != nil {
+	if _, err := encodeAllData(vals); err != nil {
 		return err
 	}
 	p.values = vals
@@ -323,7 +324,7 @@ func (p *Publisher) sendLocked(retrans bool) error {
 		Dst: c.Dst, Src: c.Src, VLAN: c.VLAN, AppID: c.AppID, Simulation: c.Simulation,
 		PDU: PDU{
 			GocbRef:           c.GocbRef,
-			TimeAllowedToLive: uint32(c.TimeAllowedToLive / time.Millisecond),
+			TimeAllowedToLive: talMillis(c.TimeAllowedToLive),
 			DatSet:            c.DatSet,
 			GoID:              c.GoID,
 			T:                 p.tChange,
@@ -484,4 +485,12 @@ func SameShape(a, b *mms.Value) bool {
 		// Scalars: equal types are the same shape.
 	}
 	return true
+}
+
+// talMillis converts TimeAllowedToLive to the goosePdu
+// timeAllowedToLive milliseconds. normalize already rejects values
+// above 2^32-1 ms; the clamp only makes that bound visible at the
+// conversion and never changes an accepted value.
+func talMillis(d time.Duration) uint32 {
+	return uint32(min(max(d/time.Millisecond, 0), math.MaxUint32))
 }
