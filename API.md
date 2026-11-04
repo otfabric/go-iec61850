@@ -1027,6 +1027,9 @@ type ServerOptions struct {
     OnConnect    func(ConnectionEvent)
     OnDisconnect func(ConnectionEvent)
     Metrics      mms.Metrics // used when MMS.Metrics is nil
+    // AllowReadOnlyFCWrites lets clients write ST, MX, SG, SR, OR and
+    // EX (simulators, test fixtures only); default: object-access-denied.
+    AllowReadOnlyFCWrites bool
     MMS          mms.ServerOptions // incl. AssociationTimeout
 }
 
