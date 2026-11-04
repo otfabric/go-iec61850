@@ -79,6 +79,11 @@ Run with `make test`:
   from fixed seeds, and drop the connection.
 - GOOSE: `TestChaosLossReorderDuplicate`, `TestChaosCorruption`.
 - SV: `TestChaosAccounting`, `TestChaosMutation`.
+- Hostile clients: `TestChaosHostileClientsAgainstSCLModel`
+  (`chaos_hostile_test.go`) has four clients write random values of random
+  types (oversized strings, out-of-range ctlNum, read-only FCs) to an
+  SCL-built server while the application updates status; the model must stay
+  intact and serve every LN$FC afterwards.
 - Goroutine leaks: `TestClient_NoGoroutineLeakOnConnectDisconnect`,
   `TestConcurrent_TimeoutDoesNotLeakGoroutines`.
 - `readme_test.go` checks the README's code snippets.

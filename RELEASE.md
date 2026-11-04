@@ -1,5 +1,36 @@
 # go-iec61850 Releases
 
+## v1.5.0
+
+**Date:** 2026-11-04
+**Previous release:** v1.4.5
+
+### Breaking
+
+- Requires Go 1.26 (was 1.25). Built on go-mms v1.3.1, go-cotp v1.2.0 and go-tpkt v1.1.0. CI tests Go 1.26 and 1.27.
+- A server built from a model refuses client writes to read-only functional constraints: ST, MX, SG, SR, OR and EX answer object-access-denied (IEC 61850-7-2). Before, any MMS client could overwrite status and measurements, for example a breaker's `Pos.stVal`. The application changes them with `Server.SetValue`.
+
+### Fixed
+
+- Models from vendor SCL could not be served: ObjRef attributes (VISIBLE STRING129) were refused, Dbpos values given as literals (`off`, `on`, `intermediate-state`, `bad-state`) were refused, and a numeric enum literal such as ABB's baud rate `9600` (ordinal 6) was read as ordinal 9600. Every model of the SCL test corpus in a supported schema version is now served.
+- GOOSE and SV: a UtcTime before 1970 or after 2106-02-07 was wrapped on the wire (one second before the epoch went out as 2106); encoding now fails with `ErrInvalidValue`. The zero `time.Time` is written as the epoch.
+- `GetGoCB` and `GetMSVCB` truncated attributes outside their IEC 61850-7-2 types (ConfRev 2^32 read as 0, SmpRate 70000 as 4464, PRIORITY 256 as 0); they now return `ErrProtocol`.
+- Server: a GoCB whose ConfRev passed 2^32-1 published confRev 0; enabling it is now refused. An MSVCB `SmpRate` write above 65535 was stored and published truncated; it is refused with object-value-invalid.
+- Controls: a ctlNum above 255 in Oper, SBOw or Cancel was truncated and could match an unrelated Select; it is rejected.
+- Setting groups: ActSG or EditSG writes above 255 wrapped (ActSG=257 activated group 1); the client truncated NumOfSGs and ResvTms; SCL `numOfSGs`/`actSG` above 255 were wrapped silently and now give the error diagnostic `invalid-setting-control`.
+- Reports: a peer that kept sending segments with MoreSegmentsFollow grew the reassembly buffer without bound; it is capped at 65536 segments.
+- `Quality.WithValidity` with a value outside 0..3 overwrote detail-quality bits; only the two validity bits are used.
+- `Server.Close` cancels and waits for pending CommandTerminations, which ran untracked; CommandTermination and report sends are bounded by 10 s and stop with `ReportEngine.Stop`.
+- The files example created downloads with mode 0644 under a server-chosen name; it now creates them 0600 inside the output directory (`os.OpenRoot`). The XSD bundle parser confines `xs:include` to the bundle directory.
+
+### Changed
+
+- Raw socket transports decode `tpacket_auxdata` and `bpf_hdr` without unsafe pointer casts; static analysis findings resolved in code (gosec low/low 116 -> 2, the two left are the seeded RNG of the in-memory fault hub).
+- Interop CI pins the iec61850-interop v1.1.1 images; shared workflows at v3.3.1. `go fix` (Go 1.26) applied.
+- Tests: end-to-end tests that serve every SCL model of the corpus and read every LN$FC, and that refuse hostile client writes; codec boundary tests for GOOSE, SV, BER, UtcTime and control blocks; fuzz targets `FuzzDecodePDU` (GOOSE) and `FuzzLayoutDecode` (SV).
+
+---
+
 ## v1.4.5
 
 **Date:** 2026-10-31
