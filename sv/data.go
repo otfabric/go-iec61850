@@ -249,7 +249,11 @@ func appendValue(b []byte, k Kind, v *mms.Value) ([]byte, error) {
 		if !ok {
 			return b, errValue("want UTCTime, got %v", v.Type())
 		}
-		return appendUTCTime(b, t, v.UTCTimeQuality()), nil
+		secs, ok := utcTimeSeconds(t)
+		if !ok {
+			return b, errValue("TimeStamp %s outside the UtcTime range 1970-01-01..2106-02-07", t.UTC().Format(time.RFC3339))
+		}
+		return appendUTCTime(b, secs, t.Nanosecond(), v.UTCTimeQuality()), nil
 	default:
 		return b, errValue("invalid kind %d", uint8(k))
 	}
@@ -261,19 +265,19 @@ func appendInt(b []byte, k Kind, x int64) ([]byte, error) {
 		if x < math.MinInt8 || x > math.MaxInt8 {
 			return b, errValue("%d out of INT8 range", x)
 		}
-		return append(b, byte(int8(x))), nil
+		return append(b, byte(x&0xff)), nil // two's complement low octet
 	case KindInt16:
 		if x < math.MinInt16 || x > math.MaxInt16 {
 			return b, errValue("%d out of INT16 range", x)
 		}
-		return binary.BigEndian.AppendUint16(b, uint16(int16(x))), nil
+		return binary.BigEndian.AppendUint16(b, uint16(x&0xffff)), nil
 	case KindInt64:
-		return binary.BigEndian.AppendUint64(b, uint64(x)), nil
+		return binary.BigEndian.AppendUint64(b, uint64((x>>32)&0xffffffff)<<32|uint64(x&0xffffffff)), nil
 	default: // INT32, ENUM
 		if x < math.MinInt32 || x > math.MaxInt32 {
 			return b, errValue("%d out of 32-bit range", x)
 		}
-		return binary.BigEndian.AppendUint32(b, uint32(int32(x))), nil
+		return binary.BigEndian.AppendUint32(b, uint32(x&0xffffffff)), nil
 	}
 }
 
@@ -293,7 +297,7 @@ func appendUint(b []byte, k Kind, x uint64) ([]byte, error) {
 		if x > 0xffffff {
 			return b, errValue("%d out of INT24U range", x)
 		}
-		return append(b, byte(x>>16), byte(x>>8), byte(x)), nil
+		return append(b, byte((x>>16)&0xff), byte((x>>8)&0xff), byte(x&0xff)), nil
 	default:
 		if x > math.MaxUint32 {
 			return b, errValue("%d out of INT32U range", x)
@@ -307,13 +311,13 @@ func decodeValue(k Kind, c []byte) (*mms.Value, error) {
 	case KindBoolean:
 		return mms.NewBoolean(c[0] != 0), nil
 	case KindInt8:
-		return mms.NewInteger(int64(int8(c[0]))), nil
+		return mms.NewInteger(int64(beInt8(c))), nil
 	case KindInt16:
-		return mms.NewInteger(int64(int16(binary.BigEndian.Uint16(c)))), nil
+		return mms.NewInteger(int64(beInt16(c))), nil
 	case KindInt32, KindEnum:
-		return mms.NewInteger(int64(int32(binary.BigEndian.Uint32(c)))), nil
+		return mms.NewInteger(int64(beInt32(c))), nil
 	case KindInt64:
-		return mms.NewInteger(int64(binary.BigEndian.Uint64(c))), nil
+		return mms.NewInteger(beInt64(c)), nil
 	case KindUint8:
 		return mms.NewUnsigned(uint64(c[0])), nil
 	case KindUint16:
@@ -461,11 +465,11 @@ type LESample struct {
 // Append appends the 64-octet encoding of s to dst.
 func (s *LESample) Append(dst []byte) []byte {
 	for _, p := range s.Current {
-		dst = binary.BigEndian.AppendUint32(dst, uint32(p.Value))
+		dst = binary.BigEndian.AppendUint32(dst, int32Bits(p.Value))
 		dst = binary.BigEndian.AppendUint32(dst, uint32(p.Q))
 	}
 	for _, p := range s.Voltage {
-		dst = binary.BigEndian.AppendUint32(dst, uint32(p.Value))
+		dst = binary.BigEndian.AppendUint32(dst, int32Bits(p.Value))
 		dst = binary.BigEndian.AppendUint32(dst, uint32(p.Q))
 	}
 	return dst
@@ -478,7 +482,7 @@ func DecodeLE(sample []byte, s *LESample) error {
 	}
 	for i := range 8 {
 		p := Point{
-			Value: int32(binary.BigEndian.Uint32(sample[i*8:])),
+			Value: beInt32(sample[i*8:]),
 			Q:     Quality(binary.BigEndian.Uint32(sample[i*8+4:])),
 		}
 		if i < 4 {
@@ -520,8 +524,32 @@ func saturate(x float64) int32 {
 // Int32At returns the INT32 at byte offset off of a sample, for
 // zero-allocation access with [Layout.Offsets].
 func Int32At(sample []byte, off int) int32 {
-	return int32(binary.BigEndian.Uint32(sample[off:]))
+	return beInt32(sample[off:])
 }
+
+// The INTn types of an SV sample are fixed-width big-endian two's
+// complement (IEC 61850-9-2 Ed2 table "Encoding for the basic data
+// types"); these reinterpret the octets without an unchecked conversion.
+
+func beInt8(b []byte) int8 { return int8(int16(b[0]) << 8 >> 8) }
+
+func beInt16(b []byte) int16 {
+	_ = b[1]
+	return int16(b[0])<<8 | int16(b[1])
+}
+
+func beInt32(b []byte) int32 {
+	_ = b[3]
+	return int32(b[0])<<24 | int32(b[1])<<16 | int32(b[2])<<8 | int32(b[3])
+}
+
+func beInt64(b []byte) int64 {
+	_ = b[7]
+	return int64(beInt32(b))<<32 | int64(binary.BigEndian.Uint32(b[4:]))
+}
+
+// int32Bits returns the two's-complement bit pattern of v.
+func int32Bits(v int32) uint32 { return uint32(int64(v) & 0xffffffff) }
 
 // QualityAt returns the Quality at byte offset off of a sample.
 func QualityAt(sample []byte, off int) Quality {

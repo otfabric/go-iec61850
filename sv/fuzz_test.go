@@ -77,3 +77,70 @@ func FuzzSubscriber(f *testing.F) {
 		drainEvents(sub)
 	})
 }
+
+// FuzzLayoutDecode decodes arbitrary sample octets against an arbitrary
+// layout (one Kind per octet of kinds). Layout.Decode, DecodeLE and the
+// zero-allocation accessors must never panic, and every accepted
+// sample must re-encode, after one normalising pass (BOOLEAN non-zero
+// octets, NaN payloads), to a stable encoding of the same size.
+func FuzzLayoutDecode(f *testing.F) {
+	all := make([]byte, 0, int(kindCount))
+	for k := KindBoolean; k < kindCount; k++ {
+		all = append(all, byte(k))
+	}
+	f.Add(all, make([]byte, Layout(kindsOf(all)).Size()))
+	f.Add([]byte{byte(KindInt8), byte(KindInt64), byte(KindTimestamp)},
+		[]byte{0x80, 0x80, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x0a})
+	f.Add([]byte{byte(KindDbpos), byte(KindBoolean)}, []byte{0, 0, 0, 4, 2})
+	f.Add([]byte{byte(KindInt32), byte(KindQuality)}, leSample(-1)[:8])
+	f.Fuzz(func(t *testing.T, kinds, sample []byte) {
+		if len(kinds) > 64 {
+			return
+		}
+		l := Layout(kindsOf(kinds))
+		if len(sample) == LESampleSize {
+			var le LESample
+			if err := DecodeLE(sample, &le); err != nil || !bytes.Equal(le.Append(nil), sample) {
+				t.Fatalf("9-2LE round trip: %v", err)
+			}
+		}
+		if l.Validate() != nil {
+			return
+		}
+		for _, off := range l.Offsets() {
+			if off+8 <= len(sample) {
+				_ = Int32At(sample, off)
+				_ = QualityAt(sample, off)
+				_ = Float32At(sample, off)
+				_, _ = TimestampAt(sample, off)
+			}
+		}
+		vals, err := l.Decode(sample)
+		if err != nil {
+			return
+		}
+		enc, err := l.Encode(nil, vals)
+		if err != nil {
+			t.Fatalf("re-encode %v: %v", l, err)
+		}
+		if len(enc) != len(sample) {
+			t.Fatalf("size %d, want %d", len(enc), len(sample))
+		}
+		vals2, err := l.Decode(enc)
+		if err != nil {
+			t.Fatalf("re-decode: %v", err)
+		}
+		enc2, err := l.Encode(nil, vals2)
+		if err != nil || !bytes.Equal(enc, enc2) {
+			t.Fatalf("unstable: % x / % x %v", enc, enc2, err)
+		}
+	})
+}
+
+func kindsOf(b []byte) []Kind {
+	ks := make([]Kind, len(b))
+	for i, x := range b {
+		ks[i] = Kind(x)
+	}
+	return ks
+}

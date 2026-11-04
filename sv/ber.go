@@ -4,6 +4,7 @@ package sv
 
 import (
 	"encoding/binary"
+	"math"
 	"time"
 )
 
@@ -36,15 +37,17 @@ func appendHdr(b []byte, tag byte, n int) []byte {
 	b = append(b, tag)
 	switch {
 	case n < 0x80:
-		return append(b, byte(n))
+		return append(b, byte(n&0x7f))
 	case n <= 0xff:
-		return append(b, 0x81, byte(n))
+		return append(b, 0x81, byte(n&0xff))
 	case n <= 0xffff:
-		return append(b, 0x82, byte(n>>8), byte(n))
+		return append(b, 0x82, byte((n>>8)&0xff), byte(n&0xff))
 	case n <= 0xffffff:
-		return append(b, 0x83, byte(n>>16), byte(n>>8), byte(n))
+		return append(b, 0x83, byte((n>>16)&0xff), byte((n>>8)&0xff), byte(n&0xff))
 	default:
-		return append(b, 0x84, byte(n>>24), byte(n>>16), byte(n>>8), byte(n))
+		// Callers bound n by MaxPayload (AppendFrame) or by the
+		// size of an in-memory PDU; four octets cover 4 GiB.
+		return append(b, 0x84, byte((n>>24)&0xff), byte((n>>16)&0xff), byte((n>>8)&0xff), byte(n&0xff))
 	}
 }
 
@@ -54,11 +57,11 @@ func unsignedBytes(b []byte, v uint32) []byte {
 	for n < 4 && v>>(8*n) != 0 {
 		n++
 	}
-	if byte(v>>(8*(n-1)))&0x80 != 0 {
+	if (v>>(8*(n-1)))&0x80 != 0 {
 		b = append(b, 0)
 	}
 	for i := n - 1; i >= 0; i-- {
-		b = append(b, byte(v>>(8*i)))
+		b = append(b, byte((v>>(8*i))&0xff))
 	}
 	return b
 }
@@ -69,7 +72,7 @@ func unsignedLen(v uint32) int {
 	for n < 4 && v>>(8*n) != 0 {
 		n++
 	}
-	if byte(v>>(8*(n-1)))&0x80 != 0 {
+	if (v>>(8*(n-1)))&0x80 != 0 {
 		n++
 	}
 	return n
@@ -140,14 +143,31 @@ func decodeUint(c []byte, field string, off int) (uint32, error) {
 	return uint32(v), nil
 }
 
+// utcTimeSeconds returns the 32-bit seconds field of a UtcTime
+// (IEC 61850-8-1 UtcTime, used unchanged by IEC 61850-9-2 for RefrTm
+// and TimeStamp): seconds since 1970-01-01 00:00 UTC as an unsigned
+// 32-bit count, so only 1970-01-01..2106-02-07 can be represented.
+// The zero time.Time, Go's "not set", maps to the epoch, as in go-mms.
+// ok is false for any other instant outside that range.
+func utcTimeSeconds(t time.Time) (secs uint32, ok bool) {
+	if t.IsZero() {
+		return 0, true
+	}
+	s := t.Unix()
+	if s < 0 || s > math.MaxUint32 {
+		return 0, false
+	}
+	return uint32(s), true
+}
+
 // appendUTCTime appends an 8-octet UtcTime (IEC 61850-8-1 / -9-2):
-// seconds since 1970, a 24-bit fraction of a second and TimeQuality.
-func appendUTCTime(b []byte, t time.Time, quality uint8) []byte {
-	b = binary.BigEndian.AppendUint32(b, uint32(t.Unix()))
-	frac := min(
-		// round to nearest
-		(uint64(t.Nanosecond())<<24+5e8)/1e9, 0xffffff)
-	return append(b, byte(frac>>16), byte(frac>>8), byte(frac), quality)
+// secs (from [utcTimeSeconds]), a 24-bit fraction of a second rounded
+// from nsec, and the TimeQuality octet.
+func appendUTCTime(b []byte, secs uint32, nsec int, quality uint8) []byte {
+	b = binary.BigEndian.AppendUint32(b, secs)
+	// Round to the nearest 2^-24 s; nsec < 1e9 keeps frac below 2^24.
+	frac := min((uint64(max(nsec, 0))<<24+5e8)/1e9, 0xffffff)
+	return append(b, byte((frac>>16)&0xff), byte((frac>>8)&0xff), byte(frac&0xff), quality)
 }
 
 func decodeUTCTime(c []byte) (time.Time, uint8) {

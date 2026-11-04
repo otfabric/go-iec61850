@@ -210,7 +210,7 @@ func AppendFrame(dst []byte, f *Frame) ([]byte, error) {
 		return dst, err
 	}
 	payload := headerLen + apduLen
-	if payload > MaxPayload {
+	if payload < 0 || payload > MaxPayload {
 		return dst, errLimit("SV payload of %d octets exceeds %d", payload, MaxPayload)
 	}
 	start := len(dst)
@@ -281,7 +281,8 @@ func pduLen(p *PDU) (int, error) {
 	if len(p.ASDUs) == 0 {
 		return 0, errValue("savPdu without ASDU")
 	}
-	if n := noASDU(p); n < 0 || n > 0xffff {
+	n := noASDU(p)
+	if n < 0 || n > 0xffff {
 		return 0, errValue("noASDU %d out of range", n)
 	}
 	seq := 0
@@ -293,9 +294,14 @@ func pduLen(p *PDU) (int, error) {
 		if !isVisible(a.SvID) || !isVisible(a.DatSet) {
 			return 0, errValue("ASDU %d: svID/datSet must be VisibleString", i)
 		}
+		if a.HasRefrTm {
+			if _, ok := utcTimeSeconds(a.RefrTm); !ok {
+				return 0, errValue("ASDU %d: RefrTm %s outside the UtcTime range 1970-01-01..2106-02-07", i, a.RefrTm.UTC().Format(time.RFC3339))
+			}
+		}
 		seq += tlvLen(asduContentLen(a))
 	}
-	c := tlvLen(unsignedLen(uint32(noASDU(p)))) + tlvLen(seq)
+	c := tlvLen(unsignedLen(uint32(n))) + tlvLen(seq)
 	if p.Security != nil {
 		c += tlvLen(len(p.Security))
 	}
@@ -308,7 +314,8 @@ func appendPDU(b []byte, p *PDU) []byte {
 		seq += tlvLen(asduContentLen(&p.ASDUs[i]))
 	}
 	var nbuf [5]byte
-	n := unsignedBytes(nbuf[:0], uint32(noASDU(p)))
+	// pduLen bounded noASDU to 0..65535; the clamp only states it.
+	n := unsignedBytes(nbuf[:0], uint32(min(max(noASDU(p), 0), 0xffff)))
 	c := tlvLen(len(n)) + tlvLen(seq)
 	if p.Security != nil {
 		c += tlvLen(len(p.Security))
@@ -341,7 +348,9 @@ func appendASDU(b []byte, a *ASDU) []byte {
 	b = binary.BigEndian.AppendUint32(b, a.ConfRev)
 	if a.HasRefrTm {
 		b = appendHdr(b, tagRefrTm, 8)
-		b = appendUTCTime(b, a.RefrTm, a.RefrTmQuality)
+		// pduLen rejected an unrepresentable RefrTm before encoding.
+		secs, _ := utcTimeSeconds(a.RefrTm)
+		b = appendUTCTime(b, secs, a.RefrTm.Nanosecond(), a.RefrTmQuality)
 	}
 	b = appendHdr(b, tagSmpSynch, 1)
 	b = append(b, a.SmpSynch)
