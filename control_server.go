@@ -5,6 +5,7 @@ package iec61850
 import (
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"sync"
@@ -218,10 +219,58 @@ func (s *Server) handleControlWrite(ctx context.Context, ldName, lnName string, 
 // triggered by a write).
 const commandTerminationDelay = 100 * time.Millisecond
 
+// unsolicitedSendTimeout bounds one InformationReport send started in
+// the background (CommandTermination, reports), so a peer that stops
+// reading cannot hold the goroutine forever.
+const unsolicitedSendTimeout = 10 * time.Second
+
+// backgroundTasks tracks goroutines a [Server] starts that outlive the
+// request that triggered them, so [Server.Close] can cancel and wait for
+// them. The zero value is ready to use.
+type backgroundTasks struct {
+	mu     sync.Mutex
+	ctx    context.Context
+	cancel context.CancelFunc
+	closed bool
+	wg     sync.WaitGroup
+}
+
+// start runs f in a tracked goroutine with a context that ends on stop.
+// It reports false, without running f, once stop has been called.
+func (b *backgroundTasks) start(f func(life context.Context)) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return false
+	}
+	if b.ctx == nil {
+		b.ctx, b.cancel = context.WithCancel(context.Background())
+	}
+	life := b.ctx
+	b.wg.Go(func() { f(life) })
+	return true
+}
+
+// stop cancels every tracked goroutine and waits for them to return.
+// It is idempotent.
+func (b *backgroundTasks) stop() {
+	b.mu.Lock()
+	b.closed = true
+	if b.cancel != nil {
+		b.cancel()
+	}
+	b.mu.Unlock()
+	b.wg.Wait()
+}
+
 // sendCommandTermination sends a positive CommandTermination (IEC
 // 61850-8-1 clause 20.6) to the connection that operated an
 // enhanced-security control: an InformationReport of the Oper attribute
 // with the operated value.
+//
+// The send runs after the Write response, so it must not inherit the
+// request's cancellation; it keeps the request's values, ends when the
+// server is closed and is bounded by unsolicitedSendTimeout.
 func (s *Server) sendCommandTermination(ctx context.Context, domain, operItem string, oper *mms.Value) {
 	sc := mms.ServerConnFromContext(ctx)
 	if sc == nil || oper == nil {
@@ -231,14 +280,25 @@ func (s *Server) sendCommandTermination(ctx context.Context, domain, operItem st
 		Variables: []mms.ObjectName{{Scope: mms.ObjectScopeDomain, Domain: mms.DomainID(domain), ItemID: mms.ItemID(operItem)}},
 		Values:    []*mms.Value{oper.Clone()},
 	}
-	go func() {
-		time.Sleep(commandTerminationDelay)
-		if err := sc.SendInformationReport(context.Background(), req); err != nil {
+	reqCtx := context.WithoutCancel(ctx)
+	s.bg.start(func(life context.Context) {
+		sendCtx, cancel := context.WithTimeout(reqCtx, commandTerminationDelay+unsolicitedSendTimeout)
+		defer cancel()
+		defer context.AfterFunc(life, cancel)()
+		delay := time.NewTimer(commandTerminationDelay)
+		defer delay.Stop()
+		select {
+		case <-delay.C:
+		case <-sendCtx.Done():
+			s.logger.Debug("iec61850: CommandTermination abandoned", "oper", domain+"/"+operItem, "error", sendCtx.Err())
+			return
+		}
+		if err := sc.SendInformationReport(sendCtx, req); err != nil {
 			s.logger.Debug("iec61850: CommandTermination send failed", "oper", domain+"/"+operItem, "error", err)
 			return
 		}
 		s.logger.Debug("iec61850: CommandTermination sent", "oper", domain+"/"+operItem)
-	}()
+	})
 }
 
 func (s *Server) executeOperate(ctx context.Context, reg *controlRegistration, req ControlRequest) error {
@@ -518,6 +578,22 @@ func (s *Server) executeCancel(ctx context.Context, reg *controlRegistration, re
 	return nil
 }
 
+// decodeCtlNum decodes the ctlNum member of an Oper/SBOw/Cancel
+// structure. IEC 61850-7-2 clause 20 (control model) types ctlNum as
+// INT8U; a larger value is malformed and is rejected instead of being
+// truncated, which could otherwise correlate with an unrelated Select. A member that is not
+// an unsigned integer leaves ctlNum at zero, as before.
+func decodeCtlNum(v *mms.Value) (uint8, error) {
+	n, ok := v.Uint32()
+	if !ok {
+		return 0, nil
+	}
+	if n > math.MaxUint8 {
+		return 0, fmt.Errorf("ctlNum %d exceeds INT8U", n)
+	}
+	return uint8(n), nil
+}
+
 // decodeControlRequest decodes an MMS structure into a ControlRequest.
 func decodeControlRequest(ref, operation string, val *mms.Value) (ControlRequest, error) {
 	req := ControlRequest{
@@ -570,9 +646,11 @@ func decodeControlRequest(ref, operation string, val *mms.Value) (ControlRequest
 		// ctlNum is at originIdx+1 (when present in model)
 		ctlNumIdx := originIdx + 1
 		if ctlNumIdx < len(members) {
-			if n, ok := members[ctlNumIdx].Uint32(); ok {
-				req.CtlNum = uint8(n)
+			n, err := decodeCtlNum(members[ctlNumIdx])
+			if err != nil {
+				return req, err
 			}
+			req.CtlNum = n
 		}
 		// T (timestamp) is at ctlNumIdx+1 — skip it.
 		// Test is at ctlNumIdx+2, Check at ctlNumIdx+3.
@@ -612,9 +690,11 @@ func decodeControlRequest(ref, operation string, val *mms.Value) (ControlRequest
 		}
 		ctlNumIdx := originIdx + 1
 		if ctlNumIdx < len(members) {
-			if n, ok := members[ctlNumIdx].Uint32(); ok {
-				req.CtlNum = uint8(n)
+			n, err := decodeCtlNum(members[ctlNumIdx])
+			if err != nil {
+				return req, err
 			}
+			req.CtlNum = n
 		}
 
 	case "SBO":

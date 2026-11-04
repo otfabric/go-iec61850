@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"path"
 	"sort"
 	"strings"
@@ -1766,7 +1767,19 @@ func (s *ReportSubscription) handleSegment(ri *ReportIndication) *ReportIndicati
 		return nil
 	}
 
-	expectedSubSeq := uint32(len(s.segBuf))
+	// SubSeqNum is INT16U (IEC 61850-7-2 clause 17, report format), so a
+	// report has at most 65536 segments. A peer that keeps sending
+	// MoreSegments beyond that cannot grow the buffer without bound:
+	// the partial report is dropped.
+	n := len(s.segBuf)
+	if n > math.MaxUint16 {
+		s.client.logger.Warn("iec61850: segmented report exceeds 65536 segments (dropped)",
+			"rptID", ri.RptID, "seqNum", ri.SeqNum)
+		s.segBuf = nil
+		s.segActive = false
+		return nil
+	}
+	expectedSubSeq := uint32(n)
 	if ri.SubSeqNum != expectedSubSeq {
 		s.client.logger.Warn("iec61850: non-contiguous SubSeqNum",
 			"rptID", ri.RptID, "expected", expectedSubSeq, "got", ri.SubSeqNum)

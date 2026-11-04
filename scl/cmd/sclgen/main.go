@@ -222,6 +222,17 @@ func selectVersions(spec string) []versionSpec {
 }
 
 func compareDir(generated, checked string) error {
+	genRoot, err := os.OpenRoot(generated)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = genRoot.Close() }()
+	checkedRoot, err := os.OpenRoot(checked)
+	if err != nil {
+		return fmt.Errorf("checked-in output: %w", err)
+	}
+	defer func() { _ = checkedRoot.Close() }()
+
 	entries, err := os.ReadDir(generated)
 	if err != nil {
 		return err
@@ -230,11 +241,11 @@ func compareDir(generated, checked string) error {
 		if e.IsDir() {
 			continue
 		}
-		genData, err := os.ReadFile(filepath.Join(generated, e.Name()))
+		genData, err := genRoot.ReadFile(e.Name())
 		if err != nil {
 			return err
 		}
-		checkedData, err := os.ReadFile(filepath.Join(checked, e.Name()))
+		checkedData, err := checkedRoot.ReadFile(e.Name())
 		if err != nil {
 			return fmt.Errorf("file %s: not found in checked-in output: %w", e.Name(), err)
 		}

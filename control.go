@@ -31,7 +31,7 @@ var ctlNumCounter atomic.Uint32
 
 func nextCtlNum() uint8 {
 	n := ctlNumCounter.Add(1)
-	return uint8(n)
+	return uint8(n & 0xff) // wraps by design, see above
 }
 
 // Operate performs a direct-operate control command on the specified

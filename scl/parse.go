@@ -70,7 +70,7 @@ func ParseBytes(data []byte, opts ParseOptions) (*Result, error) {
 // ParseFileOpts reads and parses an SCL file, using the file
 // extension to infer [DocumentKind] when not specified in opts.
 func ParseFileOpts(path string, opts ParseOptions) (*Result, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filepath.Clean(path)) // the caller names the file to read
 	if err != nil {
 		return nil, fmt.Errorf("scl: read %q: %w", path, err)
 	}

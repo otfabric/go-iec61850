@@ -5,6 +5,7 @@ package iec61850
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/otfabric/go-mms"
 )
@@ -87,20 +88,18 @@ func decodeSGCB(v *mms.Value) (*SettingGroupInfo, error) {
 
 	info := &SettingGroupInfo{}
 
-	if u, ok := members[0].Uint32(); ok {
-		info.NumOfSGs = uint8(u)
-	} else {
-		return nil, fmt.Errorf("iec61850: SGCB decode: NumOfSGs: expected unsigned, got %s", members[0].Type())
+	// NumOfSG, ActSG and EditSG are INT8U and ResvTms INT16U (IEC
+	// 61850-7-2 clause 16, SGCB class); a larger value from the server is
+	// rejected rather than truncated to a different group number.
+	var err error
+	if info.NumOfSGs, err = sgcbUint8(members[0], "NumOfSGs"); err != nil {
+		return nil, err
 	}
-	if u, ok := members[1].Uint32(); ok {
-		info.ActSG = uint8(u)
-	} else {
-		return nil, fmt.Errorf("iec61850: SGCB decode: ActSG: expected unsigned, got %s", members[1].Type())
+	if info.ActSG, err = sgcbUint8(members[1], "ActSG"); err != nil {
+		return nil, err
 	}
-	if u, ok := members[2].Uint32(); ok {
-		info.EditSG = uint8(u)
-	} else {
-		return nil, fmt.Errorf("iec61850: SGCB decode: EditSG: expected unsigned, got %s", members[2].Type())
+	if info.EditSG, err = sgcbUint8(members[2], "EditSG"); err != nil {
+		return nil, err
 	}
 	if b, ok := members[3].Bool(); ok {
 		info.CnfEdit = b
@@ -110,11 +109,26 @@ func decodeSGCB(v *mms.Value) (*SettingGroupInfo, error) {
 	// members[4] is LActTm (UTCTime) — informational, not stored in info.
 	if len(members) > 5 {
 		if u, ok := members[5].Uint32(); ok {
+			if u > math.MaxUint16 {
+				return nil, fmt.Errorf("iec61850: SGCB decode: ResvTms %d exceeds INT16U", u)
+			}
 			info.ResvTms = uint16(u)
 		}
 	}
 
 	return info, nil
+}
+
+// sgcbUint8 decodes an INT8U SGCB member.
+func sgcbUint8(v *mms.Value, name string) (uint8, error) {
+	u, ok := v.Uint32()
+	if !ok {
+		return 0, fmt.Errorf("iec61850: SGCB decode: %s: expected unsigned, got %s", name, v.Type())
+	}
+	if u > math.MaxUint8 {
+		return 0, fmt.Errorf("iec61850: SGCB decode: %s %d exceeds INT8U", name, u)
+	}
+	return uint8(u), nil
 }
 
 // sgcbObjectName returns an MMS domain-specific ObjectName for the SGCB.

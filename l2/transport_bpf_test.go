@@ -5,6 +5,7 @@
 package l2
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"unsafe"
@@ -85,5 +86,60 @@ func TestBPFOsErr(t *testing.T) {
 		if c.kind != nil && !errors.Is(err, c.kind) {
 			t.Errorf("%s %v: kind = %v, want %v", c.op, c.err, err, c.kind)
 		}
+	}
+}
+
+// TestNextRecordBounds checks the header fields at their wrap points:
+// the decoder must reject, never slice out of range or overflow.
+func TestNextRecordBounds(t *testing.T) {
+	a := []byte{1, 2, 3, 4}
+	set := func(mut func(h *unix.BpfHdr)) []byte {
+		b := bpfRecord(a, len(a))
+		mut((*unix.BpfHdr)(unsafe.Pointer(&b[0])))
+		return b
+	}
+	for name, buf := range map[string][]byte{
+		"hdrlen past buffer":  set(func(h *unix.BpfHdr) { h.Hdrlen = 0xffff; h.Caplen = 0 }),
+		"caplen max uint32":   set(func(h *unix.BpfHdr) { h.Caplen = 0xffffffff }),
+		"caplen one too long": set(func(h *unix.BpfHdr) { h.Caplen = uint32(len(a)) + uint32(unix.BPF_ALIGNMENT) }),
+		"short header":        make([]byte, bpfHdrMin-1),
+	} {
+		if _, _, ok := nextRecord(buf); ok {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	// Caplen exactly filling the buffer is accepted.
+	b := bpfRecord(a, len(a))
+	h := (*unix.BpfHdr)(unsafe.Pointer(&b[0]))
+	h.Caplen = uint32(len(b) - bpfHdrMin)
+	h.Datalen = h.Caplen
+	if f, rest, ok := nextRecord(b); !ok || len(f) != len(b)-bpfHdrMin || len(rest) != 0 {
+		t.Errorf("full-buffer capture: %d %v %d", len(f), ok, len(rest))
+	}
+	// The decoder agrees with the struct layout for every field.
+	if bpfHdrMin != int(unsafe.Offsetof(unix.BpfHdr{}.Hdrlen))+2 || bpfCaplenOff >= bpfHdrlenOff {
+		t.Error("bpf_hdr offsets")
+	}
+}
+
+// TestOpenBPF opens a real BPF device on the loopback interface when the
+// process may (macOS ChmodBPF / access_bpf group or root), covering
+// BIOCSETIF via IoctlSetString, BIOCSETF and BIOCSRTIMEOUT.
+func TestOpenBPF(t *testing.T) {
+	iface := rawTestIface()
+	if iface == "" {
+		iface = "lo0" // receive-only: nothing is sent
+	}
+	tr := openOrSkip(t, iface, TransportOptions{EtherTypes: []uint16{EtherTypeGOOSE, EtherTypeSV}, Multicast: []MAC{{0x01, 0x0c, 0xcd, 0x01}}})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*pollInterval)
+	defer cancel()
+	if _, err := tr.Recv(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("Recv on idle loopback: %v", err)
+	}
+	if err := tr.Close(); err != nil {
+		t.Error(err)
+	}
+	if _, err := Open("this-interface-name-is-too-long0", TransportOptions{}); err == nil {
+		t.Error("overlong interface name accepted")
 	}
 }

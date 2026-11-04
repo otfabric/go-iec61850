@@ -496,3 +496,42 @@ func TestHubBehaviour(t *testing.T) {
 	}
 	c.deliver([]byte{1}, hub) // no panic after close
 }
+
+func TestJumpOffsetBounds(t *testing.T) {
+	for _, d := range []int{0, 1, 2*maxEtherTypes + 3, 255} {
+		if got := jumpOffset(d); int(got) != d {
+			t.Errorf("jumpOffset(%d) = %d", d, got)
+		}
+	}
+	for _, d := range []int{-1, 256, 1 << 20} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("jumpOffset(%d) did not panic", d)
+				}
+			}()
+			jumpOffset(d)
+		}()
+	}
+	// Every jump of the largest program stays inside the program and
+	// within a byte: the first jeq of a full list jumps furthest.
+	many := make([]uint16, maxEtherTypes)
+	for i := range many {
+		many[i] = 0x9000 + uint16(i)
+	}
+	prog := etherTypeFilter(many)
+	if len(prog) != 2*maxEtherTypes+5 {
+		t.Fatalf("program length %d", len(prog))
+	}
+	if got, want := int(prog[1].jt), 2*maxEtherTypes+2; got != want {
+		t.Errorf("first jt = %d, want %d", got, want)
+	}
+	for pc, in := range prog {
+		if in.code == bpfRetK {
+			continue
+		}
+		if pc+1+int(in.jt) >= len(prog) || pc+1+int(in.jf) >= len(prog) {
+			t.Errorf("insn %d jumps outside the program", pc)
+		}
+	}
+}

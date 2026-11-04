@@ -84,8 +84,11 @@ func (q Quality) Has(flag Quality) bool {
 }
 
 // WithValidity returns a copy of the quality with the given validity.
+// Validity is the 2-bit field of the Quality type (IEC 61850-7-3
+// clause 6.2); only the low two bits of v are used, so an out-of-range
+// value cannot set detail-quality flags.
 func (q Quality) WithValidity(v Validity) Quality {
-	return (q &^ validityMask) | Quality(v)
+	return (q &^ validityMask) | Quality(v&Validity(validityMask))
 }
 
 // String returns a human-readable representation of the quality.

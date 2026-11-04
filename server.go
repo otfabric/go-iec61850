@@ -83,6 +83,9 @@ type Server struct {
 	lnMu          sync.Mutex
 	hookListeners map[mms.TransportListener]struct{}
 	shutdown      bool
+
+	// bg tracks background sends (CommandTermination) stopped by Close.
+	bg backgroundTasks
 }
 
 // ServerOptions configures the IEC 61850 server.
@@ -402,8 +405,8 @@ func parseSGCBStoreKey(itemID string) (subfield string, ok bool) {
 }
 
 // Close performs an orderly shutdown of the server's runtime engines.
-// It stops the report engine (integrity timers, delivery goroutines),
-// the GOOSE engine (publishers)
+// It stops pending CommandTermination sends, the report engine
+// (integrity timers, delivery goroutines), the GOOSE engine (publishers)
 // and clears references to the journal and setting group engines.
 // Close is idempotent and safe to call multiple times.
 //
@@ -413,6 +416,7 @@ func parseSGCBStoreKey(itemID string) (subfield string, ok bool) {
 // stateless (no background goroutines), so they only need reference
 // clearing for garbage collection.
 func (s *Server) Close() {
+	s.bg.stop()
 	if s.reportEngine != nil {
 		s.reportEngine.Stop()
 	}

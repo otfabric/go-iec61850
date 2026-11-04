@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"math"
 	"net"
 	"sync"
 	"time"
@@ -73,7 +74,11 @@ func (t *packetTransport) setup(proto uint16, types []uint16, opts TransportOpti
 	for i, in := range filter {
 		prog[i] = unix.SockFilter{Code: in.code, Jt: in.jt, Jf: in.jf, K: in.k}
 	}
-	fprog := unix.SockFprog{Len: uint16(len(prog)), Filter: &prog[0]}
+	n := len(prog)
+	if n == 0 || n > unix.BPF_MAXINSNS {
+		return &ConfigError{Field: "EtherTypes", Message: "BPF program length out of range"}
+	}
+	fprog := unix.SockFprog{Len: uint16(n), Filter: &prog[0]}
 	if err := unix.SetsockoptSockFprog(fd, unix.SOL_SOCKET, unix.SO_ATTACH_FILTER, &fprog); err != nil {
 		return osErr("attach filter", t.iface, err)
 	}
@@ -87,9 +92,17 @@ func (t *packetTransport) setup(proto uint16, types []uint16, opts TransportOpti
 	if err := unix.SetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &tv); err != nil {
 		return osErr("rcvtimeo", t.iface, err)
 	}
-	add := func(typ uint16, addr []byte) error {
-		mr := unix.PacketMreq{Ifindex: int32(t.idx), Type: typ, Alen: uint16(len(addr))}
-		copy(mr.Address[:], addr)
+	// struct packet_mreq carries the ifindex as a C int.
+	if t.idx <= 0 || t.idx > math.MaxInt32 {
+		return &TransportError{Op: "membership", Interface: t.iface, Err: errors.New("interface index out of range"), Kind: ErrInterfaceNotFound}
+	}
+	ifindex := int32(t.idx)
+	add := func(typ uint16, group *MAC) error {
+		mr := unix.PacketMreq{Ifindex: ifindex, Type: typ}
+		if group != nil {
+			mr.Alen = macLen
+			copy(mr.Address[:], group[:])
+		}
 		return unix.SetsockoptPacketMreq(fd, unix.SOL_PACKET, unix.PACKET_ADD_MEMBERSHIP, &mr)
 	}
 	if opts.Promiscuous {
@@ -103,7 +116,7 @@ func (t *packetTransport) setup(proto uint16, types []uint16, opts TransportOpti
 		}
 	}
 	for _, m := range opts.Multicast {
-		if err := add(unix.PACKET_MR_MULTICAST, m[:]); err != nil {
+		if err := add(unix.PACKET_MR_MULTICAST, &m); err != nil {
 			return osErr("multicast "+m.String(), t.iface, err)
 		}
 	}
@@ -158,18 +171,19 @@ func restoreVLAN(frame, oob []byte) []byte {
 			if m.Header.Level != unix.SOL_PACKET || m.Header.Type != unix.PACKET_AUXDATA || len(m.Data) < sizeofAuxdata {
 				continue
 			}
-			aux := (*unix.TpacketAuxdata)(unsafe.Pointer(&m.Data[0]))
-			if aux.Status&unix.TP_STATUS_VLAN_VALID == 0 || len(frame) < 12 {
+			status := binary.NativeEndian.Uint32(m.Data[auxStatusOff:])
+			if status&unix.TP_STATUS_VLAN_VALID == 0 || len(frame) < 12 {
 				break
 			}
+			tci := binary.NativeEndian.Uint16(m.Data[auxVlanTCIOff:])
 			tpid := EtherTypeVLAN
-			if aux.Status&unix.TP_STATUS_VLAN_TPID_VALID != 0 && aux.Vlan_tpid != 0 {
-				tpid = aux.Vlan_tpid
+			if v := binary.NativeEndian.Uint16(m.Data[auxVlanTPIDOff:]); status&unix.TP_STATUS_VLAN_TPID_VALID != 0 && v != 0 {
+				tpid = v
 			}
 			out := make([]byte, 0, len(frame)+4)
 			out = append(out, frame[:12]...)
 			out = binary.BigEndian.AppendUint16(out, tpid)
-			out = binary.BigEndian.AppendUint16(out, aux.Vlan_tci)
+			out = binary.BigEndian.AppendUint16(out, tci)
 			return append(out, frame[12:]...)
 		}
 	}
@@ -201,4 +215,15 @@ func osErr(op, iface string, err error) error {
 	return te
 }
 
-const sizeofAuxdata = int(unsafe.Sizeof(unix.TpacketAuxdata{}))
+// struct tpacket_auxdata (linux/if_packet.h) is decoded field by field
+// in host byte order; the offsets come from the x/sys layout so no
+// pointer cast over the control-message bytes is needed.
+const (
+	sizeofAuxdata  = int(unsafe.Sizeof(unix.TpacketAuxdata{}))
+	auxStatusOff   = int(unsafe.Offsetof(unix.TpacketAuxdata{}.Status))
+	auxVlanTCIOff  = int(unsafe.Offsetof(unix.TpacketAuxdata{}.Vlan_tci))
+	auxVlanTPIDOff = int(unsafe.Offsetof(unix.TpacketAuxdata{}.Vlan_tpid))
+)
+
+// macLen is the hardware address length of an Ethernet MAC.
+const macLen = uint16(len(MAC{}))

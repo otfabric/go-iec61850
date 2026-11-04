@@ -83,7 +83,7 @@ func convLDB4(r raw.LDevice, diags *[]Diagnostic) LDevice {
 	return ld
 }
 
-func convLN0B4(r raw.LN0, _ *[]Diagnostic) LN {
+func convLN0B4(r raw.LN0, diags *[]Diagnostic) LN {
 	ln := LN{LNClass: r.LnClass, Inst: r.Inst, LNType: r.LnType, Desc: r.Desc}
 	for _, doi := range r.DOI {
 		ln.DOIs = append(ln.DOIs, convDOIB4(doi))
@@ -118,11 +118,7 @@ func convLN0B4(r raw.LN0, _ *[]Diagnostic) LN {
 		ln.Logs = append(ln.Logs, Log{Name: lc.Name, Desc: lc.Desc})
 	}
 	if r.SettingControl != nil {
-		ln.SettingControl = &SettingControl{
-			NumOfSGs: uint8(r.SettingControl.NumOfSGs),
-			ActSG:    uint8(r.SettingControl.ActSG),
-			ResvTms:  r.SettingControl.ResvTms,
-		}
+		ln.SettingControl = convSettingControl(r.SettingControl.NumOfSGs, r.SettingControl.ActSG, r.SettingControl.ResvTms, diags)
 	}
 	for _, p := range r.Private {
 		ln.Private = append(ln.Private, Private{Type: p.Type, Source: p.Source, InnerXML: p.InnerXML})

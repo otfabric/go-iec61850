@@ -170,22 +170,29 @@ func ParseBundle(dir string, version string) (*Schema, error) {
 		Bundle:  filepath.Base(dir),
 	}
 
+	// xs:include locations are resolved inside the bundle directory only.
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, fmt.Errorf("parse bundle %s: %w", dir, err)
+	}
+	defer func() { _ = root.Close() }()
+
 	loaded := make(map[string]bool)
-	if err := loadXSD(dir, "SCL.xsd", schema, loaded); err != nil {
+	if err := loadXSD(root, "SCL.xsd", schema, loaded); err != nil {
 		return nil, fmt.Errorf("parse bundle %s: %w", dir, err)
 	}
 
 	return schema, nil
 }
 
-func loadXSD(dir, filename string, schema *Schema, loaded map[string]bool) error {
+func loadXSD(root *os.Root, filename string, schema *Schema, loaded map[string]bool) error {
 	if loaded[filename] {
 		return nil
 	}
 	loaded[filename] = true
 
-	path := filepath.Join(dir, filename)
-	data, err := os.ReadFile(path)
+	path := filepath.Join(root.Name(), filename)
+	data, err := root.ReadFile(filename)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
@@ -204,7 +211,7 @@ func loadXSD(dir, filename string, schema *Schema, loaded map[string]bool) error
 		if isIgnoredFile(loc) {
 			continue
 		}
-		if err := loadXSD(dir, loc, schema, loaded); err != nil {
+		if err := loadXSD(root, loc, schema, loaded); err != nil {
 			return err
 		}
 	}
