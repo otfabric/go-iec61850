@@ -20,6 +20,7 @@ Run `make help` for the list of targets.
 - `make coverage-pkg-check`: fails below 90% per package. CI runs this gate as root so that the GOOSE raw socket tests run; do not lower it.
 - `make fuzz`: fuzz targets for `FUZZTIME` (default 15s).
 - `make interop`, `make interop-goose`: tests against independent stacks, see [INTEROP.md](INTEROP.md).
+- **Self-interop** (manual workflow, never required): this commit against the latest published image of go-iec61850 itself, `ghcr.io/otfabric/iec61850-interop-otfabric:latest` (`IEC61850_PEER_STACK=otfabric`, `IEC61850_INTEROP_OTFABRIC_IMAGE`). It catches a wire change that breaks an earlier release; it is not independent evidence (INTEROP.md).
 
 Add a fuzz target for any new decoder of untrusted input.
 

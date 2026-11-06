@@ -14,7 +14,12 @@
 //
 // Environment variables (all optional):
 //
-//	IEC61850_PEER_STACK       Stack behind the TestLibIEC* adapters: libiec61850 (default), dscsystems or iec61850-rust
+//	IEC61850_PEER_STACK       Stack behind the TestLibIEC* adapters: libiec61850 (default), dscsystems, iec61850-rust,
+//	                          or otfabric (go-iec61850 itself, see IEC61850_INTEROP_OTFABRIC_IMAGE)
+//	IEC61850_INTEROP_OTFABRIC_IMAGE  Image of go-iec61850's own adapter (ghcr.io/otfabric/iec61850-interop-otfabric);
+//	                          no default. It is not an independent implementation (INTEROP.md): the stack runs
+//	                          only when this names an image, and with IEC61850_PEER_STACK=otfabric the GOOSE and
+//	                          SV tests run against it alone.
 //	LIBIEC61850_IMAGE         Docker image with libiec61850 adapters (default: iec61850-interop-libiec61850:local)
 //	DSCSYSTEMS_IMAGE          Docker image with dscsystems adapters (default: iec61850-interop-dscsystems:local)
 //	IEC61850RUST_IMAGE        Docker image with iec61850-rust adapters (default: iec61850-interop-iec61850-rust:local)
@@ -263,11 +268,35 @@ func peer() peerStack {
 		return peerStack{"dscsystems", "DSCSYSTEMS_IMAGE", defaultDSCImage}
 	case "iec61850-rust":
 		return peerStack{"iec61850-rust", "IEC61850RUST_IMAGE", defaultRustImage}
+	case "otfabric":
+		if os.Getenv(otfabricImageEnv) == "" {
+			fmt.Fprintf(os.Stderr, "IEC61850_PEER_STACK=otfabric needs %s (no default)\n", otfabricImageEnv)
+			os.Exit(2)
+		}
+		return otfabricStack
 	default:
 		fmt.Fprintf(os.Stderr, "unknown IEC61850_PEER_STACK %q\n", s)
 		os.Exit(2)
 		return peerStack{}
 	}
+}
+
+// otfabricImageEnv names the image of go-iec61850's own adapter. It has no
+// default: the otfabric stack is OT Fabric's own, never an independent peer,
+// and runs only when asked for.
+const otfabricImageEnv = "IEC61850_INTEROP_OTFABRIC_IMAGE"
+
+var otfabricStack = peerStack{"otfabric", otfabricImageEnv, ""}
+
+// domainPrefix is the IED name the client prepends to LD names for the peer's
+// server. The references name MMS domains <IED><LD>; go-iec61850's own server
+// (stack otfabric) names them by the bare LD instance (KNOWN_LIMITATIONS.md,
+// "References use the server's MMS domain"), so there is no prefix.
+func domainPrefix(iedName string) string {
+	if peer().name == otfabricStack.name {
+		return ""
+	}
+	return iedName
 }
 
 // dockerImage returns the peer image ($imageEnv or the local default).
@@ -607,7 +636,7 @@ func startIEDServer(t *testing.T) *iedServerHandle {
 		}
 		validateIEDAdapterMeta(t, m, "iec61850-v3", peer().name)
 		t.Cleanup(stop)
-		return &iedServerHandle{addr: m.addr, iedName: m.iedName}
+		return &iedServerHandle{addr: m.addr, iedName: domainPrefix(m.iedName)}
 	case <-startCtx.Done():
 		stop()
 		t.Fatal("timed out waiting for IED server readiness")

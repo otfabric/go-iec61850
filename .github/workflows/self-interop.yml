@@ -1,0 +1,96 @@
+name: Self-interop
+run-name: "Self-interop against iec61850-interop-otfabric:latest, by @${{ github.actor }} on ${{ github.ref_name }}"
+
+# Manual only. This commit against the latest published image of go-iec61850
+# itself (ghcr.io/otfabric/iec61850-interop-otfabric:latest, from
+# otfabric/iec61850-interop: commands otfabric-ied-*, otfabric-goose-*,
+# otfabric-sv-*), in both roles. The e2e tests run both sides from one commit;
+# this one finds a change on the wire that breaks an earlier release.
+#
+# Not part of the Interop workflow, which runs against the independent
+# references, and never a required check. Nothing is pinned or committed, so it
+# cannot ask for a release. A pass is not independent verification (INTEROP.md).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/otfabric/iec61850-interop-otfabric:latest
+  GOWORK: "off"
+  IEC61850_SV_FIXTURE: sv-v1
+
+jobs:
+  self-interop:
+    name: This commit against iec61850-interop-otfabric:latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Pull the image
+        run: docker pull "${IMAGE}"
+
+      - name: Versions
+        id: versions
+        env:
+          SHA: ${{ github.sha }}
+          REF: ${{ github.ref_name }}
+        run: |
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "${IMAGE}")
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Versions"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| go-iec61850 under test | \`${REF}\` at \`${SHA}\` (\`$(git describe --tags --always)\`) |"
+            echo "| Go | \`$(go env GOVERSION)\` |"
+            echo "| Image | \`${IMAGE}\` |"
+            echo "| Image digest | \`${digest}\` |"
+            echo "| Image reports | \`$(docker run --rm --entrypoint otfabric-ied-server "${IMAGE}" --version)\` |"
+            docker run --rm --entrypoint otfabric-ied-server "${IMAGE}" --capabilities \
+              | jq -r '"| go-iec61850 in the image | `\(.upstream.version)` at `\(.upstream.revision)`, go-mms `\(.upstream.mmsVersion)` |"'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Run the IED interop suite against otfabric
+        env:
+          IEC61850_PEER_STACK: otfabric
+          IEC61850_INTEROP_OTFABRIC_IMAGE: ${{ steps.versions.outputs.digest }}
+        run: |
+          set -o pipefail
+          go test -v -tags interop -count=1 -timeout 900s -run '^Test(LibIEC|GoServer|PeerClient)' ./interop/... 2>&1 | tee interop.log
+
+      # GOOSE and SV are raw Ethernet: the adapter runs on a Docker bridge
+      # network whose bridge device goose0 the test opens from the host (as
+      # root, for CAP_NET_RAW). An idle container gives the bridge its carrier.
+      - name: Run the GOOSE and SV interop suite against otfabric
+        env:
+          IEC61850_PEER_STACK: otfabric
+          IEC61850_INTEROP_OTFABRIC_IMAGE: ${{ steps.versions.outputs.digest }}
+          GOOSE_IFACE: goose0
+        run: |
+          set -o pipefail
+          docker network create -o com.docker.network.bridge.name=goose0 iec61850-interop-goose
+          docker run -d --rm --name goose-carrier --network iec61850-interop-goose --entrypoint sleep "${IEC61850_INTEROP_OTFABRIC_IMAGE}" infinity
+          sleep 2
+          go test -exec 'sudo -E' -v -tags interop -count=1 -timeout 600s -run 'GOOSE|SV_' ./interop/... 2>&1 | tee l2.log
+
+      - name: Result
+        if: always()
+        run: |
+          {
+            echo "## Result"
+            echo
+            for f in interop.log l2.log; do
+              [ -f "$f" ] || continue
+              echo "- ${f%.log}: $(grep -c -- '--- PASS' "$f") passed, $(grep -c -- '--- SKIP' "$f") skipped, $(grep -c -- '--- FAIL' "$f") failed"
+            done
+          } | tee -a "$GITHUB_STEP_SUMMARY"

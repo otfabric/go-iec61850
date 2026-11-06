@@ -29,9 +29,19 @@ import (
 	iec61850 "github.com/otfabric/go-iec61850"
 )
 
+// urcbID is the item ID of the fixture's URCB on the peer's server. The
+// references append libiec61850's instance suffix ("urcb0101"); go-iec61850's
+// own server (stack otfabric) uses the SCL name ("urcb01", as
+// TestLibIECServer_URCB_RejectedWriteNoReport notes).
+var urcbID = func() string {
+	if peer().name == otfabricStack.name {
+		return "LLN0$RP$urcb01"
+	}
+	return "LLN0$RP$urcb0101"
+}()
+
 const (
 	urcbLD    = "InteropLD"
-	urcbID    = "LLN0$RP$urcb0101"
 	urcbRptID = "interop_urcb01"
 
 	// modStValRef is the dataset member (index 1) that is writable by clients
