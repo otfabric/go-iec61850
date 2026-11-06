@@ -93,16 +93,22 @@ func TestPublisherRetransmissionCurve(t *testing.T) {
 		}
 	}
 	// Intervals: 5, 10, 20, 40, 40, 40 ms. Frames are scheduled from their
-	// planned time, so a late send shortens the next measured interval:
-	// each interval gets a loose lower bound, the total a strict one.
+	// planned time, so a late send shortens the next measured interval and
+	// cannot bound it from below: each interval gets a loose upper bound, and
+	// the time since the first frame a lower bound with the same 5 ms of
+	// slack (for a late first frame) as the total.
 	tx.mu.Lock()
 	times := append([]time.Time(nil), tx.times...)
 	tx.mu.Unlock()
 	want := []time.Duration{5, 10, 20, 40, 40, 40}
+	var planned time.Duration
 	for i, w := range want {
-		got := times[i+1].Sub(times[i])
-		if got < w*time.Millisecond/2 || got > w*time.Millisecond*4+20*time.Millisecond {
+		planned += w * time.Millisecond
+		if got := times[i+1].Sub(times[i]); got > w*time.Millisecond*4+20*time.Millisecond {
 			t.Errorf("interval %d = %v, want ~%dms", i, got, w)
+		}
+		if since := times[i+1].Sub(times[0]); since < planned-5*time.Millisecond {
+			t.Errorf("frame %d %v after the first, want >= ~%v", i+1, since, planned)
 		}
 	}
 	if total := times[6].Sub(times[0]); total < 150*time.Millisecond {

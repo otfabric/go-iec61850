@@ -390,9 +390,17 @@ func TestPublisherRateAndSequence(t *testing.T) {
 			t.Fatalf("smpCnt %d after %d", cnts[i], cnts[i-1])
 		}
 	}
+	// A skip moves smpCnt on, so the subscriber counts it as lost at the
+	// next frame. Samples skipped after the last frame sent (a loaded host,
+	// just before stop) have no next frame: Lost is the gaps the subscriber
+	// saw, at most what the publisher skipped.
 	ss := sub.Stats()[0]
-	if ss.Lost != st.Skipped || ss.Duplicates != 0 || ss.OutOfOrder != 0 {
-		t.Errorf("subscriber stats %+v (publisher skipped %d)", ss, st.Skipped)
+	gaps := uint64(0)
+	for i := 1; i < len(cnts); i++ {
+		gaps += uint64((int(cnts[i]) - int(cnts[i-1]) - 1 + 4000) % 4000)
+	}
+	if ss.Lost != gaps || ss.Lost > st.Skipped || ss.Duplicates != 0 || ss.OutOfOrder != 0 {
+		t.Errorf("subscriber stats %+v (smpCnt gaps %d, publisher skipped %d)", ss, gaps, st.Skipped)
 	}
 }
 
