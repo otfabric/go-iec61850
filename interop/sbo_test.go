@@ -30,7 +30,7 @@ import (
 // ---------------------------------------------------------------------------
 
 const sbo2Ref = "InteropLD/GGIO1.SPCSO2"
-const sbo2StValKey = "InteropLD/GGIO1$ST$SPCSO2$stVal"
+const sbo2StValKey = goLD + "/GGIO1$ST$SPCSO2$stVal"
 
 // ---------------------------------------------------------------------------
 // TestLibIECServer_Control_SBOOperate
@@ -266,8 +266,8 @@ func TestGoServer_SBO_OperateWithoutSelect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// The go server registers bare LD domain names (no IED name prefix).
-	client, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), iec61850.DialOptions{})
+	// The go server names its domain <IED><LD inst>; dial with its IED name.
+	client, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), goDialOptions())
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}

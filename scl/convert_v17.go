@@ -71,7 +71,7 @@ func convAP17(r raw.AccessPoint, diags *[]Diagnostic) AccessPoint {
 }
 
 func convLD17(r raw.LDevice, diags *[]Diagnostic) LDevice {
-	ld := LDevice{Inst: r.Inst, Desc: r.Desc}
+	ld := LDevice{Inst: r.Inst, LdName: r.LdName, Desc: r.Desc}
 	ln0 := convLN017(r.LN0, diags)
 	ld.LN0 = &ln0
 	for _, ln := range r.LN {

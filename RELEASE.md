@@ -1,5 +1,31 @@
 # go-iec61850 Releases
 
+## v1.7.0
+
+**Date:** 2026-11-06
+**Previous release:** v1.6.0
+
+### Breaking
+
+- **A server built from SCL names its logical devices as IEC 61850-8-1 does**, as the other IEC 61850 stacks do: the MMS domain is LDevice@ldName when the SCL gives one, otherwise the IED name followed by LDevice@inst (`InteropIEDInteropLD`). It was the bare instance (`InteropLD`). Data set members, report control block `DatSet`, GoCB and MSVCB references, the published `gocbRef`/`datSet`/`svID` and the keys of `Server.SetValue` and `RegisterControl` follow. A client that takes the logical devices from `ListLogicalDevices` (GetServerDirectory) is not affected; one that addresses `InteropLD/...` directly uses `DialOptions.IEDName`, the new name, or builds the server with `NewServerModelFromSCLWithOptions(..., ServerModelOptions{InstanceDomainNames: true})`, which keeps the old names. Setting `ldName` in the SCL is the standard way to give a device a short name. Released as a minor version at the maintainer's choice.
+
+### Fixed
+
+- **Reports carry the data references their OptFlds announce.** With the data-reference bit of OptFlds set, a report left the references out, so a client that parses the IEC 61850-8-1 report format read the first value as a reference: cB-Sigma/iec61850's client refused it ("the report's data reference is not a visible-string"). The server now sends one reference (`<LD>/<LN>$<FC>$<DO>...`) per included member between the inclusion bitstring and the values, in live reports and in replayed BRCB entries. Found with cB-Sigma's client in iec61850-interop.
+
+### Added
+
+- `NewServerModelFromSCLWithOptions` and `ServerModelOptions.InstanceDomainNames`.
+- `scl.LDevice.LdName`: LDevice@ldName is parsed (schema 2007B and later) and written by the SCL generator.
+
+### Tests
+
+- A control write (`Oper`, `SBOw`, `Cancel`) to an object without a control structure is answered object-non-existent and leaves the status alone, even with `AllowReadOnlyFCWrites` (dscsystems/go-iec61850 v0.6.6 fixed the opposite in its server; go-iec61850 was not affected).
+- Data references in live and replayed reports, and their place in the report.
+- Domain names: IED name plus instance by default, ldName honoured, data set members across logical devices, duplicate names refused, `InstanceDomainNames`.
+
+---
+
 ## v1.6.0
 
 **Date:** 2026-11-04

@@ -29,8 +29,8 @@ func TestGenerateConfig_Basic(t *testing.T) {
 	if len(cfg.LogicalDevices) != 1 {
 		t.Fatalf("LDs = %d, want 1", len(cfg.LogicalDevices))
 	}
-	if cfg.LogicalDevices[0].Name != "LD1" {
-		t.Errorf("LD name = %q, want LD1", cfg.LogicalDevices[0].Name)
+	if cfg.LogicalDevices[0].Name != "IED1LD1" {
+		t.Errorf("LD name = %q, want IED1LD1", cfg.LogicalDevices[0].Name)
 	}
 
 	lns := cfg.LogicalDevices[0].LogicalNodes
@@ -90,13 +90,13 @@ func TestGenerateMMS_Basic(t *testing.T) {
 	}
 
 	out := buf.String()
-	if !strings.Contains(out, "domain: LD1") {
-		t.Error("expected 'domain: LD1' in output")
+	if !strings.Contains(out, "domain: IED1LD1") {
+		t.Error("expected 'domain: IED1LD1' in output")
 	}
 	if !strings.Contains(out, "LLN0$ST$Mod$stVal") {
 		t.Error("expected LLN0$ST$Mod$stVal variable in output")
 	}
-	if !strings.Contains(out, "nvl: LD1/LLN0$dsEvents") {
+	if !strings.Contains(out, "nvl: IED1LD1/LLN0$dsEvents") {
 		t.Error("expected NVL dsEvents in output")
 	}
 }

@@ -124,7 +124,7 @@ func TestResourceExhaust_ReportBackpressure(t *testing.T) {
 	// Subscribe with a tiny queue (size=2) and DropNewest policy.
 	var dropped atomic.Int64
 	sub, err := c.SubscribeReport(context.Background(), "rpt01", SubscribeReportOptions{
-		LD:             "LD1",
+		LD:             "IED1LD1",
 		RCBItemID:      "LLN0$RP$urcb01",
 		AutoEnable:     true,
 		GIOnSubscribe:  true,
@@ -149,7 +149,7 @@ func TestResourceExhaust_ReportBackpressure(t *testing.T) {
 	// Flood the server with GI triggers — do not consume from the report channel.
 	const floods = 30
 	for range floods {
-		_ = c.SetReportControlBlock(context.Background(), "LD1", "LLN0$RP$urcb01", RCBUpdate{
+		_ = c.SetReportControlBlock(context.Background(), "IED1LD1", "LLN0$RP$urcb01", RCBUpdate{
 			Fields: RCBFieldGI,
 			GI:     true,
 		})
@@ -159,7 +159,7 @@ func TestResourceExhaust_ReportBackpressure(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Reads should still work despite the flooded report queue.
-	ref, _ := ParseRef("LD1/LLN0.Mod.stVal[ST]")
+	ref, _ := ParseRef("IED1LD1/LLN0.Mod.stVal[ST]")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if _, err := c.Read(ctx, ref); err != nil {
@@ -204,7 +204,7 @@ func TestResourceExhaust_ValueStoreUnderLoad(t *testing.T) {
 	const itersPerSetter = 200
 	var setWG sync.WaitGroup
 	ctx := context.Background()
-	storeKey := "LD1/LLN0$ST$Mod$stVal"
+	storeKey := "IED1LD1/LLN0$ST$Mod$stVal"
 
 	for i := range setters {
 		setWG.Add(1)
@@ -227,7 +227,7 @@ func TestResourceExhaust_ValueStoreUnderLoad(t *testing.T) {
 		_ = c.Abort(context.Background())
 	}()
 
-	ref, _ := ParseRef("LD1/LLN0.Mod.stVal[ST]")
+	ref, _ := ParseRef("IED1LD1/LLN0.Mod.stVal[ST]")
 	var readErrors atomic.Int64
 	var readWG sync.WaitGroup
 	readWG.Go(func() {

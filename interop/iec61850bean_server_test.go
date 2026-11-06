@@ -40,12 +40,12 @@ func TestBeanServer_GetServerDirectory(t *testing.T) {
 
 	found := false
 	for _, n := range r.Names {
-		if n == "InteropLD" {
+		if n == goLD {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected 'InteropLD' in get-server-directory names: %v", r.Names)
+		t.Errorf("expected %q in get-server-directory names: %v", goLD, r.Names)
 	}
 }
 
@@ -54,9 +54,9 @@ func TestBeanServer_GetLDDirectory(t *testing.T) {
 	ch := startIEC61850BeanClientAdapter(t, srv.port)
 	results := collectIEDResults(t, ch)
 
-	r, ok := findIEDResult(t, results, "get-ld-directory", "InteropLD")
+	r, ok := findIEDResult(t, results, "get-ld-directory", goLD)
 	if !ok {
-		t.Fatal("no 'get-ld-directory' result for InteropLD")
+		t.Fatal("no 'get-ld-directory' result for " + goLD)
 	}
 	if !r.OK {
 		t.Fatalf("get-ld-directory failed: %s", r.Error)
@@ -78,9 +78,9 @@ func TestBeanServer_GetLNDirectory(t *testing.T) {
 	ch := startIEC61850BeanClientAdapter(t, srv.port)
 	results := collectIEDResults(t, ch)
 
-	r, ok := findIEDResult(t, results, "get-ln-directory", "InteropLD/GGIO1")
+	r, ok := findIEDResult(t, results, "get-ln-directory", goLD+"/GGIO1")
 	if !ok {
-		t.Fatal("no 'get-ln-directory' result for InteropLD/GGIO1")
+		t.Fatal("no 'get-ln-directory' result for " + goLD + "/GGIO1")
 	}
 	if !r.OK {
 		t.Fatalf("get-ln-directory failed: %s", r.Error)
@@ -102,7 +102,7 @@ func TestBeanServer_Read_ST(t *testing.T) {
 	ch := startIEC61850BeanClientAdapter(t, srv.port)
 	results := collectIEDResults(t, ch)
 
-	target := "InteropLD/GGIO1.SPS1.stVal[ST]"
+	target := goLD + "/GGIO1.SPS1.stVal[ST]"
 	r, ok := findIEDResult(t, results, "read", target)
 	if !ok {
 		t.Fatalf("no 'read' result for %q", target)
@@ -125,7 +125,7 @@ func TestBeanServer_Read_MX(t *testing.T) {
 	ch := startIEC61850BeanClientAdapter(t, srv.port)
 	results := collectIEDResults(t, ch)
 
-	target := "InteropLD/MMXU1.TotW.mag.f[MX]"
+	target := goLD + "/MMXU1.TotW.mag.f[MX]"
 	r, ok := findIEDResult(t, results, "read", target)
 	if !ok {
 		t.Fatalf("no 'read' result for %q", target)
@@ -148,7 +148,7 @@ func TestBeanServer_Read_CF(t *testing.T) {
 	ch := startIEC61850BeanClientAdapter(t, srv.port)
 	results := collectIEDResults(t, ch)
 
-	target := "InteropLD/LLN0.Mod.ctlModel[CF]"
+	target := goLD + "/LLN0.Mod.ctlModel[CF]"
 	r, ok := findIEDResult(t, results, "read", target)
 	if !ok {
 		t.Fatalf("no 'read' result for %q", target)
@@ -171,7 +171,7 @@ func TestBeanServer_Read_DC(t *testing.T) {
 	ch := startIEC61850BeanClientAdapter(t, srv.port)
 	results := collectIEDResults(t, ch)
 
-	target := "InteropLD/LLN0.Mod.d[DC]"
+	target := goLD + "/LLN0.Mod.d[DC]"
 	r, ok := findIEDResult(t, results, "read", target)
 	if !ok {
 		t.Fatalf("no 'read' result for %q", target)
@@ -194,7 +194,7 @@ func TestBeanServer_Write(t *testing.T) {
 	ch := startIEC61850BeanClientAdapter(t, srv.port)
 	results := collectIEDResults(t, ch)
 
-	target := "InteropLD/LLN0.Mod.stVal[ST]"
+	target := goLD + "/LLN0.Mod.stVal[ST]"
 	r, ok := findIEDResult(t, results, "write", target)
 	if !ok {
 		t.Fatalf("no 'write' result for %q", target)
@@ -209,7 +209,7 @@ func TestBeanServer_ReadDataSet(t *testing.T) {
 	ch := startIEC61850BeanClientAdapter(t, srv.port)
 	results := collectIEDResults(t, ch)
 
-	target := "InteropLD/LLN0$dsInterop"
+	target := goLD + "/LLN0$dsInterop"
 	r, ok := findIEDResult(t, results, "read-dataset", target)
 	if !ok {
 		t.Fatalf("no 'read-dataset' result for %q", target)

@@ -92,12 +92,6 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   is subject to OS scheduling: the publisher paces on an absolute schedule
   and counts late and skipped samples, but it is not a substitute for a
   hardware merging unit with PTP or 1PPS synchronisation.
-- **References use the server's MMS domain** — the server's MMS domain is
-  the bare LD instance, so GoCB/MSVCB references and the published
-  `gocbRef`/`datSet` are `LD/LLN0$...` rather than the IED-name-prefixed
-  form used by IEDs that name domains `<IED><LD>`. Subscribers that
-  validate against an SCL with IED-prefixed references must relax the
-  reference check (see `examples/goose-subscriber -any-ref`).
 
 ## SCL limitations
 

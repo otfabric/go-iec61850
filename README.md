@@ -139,7 +139,8 @@ does not require cobra.
 The snippets below are compiled and run by `go test`
 ([readme_test.go](readme_test.go)) against the demo IED of the examples
 ([demo.icd](examples/internal/demoied/demo.icd)): an IED `DemoIED` with
-logical device `LD1`, a GOOSE control block `gcb01` and a 9-2LE Sampled
+logical device `LD1` (served as MMS domain `DemoIEDLD1`, the IED name
+followed by the instance), a GOOSE control block `gcb01` and a 9-2LE Sampled
 Values control block `MSVCB01`. Complete programs, each with a README
 and a smoke test, are in [examples/](examples/).
 
@@ -174,7 +175,7 @@ func readMeasurement(ctx context.Context, addr string) error {
         fmt.Println("LD", ld.Name)
     }
 
-    ref, err := iec61850.ParseRef("LD1/MMXU1.PhV.phsA.cVal.mag.f[MX]")
+    ref, err := iec61850.ParseRef("DemoIEDLD1/MMXU1.PhV.phsA.cVal.mag.f[MX]")
     if err != nil {
         return err
     }
@@ -218,10 +219,10 @@ func serve(ctx context.Context, doc *scl.SCL, ln *iso.Listener) error {
     srv.EnableReports()
 
     // Store keys are "<LD>/<MMS item ID>".
-    err = srv.RegisterControl("LD1", "GGIO1.SPCSO1", iec61850.CtlModelDirectNormal, iec61850.ControlHandler{
+    err = srv.RegisterControl("DemoIEDLD1", "GGIO1.SPCSO1", iec61850.CtlModelDirectNormal, iec61850.ControlHandler{
         OnOperate: func(ctx context.Context, req iec61850.ControlRequest) error {
             on, _ := req.CtlVal.Bool()
-            srv.SetValue(ctx, "LD1/GGIO1$ST$SPCSO1$stVal", mms.NewBoolean(on))
+            srv.SetValue(ctx, "DemoIEDLD1/GGIO1$ST$SPCSO1$stVal", mms.NewBoolean(on))
             return nil
         },
     })
@@ -229,7 +230,7 @@ func serve(ctx context.Context, doc *scl.SCL, ln *iso.Listener) error {
         return err
     }
     // SetValue updates the model and drives reports, logs, GOOSE and SV.
-    srv.SetValue(ctx, "LD1/MMXU1$MX$PhV$phsA$cVal$mag$f", mms.NewFloat(230.1))
+    srv.SetValue(ctx, "DemoIEDLD1/MMXU1$MX$PhV$phsA$cVal$mag$f", mms.NewFloat(230.1))
 
     return srv.ListenAndServe(ctx, ln) // until ctx is done
 }
@@ -661,7 +662,16 @@ The MMS wire format uses a different convention (domain = LD, item ID =
 The `DialOptions.IEDName` field allows working with full-IED-qualified servers:
 when set, the client automatically prepends the IED name to outgoing domain
 names and strips it from returned names, so application code always uses bare
-LD instance names.
+LD instance names. A client that does not know the IED name takes the logical
+devices from `ListLogicalDevices` (GetServerDirectory).
+
+A server built with `NewServerModelFromSCL` serves each logical device under
+its IEC 61850-8-1 name, as the other IEC 61850 stacks do: LDevice@ldName when
+the SCL gives one, otherwise the IED name followed by the instance
+(`InteropIEDInteropLD`). `NewServerModelFromSCLWithOptions` with
+`ServerModelOptions{InstanceDomainNames: true}` keeps the bare instance
+(`InteropLD`) of go-iec61850 before v1.7.0; setting `ldName` in the SCL is the
+standard way to give a device a short name.
 
 ---
 

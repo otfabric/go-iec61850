@@ -43,7 +43,7 @@ func TestRegisterModel_RCBDefaults(t *testing.T) {
 		t.Fatalf("RegisterModel: %v", err)
 	}
 
-	rptID := vs.Get(StoreKey("LD1", "LLN0$BR$brcbEvents01$RptID"))
+	rptID := vs.Get(StoreKey("IED1LD1", "LLN0$BR$brcbEvents01$RptID"))
 	if rptID == nil {
 		t.Fatal("expected RptID in value store")
 	}
@@ -55,7 +55,7 @@ func TestRegisterModel_RCBDefaults(t *testing.T) {
 		t.Errorf("RptID = %q, want rpt01", s2)
 	}
 
-	rptEna := vs.Get(StoreKey("LD1", "LLN0$BR$brcbEvents01$RptEna"))
+	rptEna := vs.Get(StoreKey("IED1LD1", "LLN0$BR$brcbEvents01$RptEna"))
 	if rptEna == nil {
 		t.Fatal("expected RptEna in value store")
 	}
@@ -84,14 +84,14 @@ func TestRegisterModel_RCBSubfields(t *testing.T) {
 		"PurgeBuf", "EntryID", "TimeOfEntry",
 	}
 	for _, sf := range subfields {
-		key := StoreKey("LD1", "LLN0$BR$brcbEvents01$"+sf)
+		key := StoreKey("IED1LD1", "LLN0$BR$brcbEvents01$"+sf)
 		v := vs.Get(key)
 		if v == nil {
 			t.Errorf("expected subfield %s in value store", sf)
 		}
 	}
 
-	datSet := vs.Get(StoreKey("LD1", "LLN0$BR$brcbEvents01$DatSet"))
+	datSet := vs.Get(StoreKey("IED1LD1", "LLN0$BR$brcbEvents01$DatSet"))
 	if datSet == nil {
 		t.Fatal("expected DatSet value")
 	}
@@ -99,8 +99,8 @@ func TestRegisterModel_RCBSubfields(t *testing.T) {
 	if !ok {
 		t.Fatal("expected VisibleString for DatSet")
 	}
-	if dsStr != "LD1/LLN0$dsEvents" {
-		t.Errorf("DatSet = %q, want LD1/LLN0$dsEvents", dsStr)
+	if dsStr != "IED1LD1/LLN0$dsEvents" {
+		t.Errorf("DatSet = %q, want IED1LD1/LLN0$dsEvents", dsStr)
 	}
 }
 
@@ -117,7 +117,7 @@ func TestRegisterModel_DomainQualifiedKeys(t *testing.T) {
 		t.Fatalf("RegisterModel: %v", err)
 	}
 
-	key := StoreKey("LD1", "LLN0$ST$Mod$stVal")
+	key := StoreKey("IED1LD1", "LLN0$ST$Mod$stVal")
 	val := vs.Get(key)
 	if val != nil {
 		t.Log("DA value found with domain-qualified key (may be nil for default)")
@@ -187,7 +187,7 @@ func TestRegisterModel_InitialValueSeeded(t *testing.T) {
 		t.Fatalf("RegisterModel: %v", err)
 	}
 
-	key := StoreKey("LD1", "GGIO1$ST$Ind1$stVal")
+	key := StoreKey("IED1LD1", "GGIO1$ST$Ind1$stVal")
 	val := vs.Get(key)
 	if val == nil {
 		t.Fatal("expected seeded value for GGIO1$ST$Ind1$stVal")
@@ -214,7 +214,7 @@ func TestRegisterModel_RCBOptFldsFromReportDef(t *testing.T) {
 		t.Fatalf("RegisterModel: %v", err)
 	}
 
-	optFldsVal := vs.Get(StoreKey("LD1", "LLN0$BR$brcbEvents01$OptFlds"))
+	optFldsVal := vs.Get(StoreKey("IED1LD1", "LLN0$BR$brcbEvents01$OptFlds"))
 	if optFldsVal == nil {
 		t.Fatal("expected OptFlds value in store")
 	}
@@ -229,7 +229,7 @@ func TestRegisterModel_RCBOptFldsFromReportDef(t *testing.T) {
 		t.Errorf("OptFlds data = %x, expected SeqNum+TimeStamp bits set (0x60)", data)
 	}
 
-	trgOpsVal := vs.Get(StoreKey("LD1", "LLN0$BR$brcbEvents01$TrgOps"))
+	trgOpsVal := vs.Get(StoreKey("IED1LD1", "LLN0$BR$brcbEvents01$TrgOps"))
 	if trgOpsVal == nil {
 		t.Fatal("expected TrgOps value in store")
 	}

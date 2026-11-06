@@ -271,7 +271,7 @@ func TestSCLCorpus_MultiLN_ServerModel(t *testing.T) {
 	}
 
 	// The LD should expose LLN0, GGIO1, GGIO2, GGIO3, MMXU1.
-	lns, err := c.ListLogicalNodes(ctx, "LD1")
+	lns, err := c.ListLogicalNodes(ctx, "IED1LD1")
 	if err != nil {
 		t.Fatalf("ListLogicalNodes: %v", err)
 	}
@@ -285,7 +285,7 @@ func TestSCLCorpus_MultiLN_ServerModel(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Errorf("expected LN with prefix %q in LD1, not found (lns: %v)", want, lns)
+			t.Errorf("expected LN with prefix %q in IED1LD1, not found (lns: %v)", want, lns)
 		}
 	}
 }
@@ -328,7 +328,7 @@ func TestSCLCorpus_SDOChain_ServerModel(t *testing.T) {
 	ctx := context.Background()
 	c := dialLoopback(t, ctx, srv)
 
-	items, err := c.ListLogicalNodes(ctx, "LD1")
+	items, err := c.ListLogicalNodes(ctx, "IED1LD1")
 	if err != nil {
 		t.Fatalf("ListLogicalNodes: %v", err)
 	}
@@ -352,7 +352,7 @@ func TestSCLCorpus_EnumDA_ServerModel(t *testing.T) {
 	c := dialLoopback(t, ctx, srv)
 
 	// stVal of an ENS is an enum; read it and verify it doesn't error.
-	ref, err := ParseRef("LD1/LLN0.Mod.stVal[ST]")
+	ref, err := ParseRef("IED1LD1/LLN0.Mod.stVal[ST]")
 	if err != nil {
 		t.Fatalf("ParseRef: %v", err)
 	}
@@ -377,7 +377,7 @@ func TestSCLCorpus_DAType_BDA_ServerModel(t *testing.T) {
 	c := dialLoopback(t, ctx, srv)
 
 	// MMXU1.TotW.mag is a struct (AnalogueValue with f + i sub-fields).
-	ref, err := ParseRef("LD1/MMXU1.TotW.mag[MX]")
+	ref, err := ParseRef("IED1LD1/MMXU1.TotW.mag[MX]")
 	if err != nil {
 		t.Fatalf("ParseRef: %v", err)
 	}
@@ -432,7 +432,7 @@ func TestSCLCorpus_MultiLN_Reports(t *testing.T) {
 	c := dialLoopback(t, ctx, srv)
 
 	sub, err := c.SubscribeReport(ctx, "rpt_multi_ln", SubscribeReportOptions{
-		LD:            "LD1",
+		LD:            "IED1LD1",
 		RCBItemID:     "LLN0$RP$urcb01",
 		AutoEnable:    true,
 		GIOnSubscribe: true,

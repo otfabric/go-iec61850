@@ -12,7 +12,7 @@
 //
 // Usage:
 //
-//	svcb-client [-addr 127.0.0.1:102] [-ld LD1] [-msvcb LLN0$MS$MSVCB01] [-rate 96]
+//	svcb-client [-addr 127.0.0.1:102] [-ld DemoIEDLD1] [-msvcb LLN0$MS$MSVCB01] [-rate 96]
 //
 // Run it against examples/ied-server started with -iface.
 package main
@@ -36,7 +36,7 @@ import (
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:102", "server address")
-	ld := flag.String("ld", "LD1", "logical device (MMS domain)")
+	ld := flag.String("ld", "DemoIEDLD1", "logical device (MMS domain)")
 	msvcb := flag.String("msvcb", "LLN0$MS$MSVCB01", "MSVCB item ID")
 	rate := flag.Uint("rate", 96, "new SmpRate")
 	flag.Parse()

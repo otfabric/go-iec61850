@@ -21,7 +21,7 @@ func TestRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Log("\n" + out.String())
-	out.WaitFor(t, "LD LD1\n", 0)
+	out.WaitFor(t, "LD DemoIEDLD1\n", 0)
 	out.WaitFor(t, "  LN MMXU1\n", 0)
 	out.WaitFor(t, "[MX] = ", 0)
 }

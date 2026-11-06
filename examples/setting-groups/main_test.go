@@ -15,7 +15,7 @@ func TestRun(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	var out demoied.Output
-	if err := run(ctx, addr, demoied.LD, "PTOC1.StrVal.setMag.f", 175, &out); err != nil {
+	if err := run(ctx, addr, demoied.Domain, "PTOC1.StrVal.setMag.f", 175, &out); err != nil {
 		t.Fatal(err)
 	}
 	t.Log("\n" + out.String())

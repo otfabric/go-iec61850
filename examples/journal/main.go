@@ -9,7 +9,7 @@
 //
 // Usage:
 //
-//	journal [-addr 127.0.0.1:102] [-ld LD1] [-since 1h] [-follow] [-poll 2s]
+//	journal [-addr 127.0.0.1:102] [-ld DemoIEDLD1] [-since 1h] [-follow] [-poll 2s]
 //
 // Run it against examples/ied-server, whose demo IED logs the changes
 // of its measurement in LLN0$EventLog.
@@ -31,7 +31,7 @@ import (
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:102", "server address")
-	ld := flag.String("ld", "LD1", "logical device (MMS domain)")
+	ld := flag.String("ld", "DemoIEDLD1", "logical device (MMS domain)")
 	since := flag.Duration("since", time.Hour, "read entries of this period")
 	follow := flag.Bool("follow", false, "keep polling for new entries")
 	poll := flag.Duration("poll", 2*time.Second, "poll interval with -follow")

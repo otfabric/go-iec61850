@@ -111,7 +111,7 @@ func TestGoServer_URCB_TrgOp_QualityChange(t *testing.T) {
 	// Pre-load the dataset member as {stVal, q} so qualityChanged can compare
 	// the quality bit string at structure index 1.  Use ValidityGood (q=0) as
 	// the baseline.  This bypasses the write interceptor (no report fired).
-	const memberKey = "InteropLD/GGIO1$ST$SPS1$stVal"
+	const memberKey = goLD + "/GGIO1$ST$SPS1$stVal"
 	goodQual := iec61850.EncodeQuality(0)
 	h.srv.ValueStore().Set(memberKey, mms.NewStructure([]*mms.Value{
 		mms.NewBoolean(fixVal.SPS1StVal),

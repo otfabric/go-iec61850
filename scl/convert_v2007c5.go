@@ -76,7 +76,7 @@ func convAP2007c5(r raw.AccessPoint, diags *[]Diagnostic) AccessPoint {
 }
 
 func convLD2007c5(r raw.LDevice, diags *[]Diagnostic) LDevice {
-	ld := LDevice{Inst: r.Inst, Desc: r.Desc}
+	ld := LDevice{Inst: r.Inst, LdName: r.LdName, Desc: r.Desc}
 	ln0 := convLN02007c5(r.LN0, diags)
 	ld.LN0 = &ln0
 	for _, ln := range r.LN {

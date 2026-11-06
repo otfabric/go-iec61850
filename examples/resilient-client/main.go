@@ -19,7 +19,7 @@
 //
 // Usage:
 //
-//	resilient-client [-addr 127.0.0.1:102] [-ref LD1/MMXU1.PhV.phsA.cVal.mag.f[MX]] [-interval 1s]
+//	resilient-client [-addr 127.0.0.1:102] [-ref DemoIEDLD1/MMXU1.PhV.phsA.cVal.mag.f[MX]] [-interval 1s]
 //
 // Run it against examples/ied-server and restart the server to see the
 // reconnects.
@@ -45,7 +45,7 @@ import (
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:102", "server address")
-	ref := flag.String("ref", "LD1/MMXU1.PhV.phsA.cVal.mag.f[MX]", "attribute to poll")
+	ref := flag.String("ref", "DemoIEDLD1/MMXU1.PhV.phsA.cVal.mag.f[MX]", "attribute to poll")
 	interval := flag.Duration("interval", time.Second, "poll interval")
 	flag.Parse()
 

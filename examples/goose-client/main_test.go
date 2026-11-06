@@ -27,7 +27,7 @@ func TestRun(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	var out demoied.Output
-	if err := run(ctx, addr, demoied.LD, "LLN0$GO$gcb01", "Renamed", &out); err != nil {
+	if err := run(ctx, addr, demoied.Domain, "LLN0$GO$gcb01", "Renamed", &out); err != nil {
 		t.Fatal(err)
 	}
 	out.WaitFor(t, "rejected (temporarily-unavailable)", 0)

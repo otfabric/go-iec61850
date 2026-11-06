@@ -11,7 +11,7 @@
 //
 // Usage:
 //
-//	setting-groups [-addr 127.0.0.1:102] [-ld LD1] [-setting PTOC1.StrVal.setMag.f] [-value 175]
+//	setting-groups [-addr 127.0.0.1:102] [-ld DemoIEDLD1] [-setting PTOC1.StrVal.setMag.f] [-value 175]
 //
 // Run it against examples/ied-server, whose demo IED has two setting
 // groups with PTOC1.StrVal.setMag.f as a setting
@@ -36,7 +36,7 @@ import (
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:102", "server address")
-	ld := flag.String("ld", "LD1", "logical device (MMS domain)")
+	ld := flag.String("ld", "DemoIEDLD1", "logical device (MMS domain)")
 	setting := flag.String("setting", "PTOC1.StrVal.setMag.f", "setting (LN.DO.DA, FLOAT32)")
 	value := flag.Float64("value", 175, "new value of the setting in group 2")
 	flag.Parse()

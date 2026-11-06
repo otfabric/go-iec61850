@@ -48,7 +48,7 @@ func readMeasurement(ctx context.Context, addr string) error {
 		fmt.Println("LD", ld.Name)
 	}
 
-	ref, err := iec61850.ParseRef("LD1/MMXU1.PhV.phsA.cVal.mag.f[MX]")
+	ref, err := iec61850.ParseRef("DemoIEDLD1/MMXU1.PhV.phsA.cVal.mag.f[MX]")
 	if err != nil {
 		return err
 	}
@@ -75,10 +75,10 @@ func serve(ctx context.Context, doc *scl.SCL, ln *iso.Listener) error {
 	srv.EnableReports()
 
 	// Store keys are "<LD>/<MMS item ID>".
-	err = srv.RegisterControl("LD1", "GGIO1.SPCSO1", iec61850.CtlModelDirectNormal, iec61850.ControlHandler{
+	err = srv.RegisterControl("DemoIEDLD1", "GGIO1.SPCSO1", iec61850.CtlModelDirectNormal, iec61850.ControlHandler{
 		OnOperate: func(ctx context.Context, req iec61850.ControlRequest) error {
 			on, _ := req.CtlVal.Bool()
-			srv.SetValue(ctx, "LD1/GGIO1$ST$SPCSO1$stVal", mms.NewBoolean(on))
+			srv.SetValue(ctx, "DemoIEDLD1/GGIO1$ST$SPCSO1$stVal", mms.NewBoolean(on))
 			return nil
 		},
 	})
@@ -86,7 +86,7 @@ func serve(ctx context.Context, doc *scl.SCL, ln *iso.Listener) error {
 		return err
 	}
 	// SetValue updates the model and drives reports, logs, GOOSE and SV.
-	srv.SetValue(ctx, "LD1/MMXU1$MX$PhV$phsA$cVal$mag$f", mms.NewFloat(230.1))
+	srv.SetValue(ctx, "DemoIEDLD1/MMXU1$MX$PhV$phsA$cVal$mag$f", mms.NewFloat(230.1))
 
 	return srv.ListenAndServe(ctx, ln) // until ctx is done
 }

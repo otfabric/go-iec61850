@@ -36,7 +36,7 @@ func TestConcurrent_ContextCancelReleasesInflightReads(t *testing.T) {
 
 	// Intercept reads so they block until ctx is done.
 	reading := make(chan struct{}, 1)
-	if err := srv.MMS().SetVariableRead("LD1", "LLN0$ST$Mod$stVal", func(ctx context.Context) (*mms.Value, error) {
+	if err := srv.MMS().SetVariableRead("IED1LD1", "LLN0$ST$Mod$stVal", func(ctx context.Context) (*mms.Value, error) {
 		select {
 		case reading <- struct{}{}:
 		default:
@@ -69,7 +69,7 @@ func TestConcurrent_ContextCancelReleasesInflightReads(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			ref, _ := ParseRef("LD1/LLN0.Mod.stVal[ST]")
+			ref, _ := ParseRef("IED1LD1/LLN0.Mod.stVal[ST]")
 			_, errs[idx] = c.Read(reqCtx, ref)
 		}(i)
 	}
@@ -153,7 +153,7 @@ func TestConcurrent_ReportsDuringOutstandingRequests(t *testing.T) {
 
 	// Subscribe to URCB with GI.
 	sub, err := c.SubscribeReport(context.Background(), "rpt01", SubscribeReportOptions{
-		LD:            "LD1",
+		LD:            "IED1LD1",
 		RCBItemID:     "LLN0$RP$urcb01",
 		AutoEnable:    true,
 		GIOnSubscribe: true,
@@ -181,7 +181,7 @@ func TestConcurrent_ReportsDuringOutstandingRequests(t *testing.T) {
 			case <-stopGI:
 				return
 			case <-time.After(20 * time.Millisecond):
-				_ = c.SetReportControlBlock(context.Background(), "LD1", "LLN0$RP$urcb01", RCBUpdate{
+				_ = c.SetReportControlBlock(context.Background(), "IED1LD1", "LLN0$RP$urcb01", RCBUpdate{
 					Fields: RCBFieldGI,
 					GI:     true,
 				})
@@ -196,7 +196,7 @@ func TestConcurrent_ReportsDuringOutstandingRequests(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			for range 10 {
-				ref, _ := ParseRef("LD1/LLN0.Mod.stVal[ST]")
+				ref, _ := ParseRef("IED1LD1/LLN0.Mod.stVal[ST]")
 				_, e := c.Read(ctx, ref)
 				if e == nil {
 					readsOK.Add(1)
@@ -250,7 +250,7 @@ func TestConcurrent_ManyWritesThenClose(t *testing.T) {
 		wg.Go(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
-			ref, _ := ParseRef("LD1/LLN0.Mod.stVal[ST]")
+			ref, _ := ParseRef("IED1LD1/LLN0.Mod.stVal[ST]")
 			_ = c.Write(ctx, ref, mms.NewInteger(1))
 		})
 	}
@@ -287,7 +287,7 @@ func TestConcurrent_TimeoutDoesNotLeakGoroutines(t *testing.T) {
 	}
 
 	// Make reads block until their ctx is done.
-	if err := srv.MMS().SetVariableRead("LD1", "LLN0$ST$Mod$stVal", func(ctx context.Context) (*mms.Value, error) {
+	if err := srv.MMS().SetVariableRead("IED1LD1", "LLN0$ST$Mod$stVal", func(ctx context.Context) (*mms.Value, error) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}); err != nil {
@@ -308,7 +308,7 @@ func TestConcurrent_TimeoutDoesNotLeakGoroutines(t *testing.T) {
 		t.Fatalf("Dial: %v", err)
 	}
 
-	ref, _ := ParseRef("LD1/LLN0.Mod.stVal[ST]")
+	ref, _ := ParseRef("IED1LD1/LLN0.Mod.stVal[ST]")
 
 	// Warm-up.
 	for range 3 {

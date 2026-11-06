@@ -37,7 +37,7 @@ import (
 
 // ind1 is the store key of the demo IED's GGIO1.Ind1.stVal: the MMS
 // domain (the LD) and item ID.
-const ind1 = demoied.LD + "/GGIO1$ST$Ind1$stVal"
+const ind1 = demoied.Domain + "/GGIO1$ST$Ind1$stVal"
 
 func main() {
 	iface := flag.String("iface", "", "network interface for GOOSE (required)")

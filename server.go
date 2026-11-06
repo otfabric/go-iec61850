@@ -550,7 +550,29 @@ func (s *Server) listenAndServeWithHooks(ctx context.Context, ln mms.TransportLi
 // configuration. The iedName selects the IED; apName selects the
 // AccessPoint (empty uses the first AccessPoint with a Server).
 //
+// Each logical device is served as the MMS domain IEC 61850-8-1 names it,
+// as the other IEC 61850 stacks do: LDevice@ldName when the SCL has one,
+// otherwise the IED name followed by LDevice@inst ("InteropIEDInteropLD").
+// Data set members, report, GOOSE and SV control block references, and
+// the keys of [Server.SetValue] use that name. Before v1.7.0 the domain
+// was LDevice@inst alone; [NewServerModelFromSCLWithOptions] with
+// [ServerModelOptions.InstanceDomainNames] keeps that.
+//
 // This is a convenience wrapper around [servermodel.FromSCL].
 func NewServerModelFromSCL(s *scl.SCL, iedName, apName string) (*servermodel.Model, error) {
 	return servermodel.FromSCL(s, iedName, apName)
+}
+
+// ServerModelOptions control [NewServerModelFromSCLWithOptions].
+type ServerModelOptions struct {
+	// InstanceDomainNames names each logical device (MMS domain) by its
+	// LDevice@inst alone ("InteropLD"), as go-iec61850 did before v1.7.0,
+	// instead of its IEC 61850-8-1 name.
+	InstanceDomainNames bool
+}
+
+// NewServerModelFromSCLWithOptions is [NewServerModelFromSCL] with
+// options.
+func NewServerModelFromSCLWithOptions(s *scl.SCL, iedName, apName string, o ServerModelOptions) (*servermodel.Model, error) {
+	return servermodel.FromSCLWithOptions(s, iedName, apName, servermodel.Options{InstanceDomainNames: o.InstanceDomainNames})
 }

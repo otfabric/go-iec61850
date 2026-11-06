@@ -51,10 +51,10 @@ import (
 
 // Store keys ("<LD>/<MMS item ID>") of the simulated process values.
 const (
-	keyPhV    = demoied.LD + "/MMXU1$MX$PhV$phsA$cVal$mag$f"
-	keyInd1   = demoied.LD + "/GGIO1$ST$Ind1$stVal"
-	keySPCSO1 = demoied.LD + "/GGIO1$ST$SPCSO1$stVal"
-	keyIA     = demoied.LD + "/ITCTR1$MX$AmpSv$instMag$i"
+	keyPhV    = demoied.Domain + "/MMXU1$MX$PhV$phsA$cVal$mag$f"
+	keyInd1   = demoied.Domain + "/GGIO1$ST$Ind1$stVal"
+	keySPCSO1 = demoied.Domain + "/GGIO1$ST$SPCSO1$stVal"
+	keyIA     = demoied.Domain + "/ITCTR1$MX$AmpSv$instMag$i"
 )
 
 type config struct {
@@ -114,7 +114,7 @@ func run(ctx context.Context, cfg config, out io.Writer) error {
 	}
 	defer srv.Close()
 
-	if err := srv.RegisterControl(demoied.LD, "GGIO1.SPCSO1", iec61850.CtlModelDirectNormal, iec61850.ControlHandler{
+	if err := srv.RegisterControl(demoied.Domain, "GGIO1.SPCSO1", iec61850.CtlModelDirectNormal, iec61850.ControlHandler{
 		OnOperate: func(ctx context.Context, req iec61850.ControlRequest) error {
 			on, _ := req.CtlVal.Bool()
 			srv.SetValue(ctx, keySPCSO1, mms.NewBoolean(on))

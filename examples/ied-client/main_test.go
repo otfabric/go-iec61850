@@ -27,7 +27,7 @@ func TestRun(t *testing.T) {
 	go func() { done <- run(ctx, addr, slog.New(slog.NewTextHandler(io.Discard, nil)), 2, &out) }()
 	out.WaitFor(t, "subscribed to LLN0$RP$urcb01 (RptID DemoURCB01)", 5*time.Second)
 	out.WaitFor(t, "report seq=1", 5*time.Second)
-	srv.SetValue(ctx, demoied.LD+"/MMXU1$MX$PhV$phsA$cVal$mag$f", mms.NewFloat(231))
+	srv.SetValue(ctx, demoied.Domain+"/MMXU1$MX$PhV$phsA$cVal$mag$f", mms.NewFloat(231))
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}

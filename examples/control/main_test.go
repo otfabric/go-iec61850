@@ -19,7 +19,7 @@ func TestRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	var operated atomic.Int32
-	if err := srv.RegisterControl(demoied.LD, "GGIO1.SPCSO1", iec61850.CtlModelDirectNormal, iec61850.ControlHandler{
+	if err := srv.RegisterControl(demoied.Domain, "GGIO1.SPCSO1", iec61850.CtlModelDirectNormal, iec61850.ControlHandler{
 		OnOperate: func(_ context.Context, req iec61850.ControlRequest) error {
 			if b, _ := req.CtlVal.Bool(); !b {
 				return errors.New("refused: only on")
@@ -38,16 +38,16 @@ func TestRun(t *testing.T) {
 	if err := run(ctx, addr, "", true, &out); err != nil {
 		t.Fatal(err)
 	}
-	out.WaitFor(t, "LD1/GGIO1.SPCSO1 ctlModel=", 0)
+	out.WaitFor(t, "DemoIEDLD1/GGIO1.SPCSO1 ctlModel=", 0)
 
-	if err := run(ctx, addr, "LD1/GGIO1.SPCSO1", true, &out); err != nil {
+	if err := run(ctx, addr, "DemoIEDLD1/GGIO1.SPCSO1", true, &out); err != nil {
 		t.Fatal(err)
 	}
 	out.WaitFor(t, "operated: ctlVal=true", 0)
 	if operated.Load() != 1 {
 		t.Errorf("operated %d times", operated.Load())
 	}
-	if err := run(ctx, addr, "LD1/GGIO1.SPCSO1", false, &out); err == nil {
+	if err := run(ctx, addr, "DemoIEDLD1/GGIO1.SPCSO1", false, &out); err == nil {
 		t.Error("refused operate succeeded")
 	}
 	t.Log("\n" + out.String())

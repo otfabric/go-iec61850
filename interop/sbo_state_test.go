@@ -42,7 +42,7 @@ func TestGoServer_SBO_CancelByOwner(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	client, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), iec61850.DialOptions{})
+	client, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), goDialOptions())
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestGoServer_SBO_CancelByNonOwner(t *testing.T) {
 	}
 
 	// Client A selects SPCSO2.
-	clientA, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), iec61850.DialOptions{})
+	clientA, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), goDialOptions())
 	if err != nil {
 		t.Fatalf("dial A: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestGoServer_SBO_CancelByNonOwner(t *testing.T) {
 	}
 
 	// Client B connects and tries to cancel — must fail (B doesn't own the selection).
-	clientB, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), iec61850.DialOptions{})
+	clientB, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), goDialOptions())
 	if err != nil {
 		t.Fatalf("dial B: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestGoServer_SBO_SecondClientContention(t *testing.T) {
 	}
 
 	// Client A selects SPCSO2.
-	clientA, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), iec61850.DialOptions{})
+	clientA, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), goDialOptions())
 	if err != nil {
 		t.Fatalf("dial A: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestGoServer_SBO_SecondClientContention(t *testing.T) {
 	t.Logf("clientA select granted: %s", selectedRef)
 
 	// Client B connects and tries to select — must fail (A holds the selection).
-	clientB, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), iec61850.DialOptions{})
+	clientB, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), goDialOptions())
 	if err != nil {
 		t.Fatalf("dial B: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestGoServer_SBO_SelectTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	client, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), iec61850.DialOptions{})
+	client, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), goDialOptions())
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestGoServer_SBO_RepeatedSelectSameClient(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	client, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), iec61850.DialOptions{})
+	client, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), goDialOptions())
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
@@ -320,7 +320,7 @@ func TestGoServer_SBO_DisconnectReleasesSelection(t *testing.T) {
 	}
 
 	// Client A selects SPCSO2.
-	clientA, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), iec61850.DialOptions{})
+	clientA, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), goDialOptions())
 	if err != nil {
 		t.Fatalf("dial A: %v", err)
 	}
@@ -336,7 +336,7 @@ func TestGoServer_SBO_DisconnectReleasesSelection(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Client B must now be able to select immediately (disconnect released the selection).
-	clientB, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), iec61850.DialOptions{})
+	clientB, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), goDialOptions())
 	if err != nil {
 		t.Fatalf("dial B: %v", err)
 	}
@@ -374,7 +374,7 @@ func TestGoServer_SBOw_ValueMustMatchOperate(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	client, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), iec61850.DialOptions{})
+	client, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), goDialOptions())
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
@@ -429,7 +429,7 @@ func TestGoServer_SBOw_SecondClientContention(t *testing.T) {
 	}
 
 	// Client A selects with ctlNum=1.
-	clientA, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), iec61850.DialOptions{})
+	clientA, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), goDialOptions())
 	if err != nil {
 		t.Fatalf("dial A: %v", err)
 	}
@@ -444,7 +444,7 @@ func TestGoServer_SBOw_SecondClientContention(t *testing.T) {
 	t.Log("clientA SelectWithValue granted")
 
 	// Client B connects and tries to select — must fail.
-	clientB, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), iec61850.DialOptions{})
+	clientB, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), goDialOptions())
 	if err != nil {
 		t.Fatalf("dial B: %v", err)
 	}
@@ -501,7 +501,7 @@ func TestGoServer_SBOw_DisconnectReleasesSelection(t *testing.T) {
 	}
 
 	// Client A selects with ctlNum=1.
-	clientA, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), iec61850.DialOptions{})
+	clientA, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), goDialOptions())
 	if err != nil {
 		t.Fatalf("dial A: %v", err)
 	}
@@ -521,7 +521,7 @@ func TestGoServer_SBOw_DisconnectReleasesSelection(t *testing.T) {
 	// Client B connects and selects with ctlNum=2.
 	// Both clients share the default origin key ("6:"), so B's select
 	// overwrites A's stale state.
-	clientB, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), iec61850.DialOptions{})
+	clientB, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), goDialOptions())
 	if err != nil {
 		t.Fatalf("dial B: %v", err)
 	}

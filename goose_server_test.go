@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	gcbAllRef  = "InteropLD/LLN0$GO$gcbAll"
-	gcbBoolRef = "InteropLD/LLN0$GO$gcbBool"
-	sps1Key    = "InteropLD/GGIO1$ST$SPS1$stVal"
+	gcbAllRef  = "InteropIEDInteropLD/LLN0$GO$gcbAll"
+	gcbBoolRef = "InteropIEDInteropLD/LLN0$GO$gcbBool"
+	sps1Key    = "InteropIEDInteropLD/GGIO1$ST$SPS1$stVal"
 )
 
 type gooseFixture struct {
@@ -100,7 +100,7 @@ func (f *gooseFixture) waitMessage(t *testing.T, pred func(p *goose.PDU) bool) *
 func TestGOOSEServerPublishesOnDataChange(t *testing.T) {
 	f := newGOOSEFixture(t, GOOSEOptions{})
 	p := f.waitMessage(t, func(*goose.PDU) bool { return true })
-	if p.DatSet != "InteropLD/LLN0$dsGooseAll" || p.GoID != "InteropGooseAll" || p.ConfRev != 1 || len(p.AllData) != 8 {
+	if p.DatSet != "InteropIEDInteropLD/LLN0$dsGooseAll" || p.GoID != "InteropGooseAll" || p.ConfRev != 1 || len(p.AllData) != 8 {
 		t.Fatalf("initial PDU %+v", p)
 	}
 	first := p.StNum
@@ -116,7 +116,7 @@ func TestGOOSEServerPublishesOnDataChange(t *testing.T) {
 		t.Fatal("SPS1.stVal not published")
 	}
 	// A structured member (MMXU1.TotW [MX]) changes through a leaf.
-	f.srv.SetValue(context.Background(), "InteropLD/MMXU1$MX$TotW$mag$f", mms.NewFloat(-0.25))
+	f.srv.SetValue(context.Background(), "InteropIEDInteropLD/MMXU1$MX$TotW$mag$f", mms.NewFloat(-0.25))
 	p = f.waitMessage(t, func(p *goose.PDU) bool { return p.StNum == first+2 })
 	totw, _ := p.AllData[7].Structure()
 	mag, _ := totw[0].Structure()
@@ -142,11 +142,11 @@ func TestGOOSEServerGoCBOverMMS(t *testing.T) {
 	f := newGOOSEFixture(t, GOOSEOptions{})
 	f.waitMessage(t, func(*goose.PDU) bool { return true })
 
-	cb, err := f.client.GetGoCB(ctx, "InteropLD", "LLN0$GO$gcbAll")
+	cb, err := f.client.GetGoCB(ctx, "InteropIEDInteropLD", "LLN0$GO$gcbAll")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cb.GoEna || cb.GoID != "InteropGooseAll" || cb.DatSet != "InteropLD/LLN0$dsGooseAll" || cb.ConfRev != 1 || cb.NdsCom ||
+	if !cb.GoEna || cb.GoID != "InteropGooseAll" || cb.DatSet != "InteropIEDInteropLD/LLN0$dsGooseAll" || cb.ConfRev != 1 || cb.NdsCom ||
 		cb.DstAddress.Addr != (goose.MAC{0x01, 0x0c, 0xcd, 0x01, 0x00, 0x01}) || cb.DstAddress.AppID != 0x1001 ||
 		cb.DstAddress.Priority != 4 || !cb.HasTimes || cb.MinTime != 10 || cb.MaxTime != 1000 {
 		t.Fatalf("GoCB = %+v", cb)
@@ -154,41 +154,41 @@ func TestGOOSEServerGoCBOverMMS(t *testing.T) {
 
 	// GoID/DatSet are not writable while enabled.
 	id := "renamed"
-	if err := f.client.SetGoCB(ctx, "InteropLD", "LLN0$GO$gcbAll", GoCBUpdate{GoID: &id}); err == nil {
+	if err := f.client.SetGoCB(ctx, "InteropIEDInteropLD", "LLN0$GO$gcbAll", GoCBUpdate{GoID: &id}); err == nil {
 		t.Fatal("GoID write accepted while GoEna")
 	}
 	// Read-only attributes.
-	if err := f.client.Write(ctx, mustParseRef(t, "InteropLD/LLN0.GO.gcbAll.ConfRev"), mms.NewUnsigned(9)); err == nil {
+	if err := f.client.Write(ctx, mustParseRef(t, "InteropIEDInteropLD/LLN0.GO.gcbAll.ConfRev"), mms.NewUnsigned(9)); err == nil {
 		t.Fatal("ConfRev write accepted")
 	}
 	// Disable, retarget to dsGooseBool (ConfRev increments), rename, enable.
 	off, on := false, true
-	ds := "InteropLD/LLN0$dsGooseBool"
-	if err := f.client.SetGoCB(ctx, "InteropLD", "LLN0$GO$gcbAll", GoCBUpdate{GoEna: &off}); err != nil {
+	ds := "InteropIEDInteropLD/LLN0$dsGooseBool"
+	if err := f.client.SetGoCB(ctx, "InteropIEDInteropLD", "LLN0$GO$gcbAll", GoCBUpdate{GoEna: &off}); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.client.SetGoCB(ctx, "InteropLD", "LLN0$GO$gcbAll", GoCBUpdate{GoID: &id, DatSet: &ds, GoEna: &on}); err != nil {
+	if err := f.client.SetGoCB(ctx, "InteropIEDInteropLD", "LLN0$GO$gcbAll", GoCBUpdate{GoID: &id, DatSet: &ds, GoEna: &on}); err != nil {
 		t.Fatal(err)
 	}
 	p := f.waitMessage(t, func(p *goose.PDU) bool { return p.GoID == "renamed" })
 	if p.DatSet != ds || p.ConfRev != 2 || len(p.AllData) != 2 {
 		t.Fatalf("after retarget: %+v", p)
 	}
-	cb, _ = f.client.GetGoCB(ctx, "InteropLD", "LLN0$GO$gcbAll")
+	cb, _ = f.client.GetGoCB(ctx, "InteropIEDInteropLD", "LLN0$GO$gcbAll")
 	if cb.ConfRev != 2 || cb.DatSet != ds || !cb.GoEna {
 		t.Errorf("GoCB after update = %+v", cb)
 	}
 	// Unknown dataset is rejected.
-	bad := "InteropLD/LLN0$nope"
-	_ = f.client.SetGoCB(ctx, "InteropLD", "LLN0$GO$gcbAll", GoCBUpdate{GoEna: &off})
-	if err := f.client.SetGoCB(ctx, "InteropLD", "LLN0$GO$gcbAll", GoCBUpdate{DatSet: &bad}); err == nil {
+	bad := "InteropIEDInteropLD/LLN0$nope"
+	_ = f.client.SetGoCB(ctx, "InteropIEDInteropLD", "LLN0$GO$gcbAll", GoCBUpdate{GoEna: &off})
+	if err := f.client.SetGoCB(ctx, "InteropIEDInteropLD", "LLN0$GO$gcbAll", GoCBUpdate{DatSet: &bad}); err == nil {
 		t.Error("unknown DatSet accepted")
 	}
 	// Writing the same DatSet is a no-op (ConfRev unchanged).
-	if err := f.client.SetGoCB(ctx, "InteropLD", "LLN0$GO$gcbAll", GoCBUpdate{DatSet: &ds}); err != nil {
+	if err := f.client.SetGoCB(ctx, "InteropIEDInteropLD", "LLN0$GO$gcbAll", GoCBUpdate{DatSet: &ds}); err != nil {
 		t.Error(err)
 	}
-	if cb, _ = f.client.GetGoCB(ctx, "InteropLD", "LLN0$GO$gcbAll"); cb.ConfRev != 2 || cb.GoEna {
+	if cb, _ = f.client.GetGoCB(ctx, "InteropIEDInteropLD", "LLN0$GO$gcbAll"); cb.ConfRev != 2 || cb.GoEna {
 		t.Errorf("after no-op: %+v", cb)
 	}
 	// A change to a dataset member publishes on the retargeted block
@@ -196,7 +196,7 @@ func TestGOOSEServerGoCBOverMMS(t *testing.T) {
 	if err := f.engine.SetEnabled(gcbAllRef, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.client.Write(ctx, mustParseRef(t, "InteropLD/GGIO1.ST.SPS1.stVal"), mms.NewBoolean(true)); err == nil {
+	if err := f.client.Write(ctx, mustParseRef(t, "InteropIEDInteropLD/GGIO1.ST.SPS1.stVal"), mms.NewBoolean(true)); err == nil {
 		t.Fatal("ST write accepted")
 	}
 	f.srv.SetValue(ctx, sps1Key, mms.NewBoolean(true))
@@ -214,7 +214,7 @@ func TestGOOSEServerStartDisabledAndErrors(t *testing.T) {
 		t.Fatalf("event while disabled: %v", ev.Kind)
 	case <-time.After(50 * time.Millisecond):
 	}
-	cb, err := f.client.GetGoCB(ctx, "InteropLD", "LLN0$GO$gcbBool")
+	cb, err := f.client.GetGoCB(ctx, "InteropIEDInteropLD", "LLN0$GO$gcbBool")
 	if err != nil || cb.GoEna {
 		t.Fatalf("%+v %v", cb, err)
 	}
@@ -238,10 +238,10 @@ func TestGOOSEServerStartDisabledAndErrors(t *testing.T) {
 		t.Error("GOOSEEngine accessor")
 	}
 	// Whole-structure and DstAddress writes are denied.
-	if _, err := f.client.MMS().Write(ctx, mms.WriteRequest{DomainID: "InteropLD", ItemID: "LLN0$GO$gcbAll$DstAddress$APPID", Value: mms.NewUnsigned(1)}); err == nil {
+	if _, err := f.client.MMS().Write(ctx, mms.WriteRequest{DomainID: "InteropIEDInteropLD", ItemID: "LLN0$GO$gcbAll$DstAddress$APPID", Value: mms.NewUnsigned(1)}); err == nil {
 		t.Error("APPID write accepted")
 	}
-	if _, err := f.client.MMS().Write(ctx, mms.WriteRequest{DomainID: "InteropLD", ItemID: "LLN0$GO$gcbAll$GoEna", Value: mms.NewInteger(1)}); err == nil {
+	if _, err := f.client.MMS().Write(ctx, mms.WriteRequest{DomainID: "InteropIEDInteropLD", ItemID: "LLN0$GO$gcbAll$GoEna", Value: mms.NewInteger(1)}); err == nil {
 		t.Error("type-inconsistent GoEna write accepted")
 	}
 	// Client argument validation and decode errors.
@@ -251,10 +251,10 @@ func TestGOOSEServerStartDisabledAndErrors(t *testing.T) {
 	if err := f.client.SetGoCB(ctx, "", "x", GoCBUpdate{}); !errors.Is(err, ErrInvalidArgument) {
 		t.Error(err)
 	}
-	if _, err := f.client.GetGoCB(ctx, "InteropLD", "LLN0$GO$nope"); err == nil {
+	if _, err := f.client.GetGoCB(ctx, "InteropIEDInteropLD", "LLN0$GO$nope"); err == nil {
 		t.Error("missing GoCB read succeeded")
 	}
-	if _, err := f.client.GetGoCB(ctx, "InteropLD", "LLN0$ST$Mod$stVal"); err == nil {
+	if _, err := f.client.GetGoCB(ctx, "InteropIEDInteropLD", "LLN0$ST$Mod$stVal"); err == nil {
 		t.Error("non-GoCB decoded")
 	}
 	f.srv.Close()

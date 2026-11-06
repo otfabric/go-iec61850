@@ -1918,7 +1918,7 @@ func TestReplayBRCBEntries_Empty(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		re.replayBRCBEntries("LLN0$BR$brcb01", "rptID", OptFlds(0), 1, "LD1/dsInterop", nil, &sc)
+		re.replayBRCBEntries("LLN0$BR$brcb01", "rptID", OptFlds(0), 1, "LD1/dsInterop", nil, nil, &sc)
 	}()
 	select {
 	case <-done:

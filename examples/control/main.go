@@ -11,7 +11,7 @@
 //
 // Usage:
 //
-//	control [-addr 127.0.0.1:102] [-do LD1/GGIO1.SPCSO1] [-value true]
+//	control [-addr 127.0.0.1:102] [-do DemoIEDLD1/GGIO1.SPCSO1] [-value true]
 //
 // Run it against examples/ied-server.
 package main

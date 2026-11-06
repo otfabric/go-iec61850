@@ -26,10 +26,12 @@ import (
 //go:embed demo.icd
 var ICD []byte
 
-// Names in demo.icd.
+// Names in demo.icd. Domain is the MMS domain the server gives LD: the
+// IED name followed by the instance (IEC 61850-8-1).
 const (
-	IED = "DemoIED"
-	LD  = "LD1"
+	IED    = "DemoIED"
+	LD     = "LD1"
+	Domain = IED + LD
 )
 
 // SCL parses ICD.
@@ -60,7 +62,7 @@ func NewServer(opts iec61850.ServerOptions) (*iec61850.Server, error) {
 		return nil, err
 	}
 	// Initial process values (SCL DAI values are loaded the same way).
-	srv.ValueStore().Set(LD+"/MMXU1$MX$PhV$phsA$cVal$mag$f", mms.NewFloat(0))
+	srv.ValueStore().Set(Domain+"/MMXU1$MX$PhV$phsA$cVal$mag$f", mms.NewFloat(0))
 	srv.EnableReports()
 	srv.EnableJournals()
 	enableSettingGroups(srv)
@@ -70,8 +72,8 @@ func NewServer(opts iec61850.ServerOptions) (*iec61850.Server, error) {
 // Setting store keys of PTOC1.StrVal.setMag.f: the active group's
 // value (FC SG) and the edit buffer (FC SE).
 const (
-	keySG = LD + "/PTOC1$SG$StrVal$setMag$f"
-	keySE = LD + "/PTOC1$SE$StrVal$setMag$f"
+	keySG = Domain + "/PTOC1$SG$StrVal$setMag$f"
+	keySE = Domain + "/PTOC1$SE$StrVal$setMag$f"
 )
 
 // enableSettingGroups keeps the values of the two setting groups in the

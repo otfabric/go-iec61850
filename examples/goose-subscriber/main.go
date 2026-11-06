@@ -15,9 +15,9 @@
 //	goose-subscriber -iface eth0 [-scl station.scd -ied IED1 -ld LD0 -gocb gcb1] [-any-ref] [-stats 10s]
 //
 // Without -scl it uses the demo IED (examples/internal/demoied/demo.icd).
-// The go-iec61850 server publishes with the bare LD as MMS domain
-// (LD1/LLN0$GO$gcb01) where SCL names IED+LD (DemoIEDLD1/LLN0$GO$gcb01);
-// use -any-ref against examples/goose-server.
+// The go-iec61850 server publishes with the MMS domain IED+LD, as SCL
+// names it (DemoIEDLD1/LLN0$GO$gcb01); -any-ref accepts a publisher that
+// names the domain differently (go-iec61850 before v1.7.0: LD1/...).
 package main
 
 import (

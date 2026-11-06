@@ -62,13 +62,13 @@ func TestDecodeMSVCBRanges(t *testing.T) {
 func TestSVServerSmpRateWidth(t *testing.T) {
 	ctx := context.Background()
 	f := newSVFixture(t, SVOptions{StartDisabled: true})
-	if _, err := f.client.MMS().Write(ctx, mms.WriteRequest{DomainID: "MU01", ItemID: "LLN0$MS$MSVCB01$SmpRate", Value: mms.NewUnsigned(70000)}); err == nil {
+	if _, err := f.client.MMS().Write(ctx, mms.WriteRequest{DomainID: "MUIEDMU01", ItemID: "LLN0$MS$MSVCB01$SmpRate", Value: mms.NewUnsigned(70000)}); err == nil {
 		t.Error("SmpRate 70000 accepted")
 	}
 	if v, _ := f.srv.store.Get(msvcb1Ref + "$SmpRate").Uint64(); v == 70000 {
 		t.Error("SmpRate 70000 stored")
 	}
-	if _, err := f.client.MMS().Write(ctx, mms.WriteRequest{DomainID: "MU01", ItemID: "LLN0$MS$MSVCB01$SmpRate", Value: mms.NewUnsigned(math.MaxUint16)}); err != nil {
+	if _, err := f.client.MMS().Write(ctx, mms.WriteRequest{DomainID: "MUIEDMU01", ItemID: "LLN0$MS$MSVCB01$SmpRate", Value: mms.NewUnsigned(math.MaxUint16)}); err != nil {
 		t.Errorf("SmpRate 65535: %v", err)
 	}
 	for _, c := range []struct {

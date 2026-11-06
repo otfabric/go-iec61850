@@ -10,7 +10,7 @@
 //
 // Usage:
 //
-//	reports [-addr 127.0.0.1:102] [-ld LD1] [-rcb LLN0$RP$urcb01] [-count 0]
+//	reports [-addr 127.0.0.1:102] [-ld DemoIEDLD1] [-rcb LLN0$RP$urcb01] [-count 0]
 //
 // Run it against examples/ied-server, which updates its measurement
 // every two seconds.

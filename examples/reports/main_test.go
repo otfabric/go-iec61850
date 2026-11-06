@@ -22,7 +22,7 @@ func TestRun(t *testing.T) {
 	go func() { done <- run(ctx, addr, "", "", 2, &out) }()
 	out.WaitFor(t, "RptID=DemoURCB01", 5*time.Second)
 	out.WaitFor(t, "report DemoURCB01 seq=", 5*time.Second)
-	srv.SetValue(ctx, demoied.LD+"/MMXU1$MX$PhV$phsA$cVal$mag$f", mms.NewFloat(230))
+	srv.SetValue(ctx, demoied.Domain+"/MMXU1$MX$PhV$phsA$cVal$mag$f", mms.NewFloat(230))
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}

@@ -149,13 +149,13 @@ func chaosOps(t *testing.T, c *Client, n int) (ok, failed int) {
 		var err error
 		switch i % 4 {
 		case 0:
-			_, err = c.MMS().Read(ctx, mms.ReadRequest{DomainID: "LD1", ItemID: "LLN0$ST$Mod$stVal"})
+			_, err = c.MMS().Read(ctx, mms.ReadRequest{DomainID: "IED1LD1", ItemID: "LLN0$ST$Mod$stVal"})
 		case 1:
 			_, err = c.ListLogicalDevices(ctx)
 		case 2:
-			_, err = c.GetReportControlBlock(ctx, "LD1", "LLN0$RP$urcb01")
+			_, err = c.GetReportControlBlock(ctx, "IED1LD1", "LLN0$RP$urcb01")
 		case 3:
-			_, err = c.MMS().Read(ctx, mms.ReadRequest{DomainID: "LD1", ItemID: "LLN0$ST$Mod"})
+			_, err = c.MMS().Read(ctx, mms.ReadRequest{DomainID: "IED1LD1", ItemID: "LLN0$ST$Mod"})
 		}
 		cancel()
 		if time.Since(start) > 2*time.Second {

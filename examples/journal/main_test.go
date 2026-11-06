@@ -18,14 +18,14 @@ func TestRun(t *testing.T) {
 	srv, addr := demoied.Start(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	const key = demoied.LD + "/MMXU1$MX$PhV$phsA$cVal$mag$f"
+	const key = demoied.Domain + "/MMXU1$MX$PhV$phsA$cVal$mag$f"
 	srv.SetValue(ctx, key, mms.NewFloat(230.5))
 	srv.SetValue(ctx, key, mms.NewFloat(231.5))
 
 	var out demoied.Output
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, addr, demoied.LD, time.Hour, true, 20*time.Millisecond, &out) }()
-	out.WaitFor(t, "LD1/LLN0$EventLog: 2 entries", 5*time.Second)
+	go func() { done <- run(ctx, addr, demoied.Domain, time.Hour, true, 20*time.Millisecond, &out) }()
+	out.WaitFor(t, "DemoIEDLD1/LLN0$EventLog: 2 entries", 5*time.Second)
 	out.WaitFor(t, "MMXU1$MX$PhV$phsA$cVal$mag$f = 231.5", time.Second)
 
 	srv.SetValue(ctx, key, mms.NewFloat(232.5))

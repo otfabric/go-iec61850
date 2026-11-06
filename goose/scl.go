@@ -114,7 +114,7 @@ func blocksForAP(doc *scl.SCL, iedName, apName string) ([]ControlBlock, error) {
 	for _, ld := range model.LogicalDevices {
 		for _, ln := range ld.LogicalNodes {
 			for _, g := range ln.GoCBs {
-				cb, err := newControlBlock(model, iedName, apName, ld.Name, ln.Name, &g)
+				cb, err := newControlBlock(model, iedName, apName, ld.Name, ld.Inst, ln.Name, &g)
 				if err != nil {
 					errs = append(errs, err)
 					continue
@@ -129,10 +129,11 @@ func blocksForAP(doc *scl.SCL, iedName, apName string) ([]ControlBlock, error) {
 	return out, nil
 }
 
-func newControlBlock(m *servermodel.Model, iedName, apName, ldName, lnName string, g *servermodel.GoCBDef) (*ControlBlock, error) {
-	domain := iedName + ldName
+// newControlBlock builds the control block g of LN lnName in the
+// logical device with MMS domain domain and instance ldInst.
+func newControlBlock(m *servermodel.Model, iedName, apName, domain, ldInst, lnName string, g *servermodel.GoCBDef) (*ControlBlock, error) {
 	cb := &ControlBlock{
-		IEDName: iedName, APName: apName, LDInst: ldName, LNName: lnName, Name: g.Name,
+		IEDName: iedName, APName: apName, LDInst: ldInst, LNName: lnName, Name: g.Name,
 		GocbRef:    domain + "/" + servermodel.GoCBItemID(lnName, g.Name),
 		DatSet:     servermodel.QualifiedDatSet(domain, lnName, g.DatSet),
 		GoID:       g.GoID,
@@ -153,18 +154,18 @@ func newControlBlock(m *servermodel.Model, iedName, apName, ldName, lnName strin
 	if g.DatSet == "" {
 		return cb, nil
 	}
-	ds, _ := m.FindDataSet(ldName, g.DatSet)
+	ds, _ := m.FindDataSet(domain, g.DatSet)
 	if ds == nil {
 		return nil, fmt.Errorf("%w: GoCB %s: dataset %q not found", ErrSCL, cb.GocbRef, g.DatSet)
 	}
 	for _, mem := range ds.Members {
-		n, err := m.ResolveMember(ldName, mem)
+		n, err := m.ResolveMember(domain, mem)
 		if err != nil {
 			return nil, fmt.Errorf("%w: GoCB %s: %w", ErrSCL, cb.GocbRef, err)
 		}
-		ld := mem.LDInst
+		ld := m.LDInst(mem.LDInst)
 		if ld == "" {
-			ld = ldName
+			ld = ldInst
 		}
 		cb.Members = append(cb.Members, Member{Ref: ld + "/" + mem.LNName + "." + mem.DOPath, FC: mem.FC, Type: n.Type})
 	}
