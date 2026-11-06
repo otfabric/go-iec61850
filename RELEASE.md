@@ -2,7 +2,7 @@
 
 ## v1.7.0
 
-**Date:** 2026-11-06
+**Date:** 2026-11-07
 **Previous release:** v1.6.0
 
 ### Breaking
@@ -23,6 +23,7 @@
 - A control write (`Oper`, `SBOw`, `Cancel`) to an object without a control structure is answered object-non-existent and leaves the status alone, even with `AllowReadOnlyFCWrites` (dscsystems/go-iec61850 v0.6.6 fixed the opposite in its server; go-iec61850 was not affected).
 - Data references in live and replayed reports, and their place in the report.
 - Domain names: IED name plus instance by default, ldName honoured, data set members across logical devices, duplicate names refused, `InstanceDomainNames`.
+- Interop: the suite runs against the iec61850-interop v1.4.0 images, whose reporters and controllers take the logical device from the server directory (contract 1.3); the go server is addressed as `InteropIEDInteropLD`, and the data set of each peer server is read by its list name with and without `specificationWithResult` (iec61850bean answers only the latter, a registered limitation).
 
 ---
 
