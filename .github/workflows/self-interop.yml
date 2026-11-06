@@ -12,6 +12,8 @@ run-name: "Self-interop against iec61850-interop-otfabric:latest, by @${{ github
 # cannot ask for a release. A pass is not independent verification (INTEROP.md).
 on:
   workflow_dispatch:
+  push:  # TEMPORARY: run from the PR branch once; removed before merge
+    branches: [ci/self-interop]
 
 permissions:
   contents: read
