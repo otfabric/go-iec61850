@@ -102,7 +102,7 @@ func TestGoServer_Quality_Invalid(t *testing.T) {
 	// validity=invalid → bits 0-1 = 01 → uint16 value of (0b01 << 11) = 0x0800
 	const qInvalid uint16 = 0x0800
 	srv.srv.SetValue(ctx,
-		"InteropLD/GGIO1$ST$SPS1$q",
+		goLD+"/GGIO1$ST$SPS1$q",
 		qualityBits(qInvalid),
 	)
 
@@ -133,7 +133,7 @@ func TestGoServer_Quality_Questionable(t *testing.T) {
 
 	// validity=questionable → bits 0-1 = 11 → uint16 = 0x1800
 	const qQst uint16 = 0x1800
-	srv.srv.SetValue(ctx, "InteropLD/GGIO1$ST$SPS1$q", qualityBits(qQst))
+	srv.srv.SetValue(ctx, goLD+"/GGIO1$ST$SPS1$q", qualityBits(qQst))
 
 	c := dialIED(t, ctx, fmt.Sprintf("127.0.0.1:%d", srv.port))
 	defer c.Close(ctx)
@@ -164,7 +164,7 @@ func TestGoServer_Quality_DetailBits(t *testing.T) {
 	// operatorBlocked=true (bit 12).
 	// bits 10,11,12 set → uint16 = 0x0007
 	const qDetail uint16 = 0x0007
-	srv.srv.SetValue(ctx, "InteropLD/GGIO1$ST$SPS1$q", qualityBits(qDetail))
+	srv.srv.SetValue(ctx, goLD+"/GGIO1$ST$SPS1$q", qualityBits(qDetail))
 
 	c := dialIED(t, ctx, fmt.Sprintf("127.0.0.1:%d", srv.port))
 	defer c.Close(ctx)
@@ -199,7 +199,7 @@ func TestGoServer_Timestamp_Round_Trip(t *testing.T) {
 	// Use a round-millisecond timestamp for reliable comparison.
 	wantTime := time.Date(2024, 6, 15, 10, 30, 0, 500_000_000, time.UTC) // 500 ms fractional
 
-	srv.srv.SetValue(ctx, "InteropLD/GGIO1$ST$SPS1$t", mms.NewUTCTime(wantTime))
+	srv.srv.SetValue(ctx, goLD+"/GGIO1$ST$SPS1$t", mms.NewUTCTime(wantTime))
 
 	c := dialIED(t, ctx, fmt.Sprintf("127.0.0.1:%d", srv.port))
 	defer c.Close(ctx)
@@ -237,7 +237,7 @@ func TestGoServer_Timestamp_QualityFlags(t *testing.T) {
 	// Set LeapSecondsKnown + ClockNotSynchronized flags.
 	wantQuality := mms.UTCTimeQualityLeapSecondsKnown | mms.UTCTimeQualityClockNotSynchronized
 
-	srv.srv.SetValue(ctx, "InteropLD/GGIO1$ST$SPS1$t",
+	srv.srv.SetValue(ctx, goLD+"/GGIO1$ST$SPS1$t",
 		mms.NewUTCTimeWithQuality(wantTime, wantQuality),
 	)
 
@@ -294,7 +294,7 @@ func TestGoServer_Timestamp_Accuracy(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			wantTime := time.Date(2025, 3, 1, 12, 0, 0, tc.ns, time.UTC)
-			srv.srv.SetValue(ctx, "InteropLD/GGIO1$ST$SPS1$t", mms.NewUTCTime(wantTime))
+			srv.srv.SetValue(ctx, goLD+"/GGIO1$ST$SPS1$t", mms.NewUTCTime(wantTime))
 
 			raw, err := c.ReadRaw(ctx, tRef)
 			if err != nil {

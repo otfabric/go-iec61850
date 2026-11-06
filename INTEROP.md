@@ -475,7 +475,7 @@ Report delivery (InformationReports) and confirmed services (Read, Write, SetRCB
 ## Fixtures
 
 `interop/testdata/` holds synchronized copies of the canonical iec61850-interop
-fixtures, matching the pinned adapter images (iec61850-interop v1.3.0):
+fixtures, matching the pinned adapter images (iec61850-interop v1.4.0):
 
 | Path | Fixture revision | Content |
 |---|---|---|

@@ -48,7 +48,7 @@ func TestRun(t *testing.T) {
 	go func() { _ = sub.Run(ctx) }()
 
 	var out demoied.Output
-	if err := run(ctx, addr, demoied.LD, "LLN0$MS$MSVCB01", 96, &out); err != nil {
+	if err := run(ctx, addr, demoied.Domain, "LLN0$MS$MSVCB01", 96, &out); err != nil {
 		t.Fatal(err)
 	}
 	out.WaitFor(t, "SvEna=true", 0)

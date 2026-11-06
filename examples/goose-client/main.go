@@ -9,7 +9,7 @@
 //
 // Usage:
 //
-//	goose-client [-addr 127.0.0.1:102] [-ld LD1] [-gocb LLN0$GO$gcb01] [-goid NewGoID]
+//	goose-client [-addr 127.0.0.1:102] [-ld DemoIEDLD1] [-gocb LLN0$GO$gcb01] [-goid NewGoID]
 //
 // Run it against examples/goose-server.
 package main
@@ -32,7 +32,7 @@ import (
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:102", "server address")
-	ld := flag.String("ld", "LD1", "logical device (MMS domain)")
+	ld := flag.String("ld", "DemoIEDLD1", "logical device (MMS domain)")
 	gocb := flag.String("gocb", "LLN0$GO$gcb01", "GoCB item ID")
 	goID := flag.String("goid", "DemoGooseRenamed", "new GoID")
 	flag.Parse()

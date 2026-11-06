@@ -196,10 +196,11 @@ type genServer struct {
 }
 
 type genLDevice struct {
-	Inst string  `xml:"inst,attr"`
-	Desc string  `xml:"desc,attr"`
-	LN0  *genLN  `xml:"LN0"`
-	LNs  []genLN `xml:"LN"`
+	Inst   string  `xml:"inst,attr"`
+	LdName string  `xml:"ldName,attr,omitempty"`
+	Desc   string  `xml:"desc,attr"`
+	LN0    *genLN  `xml:"LN0"`
+	LNs    []genLN `xml:"LN"`
 }
 
 type genLN struct {
@@ -476,7 +477,7 @@ func iedToGenXML(ied IED) genIED {
 }
 
 func ldToGenXML(ld LDevice) genLDevice {
-	raw := genLDevice{Inst: ld.Inst, Desc: ld.Desc}
+	raw := genLDevice{Inst: ld.Inst, LdName: ld.LdName, Desc: ld.Desc}
 	if ld.LN0 != nil {
 		ln := lnToGenXML(*ld.LN0)
 		raw.LN0 = &ln

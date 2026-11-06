@@ -616,8 +616,8 @@ func TestSV_GoServer(t *testing.T) {
 			if first.AppID != fx.AppID || first.Dst != fx.Dst || first.ConfRev != fx.ConfRev || first.NoASDU != 1 || len(first.Values) != 16 {
 				t.Errorf("ASDU: %+v", first)
 			}
-			srv.SetValue(context.Background(), "InteropLD/TCTR1$MX$Amp$instMag$i", mms.NewInteger(4321))
-			srv.SetValue(context.Background(), "InteropLD/TVTR4$MX$Vol$q", sv.QualityTest.Value())
+			srv.SetValue(context.Background(), goLD+"/TCTR1$MX$Amp$instMag$i", mms.NewInteger(4321))
+			srv.SetValue(context.Background(), goLD+"/TVTR4$MX$Vol$q", sv.QualityTest.Value())
 			ev, ok := sub.next(t, svEventTimeout, func(e svEvent) bool {
 				return isSV(e) && len(e.Values) == 16 && canonJSON(t, e.Values[:1]) == "i:4321"
 			})

@@ -108,8 +108,8 @@ func TestFromSCL_Basic(t *testing.T) {
 		t.Fatalf("got %d LDs, want 1", len(m.LogicalDevices))
 	}
 	ld := m.LogicalDevices[0]
-	if ld.Name != "LD1" {
-		t.Errorf("LD name = %q, want LD1", ld.Name)
+	if ld.Name != "IED1LD1" {
+		t.Errorf("LD name = %q, want IED1LD1", ld.Name)
 	}
 
 	if len(ld.LogicalNodes) != 2 {

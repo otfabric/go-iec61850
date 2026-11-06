@@ -54,8 +54,8 @@ func TestGOOSEServerConfRevOverflow(t *testing.T) {
 	f := newGOOSEFixture(t, GOOSEOptions{StartDisabled: true})
 	confRevKey := gcbAllRef + "$ConfRev"
 	f.srv.store.Set(confRevKey, mms.NewUnsigned(math.MaxUint32))
-	ds := "InteropLD/LLN0$dsGooseBool"
-	if err := f.client.SetGoCB(ctx, "InteropLD", "LLN0$GO$gcbAll", GoCBUpdate{DatSet: &ds}); err != nil {
+	ds := "InteropIEDInteropLD/LLN0$dsGooseBool"
+	if err := f.client.SetGoCB(ctx, "InteropIEDInteropLD", "LLN0$GO$gcbAll", GoCBUpdate{DatSet: &ds}); err != nil {
 		t.Fatal(err)
 	}
 	if cr, _ := f.srv.store.Get(confRevKey).Uint64(); cr != math.MaxUint32+1 {
@@ -71,7 +71,7 @@ func TestGOOSEServerConfRevOverflow(t *testing.T) {
 	}
 	// A client reading this GoCB reports the out-of-range ConfRev
 	// instead of truncating it.
-	if cb, err := f.client.GetGoCB(ctx, "InteropLD", "LLN0$GO$gcbAll"); !errors.Is(err, ErrProtocol) {
+	if cb, err := f.client.GetGoCB(ctx, "InteropIEDInteropLD", "LLN0$GO$gcbAll"); !errors.Is(err, ErrProtocol) {
 		t.Fatalf("GetGoCB: %+v %v, want ErrProtocol", cb, err)
 	}
 }

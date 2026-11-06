@@ -31,10 +31,10 @@ func TestServerCommandTermination(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer srv.Close()
-	if err := srv.RegisterControl("InteropLD", "GGIO1.SPCSO3", CtlModelSBOEnhanced, ControlHandler{}); err != nil {
+	if err := srv.RegisterControl("InteropIEDInteropLD", "GGIO1.SPCSO3", CtlModelSBOEnhanced, ControlHandler{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := srv.RegisterControl("InteropLD", "GGIO1.SPCSO1", CtlModelDirectNormal, ControlHandler{}); err != nil {
+	if err := srv.RegisterControl("InteropIEDInteropLD", "GGIO1.SPCSO1", CtlModelDirectNormal, ControlHandler{}); err != nil {
 		t.Fatal(err)
 	}
 	sctx, cancel := context.WithCancel(ctx)
@@ -50,11 +50,11 @@ func TestServerCommandTermination(t *testing.T) {
 	c, _ := NewClient(mc, ClientOptions{})
 	defer func() { _ = c.Close(ctx) }()
 
-	direct := mustParseRef(t, "InteropLD/GGIO1.SPCSO1")
+	direct := mustParseRef(t, "InteropIEDInteropLD/GGIO1.SPCSO1")
 	if err := c.Operate(ctx, direct, OperateParams{CtlVal: BoolCtlVal(true)}); err != nil {
 		t.Fatal(err)
 	}
-	sbow := mustParseRef(t, "InteropLD/GGIO1.SPCSO3")
+	sbow := mustParseRef(t, "InteropIEDInteropLD/GGIO1.SPCSO3")
 	params := OperateParams{CtlVal: BoolCtlVal(true), CtlNum: 7}
 	if err := c.SelectWithValue(ctx, sbow, params); err != nil {
 		t.Fatal(err)
@@ -64,7 +64,7 @@ func TestServerCommandTermination(t *testing.T) {
 	}
 	select {
 	case r := <-reports:
-		if len(r.Variables) != 1 || r.Variables[0].Domain != "InteropLD" || r.Variables[0].ItemID != "GGIO1$CO$SPCSO3$Oper" || len(r.Values) != 1 {
+		if len(r.Variables) != 1 || r.Variables[0].Domain != "InteropIEDInteropLD" || r.Variables[0].ItemID != "GGIO1$CO$SPCSO3$Oper" || len(r.Values) != 1 {
 			t.Fatalf("CommandTermination = %+v", r)
 		}
 		oper, ok := r.Values[0].Structure()
@@ -101,7 +101,7 @@ func TestServerCommandTerminationStopsOnClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := srv.RegisterControl("InteropLD", "GGIO1.SPCSO3", CtlModelSBOEnhanced, ControlHandler{}); err != nil {
+	if err := srv.RegisterControl("InteropIEDInteropLD", "GGIO1.SPCSO3", CtlModelSBOEnhanced, ControlHandler{}); err != nil {
 		t.Fatal(err)
 	}
 	sctx, cancel := context.WithCancel(ctx)
@@ -117,7 +117,7 @@ func TestServerCommandTerminationStopsOnClose(t *testing.T) {
 	c, _ := NewClient(mc, ClientOptions{})
 	defer func() { _ = c.Close(ctx) }()
 
-	sbow := mustParseRef(t, "InteropLD/GGIO1.SPCSO3")
+	sbow := mustParseRef(t, "InteropIEDInteropLD/GGIO1.SPCSO3")
 	params := OperateParams{CtlVal: BoolCtlVal(true), CtlNum: 9}
 	if err := c.SelectWithValue(ctx, sbow, params); err != nil {
 		t.Fatal(err)

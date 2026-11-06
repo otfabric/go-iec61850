@@ -289,15 +289,10 @@ const otfabricImageEnv = "IEC61850_INTEROP_OTFABRIC_IMAGE"
 var otfabricStack = peerStack{"otfabric", otfabricImageEnv, ""}
 
 // domainPrefix is the IED name the client prepends to LD names for the peer's
-// server. The references name MMS domains <IED><LD>; go-iec61850's own server
-// (stack otfabric) names them by the bare LD instance (KNOWN_LIMITATIONS.md,
-// "References use the server's MMS domain"), so there is no prefix.
-func domainPrefix(iedName string) string {
-	if peer().name == otfabricStack.name {
-		return ""
-	}
-	return iedName
-}
+// server. Every stack, go-iec61850's own server (stack otfabric) included,
+// names its MMS domains <IED><LD inst> as IEC 61850-8-1 requires, so the
+// prefix is the IED name from the adapter's ready event.
+func domainPrefix(iedName string) string { return iedName }
 
 // dockerImage returns the peer image ($imageEnv or the local default).
 func (p peerStack) dockerImage() string { return getEnvOr(p.imageEnv, p.image) }
@@ -336,11 +331,27 @@ func iedFreePort(t *testing.T) string {
 	return fmt.Sprintf("%d", p)
 }
 
+// goIEDName is the IED name of the go-iec61850 test servers
+// (startGoIEDServer*); goLD is the MMS domain they serve the fixture's
+// logical device under (IED name + LD inst, IEC 61850-8-1). Server-side
+// calls (Server.SetValue, ValueStore, RegisterControl, ReportEngine) take
+// goLD; clients dial with goIEDName (dialIED, goDialOptions) and use the
+// bare LD inst "InteropLD" in references.
+const (
+	goIEDName = "InteropIED"
+	goLD      = goIEDName + "InteropLD"
+)
+
+// goDialOptions are the dial options for a go-iec61850 test server.
+func goDialOptions() iec61850.DialOptions { return iec61850.DialOptions{IEDName: goIEDName} }
+
+// dialIED dials a go-iec61850 test server (startGoIEDServer*) with the IED
+// name set, so references use the bare LD inst.
 func dialIED(t *testing.T, ctx context.Context, addr string) *iec61850.Client {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		c, err := iec61850.Dial(ctx, addr, iec61850.DialOptions{})
+		c, err := iec61850.Dial(ctx, addr, goDialOptions())
 		if err == nil {
 			return c
 		}
@@ -1161,27 +1172,27 @@ func setGoIEDInitialValues(t *testing.T, srv *iec61850.Server) {
 	vs := srv.ValueStore()
 	set := func(key string, val *mms.Value) { vs.Set(key, val) }
 
-	set("InteropLD/LLN0$ST$Mod$stVal", mms.NewInteger(fixVal.ModStVal))
-	set("InteropLD/LLN0$CF$Mod$ctlModel", mms.NewInteger(fixVal.ModCtlModel))
-	set("InteropLD/LLN0$DC$Mod$d", mms.NewVisibleString(fixVal.ModD))
-	set("InteropLD/LLN0$ST$Beh$stVal", mms.NewInteger(fixVal.BehStVal))
-	set("InteropLD/GGIO1$ST$SPS1$stVal", mms.NewBoolean(fixVal.SPS1StVal))
-	set("InteropLD/GGIO1$DC$SPS1$d", mms.NewVisibleString(fixVal.SPS1D))
-	set("InteropLD/GGIO1$ST$SPCSO1$stVal", mms.NewBoolean(fixVal.SPCSO1StVal))
-	set("InteropLD/GGIO1$CF$SPCSO1$ctlModel", mms.NewInteger(fixVal.SPCSO1CtlModel))
-	set("InteropLD/GGIO1$ST$SPCSO2$stVal", mms.NewBoolean(fixVal.SPCSO2StVal))
-	set("InteropLD/GGIO1$CF$SPCSO2$ctlModel", mms.NewInteger(fixVal.SPCSO2CtlModel))
-	set("InteropLD/GGIO1$ST$SPCSO3$stVal", mms.NewBoolean(fixVal.SPCSO3StVal))
-	set("InteropLD/GGIO1$CF$SPCSO3$ctlModel", mms.NewInteger(fixVal.SPCSO3CtlModel))
-	set("InteropLD/MMXU1$MX$TotW$mag$f", mms.NewFloat(fixVal.TotWMagF))
+	set(goLD+"/LLN0$ST$Mod$stVal", mms.NewInteger(fixVal.ModStVal))
+	set(goLD+"/LLN0$CF$Mod$ctlModel", mms.NewInteger(fixVal.ModCtlModel))
+	set(goLD+"/LLN0$DC$Mod$d", mms.NewVisibleString(fixVal.ModD))
+	set(goLD+"/LLN0$ST$Beh$stVal", mms.NewInteger(fixVal.BehStVal))
+	set(goLD+"/GGIO1$ST$SPS1$stVal", mms.NewBoolean(fixVal.SPS1StVal))
+	set(goLD+"/GGIO1$DC$SPS1$d", mms.NewVisibleString(fixVal.SPS1D))
+	set(goLD+"/GGIO1$ST$SPCSO1$stVal", mms.NewBoolean(fixVal.SPCSO1StVal))
+	set(goLD+"/GGIO1$CF$SPCSO1$ctlModel", mms.NewInteger(fixVal.SPCSO1CtlModel))
+	set(goLD+"/GGIO1$ST$SPCSO2$stVal", mms.NewBoolean(fixVal.SPCSO2StVal))
+	set(goLD+"/GGIO1$CF$SPCSO2$ctlModel", mms.NewInteger(fixVal.SPCSO2CtlModel))
+	set(goLD+"/GGIO1$ST$SPCSO3$stVal", mms.NewBoolean(fixVal.SPCSO3StVal))
+	set(goLD+"/GGIO1$CF$SPCSO3$ctlModel", mms.NewInteger(fixVal.SPCSO3CtlModel))
+	set(goLD+"/MMXU1$MX$TotW$mag$f", mms.NewFloat(fixVal.TotWMagF))
 
 	// Phase C3: DPS and BCR CDCs.
 	// DPS1.stVal: Dbpos is a 2-bit BitString (MSB-first).
 	// Integer value → 2-bit pattern: val << 6 gives the high byte.
 	// e.g. 2 (on=binary "10") → 0x80 with bit-length 2.
 	dpsByte := byte(fixVal.DPS1StVal&0x3) << 6
-	set("InteropLD/GGIO1$ST$DPS1$stVal", mms.NewBitStringWithLength([]byte{dpsByte}, 2))
-	set("InteropLD/MMTR1$ST$TotVAh$actVal", mms.NewUnsigned(fixVal.BCRActVal))
+	set(goLD+"/GGIO1$ST$DPS1$stVal", mms.NewBitStringWithLength([]byte{dpsByte}, 2))
+	set(goLD+"/MMTR1$ST$TotVAh$actVal", mms.NewUnsigned(fixVal.BCRActVal))
 }
 
 // ---------------------------------------------------------------------------
@@ -1502,23 +1513,23 @@ func startGoIEDServerWithControls(t *testing.T) *goIEDServer {
 	}
 
 	// SPCSO1 — direct-with-normal-security
-	if err := srv.RegisterControl("InteropLD", "GGIO1.SPCSO1",
+	if err := srv.RegisterControl(goLD, "GGIO1.SPCSO1",
 		iec61850.CtlModelDirectNormal,
-		makeOperateHandler("InteropLD/GGIO1$ST$SPCSO1$stVal")); err != nil {
+		makeOperateHandler(goLD+"/GGIO1$ST$SPCSO1$stVal")); err != nil {
 		t.Fatalf("RegisterControl SPCSO1: %v", err)
 	}
 
 	// SPCSO2 — sbo-with-normal-security
-	if err := srv.RegisterControl("InteropLD", "GGIO1.SPCSO2",
+	if err := srv.RegisterControl(goLD, "GGIO1.SPCSO2",
 		iec61850.CtlModelSBONormal,
-		makeOperateHandler("InteropLD/GGIO1$ST$SPCSO2$stVal")); err != nil {
+		makeOperateHandler(goLD+"/GGIO1$ST$SPCSO2$stVal")); err != nil {
 		t.Fatalf("RegisterControl SPCSO2: %v", err)
 	}
 
 	// SPCSO3 — sbo-with-enhanced-security (SBOw)
-	if err := srv.RegisterControl("InteropLD", "GGIO1.SPCSO3",
+	if err := srv.RegisterControl(goLD, "GGIO1.SPCSO3",
 		iec61850.CtlModelSBOEnhanced,
-		makeOperateHandler("InteropLD/GGIO1$ST$SPCSO3$stVal")); err != nil {
+		makeOperateHandler(goLD+"/GGIO1$ST$SPCSO3$stVal")); err != nil {
 		t.Fatalf("RegisterControl SPCSO3: %v", err)
 	}
 
@@ -1563,12 +1574,12 @@ func startGoIEDServerWithShortSBOTimeout(t *testing.T, timeout time.Duration) *g
 	setGoIEDInitialValues(t, srv)
 	vs := srv.ValueStore()
 
-	if err := srv.RegisterControl("InteropLD", "GGIO1.SPCSO1",
+	if err := srv.RegisterControl(goLD, "GGIO1.SPCSO1",
 		iec61850.CtlModelDirectNormal,
 		iec61850.ControlHandler{
 			OnOperate: func(_ context.Context, req iec61850.ControlRequest) error {
 				if b, ok := req.CtlVal.Bool(); ok {
-					vs.Set("InteropLD/GGIO1$ST$SPCSO1$stVal", mms.NewBoolean(b))
+					vs.Set(goLD+"/GGIO1$ST$SPCSO1$stVal", mms.NewBoolean(b))
 				}
 				return nil
 			},
@@ -1576,7 +1587,7 @@ func startGoIEDServerWithShortSBOTimeout(t *testing.T, timeout time.Duration) *g
 		t.Fatalf("RegisterControl SPCSO1: %v", err)
 	}
 
-	if err := srv.RegisterControl("InteropLD", "GGIO1.SPCSO2",
+	if err := srv.RegisterControl(goLD, "GGIO1.SPCSO2",
 		iec61850.CtlModelSBONormal,
 		iec61850.ControlHandler{
 			SelectTimeout: timeout,
@@ -1590,7 +1601,7 @@ func startGoIEDServerWithShortSBOTimeout(t *testing.T, timeout time.Duration) *g
 		t.Fatalf("RegisterControl SPCSO2: %v", err)
 	}
 
-	if err := srv.RegisterControl("InteropLD", "GGIO1.SPCSO3",
+	if err := srv.RegisterControl(goLD, "GGIO1.SPCSO3",
 		iec61850.CtlModelSBOEnhanced,
 		iec61850.ControlHandler{
 			OnOperate: func(_ context.Context, req iec61850.ControlRequest) error {

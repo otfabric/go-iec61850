@@ -8,7 +8,8 @@ without privileges; `go build ./examples/...` builds them.
 
 The servers and the defaults of the clients use the demo IED in
 [internal/demoied/demo.icd](internal/demoied/demo.icd): IED `DemoIED`,
-logical device `LD1` (the MMS domain of the go-iec61850 server), with a
+logical device `LD1` (served as MMS domain `DemoIEDLD1`, the IED name
+followed by the instance), with a
 measurement, a controllable output, an unbuffered report, a log, two
 setting groups, a GOOSE control block `gcb01` and a 9-2LE SV control
 block `MSVCB01`. Start a server with

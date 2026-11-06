@@ -11,7 +11,7 @@
 //
 // Usage:
 //
-//	datasets [-addr 127.0.0.1:102] [-ld LD1]
+//	datasets [-addr 127.0.0.1:102] [-ld DemoIEDLD1]
 //
 // Run it against examples/ied-server.
 package main
@@ -34,7 +34,7 @@ import (
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:102", "server address")
-	ld := flag.String("ld", "LD1", "logical device (MMS domain)")
+	ld := flag.String("ld", "DemoIEDLD1", "logical device (MMS domain)")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

@@ -119,7 +119,7 @@ func blocksForAP(doc *scl.SCL, iedName, apName string) ([]ControlBlock, error) {
 	for _, ld := range model.LogicalDevices {
 		for _, ln := range ld.LogicalNodes {
 			for i := range ln.SvCBs {
-				cb, err := newControlBlock(model, iedName, apName, ld.Name, ln.Name, &ln.SvCBs[i])
+				cb, err := newControlBlock(model, iedName, apName, ld.Name, ld.Inst, ln.Name, &ln.SvCBs[i])
 				if err != nil {
 					errs = append(errs, err)
 					continue
@@ -131,10 +131,11 @@ func blocksForAP(doc *scl.SCL, iedName, apName string) ([]ControlBlock, error) {
 	return out, errors.Join(errs...)
 }
 
-func newControlBlock(m *servermodel.Model, iedName, apName, ldName, lnName string, d *servermodel.SvCBDef) (*ControlBlock, error) {
-	domain := iedName + ldName
+// newControlBlock builds the control block d of LN lnName in the
+// logical device with MMS domain domain and instance ldInst.
+func newControlBlock(m *servermodel.Model, iedName, apName, domain, ldInst, lnName string, d *servermodel.SvCBDef) (*ControlBlock, error) {
 	cb := &ControlBlock{
-		IEDName: iedName, APName: apName, LDInst: ldName, LNName: lnName, Name: d.Name,
+		IEDName: iedName, APName: apName, LDInst: ldInst, LNName: lnName, Name: d.Name,
 		SvCBRef:    domain + "/" + servermodel.SvCBItemID(lnName, d.Name),
 		SvID:       d.SvID,
 		DatSet:     servermodel.QualifiedDatSet(domain, lnName, d.DatSet),
@@ -153,18 +154,18 @@ func newControlBlock(m *servermodel.Model, iedName, apName, ldName, lnName strin
 	if d.DatSet == "" {
 		return nil, fmt.Errorf("%w: SvCB %s: no dataset", ErrSCL, cb.SvCBRef)
 	}
-	ds, _ := m.FindDataSet(ldName, d.DatSet)
+	ds, _ := m.FindDataSet(domain, d.DatSet)
 	if ds == nil {
 		return nil, fmt.Errorf("%w: SvCB %s: dataset %q not found", ErrSCL, cb.SvCBRef, d.DatSet)
 	}
 	for _, mem := range ds.Members {
-		n, err := m.ResolveMember(ldName, mem)
+		n, err := m.ResolveMember(domain, mem)
 		if err != nil {
 			return nil, fmt.Errorf("%w: SvCB %s: %w", ErrSCL, cb.SvCBRef, err)
 		}
-		ld := mem.LDInst
+		ld := m.LDInst(mem.LDInst)
 		if ld == "" {
-			ld = ldName
+			ld = ldInst
 		}
 		ref := ld + "/" + mem.LNName + "." + mem.DOPath
 		kinds, err := leafKinds(n)

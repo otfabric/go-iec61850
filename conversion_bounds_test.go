@@ -224,7 +224,7 @@ func TestReportEngineStopCancelsSends(t *testing.T) {
 	replayed := make(chan struct{})
 	var sc mms.ServerConn
 	re.wg.Go(func() {
-		re.replayBRCBEntries("LLN0$BR$brcb01", "r", 0, 1, "LD1/ds", []*bufferedEntry{{entryID: []byte{0, 0, 0, 0, 0, 0, 0, 1}}}, &sc)
+		re.replayBRCBEntries("LLN0$BR$brcb01", "r", 0, 1, "LD1/ds", nil, []*bufferedEntry{{entryID: []byte{0, 0, 0, 0, 0, 0, 0, 1}}}, &sc)
 		close(replayed)
 	})
 

@@ -31,7 +31,7 @@ import (
 // ---------------------------------------------------------------------------
 
 const sbow3Ref = "InteropLD/GGIO1.SPCSO3"
-const sbow3StValKey = "InteropLD/GGIO1$ST$SPCSO3$stVal"
+const sbow3StValKey = goLD + "/GGIO1$ST$SPCSO3$stVal"
 
 // ---------------------------------------------------------------------------
 // TestLibIECServer_Control_SBOwOperate
@@ -229,8 +229,8 @@ func TestGoServer_SBOw_OperateWithoutSelect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// The go server registers bare LD domain names (no IED name prefix).
-	client, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), iec61850.DialOptions{})
+	// The go server names its domain <IED><LD inst>; dial with its IED name.
+	client, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), goDialOptions())
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
@@ -271,8 +271,8 @@ func TestGoServer_SBOw_CancelClearsSelect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// The go server registers bare LD domain names (no IED name prefix).
-	client, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), iec61850.DialOptions{})
+	// The go server names its domain <IED><LD inst>; dial with its IED name.
+	client, err := iec61850.Dial(ctx, fmt.Sprintf("127.0.0.1:%d", srv.port), goDialOptions())
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}

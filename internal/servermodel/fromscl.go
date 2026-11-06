@@ -10,14 +10,33 @@ import (
 	"github.com/otfabric/go-iec61850/scl/index"
 )
 
+// Options control how [FromSCLWithOptions] builds a model.
+type Options struct {
+	// InstanceDomainNames names each logical device (MMS domain) by its
+	// LDevice@inst alone ("InteropLD"), as go-iec61850 did before v1.7.0.
+	// By default a logical device has its IEC 61850-8-1 name, as the
+	// other IEC 61850 stacks give it: LDevice@ldName when the SCL has
+	// one, otherwise the IED name followed by the instance
+	// ("InteropIEDInteropLD"). Data set members, and the references the
+	// server builds from the domain (data sets, report, GOOSE and SV
+	// control blocks), follow the name.
+	InstanceDomainNames bool
+}
+
 // FromSCL builds a server [Model] from the first Server element found
 // in the specified IED/AccessPoint of the parsed SCL. If apName is
 // empty, the first AccessPoint with a Server is used.
 //
 // Type information (DOType, DAType, EnumType) is resolved from the
 // SCL DataTypeTemplates to produce fully expanded data objects with
-// their attribute hierarchies.
+// their attribute hierarchies. Logical devices get their IEC 61850-8-1
+// names (see [Options]).
 func FromSCL(s *scl.SCL, iedName, apName string) (*Model, error) {
+	return FromSCLWithOptions(s, iedName, apName, Options{})
+}
+
+// FromSCLWithOptions is [FromSCL] with options.
+func FromSCLWithOptions(s *scl.SCL, iedName, apName string, opts Options) (*Model, error) {
 	if s == nil {
 		return nil, fmt.Errorf("servermodel: nil SCL")
 	}
@@ -55,7 +74,46 @@ func FromSCL(s *scl.SCL, iedName, apName string) (*Model, error) {
 	}
 	m.Warnings = warnings
 
+	if !opts.InstanceDomainNames {
+		if err := standardDomainNames(m, ied.Name, srv.LDevices); err != nil {
+			return nil, fmt.Errorf("servermodel: %w", err)
+		}
+	}
 	return m, nil
+}
+
+// standardDomainNames renames the logical devices of m to their
+// IEC 61850-8-1 names (LDevice@ldName, else the IED name followed by the
+// instance) and points the data set members at them.
+func standardDomainNames(m *Model, iedName string, lds []scl.LDevice) error {
+	names := make(map[string]string, len(lds))
+	used := make(map[string]string, len(lds))
+	for i := range lds {
+		name := lds[i].LdName
+		if name == "" {
+			name = iedName + lds[i].Inst
+		}
+		if other, dup := used[name]; dup {
+			return fmt.Errorf("LDs %q and %q both have the domain name %q", other, lds[i].Inst, name)
+		}
+		used[name] = lds[i].Inst
+		names[lds[i].Inst] = name
+	}
+	for i := range m.LogicalDevices {
+		ld := &m.LogicalDevices[i]
+		ld.Name = names[ld.Inst]
+		for j := range ld.LogicalNodes {
+			for k := range ld.LogicalNodes[j].DataSets {
+				ds := &ld.LogicalNodes[j].DataSets[k]
+				for n := range ds.Members {
+					if name, ok := names[ds.Members[n].LDInst]; ok {
+						ds.Members[n].LDInst = name
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func findServer(ied *scl.IED, apName string) (*scl.Server, string, error) {
@@ -114,7 +172,7 @@ func gseIndex(s *scl.SCL, iedName, apName string) (map[string]*scl.GSEAddress, m
 }
 
 func convertLD(s *scl.SCL, sclLD *scl.LDevice, dotIdx map[string]*scl.DOType, datIdx map[string]*scl.DAType, enumIdx map[string]*scl.EnumType, gse map[string]*scl.GSEAddress, smv map[string]*scl.SMVAddress, warnings *[]string) (*LogicalDevice, error) {
-	ld := &LogicalDevice{Name: sclLD.Inst}
+	ld := &LogicalDevice{Name: sclLD.Inst, Inst: sclLD.Inst}
 
 	if sclLD.LN0 != nil {
 		ln, err := convertLN(s, sclLD.LN0, dotIdx, datIdx, enumIdx, sclLD.Inst, warnings)

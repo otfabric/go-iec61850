@@ -16,10 +16,10 @@ import (
 )
 
 const (
-	msvcb1Ref = "MU01/LLN0$MS$MSVCB01"
-	msvcb2Ref = "MU01/LLN0$MS$MSVCB02"
-	ia1Key    = "MU01/ITCTR1$MX$AmpSv$instMag$i"
-	ua1QKey   = "MU01/UTVTR1$MX$VolSv$q"
+	msvcb1Ref = "MUIEDMU01/LLN0$MS$MSVCB01"
+	msvcb2Ref = "MUIEDMU01/LLN0$MS$MSVCB02"
+	ia1Key    = "MUIEDMU01/ITCTR1$MX$AmpSv$instMag$i"
+	ua1QKey   = "MUIEDMU01/UTVTR1$MX$VolSv$q"
 )
 
 type svFixture struct {
@@ -126,7 +126,7 @@ func TestSVServerPublishesDataset(t *testing.T) {
 		t.Fatalf("MSVCB01 sample %+v", s.ASDU)
 	}
 	s2 := f.wait(t, "MU01-256", func(*sv.Sample) bool { return true })
-	if len(s2.Frame.PDU.ASDUs) != 8 || !s2.ASDU.HasRefrTm || !s2.ASDU.HasSmpRate || s2.ASDU.SmpRate != 256 || s2.ASDU.DatSet != "MU01/LLN0$PhsMeas1" {
+	if len(s2.Frame.PDU.ASDUs) != 8 || !s2.ASDU.HasRefrTm || !s2.ASDU.HasSmpRate || s2.ASDU.SmpRate != 256 || s2.ASDU.DatSet != "MUIEDMU01/LLN0$PhsMeas1" {
 		t.Fatalf("MSVCB02 sample %+v", s2.ASDU)
 	}
 
@@ -149,10 +149,10 @@ func TestSVServerPublishesDataset(t *testing.T) {
 		t.Errorf("publisher %v", err)
 	}
 	// MSVCB03 has no address and stays disabled.
-	if p, err := f.engine.Publisher("MU01/LLN0$MS$MSVCB03"); err != nil || p != nil {
+	if p, err := f.engine.Publisher("MUIEDMU01/LLN0$MS$MSVCB03"); err != nil || p != nil {
 		t.Errorf("MSVCB03 publisher %v %v", p, err)
 	}
-	if err := f.engine.SetEnabled("MU01/LLN0$MS$MSVCB03", true); err == nil {
+	if err := f.engine.SetEnabled("MUIEDMU01/LLN0$MS$MSVCB03", true); err == nil {
 		t.Error("MSVCB03 enabled")
 	}
 }
@@ -162,11 +162,11 @@ func TestSVServerMSVCBOverMMS(t *testing.T) {
 	f := newSVFixture(t, SVOptions{})
 	f.wait(t, "MU01", func(*sv.Sample) bool { return true })
 
-	cb, err := f.client.GetMSVCB(ctx, "MU01", "LLN0$MS$MSVCB01")
+	cb, err := f.client.GetMSVCB(ctx, "MUIEDMU01", "LLN0$MS$MSVCB01")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cb.SvEna || cb.MsvID != "MU01" || cb.DatSet != "MU01/LLN0$PhsMeas1" || cb.ConfRev != 1 || cb.SmpRate != 80 ||
+	if !cb.SvEna || cb.MsvID != "MU01" || cb.DatSet != "MUIEDMU01/LLN0$PhsMeas1" || cb.ConfRev != 1 || cb.SmpRate != 80 ||
 		!cb.HasSmpMod || cb.SmpMod != sv.SmpPerPeriod || cb.NoASDU != 1 || !cb.OptFlds.SampleSynchronized ||
 		cb.DstAddress.Addr != (sv.MAC{0x01, 0x0c, 0xcd, 0x04, 0x00, 0x01}) || cb.DstAddress.AppID != 0x4000 || cb.DstAddress.Priority != 4 {
 		t.Fatalf("MSVCB = %+v", cb)
@@ -174,13 +174,13 @@ func TestSVServerMSVCBOverMMS(t *testing.T) {
 
 	// Configuration is not writable while enabled.
 	id := "MU01-new"
-	if err := f.client.SetMSVCB(ctx, "MU01", "LLN0$MS$MSVCB01", MSVCBUpdate{MsvID: &id}); err == nil {
+	if err := f.client.SetMSVCB(ctx, "MUIEDMU01", "LLN0$MS$MSVCB01", MSVCBUpdate{MsvID: &id}); err == nil {
 		t.Fatal("MsvID write accepted while SvEna")
 	}
-	if _, err := f.client.MMS().Write(ctx, mms.WriteRequest{DomainID: "MU01", ItemID: "LLN0$MS$MSVCB01$ConfRev", Value: mms.NewUnsigned(9)}); err == nil {
+	if _, err := f.client.MMS().Write(ctx, mms.WriteRequest{DomainID: "MUIEDMU01", ItemID: "LLN0$MS$MSVCB01$ConfRev", Value: mms.NewUnsigned(9)}); err == nil {
 		t.Fatal("ConfRev write accepted")
 	}
-	if _, err := f.client.MMS().Write(ctx, mms.WriteRequest{DomainID: "MU01", ItemID: "LLN0$MS$MSVCB01$noASDU", Value: mms.NewUnsigned(2)}); err == nil {
+	if _, err := f.client.MMS().Write(ctx, mms.WriteRequest{DomainID: "MUIEDMU01", ItemID: "LLN0$MS$MSVCB01$noASDU", Value: mms.NewUnsigned(2)}); err == nil {
 		t.Fatal("noASDU write accepted")
 	}
 
@@ -189,11 +189,11 @@ func TestSVServerMSVCBOverMMS(t *testing.T) {
 	rate := uint16(4000)
 	mod := sv.SmpPerSec
 	opts := sv.OptFlds{RefreshTime: true, SampleRate: true, DataSet: true}
-	ds := "MU01/LLN0$PhsMeas1"
-	if err := f.client.SetMSVCB(ctx, "MU01", "LLN0$MS$MSVCB01", MSVCBUpdate{SvEna: &off}); err != nil {
+	ds := "MUIEDMU01/LLN0$PhsMeas1"
+	if err := f.client.SetMSVCB(ctx, "MUIEDMU01", "LLN0$MS$MSVCB01", MSVCBUpdate{SvEna: &off}); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.client.SetMSVCB(ctx, "MU01", "LLN0$MS$MSVCB01", MSVCBUpdate{
+	if err := f.client.SetMSVCB(ctx, "MUIEDMU01", "LLN0$MS$MSVCB01", MSVCBUpdate{
 		MsvID: &id, DatSet: &ds, SmpRate: &rate, SmpMod: &mod, OptFlds: &opts, SvEna: &on,
 	}); err != nil {
 		t.Fatal(err)
@@ -203,24 +203,24 @@ func TestSVServerMSVCBOverMMS(t *testing.T) {
 		!s.ASDU.HasRefrTm || s.ASDU.DatSet != ds || s.ASDU.ConfRev != 1 {
 		t.Fatalf("after reconfigure %+v", s.ASDU)
 	}
-	cb, _ = f.client.GetMSVCB(ctx, "MU01", "LLN0$MS$MSVCB01")
+	cb, _ = f.client.GetMSVCB(ctx, "MUIEDMU01", "LLN0$MS$MSVCB01")
 	if cb.MsvID != id || cb.SmpRate != 4000 || cb.SmpMod != sv.SmpPerSec || cb.OptFlds != opts || !cb.SvEna {
 		t.Errorf("MSVCB after update = %+v", cb)
 	}
 
 	// Invalid values are rejected while disabled.
-	_ = f.client.SetMSVCB(ctx, "MU01", "LLN0$MS$MSVCB01", MSVCBUpdate{SvEna: &off})
-	empty, zero, badMod, bad := "", uint16(0), sv.SmpMod(7), "MU01/LLN0$nope"
+	_ = f.client.SetMSVCB(ctx, "MUIEDMU01", "LLN0$MS$MSVCB01", MSVCBUpdate{SvEna: &off})
+	empty, zero, badMod, bad := "", uint16(0), sv.SmpMod(7), "MUIEDMU01/LLN0$nope"
 	for i, u := range []MSVCBUpdate{{MsvID: &empty}, {SmpRate: &zero}, {SmpMod: &badMod}, {DatSet: &bad}} {
-		if err := f.client.SetMSVCB(ctx, "MU01", "LLN0$MS$MSVCB01", u); err == nil {
+		if err := f.client.SetMSVCB(ctx, "MUIEDMU01", "LLN0$MS$MSVCB01", u); err == nil {
 			t.Errorf("update %d accepted", i)
 		}
 	}
 	// The same DatSet is a no-op.
-	if err := f.client.SetMSVCB(ctx, "MU01", "LLN0$MS$MSVCB01", MSVCBUpdate{DatSet: &ds}); err != nil {
+	if err := f.client.SetMSVCB(ctx, "MUIEDMU01", "LLN0$MS$MSVCB01", MSVCBUpdate{DatSet: &ds}); err != nil {
 		t.Error(err)
 	}
-	if cb, _ = f.client.GetMSVCB(ctx, "MU01", "LLN0$MS$MSVCB01"); cb.ConfRev != 1 || cb.SvEna {
+	if cb, _ = f.client.GetMSVCB(ctx, "MUIEDMU01", "LLN0$MS$MSVCB01"); cb.ConfRev != 1 || cb.SvEna {
 		t.Errorf("after no-op: %+v", cb)
 	}
 }
@@ -257,10 +257,10 @@ func TestSVServerStartDisabledAndErrors(t *testing.T) {
 	if _, err := f.srv.EnableSV(SVOptions{}); !errors.Is(err, ErrSV) {
 		t.Error(err)
 	}
-	if _, err := f.client.MMS().Write(ctx, mms.WriteRequest{DomainID: "MU01", ItemID: "LLN0$MS$MSVCB01$SvEna", Value: mms.NewInteger(1)}); err == nil {
+	if _, err := f.client.MMS().Write(ctx, mms.WriteRequest{DomainID: "MUIEDMU01", ItemID: "LLN0$MS$MSVCB01$SvEna", Value: mms.NewInteger(1)}); err == nil {
 		t.Error("type-inconsistent SvEna write accepted")
 	}
-	if _, err := f.client.MMS().Write(ctx, mms.WriteRequest{DomainID: "MU01", ItemID: "LLN0$MS$MSVCB01$DstAddress$APPID", Value: mms.NewUnsigned(1)}); err == nil {
+	if _, err := f.client.MMS().Write(ctx, mms.WriteRequest{DomainID: "MUIEDMU01", ItemID: "LLN0$MS$MSVCB01$DstAddress$APPID", Value: mms.NewUnsigned(1)}); err == nil {
 		t.Error("APPID write accepted")
 	}
 	if _, err := f.client.GetMSVCB(ctx, "", "x"); !errors.Is(err, ErrInvalidArgument) {
@@ -269,14 +269,14 @@ func TestSVServerStartDisabledAndErrors(t *testing.T) {
 	if err := f.client.SetMSVCB(ctx, "", "x", MSVCBUpdate{}); !errors.Is(err, ErrInvalidArgument) {
 		t.Error(err)
 	}
-	if _, err := f.client.GetMSVCB(ctx, "MU01", "LLN0$MS$nope"); err == nil {
+	if _, err := f.client.GetMSVCB(ctx, "MUIEDMU01", "LLN0$MS$nope"); err == nil {
 		t.Error("missing MSVCB read succeeded")
 	}
-	if _, err := f.client.GetMSVCB(ctx, "MU01", "LLN0$ST$Mod$stVal"); err == nil {
+	if _, err := f.client.GetMSVCB(ctx, "MUIEDMU01", "LLN0$ST$Mod$stVal"); err == nil {
 		t.Error("non-MSVCB decoded")
 	}
 	id := "x"
-	if err := f.client.SetMSVCB(ctx, "MU01", "LLN0$MS$nope", MSVCBUpdate{MsvID: &id}); err == nil {
+	if err := f.client.SetMSVCB(ctx, "MUIEDMU01", "LLN0$MS$nope", MSVCBUpdate{MsvID: &id}); err == nil {
 		t.Error("write to missing MSVCB succeeded")
 	}
 	f.srv.Close()

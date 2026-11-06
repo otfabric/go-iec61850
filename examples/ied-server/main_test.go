@@ -53,7 +53,7 @@ func TestRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ref, _ := iec61850.ParseRef("LD1/GGIO1.SPCSO1")
+	ref, _ := iec61850.ParseRef("DemoIEDLD1/GGIO1.SPCSO1")
 	if err := c.Operate(ctx, ref, iec61850.OperateParams{CtlVal: iec61850.BoolCtlVal(true)}); err != nil {
 		t.Fatal(err)
 	}

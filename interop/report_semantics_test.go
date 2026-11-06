@@ -257,8 +257,8 @@ func TestLibIECServer_URCB_MultiMemberDchg(t *testing.T) {
 	newModVal := fixVal.ModStVal + 1
 
 	svsCtx := context.Background()
-	h.srv.SetValue(svsCtx, "InteropLD/GGIO1$ST$SPS1$stVal", mms.NewBoolean(newSPS1Val))
-	h.srv.SetValue(svsCtx, "InteropLD/LLN0$ST$Mod$stVal", mms.NewInteger(newModVal))
+	h.srv.SetValue(svsCtx, goLD+"/GGIO1$ST$SPS1$stVal", mms.NewBoolean(newSPS1Val))
+	h.srv.SetValue(svsCtx, goLD+"/LLN0$ST$Mod$stVal", mms.NewInteger(newModVal))
 
 	// Collect dchg reports until both members have been seen or deadline fires.
 	deadline := time.After(5 * time.Second)

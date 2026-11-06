@@ -31,8 +31,14 @@ type Model struct {
 
 // LogicalDevice represents an IEC 61850 logical device (MMS domain).
 type LogicalDevice struct {
-	// Name is the logical device instance name (MMS domain ID).
+	// Name is the MMS domain ID of the logical device: LDevice@ldName, or
+	// the IED name followed by Inst (IEC 61850-8-1); Inst itself with
+	// [Options.InstanceDomainNames].
 	Name string
+
+	// Inst is the LDevice@inst of the SCL; equal to Name with
+	// [Options.InstanceDomainNames].
+	Inst string
 
 	// LogicalNodes are the logical nodes within this LD.
 	LogicalNodes []LogicalNode
@@ -154,8 +160,8 @@ type DataSetDef struct {
 
 // DataSetMemberDef defines a single member (FCDA) of a server-side dataset.
 type DataSetMemberDef struct {
-	// LDInst is the logical device instance name. Empty means the
-	// enclosing LD.
+	// LDInst is the logical device of the member: the MMS domain ID of
+	// the model (see [LogicalDevice.Name]). Empty means the enclosing LD.
 	LDInst string
 
 	// LNName is the full logical node name (prefix+class+inst).
@@ -404,4 +410,15 @@ func joinPath(parts []string) string {
 		result.WriteString(p)
 	}
 	return result.String()
+}
+
+// LDInst returns the LDevice@inst of the logical device with MMS domain
+// domain, or "" when the model has none.
+func (m *Model) LDInst(domain string) string {
+	for i := range m.LogicalDevices {
+		if m.LogicalDevices[i].Name == domain {
+			return m.LogicalDevices[i].Inst
+		}
+	}
+	return ""
 }

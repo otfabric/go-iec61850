@@ -51,7 +51,7 @@ func TestRun(t *testing.T) {
 	var m counters
 	retry := mms.RetryPolicy{InitialBackoff: 20 * time.Millisecond, MaxBackoff: 50 * time.Millisecond}
 	cfg := config{
-		Addr: addr, Ref: demoied.LD + "/MMXU1.PhV.phsA.cVal.mag.f[MX]", Interval: 10 * time.Millisecond,
+		Addr: addr, Ref: demoied.Domain + "/MMXU1.PhV.phsA.cVal.mag.f[MX]", Interval: 10 * time.Millisecond,
 		Retry: retry, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Metrics: &m,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)

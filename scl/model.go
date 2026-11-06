@@ -88,7 +88,11 @@ type Server struct {
 
 // LDevice represents a logical device.
 type LDevice struct {
-	Inst    string
+	Inst string
+	// LdName is LDevice@ldName (IEC 61850-6 Ed 2): the name of the logical
+	// device when it is not the IED name followed by Inst. Empty when the
+	// SCL does not give one.
+	LdName  string
 	Desc    string
 	LN0     *LN
 	LNs     []LN

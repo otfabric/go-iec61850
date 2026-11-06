@@ -15,10 +15,10 @@ func TestRun(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	var out demoied.Output
-	if err := run(ctx, addr, demoied.LD, &out); err != nil {
+	if err := run(ctx, addr, demoied.Domain, &out); err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range []string{"LD1/LLN0.dsGoose (3 members", "created LD1/LLN0$dsExample", "LD1/GGIO1.Ind1.stVal[ST] = false", "deleted ", "not found (object-non-existent), as expected"} {
+	for _, s := range []string{"DemoIEDLD1/LLN0.dsGoose (3 members", "created DemoIEDLD1/LLN0$dsExample", "DemoIEDLD1/GGIO1.Ind1.stVal[ST] = false", "deleted ", "not found (object-non-existent), as expected"} {
 		out.WaitFor(t, s, 0)
 	}
 	t.Log("\n" + out.String())

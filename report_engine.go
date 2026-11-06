@@ -432,8 +432,9 @@ func (re *ReportEngine) enableRCB(_ context.Context, rt *rcbRuntime, conn *mms.S
 		confRev := rt.confRev
 		datSet := rt.datSet
 		rcbItemID := rt.rcbItemID
+		dataRefs := append([]string(nil), rt.memberKeys...)
 		re.wg.Go(func() {
-			re.replayBRCBEntries(rcbItemID, rptID, optFlds, confRev, datSet, replayEntries, conn)
+			re.replayBRCBEntries(rcbItemID, rptID, optFlds, confRev, datSet, dataRefs, replayEntries, conn)
 		})
 	}
 
@@ -477,6 +478,7 @@ func (re *ReportEngine) SetRCBBufMax(ldName, rcbItemID string, max int) bool {
 func (re *ReportEngine) replayBRCBEntries(
 	rcbItemID, rptID string,
 	optFlds OptFlds, confRev uint32, datSet string,
+	dataRefs []string,
 	entries []*bufferedEntry,
 	conn *mms.ServerConn,
 ) {
@@ -499,6 +501,7 @@ func (re *ReportEngine) replayBRCBEntries(
 			datSet:    datSet,
 			entryID:   entry.entryID,
 			inclusion: entry.inclusion,
+			dataRefs:  dataRefs,
 			reasons:   entry.reasons,
 			values:    entry.values,
 		})
@@ -748,6 +751,7 @@ func (re *ReportEngine) sendReport(_ context.Context, rt *rcbRuntime, seqNum uin
 	buffered := rt.buffered
 	enableConn := rt.enableConn
 	bufOvfl := rt.bufOvfl
+	dataRefs := append([]string(nil), rt.memberKeys...)
 	rt.mu.Unlock()
 
 	var entryIDBytes []byte
@@ -793,6 +797,7 @@ func (re *ReportEngine) sendReport(_ context.Context, rt *rcbRuntime, seqNum uin
 		bufOvfl:   bufOvfl,
 		entryID:   entryIDBytes,
 		inclusion: inclusion,
+		dataRefs:  dataRefs,
 		reasons:   reasons,
 		values:    values,
 	})
@@ -863,8 +868,12 @@ type reportParams struct {
 	bufOvfl   bool
 	entryID   []byte // nil for URCB
 	inclusion []bool
-	reasons   []ReasonCode
-	values    []*mms.Value
+	// dataRefs are the data references of the data set members, in
+	// order: "<LD>/<LN>$<FC>$<DO>[$<DA>...]" (IEC 61850-8-1 report
+	// format, the MMS form of the member reference).
+	dataRefs []string
+	reasons  []ReasonCode
+	values   []*mms.Value
 }
 
 // encodeReportValues builds the flat MMS value list for an IEC 61850
@@ -936,6 +945,21 @@ func encodeReportValuesEx(p reportParams) []*mms.Value {
 
 	inclusionBits := encodeInclusion(p.inclusion)
 	result = append(result, inclusionBits)
+
+	// One data reference per included member, between the inclusion
+	// bitstring and the values, when OptFlds asks for them.
+	if p.optFlds.Has(OptFldDataRef) {
+		for i, incl := range p.inclusion {
+			if !incl {
+				continue
+			}
+			ref := ""
+			if i < len(p.dataRefs) {
+				ref = p.dataRefs[i]
+			}
+			result = append(result, mms.NewVisibleString(ref))
+		}
+	}
 
 	for i, incl := range p.inclusion {
 		if incl && i < len(p.values) {

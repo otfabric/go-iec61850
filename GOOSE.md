@@ -210,8 +210,8 @@ A `ControlBlock` combines the `GSEControl` (name, `appID` as goID,
 ConnectedAP (`MAC-Address`, `APPID`, `VLAN-ID`, `VLAN-PRIORITY`,
 `MinTime`, `MaxTime`) and the dataset members with their MMS types
 (data-object members expand to the attributes of the FC, recursively).
-References are the on-wire form: the MMS domain is the IED name followed
-by the LD instance (`IED1LD0/LLN0$GO$gcb1`). Blocks that cannot be
+References are the on-wire form: the MMS domain is LDevice@ldName, or
+the IED name followed by the LD instance (`IED1LD0/LLN0$GO$gcb1`). Blocks that cannot be
 resolved are reported in the returned error (wrapping `ErrSCL`); the rest
 are returned.
 
@@ -240,8 +240,11 @@ srv.SetValue(ctx, "LD0/GGIO1$ST$Ind1$stVal", mms.NewBoolean(true)) // -> new GOO
   NdsCom true and cannot be enabled.
 - `GOOSEEngine.ControlBlocks()`, `Publisher(ref)`, `SetEnabled(ref, on)`
   and `Stop()`; `Server.Close` stops the engine.
-- The server's MMS domain is the bare LD instance, and so is the gocbRef
-  it publishes (`LD0/LLN0$GO$gcb1`).
+- The server's MMS domain is the logical device's IEC 61850-8-1 name, and
+  so is the gocbRef it publishes (`IED1LD0/LLN0$GO$gcb1`): LDevice@ldName
+  when the SCL has one, else the IED name followed by the instance. Before
+  v1.7.0 it was the bare instance (`LD0/LLN0$GO$gcb1`), which
+  `ServerModelOptions.InstanceDomainNames` keeps.
 
 ## Client GoCB access
 

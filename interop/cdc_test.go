@@ -132,8 +132,8 @@ func TestBeanClient_CDC_DPS_Read(t *testing.T) {
 // Targets of the server-direction CDC reads, in the ied-client's
 // "read" result format.
 const (
-	cdcDPSTarget = "InteropLD/GGIO1.DPS1.stVal[ST]"
-	cdcBCRTarget = "InteropLD/MMTR1.TotVAh.actVal[ST]"
+	cdcDPSTarget = goLD + "/GGIO1.DPS1.stVal[ST]"
+	cdcBCRTarget = goLD + "/MMTR1.TotVAh.actVal[ST]"
 )
 
 // clientCDCRead runs the ied-client adapter (the peer stack's, or

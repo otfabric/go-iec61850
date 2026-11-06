@@ -104,8 +104,8 @@ func TestListenAndServe_WithHooksServesAndFiresCallbacks(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListLogicalDevices #%d: %v", i, err)
 		}
-		if len(lds) != 1 || lds[0].Name != "LD1" {
-			t.Errorf("logical devices = %v, want [LD1]", lds)
+		if len(lds) != 1 || lds[0].Name != "IED1LD1" {
+			t.Errorf("logical devices = %v, want [IED1LD1]", lds)
 		}
 		_ = c.Close(ctx)
 		_ = mmsClient.Close(ctx)

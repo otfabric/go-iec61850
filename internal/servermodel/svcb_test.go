@@ -99,7 +99,7 @@ func TestFromSCLAndRegisterSvCBs(t *testing.T) {
 	if len(ln.SvCBs) != 3 || ln.SvCBs[0].AppID != 0x4000 || !ln.SvCBs[0].HasVLAN || ln.SvCBs[1].NoASDU != 8 || ln.SvCBs[2].HasAddress {
 		t.Fatalf("%+v", ln.SvCBs)
 	}
-	n, err := m.ResolveMember("MU01", DataSetMemberDef{LNName: "ITCTR1", DOPath: "AmpSv", FC: "MX"})
+	n, err := m.ResolveMember("MUIEDMU01", DataSetMemberDef{LNName: "ITCTR1", DOPath: "AmpSv", FC: "MX"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestFromSCLAndRegisterSvCBs(t *testing.T) {
 	t.Cleanup(func() { _ = client.Close(ctx) })
 	read := func(item string) *mms.Value {
 		t.Helper()
-		r, err := client.Read(ctx, mms.ReadRequest{DomainID: "MU01", ItemID: mms.ItemID(item)})
+		r, err := client.Read(ctx, mms.ReadRequest{DomainID: "MUIEDMU01", ItemID: mms.ItemID(item)})
 		if err != nil || r == nil || r.Value == nil {
 			t.Fatalf("read %s: %v", item, err)
 		}
@@ -139,20 +139,20 @@ func TestFromSCLAndRegisterSvCBs(t *testing.T) {
 	if id, _ := read("LLN0$MS$MSVCB02$MsvID").VisibleString(); id != "MU01-256" {
 		t.Errorf("MsvID %q", id)
 	}
-	if ds, _ := read("LLN0$MS$MSVCB01$DatSet").VisibleString(); ds != "MU01/LLN0$PhsMeas1" {
+	if ds, _ := read("LLN0$MS$MSVCB01$DatSet").VisibleString(); ds != "MUIEDMU01/LLN0$PhsMeas1" {
 		t.Errorf("DatSet %q", ds)
 	}
 	if u, _ := read("LLN0$MS$MSVCB01$DstAddress$APPID").Uint64(); u != 0x4000 {
 		t.Errorf("APPID %#x", u)
 	}
 	// Without the interceptor, writable attributes are stored directly.
-	if _, err := client.Write(ctx, mms.WriteRequest{DomainID: "MU01", ItemID: "LLN0$MS$MSVCB01$SmpRate", Value: mms.NewUnsigned(256)}); err != nil {
+	if _, err := client.Write(ctx, mms.WriteRequest{DomainID: "MUIEDMU01", ItemID: "LLN0$MS$MSVCB01$SmpRate", Value: mms.NewUnsigned(256)}); err != nil {
 		t.Fatal(err)
 	}
-	if u, _ := vs.Get(StoreKey("MU01", "LLN0$MS$MSVCB01$SmpRate")).Uint64(); u != 256 {
+	if u, _ := vs.Get(StoreKey("MUIEDMU01", "LLN0$MS$MSVCB01$SmpRate")).Uint64(); u != 256 {
 		t.Errorf("SmpRate %d", u)
 	}
-	if _, err := client.Write(ctx, mms.WriteRequest{DomainID: "MU01", ItemID: "LLN0$MS$MSVCB01$noASDU", Value: mms.NewUnsigned(2)}); err == nil {
+	if _, err := client.Write(ctx, mms.WriteRequest{DomainID: "MUIEDMU01", ItemID: "LLN0$MS$MSVCB01$noASDU", Value: mms.NewUnsigned(2)}); err == nil {
 		t.Error("noASDU write accepted")
 	}
 }

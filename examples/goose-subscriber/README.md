@@ -12,7 +12,7 @@ Subscribe to and supervise a GOOSE control block from SCL.
 go build -o goose-subscriber ./examples/goose-subscriber && sudo ./goose-subscriber -iface eth0
 ```
 
-Run `goose-publisher` (same SCL references) or `goose-server` (add `-any-ref`: the go-iec61850 server publishes with the bare LD as MMS domain) on the segment.
+Run `goose-publisher` (same SCL references) or `goose-server` (the go-iec61850 server publishes with the IED name and LD instance as MMS domain, as the SCL names it; `-any-ref` accepts a publisher that names it differently, such as go-iec61850 before v1.7.0) on the segment.
 
 ## Privileges
 

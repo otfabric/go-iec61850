@@ -644,8 +644,9 @@ func TestGOOSE_GoServer(t *testing.T) {
 			if _, err := srv.EnableGOOSE(iec61850.GOOSEOptions{Transport: tr}); err != nil {
 				t.Fatal(err)
 			}
-			// The server's MMS domain is the bare LD inst, so is the gocbRef.
-			ref := "InteropLD/LLN0$GO$gcbBool"
+			// The server names its MMS domain <IED><LD inst> (IEC 61850-8-1),
+			// so the gocbRef on the wire is the fixture's.
+			ref := fx.GocbRef
 			isFrame := func(ev gooseEvent) bool { return ev.Event == "goose" && ev.GocbRef == ref }
 			first, ok := sub.next(t, gooseEventTimeout, isFrame)
 			if !ok {
@@ -654,7 +655,7 @@ func TestGOOSE_GoServer(t *testing.T) {
 			if first.AppID != fx.AppID || first.Dst != fx.Dst || first.GoID != fx.GoID || first.NumDatSetEntries != 2 {
 				t.Errorf("frame: %+v", first)
 			}
-			srv.SetValue(context.Background(), "InteropLD/GGIO1$ST$SPS1$stVal", mms.NewBoolean(true))
+			srv.SetValue(context.Background(), goLD+"/GGIO1$ST$SPS1$stVal", mms.NewBoolean(true))
 			ev, ok := sub.next(t, gooseEventTimeout, func(e gooseEvent) bool { return isFrame(e) && e.StNum == first.StNum+1 })
 			if !ok {
 				t.Fatal("data change did not produce a new state")

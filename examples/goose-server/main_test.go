@@ -24,7 +24,7 @@ func TestRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := sub.Subscribe(goose.SubscriptionConfig{AppIDs: []uint16{0x1001}, GocbRef: "LD1/LLN0$GO$gcb01", OnlyStateChanges: true})
+	s, err := sub.Subscribe(goose.SubscriptionConfig{AppIDs: []uint16{0x1001}, GocbRef: "DemoIEDLD1/LLN0$GO$gcb01", OnlyStateChanges: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cb, err := c.GetGoCB(ctx, demoied.LD, "LLN0$GO$gcb01")
+	cb, err := c.GetGoCB(ctx, demoied.Domain, "LLN0$GO$gcb01")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -179,7 +179,7 @@ func TestE2E_SCLModelRejectsHostileWrites(t *testing.T) {
 	c := dialModel(t, srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	const dom = "InteropLD"
+	const dom = "InteropIEDInteropLD"
 
 	write := func(item string, v *mms.Value) error {
 		_, err := c.Write(ctx, mms.WriteRequest{DomainID: dom, ItemID: mms.ItemID(item), Value: v})

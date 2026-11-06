@@ -240,7 +240,7 @@ func TestGoServer_BRCB_Overflow(t *testing.T) {
 	if re == nil {
 		t.Skip("report engine not available")
 	}
-	if !re.SetRCBBufMax(brcbLD, brcbItemID, 2) {
+	if !re.SetRCBBufMax(goLD, brcbItemID, 2) {
 		t.Fatalf("BRCB runtime not found: %s/%s", brcbLD, brcbItemID)
 	}
 
@@ -259,7 +259,7 @@ drainLoop:
 	// The 3rd change overflows the buffer of 2.
 	writeCtx := context.Background()
 	for i := 0; i < 4; i++ {
-		h.srv.SetValue(writeCtx, "InteropLD/GGIO1$ST$SPS1$stVal",
+		h.srv.SetValue(writeCtx, goLD+"/GGIO1$ST$SPS1$stVal",
 			mms.NewBoolean(i%2 == 0))
 		time.Sleep(50 * time.Millisecond)
 	}

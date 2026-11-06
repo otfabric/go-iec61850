@@ -37,7 +37,7 @@ func TestChaosHostileClientsAgainstSCLModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(srv.Close)
-	const dom = "InteropLD"
+	const dom = "InteropIEDInteropLD"
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

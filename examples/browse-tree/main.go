@@ -6,7 +6,7 @@
 //
 // Usage:
 //
-//	browse-tree [-addr 127.0.0.1:102] [-depth 5] [-ld LD1]
+//	browse-tree [-addr 127.0.0.1:102] [-depth 5] [-ld DemoIEDLD1]
 //
 // Run it against examples/ied-server or any IEC 61850 server.
 package main
