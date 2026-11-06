@@ -233,9 +233,10 @@ func TestPeerClientTSelectors(t *testing.T) {
 		name  string
 		start func(t *testing.T, port int, extra ...string) <-chan iedClientResult
 	}
-	clients := []client{
-		{peer().name, startIEDClientAdapter},
-		{"iec61850bean", startIEC61850BeanClientAdapter},
+	clients := []client{{peer().name, startIEDClientAdapter}}
+	// The Self-interop run (stack otfabric) has only go-iec61850's own image.
+	if peer().name != otfabricStack.name {
+		clients = append(clients, client{"iec61850bean", startIEC61850BeanClientAdapter})
 	}
 	cases := []struct {
 		name     string

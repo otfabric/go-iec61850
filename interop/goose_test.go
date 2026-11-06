@@ -45,11 +45,24 @@ const (
 	gooseEventTimeout   = 30 * time.Second
 )
 
-// gooseStacks are the adapter stacks with GOOSE commands.
-var gooseStacks = []peerStack{
-	{"libiec61850", "LIBIEC61850_IMAGE", defaultLibIECImage},
-	{"dscsystems", "DSCSYSTEMS_IMAGE", defaultDSCImage},
-	{"iec61850-rust", "IEC61850RUST_IMAGE", defaultRustImage},
+// gooseStacks are the adapter stacks with GOOSE commands: the references,
+// and otfabric when IEC61850_INTEROP_OTFABRIC_IMAGE names an image; with
+// IEC61850_PEER_STACK=otfabric (the Self-interop workflow) otfabric alone.
+var gooseStacks = l2Stacks()
+
+func l2Stacks() []peerStack {
+	if os.Getenv("IEC61850_PEER_STACK") == "otfabric" {
+		return []peerStack{otfabricStack}
+	}
+	stacks := []peerStack{
+		{"libiec61850", "LIBIEC61850_IMAGE", defaultLibIECImage},
+		{"dscsystems", "DSCSYSTEMS_IMAGE", defaultDSCImage},
+		{"iec61850-rust", "IEC61850RUST_IMAGE", defaultRustImage},
+	}
+	if os.Getenv(otfabricImageEnv) != "" {
+		stacks = append(stacks, otfabricStack)
+	}
+	return stacks
 }
 
 // ---------------------------------------------------------------------------

@@ -119,7 +119,8 @@ iec61850-rust:
 | `IEC61850BEAN_IMAGE` | Docker image for the iec61850bean adapter | `iec61850-interop-iec61850bean:local` |
 | `DSCSYSTEMS_IMAGE` | Docker image for the dscsystems adapter | `iec61850-interop-dscsystems:local` |
 | `IEC61850RUST_IMAGE` | Docker image for the iec61850-rust adapter | `iec61850-interop-iec61850-rust:local` |
-| `IEC61850_PEER_STACK` | Stack behind the `TestLibIEC*` tests: `libiec61850`, `dscsystems` or `iec61850-rust` | `libiec61850` |
+| `IEC61850_PEER_STACK` | Stack behind the `TestLibIEC*` tests: `libiec61850`, `dscsystems`, `iec61850-rust`, or `otfabric` (go-iec61850 itself, needs `IEC61850_INTEROP_OTFABRIC_IMAGE`; the GOOSE and SV tests then run against it alone) | `libiec61850` |
+| `IEC61850_INTEROP_OTFABRIC_IMAGE` | Docker image of go-iec61850's own adapter (`ghcr.io/otfabric/iec61850-interop-otfabric`); no default, not an independent stack (INTEROP.md, Self-interop) | — |
 | `IEC61850_SKIP_BEAN` | Do not start the shared iec61850bean server | — |
 | `GOOSE_IFACE` | Interface on the GOOSE network (`goose0` on the host, `eth0` in a container); GOOSE tests skip when unset | — |
 | `IEC61850_SV_FIXTURE` | SV fixture revision the adapter images implement (`sv-v1` from iec61850-interop v0.4.0); SV tests skip unless it matches | — |

@@ -72,6 +72,20 @@ IEC61850_PEER_STACK=iec61850-rust \
 IEC61850RUST_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850-rust:v1.0.1 make interop
 ```
 
+### Against go-iec61850 itself (Self-interop)
+
+`IEC61850_PEER_STACK=otfabric IEC61850_INTEROP_OTFABRIC_IMAGE=ghcr.io/otfabric/iec61850-interop-otfabric:latest`
+runs the same suites against the latest published go-iec61850 (and the go-mms
+under it) behind the same contract: an image of
+[iec61850-interop](https://github.com/otfabric/iec61850-interop/tree/main/own/go-iec61850),
+built by hand from the latest releases. With that stack the GOOSE and SV tests
+run against it alone. The manual **Self-interop** workflow does this from any
+commit and logs the image digest; it finds a wire change that breaks an earlier
+release, which the e2e tests (both sides from one commit) cannot. It is not
+independent evidence, never a required check and not part of the Interop
+workflow, and nothing pins the image (ADR-0012), so it cannot ask for a release.
+Nothing in this file's matrices comes from it.
+
 CI pins every image by digest in `.github/workflows/interop.yml`. GOOSE
 and SV need a raw interface on a Docker network and root; see
 [interop/README.md](interop/README.md) and `make interop-goose`.
@@ -84,7 +98,8 @@ and SV need a raw interface on a Docker network and root; see
 | `IEC61850BEAN_IMAGE` | iec61850bean adapter image | `iec61850-interop-iec61850bean:local` |
 | `DSCSYSTEMS_IMAGE` | dscsystems adapter image | `iec61850-interop-dscsystems:local` |
 | `IEC61850RUST_IMAGE` | iec61850-rust adapter image | `iec61850-interop-iec61850-rust:local` |
-| `IEC61850_PEER_STACK` | stack behind `TestLibIEC*`: `libiec61850`, `dscsystems` or `iec61850-rust` | `libiec61850` |
+| `IEC61850_PEER_STACK` | stack behind `TestLibIEC*`: `libiec61850`, `dscsystems`, `iec61850-rust`, or `otfabric` (with `IEC61850_INTEROP_OTFABRIC_IMAGE`) | `libiec61850` |
+| `IEC61850_INTEROP_OTFABRIC_IMAGE` | image of go-iec61850's own adapter (`ghcr.io/otfabric/iec61850-interop-otfabric`), the `otfabric` stack: not independent, no default, runs only when set | — |
 | `IEC61850_SKIP_BEAN` | do not start the shared iec61850bean server | — |
 | `GOOSE_IFACE` | raw interface on the GOOSE Docker network (`goose0`); GOOSE tests skip when unset | — |
 | `GOOSE_NETWORK` | Docker network of the GOOSE adapters | `iec61850-interop-goose` |

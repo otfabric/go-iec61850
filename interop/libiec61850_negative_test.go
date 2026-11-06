@@ -99,6 +99,12 @@ func TestLibIECClient_Neg_UnknownDO(t *testing.T) {
 // The libiec61850 server enforces IEC 61850 write access: ST (Status) attributes
 // may not be written by external clients, even when the value type is correct.
 func TestLibIECClient_Neg_WriteReadOnly(t *testing.T) {
+	if peer().name == otfabricStack.name {
+		// Like go-iec61850's own interop server (startGoIEDServer), the
+		// otfabric server takes ST writes (AllowReadOnlyFCWrites) so that the
+		// contract's reporters can trigger a data change.
+		t.Skip("otfabric: the server allows ST writes (iec61850-interop own/go-iec61850)")
+	}
 	h := startIEDServer(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()

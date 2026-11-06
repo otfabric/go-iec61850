@@ -815,6 +815,12 @@ against this library's server, and the adapter matrix does not include BRCB
 ([INTEROP.md](INTEROP.md)). The Go server's URCB reservation suite
 (`interop/urcb_reservation_test.go`) is the same kind of test.
 
+The same suites also run, by hand and never as a required check, against the
+latest published go-iec61850 itself: the **Self-interop** workflow uses
+`ghcr.io/otfabric/iec61850-interop-otfabric:latest` (`IEC61850_PEER_STACK=otfabric`),
+which finds a wire change that breaks an earlier release. It is not
+independent evidence ([INTEROP.md](INTEROP.md#against-go-iec61850-itself-self-interop)).
+
 | Where | What |
 |---|---|
 | [COMPATIBILITY.md](COMPATIBILITY.md#per-stack-matrix) | Per-stack result matrix and stack deviations |
