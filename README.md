@@ -29,10 +29,10 @@ with raw MMS domain names, item IDs, BER or Ethernet frames.
 
 - **Stable API** — v1 follows semantic versioning for every non-internal
   package, client and server alike ([COMPATIBILITY.md](COMPATIBILITY.md)).
-- **Interoperability** — tested in CI against pinned builds of four
+- **Interoperability** — tested in CI against pinned builds of five
   independent stacks (libiec61850, iec61850bean, dscsystems,
-  iec61850-rust) in both directions, GOOSE and SV on a Docker bridge
-  included ([per-stack matrix](COMPATIBILITY.md#per-stack-matrix),
+  iec61850-rust, cbsigma) in both directions, GOOSE (and SV, all but
+  iec61850bean and cbsigma) on a Docker bridge included ([per-stack matrix](COMPATIBILITY.md#per-stack-matrix),
   [INTEROP.md](INTEROP.md)).
 - **Quality gates** — ≥ 90 % statement coverage per package, race
   detector on Go 1.26–1.27, fuzz targets for the MMS value, GOOSE, SV and
@@ -747,8 +747,8 @@ go-iec61850/
 │
 ├── interop/                    Interoperability tests (build tag: interop)
 │   │                           against iec61850-interop adapter images of
-│   │                           libiec61850, iec61850bean, dscsystems and
-│   │                           iec61850-rust (see interop/README.md)
+│   │                           libiec61850, iec61850bean, dscsystems,
+│   │                           iec61850-rust and cbsigma (see interop/README.md)
 │   ├── harness_test.go         Docker-based harness, IEC61850_PEER_STACK
 │   ├── libiec61850_*_test.go   Stack-parametrized MMS suites (TestLibIEC*)
 │   ├── iec61850bean_*_test.go  iec61850bean suites (TestBean*)
@@ -808,10 +808,12 @@ go-iec61850/
 
 Every pull request runs the MMS client and server in both directions
 against pinned [iec61850-interop](https://github.com/otfabric/iec61850-interop)
-adapter images of four independent stacks — libiec61850 (C),
-iec61850bean (Java), dscsystems go-iec61850 (Go) and iec61850-rust — and
-GOOSE and Sampled Values against the libiec61850, dscsystems and
-iec61850-rust publishers and subscribers on a Docker bridge.
+adapter images of five independent stacks — libiec61850 (C),
+iec61850bean (Java), dscsystems go-iec61850 (Go), iec61850-rust and
+cB-Sigma iec61850/iec61850-sim (Go, `cbsigma`) — GOOSE against the
+libiec61850, dscsystems, iec61850-rust and cbsigma publishers and
+subscribers, and Sampled Values against the libiec61850, dscsystems and
+iec61850-rust ones, on a Docker bridge.
 
 The suites in `interop/` (build tag `interop`) cover browsing, reads and
 writes, datasets, URCB reporting, CDC reads, quality and timestamps,

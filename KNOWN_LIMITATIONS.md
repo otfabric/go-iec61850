@@ -154,9 +154,10 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
 ## Interoperability
 
 - **Tested against software stacks only** — MMS client and server
-  behaviour is tested against pinned libiec61850, iec61850bean, dscsystems
-  and iec61850-rust adapters, and GOOSE and SV against the libiec61850,
-  dscsystems and iec61850-rust publishers and subscribers (see
+  behaviour is tested against pinned libiec61850, iec61850bean, dscsystems,
+  iec61850-rust and cbsigma adapters, GOOSE against the libiec61850,
+  dscsystems, iec61850-rust and cbsigma publishers and subscribers, and SV
+  against the libiec61850, dscsystems and iec61850-rust ones (see
   [INTEROP.md](INTEROP.md) and [COMPATIBILITY.md](COMPATIBILITY.md)).
   Interoperability with physical IEDs and vendor stacks has not been
   formally validated, and the library has no UCA conformance

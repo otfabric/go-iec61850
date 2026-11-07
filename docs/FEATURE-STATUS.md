@@ -21,29 +21,30 @@ applicable.
 (`make e2e`), *in-memory* is a transport pair or the `l2` hub.
 
 **Independent**: software that is not go-iec61850 exchanged it with
-go-iec61850 in the `interop/` suites, on pinned images. "All four" is
-libiec61850, iec61850bean, dscsystems and iec61850-rust, and results and
+go-iec61850 in the `interop/` suites, on pinned images. "All five" is
+libiec61850, iec61850bean, dscsystems, iec61850-rust and cbsigma
+(cB-Sigma/iec61850 and iec61850-sim), and results and
 exceptions per stack are in the
 [per-stack matrix](../COMPATIBILITY.md#per-stack-matrix). "None" means no
 independent evidence: the feature must not be described as interoperable.
 
 | Feature | Client | Server | Own tests | Independent |
 |---|:---:|:---:|---|---|
-| Associate, browse, read, write, dataset read | ✅ | ✅ | TCP, in-memory | all four, both directions |
+| Associate, browse, read, write, dataset read | ✅ | ✅ | TCP, in-memory | all five, both directions |
 | Create and delete datasets | ✅ | — | in-memory | none |
-| CDC reads: DPS, BCR | ✅ | ✅ | in-memory | all four, both directions |
-| URCB reporting | ✅ | ✅ | TCP, in-memory | all four, both directions; iec61850bean has no `Resv`, iec61850-rust refuses TrgOps/IntgPd writes |
+| CDC reads: DPS, BCR | ✅ | ✅ | in-memory | all five, both directions |
+| URCB reporting | ✅ | ✅ | TCP, in-memory | all five, both directions; iec61850bean has no `Resv`, iec61850-rust refuses TrgOps/IntgPd writes |
 | BRCB reporting, EntryID resume, overflow | ✅ | ✅ | in-memory, go-to-go in `interop/` | none |
-| Direct and SBO control | ✅ | ✅ | in-memory | all four, both directions |
-| SBOw (enhanced security) | ✅ | ✅ | in-memory | libiec61850, dscsystems, iec61850-rust; not iec61850bean |
+| Direct and SBO control | ✅ | ✅ | in-memory | all five, both directions |
+| SBOw (enhanced security) | ✅ | ✅ | in-memory | libiec61850, dscsystems, iec61850-rust, cbsigma; not iec61850bean |
 | CommandTermination | ◐ not awaited | ◐ positive only | in-memory | dscsystems's controller waits for it |
 | Quality and timestamps | ✅ | ✅ | in-memory, go-to-go in `interop/` | none as a dedicated scenario |
 | Several clients at once | ✅ | ✅ | TCP, go-to-go in `interop/` | none |
 | Setting groups | ✅ | ◐ no value banks | in-memory, TCP | none |
 | Journals | ✅ | ◐ in-memory | in-memory | none here; go-mms's interop covers the MMS journal services |
 | Files | ✅ | ◐ needs a `FileProvider` | in-memory | none here; go-mms's interop covers the MMS file services |
-| GOOSE publisher and subscriber | ✅ subscriber | ✅ publisher | in-memory hub, chaos, raw socket | libiec61850, dscsystems, iec61850-rust, both directions |
-| Server GoCB published on data change | n/a | ✅ | in-memory hub | libiec61850, dscsystems, iec61850-rust |
+| GOOSE publisher and subscriber | ✅ subscriber | ✅ publisher | in-memory hub, chaos, raw socket | libiec61850, dscsystems, iec61850-rust, cbsigma, both directions |
+| Server GoCB published on data change | n/a | ✅ | in-memory hub | libiec61850, dscsystems, iec61850-rust, cbsigma |
 | GoCB read and write over MMS | ✅ | ✅ | in-memory | none |
 | SV publisher and subscriber (9-2LE, generic) | ✅ subscriber | ✅ publisher | in-memory hub, chaos | libiec61850, dscsystems, iec61850-rust, both directions; libiec61850's subscriber skips the generic stream |
 | Server MSVCB published at `smpRate` | n/a | ✅ | in-memory hub | libiec61850, dscsystems, iec61850-rust |
