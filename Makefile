@@ -16,7 +16,7 @@ PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 win
 PREFIX   ?= /usr/local
 
 # docsync release of docs-check (DOC-008).
-DOCSYNC_VERSION := v0.2.0
+DOCSYNC_VERSION := v0.3.0
 
 VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 TAG        ?= $(shell git describe --tags --exact-match 2>/dev/null || echo "")
