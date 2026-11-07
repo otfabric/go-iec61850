@@ -4,6 +4,11 @@
 
 Security issues are addressed in the latest v1 patch release.
 
+| Version | Supported |
+|---------|-----------|
+| Latest release | Yes |
+| Older releases | No |
+
 ## Reporting a vulnerability
 
 Please report security vulnerabilities **privately** rather than opening a
