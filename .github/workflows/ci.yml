@@ -23,7 +23,7 @@ jobs:
       test-exclude-regex: "/example(s)?($|/)"
       codecov-name: go-iec61850
       go-versions: '["1.26", "1.27"]'
-      policy-version: v1.4.1
+      policy-version: v1.4.2
     secrets: inherit
 
   # The tools are nested modules (ADR-0009): the root run does not reach them.
@@ -36,7 +36,7 @@ jobs:
       coverage-min: "90"
       run-codecov: false
       go-versions: '["1.26", "1.27"]'
-      policy-version: v1.4.1
+      policy-version: v1.4.2
     secrets: inherit
 
   # sclgen has no tests of its own; this keeps tidy, vet, lint and the matrix
@@ -49,7 +49,7 @@ jobs:
       run-govulncheck: true
       run-codecov: false
       go-versions: '["1.26", "1.27"]'
-      policy-version: v1.4.1
+      policy-version: v1.4.2
     secrets: inherit
 
   # Per-package coverage gate. Test binaries run as root so the GOOSE

@@ -15,10 +15,10 @@ jobs:
     name: Docs (library)
     uses: otfabric/.github/.github/workflows/docs-check.yml@v3.5.0
     with:
-      docsync-version: v0.3.0
+      docsync-version: v0.3.1
       # No policy.yml in this repository: the Policy job runs here, so
       # Markdown-only changes (skipped by ci.yml) are still checked.
-      policy-version: v1.4.1
+      policy-version: v1.4.2
     secrets: inherit
 
   docs-sclparse:
@@ -26,8 +26,8 @@ jobs:
     uses: otfabric/.github/.github/workflows/docs-check.yml@v3.5.0
     with:
       module-dir: scl/cmd/sclparse
-      docsync-version: v0.3.0
-      policy-version: v1.4.1
+      docsync-version: v0.3.1
+      policy-version: v1.4.2
       run-policy: false
     secrets: inherit
 
@@ -36,7 +36,7 @@ jobs:
     uses: otfabric/.github/.github/workflows/docs-check.yml@v3.5.0
     with:
       module-dir: scl/cmd/sclgen
-      docsync-version: v0.3.0
-      policy-version: v1.4.1
+      docsync-version: v0.3.1
+      policy-version: v1.4.2
       run-policy: false
     secrets: inherit
