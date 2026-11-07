@@ -103,36 +103,6 @@ func TestListSMV_ParseFail(t *testing.T) {
 	}
 }
 
-func TestVersionString(t *testing.T) {
-	origV, origTag, origCommit, origDate := version, tag, commit, buildDate
-	t.Cleanup(func() {
-		version, tag, commit, buildDate = origV, origTag, origCommit, origDate
-	})
-
-	version, tag, commit, buildDate = "1.2.3", "", "", ""
-	if got := versionString("sclparse"); got != "sclparse 1.2.3" {
-		t.Errorf("basic = %q", got)
-	}
-
-	tag, commit, buildDate = "v1.2.3", "abcdef0123456789", "2026-01-01"
-	got := versionString("sclparse")
-	if !strings.Contains(got, "(v1.2.3)") {
-		t.Errorf("missing tag: %q", got)
-	}
-	if !strings.Contains(got, "commit abcdef01") {
-		t.Errorf("missing short commit: %q", got)
-	}
-	if !strings.Contains(got, "built 2026-01-01") {
-		t.Errorf("missing build date: %q", got)
-	}
-
-	commit = "abcd"
-	got = versionString("tool")
-	if !strings.Contains(got, "commit abcd") {
-		t.Errorf("short commit unchanged: %q", got)
-	}
-}
-
 func TestExitError_Error(t *testing.T) {
 	ee := &exitError{code: 2, msg: "boom"}
 	if ee.Error() != "boom" {

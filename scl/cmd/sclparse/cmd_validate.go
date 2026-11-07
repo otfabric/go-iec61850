@@ -38,6 +38,7 @@ func init() {
 	validateCmd.Flags().BoolVar(&validateJSON, "json", false, "output as JSON")
 	validateCmd.Flags().BoolVar(&validateStrict, "strict", false, "treat warnings as errors")
 	validateCmd.Flags().IntVar(&validateMaxErrors, "max-errors", 0, "stop after N errors (0=unlimited)")
+	_ = validateCmd.RegisterFlagCompletionFunc("max-errors", cobra.NoFileCompletions)
 	validateCmd.Flags().BoolVar(&validateWarningsAsErrors, "warnings-as-errors", false, "promote warnings to errors")
 	validateCmd.Flags().BoolVar(&validateNoWarnings, "no-warnings", false, "suppress warning output")
 }

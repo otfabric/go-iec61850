@@ -86,12 +86,13 @@ func init() {
 	for _, cmd := range []*cobra.Command{generateCmd, checkCmd} {
 		cmd.Flags().StringVar(&specRoot, "spec-root", "", "root directory containing XSD bundles (required)")
 		cmd.Flags().StringVar(&outDir, "out", "", "output root directory for generated packages (required)")
-		cmd.Flags().StringVar(&versions, "versions", "all", "comma-separated version list or 'all'")
+		cmd.Flags().StringVar(&versions, "versions", "all", "comma-separated editions ("+strings.Join(editionNames(), ", ")+") or all")
 		cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output")
 		_ = cmd.MarkFlagRequired("spec-root")
 		_ = cmd.MarkFlagRequired("out")
 		_ = cmd.MarkFlagDirname("spec-root")
 		_ = cmd.MarkFlagDirname("out")
+		_ = cmd.RegisterFlagCompletionFunc("versions", versionsCompletion)
 	}
 
 	rootCmd.AddCommand(generateCmd)
@@ -350,4 +351,35 @@ func compareDir(generated, checked string) error {
 		}
 	}
 	return nil
+}
+
+// editionNames lists the --versions values of the supported editions.
+func editionNames() []string {
+	names := make([]string, len(allVersions))
+	for i, vs := range allVersions {
+		names[i] = vs.Version
+	}
+	return names
+}
+
+// versionsCompletion completes --versions: all, or a comma-separated list of
+// editions (the editions already given are kept and not offered again).
+func versionsCompletion(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	prefix, given := "", map[string]bool{}
+	if i := strings.LastIndex(toComplete, ","); i >= 0 {
+		prefix = toComplete[:i+1]
+		for _, v := range strings.Split(toComplete[:i], ",") {
+			given[v] = true
+		}
+	}
+	var out []string
+	if prefix == "" {
+		out = append(out, "all\tevery edition")
+	}
+	for _, vs := range allVersions {
+		if !given[vs.Version] {
+			out = append(out, prefix+vs.Version+"\tSCL "+vs.Label)
+		}
+	}
+	return out, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
 }
