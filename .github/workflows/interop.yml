@@ -22,6 +22,7 @@ jobs:
       IEC61850BEAN_IMAGE: ghcr.io/otfabric/iec61850-interop-iec61850bean@sha256:df9b48b5f903ec55f7bcb7baabe651ae204c685702d77979e89165fad00c6416
       DSCSYSTEMS_IMAGE: ghcr.io/otfabric/iec61850-interop-dscsystems@sha256:bba8bc1653b4c5bb51c4b8766f0bd99d77dd3523574ed2630b09695212618f2e
       IEC61850RUST_IMAGE: ghcr.io/otfabric/iec61850-interop-iec61850-rust@sha256:c961c039384b0ea968e786a259e1f7a3a4781f2b544ff50d794bd965e991314c
+      CBSIGMA_IMAGE: ghcr.io/otfabric/iec61850-interop-cbsigma@sha256:bf0597703e7d1495ab3aa144d481bc92a0a4aef87a2bfafcbd75f7c1fbb4aa16
       # The pinned images (iec61850-interop v1.4.0) implement the SV fixture.
       IEC61850_SV_FIXTURE: sv-v1
 
@@ -55,6 +56,11 @@ jobs:
           IEC61850_PEER_STACK: iec61850-rust
         run: go test -tags=interop -v -timeout 900s -run '^Test(LibIEC|GoServer)' ./interop/...
 
+      - name: Run IEC 61850 interop against cbsigma
+        env:
+          IEC61850_PEER_STACK: cbsigma
+        run: go test -tags=interop -v -timeout 900s -run '^Test(LibIEC|GoServer)' ./interop/...
+
       # GOOSE is raw Ethernet: the adapters run on a Docker bridge network
       # whose bridge device goose0 the test opens from the host (as root,
       # for CAP_NET_RAW). An idle container gives the bridge its carrier.
@@ -65,6 +71,7 @@ jobs:
           docker pull -q "$LIBIEC61850_IMAGE"
           docker pull -q "$DSCSYSTEMS_IMAGE"
           docker pull -q "$IEC61850RUST_IMAGE"
+          docker pull -q "$CBSIGMA_IMAGE"
           docker network create -o com.docker.network.bridge.name=goose0 iec61850-interop-goose
           docker run -d --rm --name goose-carrier --network iec61850-interop-goose --entrypoint sleep "$LIBIEC61850_IMAGE" infinity
           sleep 2

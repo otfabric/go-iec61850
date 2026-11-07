@@ -12,6 +12,7 @@ iec61850-interop
   iec61850bean adapter images
   dscsystems adapter images
   iec61850-rust adapter images
+  cbsigma adapter images
          |
     go-iec61850/interop/
       harness_test.go                lifecycle helpers, fixture loading
@@ -28,17 +29,20 @@ iec61850-interop
       sbo_test.go                    TestLibIEC*_Control_SBO* / TestBean*_Control_SBO* / TestGoServer_SBO_*
       sbow_test.go                   TestLibIEC*_Control_SBOw* / TestBean*_Control_SBOw* / TestGoServer_SBOw_*
       report_semantics_test.go       TestLibIEC*_URCB_GI* / *MultiMember*
-      goose_test.go                  TestGOOSE_* (libiec61850, dscsystems, iec61850-rust)
+      goose_test.go                  TestGOOSE_* (libiec61850, dscsystems, iec61850-rust, cbsigma)
       sv_test.go                     TestSV_* (libiec61850, dscsystems, iec61850-rust),
                                      TestLibIECClient_SVCB_Read (MSVCB over MMS)
 ```
 
-The `TestLibIEC*` tests run twice in CI: against libiec61850 and, with
+The `TestLibIEC*` tests run once per stack in CI: against libiec61850 and, with
 `IEC61850_PEER_STACK=dscsystems`, against the
 [dscsystems](https://github.com/dscsystems/go-iec61850) adapters, which
 implement the same commands and JSON Lines contract (`dscsystems-` prefix),
-and with `IEC61850_PEER_STACK=iec61850-rust` against the iec61850-rust
-adapters. See the per-stack matrix in [COMPATIBILITY.md](COMPATIBILITY.md#per-stack-matrix).
+with `IEC61850_PEER_STACK=iec61850-rust` against the iec61850-rust
+adapters, and with `IEC61850_PEER_STACK=cbsigma` against the cB-Sigma
+adapters ([iec61850-sim](https://github.com/cB-Sigma/iec61850-sim) serves
+the IED, [cB-Sigma/iec61850](https://github.com/cB-Sigma/iec61850) is the
+client, controller and reporter). See the per-stack matrix in [COMPATIBILITY.md](COMPATIBILITY.md#per-stack-matrix).
 
 Each test:
 1. Starts the adapter container with `docker run`.
@@ -70,6 +74,8 @@ IEC61850_PEER_STACK=dscsystems \
 DSCSYSTEMS_IMAGE=ghcr.io/otfabric/iec61850-interop-dscsystems:v1.0.1 make interop
 IEC61850_PEER_STACK=iec61850-rust \
 IEC61850RUST_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850-rust:v1.0.1 make interop
+IEC61850_PEER_STACK=cbsigma \
+CBSIGMA_IMAGE=ghcr.io/otfabric/iec61850-interop-cbsigma:v1.4.0 make interop
 ```
 
 ### Against go-iec61850 itself (Self-interop)
@@ -98,7 +104,8 @@ and SV need a raw interface on a Docker network and root; see
 | `IEC61850BEAN_IMAGE` | iec61850bean adapter image | `iec61850-interop-iec61850bean:local` |
 | `DSCSYSTEMS_IMAGE` | dscsystems adapter image | `iec61850-interop-dscsystems:local` |
 | `IEC61850RUST_IMAGE` | iec61850-rust adapter image | `iec61850-interop-iec61850-rust:local` |
-| `IEC61850_PEER_STACK` | stack behind `TestLibIEC*`: `libiec61850`, `dscsystems`, `iec61850-rust`, or `otfabric` (with `IEC61850_INTEROP_OTFABRIC_IMAGE`) | `libiec61850` |
+| `CBSIGMA_IMAGE` | cbsigma adapter image | `iec61850-interop-cbsigma:local` |
+| `IEC61850_PEER_STACK` | stack behind `TestLibIEC*`: `libiec61850`, `dscsystems`, `iec61850-rust`, `cbsigma`, or `otfabric` (with `IEC61850_INTEROP_OTFABRIC_IMAGE`) | `libiec61850` |
 | `IEC61850_INTEROP_OTFABRIC_IMAGE` | image of go-iec61850's own adapter (`ghcr.io/otfabric/iec61850-interop-otfabric`), the `otfabric` stack: not independent, no default, runs only when set | — |
 | `IEC61850_SKIP_BEAN` | do not start the shared iec61850bean server | — |
 | `GOOSE_IFACE` | raw interface on the GOOSE Docker network (`goose0`); GOOSE tests skip when unset | — |
@@ -214,7 +221,7 @@ integer, unsigned, float32, quality, UtcTime, Dbpos, nested structure)
 and `gcbBool`. Frames cross a Docker bridge (`goose0`) that the test opens
 with the `goose` raw transport.
 
-Each row holds for libiec61850, dscsystems and iec61850-rust.
+Each row holds for libiec61850, dscsystems, iec61850-rust and cbsigma.
 
 | Capability | Go → stack | stack → Go |
 |-----------|:---:|:---:|

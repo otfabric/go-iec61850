@@ -15,6 +15,7 @@
 // Environment variables (all optional):
 //
 //	IEC61850_PEER_STACK       Stack behind the TestLibIEC* adapters: libiec61850 (default), dscsystems, iec61850-rust,
+//	                          cbsigma (cB-Sigma/iec61850 + iec61850-sim),
 //	                          or otfabric (go-iec61850 itself, see IEC61850_INTEROP_OTFABRIC_IMAGE)
 //	IEC61850_INTEROP_OTFABRIC_IMAGE  Image of go-iec61850's own adapter (ghcr.io/otfabric/iec61850-interop-otfabric);
 //	                          no default. It is not an independent implementation (INTEROP.md): the stack runs
@@ -23,6 +24,7 @@
 //	LIBIEC61850_IMAGE         Docker image with libiec61850 adapters (default: iec61850-interop-libiec61850:local)
 //	DSCSYSTEMS_IMAGE          Docker image with dscsystems adapters (default: iec61850-interop-dscsystems:local)
 //	IEC61850RUST_IMAGE        Docker image with iec61850-rust adapters (default: iec61850-interop-iec61850-rust:local)
+//	CBSIGMA_IMAGE             Docker image with cbsigma adapters (default: iec61850-interop-cbsigma:local)
 //	IEC61850BEAN_IMAGE        Docker image with iec61850bean adapters (default: iec61850-interop-iec61850bean:local)
 //	IEC61850_SERVER_BINARY    Path to libiec61850-ied-server binary (skips Docker)
 //	IEC61850_CLIENT_BINARY    Path to libiec61850-ied-client binary (skips Docker)
@@ -56,14 +58,15 @@ import (
 // ---------------------------------------------------------------------------
 
 const (
-	defaultLibIECImage = "iec61850-interop-libiec61850:local"
-	defaultDSCImage    = "iec61850-interop-dscsystems:local"
-	defaultRustImage   = "iec61850-interop-iec61850-rust:local"
-	defaultBeanImage   = "iec61850-interop-iec61850bean:local"
-	defaultFixtureDir  = "testdata"
-	iedReadyTimeout    = 60 * time.Second
-	iedClientTimeout   = 60 * time.Second
-	iedReporterTimeout = 60 * time.Second
+	defaultLibIECImage  = "iec61850-interop-libiec61850:local"
+	defaultDSCImage     = "iec61850-interop-dscsystems:local"
+	defaultRustImage    = "iec61850-interop-iec61850-rust:local"
+	defaultBeanImage    = "iec61850-interop-iec61850bean:local"
+	defaultCBSigmaImage = "iec61850-interop-cbsigma:local"
+	defaultFixtureDir   = "testdata"
+	iedReadyTimeout     = 60 * time.Second
+	iedClientTimeout    = 60 * time.Second
+	iedReporterTimeout  = 60 * time.Second
 )
 
 // ---------------------------------------------------------------------------
@@ -268,6 +271,8 @@ func peer() peerStack {
 		return peerStack{"dscsystems", "DSCSYSTEMS_IMAGE", defaultDSCImage}
 	case "iec61850-rust":
 		return peerStack{"iec61850-rust", "IEC61850RUST_IMAGE", defaultRustImage}
+	case "cbsigma":
+		return peerStack{"cbsigma", "CBSIGMA_IMAGE", defaultCBSigmaImage}
 	case "otfabric":
 		if os.Getenv(otfabricImageEnv) == "" {
 			fmt.Fprintf(os.Stderr, "IEC61850_PEER_STACK=otfabric needs %s (no default)\n", otfabricImageEnv)

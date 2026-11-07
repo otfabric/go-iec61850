@@ -58,6 +58,7 @@ func l2Stacks() []peerStack {
 		{"libiec61850", "LIBIEC61850_IMAGE", defaultLibIECImage},
 		{"dscsystems", "DSCSYSTEMS_IMAGE", defaultDSCImage},
 		{"iec61850-rust", "IEC61850RUST_IMAGE", defaultRustImage},
+		{"cbsigma", "CBSIGMA_IMAGE", defaultCBSigmaImage},
 	}
 	if os.Getenv(otfabricImageEnv) != "" {
 		stacks = append(stacks, otfabricStack)

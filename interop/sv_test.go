@@ -47,9 +47,22 @@ func requireSVImages(t *testing.T) {
 	}
 }
 
-// svStacks are the adapter stacks with SV commands (iec61850bean has
+// svStacks are the adapter stacks with SV commands (iec61850bean and cbsigma have
 // none).
-var svStacks = gooseStacks
+var svStacks = withoutStack(gooseStacks, "cbsigma")
+
+// withoutStack drops a stack: the cbsigma image has no SV commands (its
+// sv-* exit unsupported; cB-Sigma/iec61850 has an SV publisher the adapter
+// does not wire).
+func withoutStack(stacks []peerStack, name string) []peerStack {
+	var out []peerStack
+	for _, s := range stacks {
+		if s.name != name {
+			out = append(out, s)
+		}
+	}
+	return out
+}
 
 // svcbOverMMS mirrors fixtures/capabilities.json svcbOverMms: the IED
 // servers that expose LLN0$MS$MSVCB02.
