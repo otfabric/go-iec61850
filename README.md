@@ -57,6 +57,7 @@ with raw MMS domain names, item IDs, BER or Ethernet frames.
   - [SCL parsing](#scl-parsing)
 - [API overview](#api-overview)
 - [Command-line tools](#command-line-tools)
+  - [Install sclparse and sclgen](#install-sclparse-and-sclgen)
 - [Object references](#object-references)
 - [Functional constraints](#functional-constraints)
 - [Architecture](#architecture)
@@ -127,10 +128,9 @@ go get github.com/otfabric/go-iec61850
 
 Requires Go 1.26 or later.
 
-The CLI tools: Pre-built binaries are attached to every
-[release](https://github.com/otfabric/go-iec61850/releases). In a checkout,
-`make build` writes them to `bin/`. Each tool is a nested module, so the library
-does not require cobra.
+The command-line tools `sclparse` and `sclgen` have their own installer: see
+[Install sclparse and sclgen](#install-sclparse-and-sclgen). Each tool is a
+nested module, so the library does not require cobra.
 
 ---
 
@@ -578,6 +578,26 @@ for the full API.
 
 ## Command-line tools
 
+### Install sclparse and sclgen
+
+```bash
+curl -fsSL https://get.otfabric.io/sclparse | sh
+```
+
+```powershell
+irm https://get.otfabric.io/sclparse.ps1 | iex
+```
+
+```bash
+curl -fsSL https://get.otfabric.io/sclgen | sh
+```
+
+```powershell
+irm https://get.otfabric.io/sclgen.ps1 | iex
+```
+
+Linux (amd64, arm64, armv7), macOS (Intel, Apple silicon) and Windows (amd64, arm64). The installer verifies the release's SHA-256 checksum, installs per user without `sudo` (`~/.local/bin`, Windows `%LOCALAPPDATA%\OTFabric\bin`), and upgrades in place when run again. Pin a version with `OTF_VERSION=x.y.z`; for CI, containers and device images use `OTF_UNMANAGED_INSTALL=<dir>`; all options: [otfabric/install](https://github.com/otfabric/install#options). `OTF_VERSION` is the version of go-iec61850, which ships `sclparse` and `sclgen`. For offline machines, the archives and checksums are on [Releases](https://github.com/otfabric/go-iec61850/releases).
+
 ### sclparse
 
 `sclparse` inspects, validates, and queries IEC 61850 SCL files (SCD, ICD,
@@ -847,6 +867,7 @@ controllers, merging units) has not yet been formally established.
 ## Development
 
 ```bash
+make build          # sclparse and sclgen into bin/
 make test           # unit tests
 make test-race      # with the race detector
 make e2e            # client against server on loopback TCP, every example

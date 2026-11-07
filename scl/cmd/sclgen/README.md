@@ -7,7 +7,9 @@ repository under `scl/internal/raw/`.
 
 ## Installation
 
-Download a binary from the [releases](https://github.com/otfabric/go-iec61850/releases), or run `make build` in a checkout. `sclgen` is a nested module.
+See [Install sclparse and sclgen](../../../README.md#install-sclparse-and-sclgen)
+in the repository README. Contributors build it with `make build` in a checkout.
+`sclgen` is a nested module.
 
 ## Subcommands
 

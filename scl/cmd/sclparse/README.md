@@ -7,12 +7,9 @@ configuration file without writing code.
 
 ## Installation
 
-Download a binary from the [releases](https://github.com/otfabric/go-iec61850/releases), or build from a checkout. `sclparse` is a nested module:
-
-```bash
-cd scl/cmd/sclparse
-go build -o sclparse .
-```
+See [Install sclparse and sclgen](../../../README.md#install-sclparse-and-sclgen)
+in the repository README. Contributors build it with `make build` in a checkout.
+`sclparse` is a nested module.
 
 ## Global usage
 
