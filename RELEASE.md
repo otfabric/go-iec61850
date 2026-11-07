@@ -1,5 +1,16 @@
 # go-iec61850 Releases
 
+## v1.9.2
+
+**Date:** 2026-11-08
+**Previous release:** v1.9.1
+
+### Changed
+
+- `sclgen` and `sclparse` are built with the latest Go 1.26 patch release; v1.9.1 was built with go1.26.0.
+
+---
+
 ## v1.9.1
 
 **Date:** 2026-11-07
