@@ -1,8 +1,8 @@
 # Support, feature and interop status
 
 What go-iec61850 supports, how each feature is tested and which independent
-stacks exchanged it. Status: v1.3.0, interop suite on iec61850-interop v1.4.0
-images. Go 1.24 or later (CI: 1.24–1.26).
+stacks exchanged it. Status: v1.7.0, interop suite on iec61850-interop v1.4.0
+images. Go 1.26 or later (CI: 1.26–1.27).
 
 None of this is a conformance claim: no conformance test has been run, nothing
 is certified, and no physical IED has been validated
