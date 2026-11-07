@@ -95,8 +95,8 @@ func TestListSMV_ParseFail(t *testing.T) {
 	if !errors.As(err, &ee) {
 		t.Fatalf("expected exitError, got %T: %v", err, err)
 	}
-	if ee.code != exitParseFail {
-		t.Errorf("code = %d, want %d", ee.code, exitParseFail)
+	if ee.code != ExitInvalidInput {
+		t.Errorf("code = %d, want %d", ee.code, ExitInvalidInput)
 	}
 	if ee.Error() == "" {
 		t.Error("Error() empty")

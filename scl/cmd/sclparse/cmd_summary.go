@@ -41,7 +41,7 @@ func runSummary(_ *cobra.Command, args []string) error {
 
 	result, err := scl.ParseFileOpts(path, scl.ParseOptions{})
 	if err != nil {
-		return exitErr(exitParseFail, "%v", err)
+		return exitErr(ExitInvalidInput, "%v", err)
 	}
 
 	sum := scl.Summarize(result.Document)
@@ -62,8 +62,7 @@ func runSummary(_ *cobra.Command, args []string) error {
 		if summaryPretty {
 			enc.SetIndent("", "  ")
 		}
-		_ = enc.Encode(out)
-		return nil
+		return outputErr(enc.Encode(out))
 	}
 
 	if !summaryCountsOnly {

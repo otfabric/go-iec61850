@@ -2,7 +2,8 @@
   "clis": [
     {
       "name": "sclgen",
-      "manifest": "."
+      "manifest": ".",
+      "exit_codes": "."
     }
   ]
 }

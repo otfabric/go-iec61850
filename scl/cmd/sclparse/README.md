@@ -47,7 +47,7 @@ sclparse summary --counts-only station.scd
 
 ### validate
 
-Run semantic validation and print diagnostics. Exits with code 3 if any
+Run semantic validation and print diagnostics. Exits with code 1 (findings) if any
 validation errors are found.
 
 ```bash
@@ -61,7 +61,7 @@ sclparse validate --max-errors 10 station.scd # stop after 10 errors
 | Flag | Description |
 |------|-------------|
 | `--json` | Emit diagnostics as JSON |
-| `--strict` | Treat warnings as errors (exit code 3) |
+| `--strict` | Treat warnings as errors (exit code 1) |
 | `--max-errors` N | Stop after N errors (0 = unlimited) |
 | `--warnings-as-errors` | Promote warnings to errors |
 | `--no-warnings` | Suppress warning output |

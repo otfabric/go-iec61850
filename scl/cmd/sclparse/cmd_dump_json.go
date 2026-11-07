@@ -41,7 +41,7 @@ func runDumpJSON(_ *cobra.Command, args []string) error {
 
 	result, err := scl.ParseFileOpts(path, scl.ParseOptions{})
 	if err != nil {
-		return exitErr(exitParseFail, "%v", err)
+		return exitErr(ExitInvalidInput, "%v", err)
 	}
 
 	var payload any
@@ -63,9 +63,8 @@ func runDumpJSON(_ *cobra.Command, args []string) error {
 	if dumpJSONOutput != "" {
 		f, err := os.Create(filepath.Clean(dumpJSONOutput)) // the -o file named on the command line
 		if err != nil {
-			return exitErr(exitParseFail, "create %s: %v", dumpJSONOutput, err)
+			return exitErr(ExitInternal, "create %s: %v", dumpJSONOutput, err)
 		}
-		defer func() { _ = f.Close() }()
 		w = f
 	}
 
@@ -73,8 +72,14 @@ func runDumpJSON(_ *cobra.Command, args []string) error {
 	if dumpJSONPretty {
 		enc.SetIndent("", "  ")
 	}
-	if err := enc.Encode(payload); err != nil {
-		return exitErr(exitParseFail, "encode JSON: %v", err)
+	err = enc.Encode(payload)
+	if w != os.Stdout {
+		if cerr := w.Close(); err == nil {
+			err = cerr
+		}
+	}
+	if err != nil {
+		return exitErr(ExitInternal, "write JSON: %v", err)
 	}
 	return nil
 }

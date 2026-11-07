@@ -1,5 +1,27 @@
 # go-iec61850 Releases
 
+## v1.8.0
+
+**Date:** unreleased
+**Previous release:** v1.7.0
+
+### Breaking
+
+- **`sclparse` and `sclgen` exit with the organisation exit codes** (0 success, 1 findings, 2 usage, 3 invalid input, 10 internal/output, 130 interrupted); see `scl/cmd/sclparse/docs/exitcodes.md` and `scl/cmd/sclgen/docs/exitcodes.md`. A script that tests the exit status changes as follows.
+  - `sclparse`: usage error 1 → 2; the SCL file cannot be read or parsed 2 → 3; the output cannot be written (`dump-json --output`, JSON to stdout) 2 → 10; `validate` found validation errors 3 → 1; interrupted (SIGINT/SIGTERM) → 130.
+  - `sclgen`: everything was 1. Now `check` found out-of-date files stays 1; usage error (unknown flag, missing `--spec-root` or `--out`, no edition matches `--versions`) 1 → 2; a schema bundle cannot be parsed or resolved 1 → 3; the output cannot be written 1 → 10; interrupted → 130.
+
+### Fixed
+
+- `sclgen` prints a usage error such as a missing `--spec-root` to stderr; it exited silently.
+- The `sclgen` help examples use `--spec-root` and `--out`; the single-dash `-spec-root` / `-out` they showed is rejected by the flag parser.
+
+### Tests
+
+- `sclparse` and `sclgen`: the exit-code classification (error → code) and each code a command produces, driving the root command in-process; the `sclgen` help examples parse.
+
+---
+
 ## v1.7.0
 
 **Date:** 2026-11-07

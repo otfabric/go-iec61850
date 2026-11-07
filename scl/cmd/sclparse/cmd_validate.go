@@ -50,7 +50,7 @@ func runValidate(_ *cobra.Command, args []string) error {
 		Strict:           validateStrict,
 	})
 	if err != nil {
-		return exitErr(exitParseFail, "%v", err)
+		return exitErr(ExitInvalidInput, "%v", err)
 	}
 
 	type diagOut struct {
@@ -105,7 +105,9 @@ func runValidate(_ *cobra.Command, args []string) error {
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		_ = enc.Encode(out)
+		if err := enc.Encode(out); err != nil {
+			return outputErr(err)
+		}
 	} else {
 		if len(diags) == 0 {
 			fmt.Printf("%s: no issues found\n", filepath.Base(path))
@@ -118,7 +120,7 @@ func runValidate(_ *cobra.Command, args []string) error {
 	}
 
 	if errorCount > 0 {
-		return exitErr(exitValidation, "%d validation error(s)", errorCount)
+		return exitErr(ExitFindings, "%d validation error(s)", errorCount)
 	}
 	return nil
 }

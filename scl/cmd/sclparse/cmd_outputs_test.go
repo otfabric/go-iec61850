@@ -116,7 +116,7 @@ func TestAllCommands_MissingFileIsParseFailure(t *testing.T) {
 	} {
 		t.Run(cmd, func(t *testing.T) {
 			_, err := runCmd(t, cmd, missing)
-			wantExitCode(t, err, exitParseFail)
+			wantExitCode(t, err, ExitInvalidInput)
 		})
 	}
 }
@@ -124,7 +124,7 @@ func TestAllCommands_MissingFileIsParseFailure(t *testing.T) {
 func TestDetect_NotSCL(t *testing.T) {
 	p := writeTemp(t, "x.xml", `<?xml version="1.0"?><Other/>`)
 	_, err := runCmd(t, "detect", p)
-	wantExitCode(t, err, exitParseFail)
+	wantExitCode(t, err, ExitInvalidInput)
 }
 
 func TestDetect_UnknownVersionTextAndQuiet(t *testing.T) {
@@ -241,7 +241,7 @@ func TestInspect_DetectOKButParseFails(t *testing.T) {
 	p := writeTemp(t, "trunc.scd",
 		`<SCL xmlns="http://www.iec.ch/61850/2003/SCL" version="2007" revision="B"><IED name="x">`)
 	_, err := runCmd(t, "inspect", p)
-	wantExitCode(t, err, exitParseFail)
+	wantExitCode(t, err, ExitInvalidInput)
 }
 
 func TestValidate_WarningsFlags(t *testing.T) {
@@ -297,7 +297,7 @@ func TestValidate_WarningsFlags(t *testing.T) {
 
 	t.Run("warnings-as-errors", func(t *testing.T) {
 		out, err := runCmd(t, "validate", "--warnings-as-errors", p)
-		wantExitCode(t, err, exitValidation)
+		wantExitCode(t, err, ExitFindings)
 		if !strings.Contains(out, "2 error(s), 0 warning(s)") {
 			t.Errorf("unexpected output:\n%s", out)
 		}
@@ -305,7 +305,7 @@ func TestValidate_WarningsFlags(t *testing.T) {
 
 	t.Run("max-errors", func(t *testing.T) {
 		out, err := runCmd(t, "validate", "--warnings-as-errors", "--max-errors", "1", p)
-		wantExitCode(t, err, exitValidation)
+		wantExitCode(t, err, ExitFindings)
 		if !strings.Contains(out, "1 error(s), 0 warning(s)") {
 			t.Errorf("max-errors not honoured:\n%s", out)
 		}
@@ -378,5 +378,5 @@ func TestSummary_PrettyAndPrivates(t *testing.T) {
 func TestDumpJSON_OutputCreateFails(t *testing.T) {
 	bad := filepath.Join(t.TempDir(), "no-such-dir", "out.json")
 	_, err := runCmd(t, "dump-json", "--output", bad, fixturePath("scl/testdata/simple.scd"))
-	wantExitCode(t, err, exitParseFail)
+	wantExitCode(t, err, ExitInternal)
 }
