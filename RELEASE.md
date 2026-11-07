@@ -1,5 +1,16 @@
 # go-iec61850 Releases
 
+## v1.8.1
+
+**Date:** 2026-11-07
+**Previous release:** v1.8.0
+
+### Changed
+
+- `sclparse` and `sclgen` are built on go-iec61850 v1.8.0; they were on v1.4.5, so their binaries now carry the `scl` changes of v1.5.0 to v1.8.0, including the SAST fixes in `scl`.
+
+---
+
 ## v1.8.0
 
 **Date:** 2026-11-07
