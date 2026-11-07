@@ -6,7 +6,7 @@ Security issues are addressed in the latest v1 patch release.
 
 | Version | Supported |
 |---------|-----------|
-| v1.7.x (latest release) | Yes |
+| Latest release | Yes |
 | Older releases | No |
 
 ## Reporting a vulnerability
