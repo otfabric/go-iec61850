@@ -15,13 +15,16 @@ PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 win
 
 PREFIX   ?= /usr/local
 
+# docsync release of docs-check (DOC-008).
+DOCSYNC_VERSION := v0.2.0
+
 VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 TAG        ?= $(shell git describe --tags --exact-match 2>/dev/null || echo "")
 COMMIT     ?= $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "")
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS    := -s -w -X main.version=$(VERSION) -X main.tag=$(TAG) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
 
-.PHONY: e2e interop-goose coverage-check coverage-pkg-check help test test-race test-verbose vet lint fmt fuzz bench tidy check clean coverage coverage-html coverage-clean interop scl-generate scl-check-generate build build-all release-all install ai-print-all ai-print-test ai-print ai-diff ai-digest ai-context vuln
+.PHONY: e2e interop-goose coverage-check coverage-pkg-check help test test-race test-verbose vet lint fmt fuzz bench tidy check clean coverage coverage-html coverage-clean interop scl-generate scl-check-generate build build-all release-all install ai-print-all ai-print-test ai-print ai-diff ai-digest ai-context vuln docs-check
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "}; /^[a-zA-Z0-9_.-]+:.*## / {printf "%-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -192,7 +195,11 @@ install: build ## Install commands to PREFIX/bin (default /usr/local/bin)
 		echo "  INSTALL $(PREFIX)/bin/$$cmd"; \
 	done
 
-check: fmt tidy vet lint lint-ci vuln test test-race coverage ## Run all pre-commit checks
+check: fmt tidy vet lint lint-ci vuln test test-race coverage docs-check ## Run all pre-commit checks
+
+# The documents against the code (DOC-008): docsync, as docs-check.yml runs it.
+docs-check: ## Check that the documents agree with the code (docsync)
+	@go run github.com/otfabric/docsync@$(DOCSYNC_VERSION) check .
 
 clean: coverage-clean ## Clean test cache, coverage, and release artifacts
 	@echo "Cleaning test cache, coverage, and release artifacts"
