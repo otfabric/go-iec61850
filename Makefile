@@ -198,8 +198,10 @@ install: build ## Install commands to PREFIX/bin (default /usr/local/bin)
 check: fmt tidy vet lint lint-ci vuln test test-race coverage docs-check ## Run all pre-commit checks
 
 # The documents against the code (DOC-008): docsync, as docs-check.yml runs it.
-docs-check: ## Check that the documents agree with the code (docsync)
+docs-check: ## Check that the documents agree with the code (docsync), library, sclparse and sclgen
 	@go run github.com/otfabric/docsync@$(DOCSYNC_VERSION) check .
+	@cd scl/cmd/sclparse && go run github.com/otfabric/docsync@$(DOCSYNC_VERSION) check .
+	@cd scl/cmd/sclgen && go run github.com/otfabric/docsync@$(DOCSYNC_VERSION) check .
 
 clean: coverage-clean ## Clean test cache, coverage, and release artifacts
 	@echo "Cleaning test cache, coverage, and release artifacts"
