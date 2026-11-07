@@ -137,7 +137,7 @@ and `sv.Subscription.Stats` (per stream: ASDUs, lost, duplicates, out of
 order, rate, status).
 
 The MMS client and server report to an `mms.Metrics` implementation
-(go-mms v1.2.0+) set with `DialOptions.Metrics` / `ServerOptions.Metrics`
+set with `DialOptions.Metrics` / `ServerOptions.Metrics`
 (or `MMS.Metrics`, which takes precedence): `ObserveRequest` once per
 confirmed request with service, duration and error, `ObserveConnection`
 when an association is established, rejected or ends. Embed

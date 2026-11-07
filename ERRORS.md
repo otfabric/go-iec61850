@@ -99,6 +99,40 @@ across the three packages.
 | `ErrUnsupportedPlatform` | No raw Ethernet transport on this operating system |
 | `ErrInvalidConfig` | Invalid publisher, subscriber or transport configuration; `*ConfigError` unwraps to it |
 
+### `*goose.EncodeError`
+
+Returned by `goose.Publisher.Publish` (and the GOOSE encoder) when a value
+cannot be encoded or does not match the dataset layout. `Field` names the
+part of the PDU (`values` or `allData`) and `Index` the element.
+
+```go
+type EncodeError struct {
+    Field string // PDU part that failed: "values" or "allData"
+    Index int    // index of the failing element
+    Err   error  // underlying error
+}
+```
+
+Unwraps to `Err`, which matches `goose.ErrInvalidValue` (or
+`goose.ErrLimitExceeded` for nesting too deep).
+
+### `*l2.TransportError`
+
+Wraps an operating-system error from a raw Ethernet backend. `goose` and
+`sv` re-export it as the alias `goose.TransportError` / `sv.TransportError`.
+
+```go
+type TransportError struct {
+    Op        string // operation, for example "open" or "membership"
+    Interface string // network interface name
+    Err       error  // underlying operating-system error
+    Kind      error  // optional classification sentinel
+}
+```
+
+Unwraps to `Err` and, when set, to `Kind`: one of `ErrPermission`,
+`ErrInterfaceNotFound`, `ErrUnsupportedPlatform` or `ErrClosed`.
+
 ---
 
 ## Typed errors
@@ -199,7 +233,7 @@ Common codes:
 
 | Code | Meaning |
 |------|---------|
-| `DataAccessErrorObjectNonExistent` | Object not found on the server (unknown domain or variable; go-mms v1.1.0+) |
+| `DataAccessErrorObjectNonExistent` | Object not found on the server (unknown domain or variable) |
 | `DataAccessErrorObjectUndefined` | Alternate-access mismatch (component or index does not apply) |
 | `DataAccessErrorObjectAccessDenied` | Access not permitted |
 | `DataAccessErrorTemporarilyUnavailable` | Temporarily unavailable |
