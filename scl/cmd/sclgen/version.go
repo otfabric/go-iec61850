@@ -8,28 +8,27 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var versionJSON bool
+
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information",
-	Run: func(_ *cobra.Command, _ []string) {
-		fmt.Println(versionString("sclgen"))
+	Long: `Print the version, release tag, commit, build date, Go version and platform
+on one line, or as one line of JSON with --json.`,
+	Args: cobra.NoArgs,
+	RunE: func(_ *cobra.Command, _ []string) error {
+		info := currentBuildInfo()
+		line := info.Text()
+		if versionJSON {
+			line = info.JSON()
+		}
+		if _, err := fmt.Println(line); err != nil {
+			return exitErr(ExitInternal, "write output: %w", err)
+		}
+		return nil
 	},
 }
 
-func versionString(name string) string {
-	s := fmt.Sprintf("%s %s", name, version)
-	if tag != "" {
-		s += fmt.Sprintf(" (%s)", tag)
-	}
-	if commit != "" {
-		short := commit
-		if len(short) > 8 {
-			short = short[:8]
-		}
-		s += fmt.Sprintf(" commit %s", short)
-	}
-	if buildDate != "" {
-		s += fmt.Sprintf(" built %s", buildDate)
-	}
-	return s
+func init() {
+	versionCmd.Flags().BoolVar(&versionJSON, "json", false, "print the version information as one line of JSON")
 }

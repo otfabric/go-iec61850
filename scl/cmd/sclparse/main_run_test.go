@@ -136,7 +136,15 @@ func TestVersionCommand_PrintsVersionString(t *testing.T) {
 			t.Fatalf("version: %v", err)
 		}
 	})
-	if strings.TrimSpace(out) != versionString("sclparse") {
-		t.Errorf("version output = %q, want %q", out, versionString("sclparse"))
+	if want := currentBuildInfo().Text() + "\n"; out != want {
+		t.Errorf("version output = %q, want %q", out, want)
+	}
+	out = captureStdout(t, func() {
+		if err := executeCmd("version", "--json"); err != nil {
+			t.Fatalf("version --json: %v", err)
+		}
+	})
+	if want := currentBuildInfo().JSON() + "\n"; out != want {
+		t.Errorf("version --json output = %q, want %q", out, want)
 	}
 }

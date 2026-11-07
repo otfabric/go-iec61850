@@ -598,6 +598,32 @@ irm https://get.otfabric.io/sclgen.ps1 | iex
 
 Linux (amd64, arm64, armv7), macOS (Intel, Apple silicon) and Windows (amd64, arm64). The installer verifies the release's SHA-256 checksum, installs per user without `sudo` (`~/.local/bin`, Windows `%LOCALAPPDATA%\OTFabric\bin`), and upgrades in place when run again. Pin a version with `OTF_VERSION=x.y.z`; for CI, containers and device images use `OTF_UNMANAGED_INSTALL=<dir>`; all options: [otfabric/install](https://github.com/otfabric/install#options). `OTF_VERSION` is the version of go-iec61850, which ships `sclparse` and `sclgen`. For offline machines, the archives and checksums are on [Releases](https://github.com/otfabric/go-iec61850/releases).
 
+### Shell completion
+
+`sclparse` completes SCL file names (`.scd`, `.cid`, `.icd`, `.ssd`, `.iid`, `.sed`, `.xml`); `sclgen` completes the `--versions` editions and directories.
+
+```bash
+# bash (needs the bash-completion package)
+mkdir -p ~/.local/share/bash-completion/completions
+sclparse completion bash > ~/.local/share/bash-completion/completions/sclparse
+sclgen completion bash > ~/.local/share/bash-completion/completions/sclgen
+
+# zsh: a directory on your fpath, then restart the shell
+mkdir -p ~/.zsh/completions && sclparse completion zsh > ~/.zsh/completions/_sclparse
+mkdir -p ~/.zsh/completions && sclgen completion zsh > ~/.zsh/completions/_sclgen
+# and once in ~/.zshrc:  fpath=(~/.zsh/completions $fpath); autoload -U compinit && compinit
+
+# fish
+mkdir -p ~/.config/fish/completions && sclparse completion fish > ~/.config/fish/completions/sclparse.fish
+mkdir -p ~/.config/fish/completions && sclgen completion fish > ~/.config/fish/completions/sclgen.fish
+```
+
+```powershell
+# PowerShell: add this line to your profile ($PROFILE)
+sclparse completion powershell | Out-String | Invoke-Expression
+sclgen completion powershell | Out-String | Invoke-Expression
+```
+
 ### sclparse
 
 `sclparse` inspects, validates, and queries IEC 61850 SCL files (SCD, ICD,
@@ -635,7 +661,7 @@ sclparse list-reports station.scd
 | `list-smv` | List all Sampled Values control blocks |
 | `list-connected-ap` | List all connected access points |
 | `list-types` | List all data type templates |
-| `version` | Print build version |
+| `version` | Print version information (`--json`: one line of JSON) |
 
 See [scl/README.md](scl/README.md) for detailed usage and examples.
 
@@ -658,7 +684,7 @@ sclgen check --spec-root ./scl/specs --out ./scl/internal/raw
 |------------|-------------|
 | `generate` | Generate Go types from XSD schemas |
 | `check` | Verify generated output is up to date |
-| `version` | Print build version |
+| `version` | Print version information (`--json`: one line of JSON) |
 
 See [scl/README.md](scl/README.md) for full developer documentation.
 

@@ -52,6 +52,7 @@ func executeCmd(args ...string) error {
 	listConnectedAPJSON = false
 	listTypesJSON = false
 	inspectJSON = false
+	versionJSON = false
 
 	return rootCmd.Execute()
 }

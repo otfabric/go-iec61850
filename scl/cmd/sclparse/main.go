@@ -142,3 +142,8 @@ func outputErr(err error) error {
 func sclFileCompletion(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 	return []string{"scd", "cid", "icd", "ssd", "iid", "sed", "xml"}, cobra.ShellCompDirectiveFilterFileExt
 }
+
+// jsonFileCompletion completes .json files, for the output of dump-json.
+func jsonFileCompletion(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+	return []string{"json"}, cobra.ShellCompDirectiveFilterFileExt
+}

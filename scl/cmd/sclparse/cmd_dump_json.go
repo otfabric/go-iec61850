@@ -34,6 +34,7 @@ func init() {
 	dumpJSONCmd.Flags().BoolVar(&dumpJSONPretty, "pretty", false, "pretty-print with indentation")
 	dumpJSONCmd.Flags().StringVarP(&dumpJSONOutput, "output", "o", "", "write to file instead of stdout")
 	dumpJSONCmd.Flags().BoolVar(&dumpJSONIncludeMeta, "include-metadata", false, "include version and kind metadata wrapper")
+	_ = dumpJSONCmd.RegisterFlagCompletionFunc("output", jsonFileCompletion)
 }
 
 func runDumpJSON(_ *cobra.Command, args []string) error {

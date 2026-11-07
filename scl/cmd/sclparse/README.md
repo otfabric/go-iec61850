@@ -224,11 +224,28 @@ sclparse list-types --json station.scd
 
 ### version
 
-Print the build version.
+Print the version, release tag, commit, build date, Go version and platform
+on one line; `--json` prints the same as one line of JSON.
 
-```bash
-sclparse version
+```console
+$ sclparse version
+sclparse 1.9.0 (tag v1.9.0, commit 1802d0f9afe8642d1e278120b76fcdfac967cb9e, built 2026-11-07T15:41:49Z, go1.26.3, linux/amd64)
+$ sclparse version --json
+{"name":"sclparse","version":"1.9.0","tag":"v1.9.0","commit":"1802d0f9afe8642d1e278120b76fcdfac967cb9e","built":"2026-11-07T15:41:49Z","libraries":[],"go":"go1.26.3","platform":"linux/amd64"}
 ```
+
+The JSON keys are always present, in this order. The `tag …,` part (and a
+non-empty `tag`) appears only for a release build. A build from source
+without the release ldflags reports `dev` (a `go install …@vX.Y.Z` reports that version; a
+pseudo-version or a `+dirty` version is `dev` too), the commit from the Go build information with
+`-dirty` for a modified tree, and `built unknown`.
+Other OT Fabric `go-*` libraries the binary is built on (not go-iec61850
+itself) appear after `built …` as `go-x 1.2.3, ` and in the JSON
+`libraries` array (`[]` when there are none, as today).
+
+`sclparse completion bash|zsh|fish|powershell` generates the shell completion
+script; installing it is described in the
+[repository README](../../../README.md#shell-completion).
 
 ---
 

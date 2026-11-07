@@ -1,5 +1,25 @@
 # go-iec61850 Releases
 
+## v1.9.0
+
+**Date:** 2026-11-07
+**Previous release:** v1.8.1
+
+### Changed
+
+- `sclparse version` and `sclgen version` print the organisation's one-line format: `sclparse 1.9.0 (tag v1.9.0, commit <full sha>, built <RFC 3339 UTC>, go1.26.3, linux/amd64)` (was `sclparse v1.9.0 (v1.9.0) commit 1802d0f9 built …`). The version has no leading `v`; the `tag …,` part appears only for a release build; the commit is the full SHA. A build without release ldflags reports `dev` (the module version for `go install …@vX.Y.Z`; a pseudo-version or `+dirty` version is `dev`), the commit from the Go build information (`-dirty` for a modified tree) and `built unknown`.
+- `make build` injects the full commit SHA, and the version (without `v`) and tag only when HEAD is exactly on a tag; otherwise the binaries report `dev`.
+- `sclgen --versions` help lists the editions (`v17`, `v2007b`, `v2007b4`, `v2007c5`).
+
+### Added
+
+- `sclparse version --json` and `sclgen version --json`: one line of JSON with the keys `name`, `version`, `tag`, `commit`, `built`, `libraries`, `go`, `platform`, always in that order. `libraries` lists the other OT Fabric `go-*` libraries the binary is built on (not go-iec61850 itself; `[]` today); in text they follow `built …`.
+- Shell completion of flag values: `sclgen --versions` completes `all` and the editions (comma lists too), `sclparse dump-json --output` completes `.json` files, `sclparse validate --max-errors` completes no file names. A test fails when a flag that takes a value has no completion. The README has one Shell completion section for both tools (bash, zsh, fish, PowerShell).
+
+The library API is unchanged.
+
+---
+
 ## v1.8.1
 
 **Date:** 2026-11-07
