@@ -421,8 +421,8 @@ func TestValidate_Broken(t *testing.T) {
 	if !errors.As(err, &ee) {
 		t.Fatalf("expected exitError, got %T: %v", err, err)
 	}
-	if ee.code != exitValidation {
-		t.Errorf("exit code = %d, want %d", ee.code, exitValidation)
+	if ee.code != ExitFindings {
+		t.Errorf("exit code = %d, want %d", ee.code, ExitFindings)
 	}
 }
 

@@ -43,12 +43,12 @@ func runInspect(_ *cobra.Command, args []string) error {
 
 	vi, err := scl.DetectFile(path)
 	if err != nil {
-		return exitErr(exitParseFail, "%v", err)
+		return exitErr(ExitInvalidInput, "%v", err)
 	}
 
 	doc, err := scl.ParseFile(path)
 	if err != nil {
-		return exitErr(exitParseFail, "%v", err)
+		return exitErr(ExitInvalidInput, "%v", err)
 	}
 
 	privateTypes := make(map[string]int)
@@ -98,7 +98,7 @@ func runInspect(_ *cobra.Command, args []string) error {
 	if inspectJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		return enc.Encode(result)
+		return outputErr(enc.Encode(result))
 	}
 
 	fmt.Printf("Schema:          %s\n", result.Schema)

@@ -5,11 +5,16 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/otfabric/go-iec61850/scl/internal/genir"
 	"github.com/spf13/cobra"
@@ -48,8 +53,8 @@ var rootCmd = &cobra.Command{
 	Long: `sclgen generates internal Go types from IEC 61850 SCL XSD schema bundles.
 
 Example:
-  sclgen generate -spec-root ./scl/specs -out ./scl/internal/raw
-  sclgen check    -spec-root ./scl/specs -out ./scl/internal/raw`,
+  sclgen generate --spec-root ./scl/specs --out ./scl/internal/raw
+  sclgen check    --spec-root ./scl/specs --out ./scl/internal/raw`,
 	SilenceErrors: true,
 	SilenceUsage:  true,
 }
@@ -60,19 +65,19 @@ var generateCmd = &cobra.Command{
 	Long: `Generate versioned Go types from XSD schema bundles.
 
 Example:
-  sclgen generate -spec-root ./scl/specs -out ./scl/internal/raw`,
-	Run: runGenerate,
+  sclgen generate --spec-root ./scl/specs --out ./scl/internal/raw`,
+	RunE: runGenerate,
 }
 
 var checkCmd = &cobra.Command{
 	Use:   "check",
 	Short: "Verify generated output is up to date",
 	Long: `Generate to a temp directory and compare against checked-in output.
-Exits non-zero if any file differs.
+Exits with code 1 if any file differs.
 
 Example:
-  sclgen check -spec-root ./scl/specs -out ./scl/internal/raw`,
-	Run: runCheck,
+  sclgen check --spec-root ./scl/specs --out ./scl/internal/raw`,
+	RunE: runCheck,
 }
 
 func init() {
@@ -94,19 +99,95 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 }
 
-func main() {
-	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
-	}
+// Exit codes of sclgen: the organisation exit-code table
+// (otfabric/engineering standards/api-design.md); see docs/exitcodes.md.
+const (
+	// ExitOK: success.
+	ExitOK = 0
+	// ExitFindings: check completed and found out-of-date generated files.
+	ExitFindings = 1
+	// ExitUsage: usage error (unknown command or flag, missing required
+	// flag, no edition matches --versions).
+	ExitUsage = 2
+	// ExitInvalidInput: a schema bundle cannot be parsed or resolved.
+	ExitInvalidInput = 3
+	// ExitInternal: the output cannot be written, or another internal failure.
+	ExitInternal = 10
+	// ExitInterrupted: interrupted by SIGINT or SIGTERM.
+	ExitInterrupted = 130
+)
+
+// exitError carries the exit code of a command failure.
+type exitError struct {
+	code int
+	err  error
 }
 
-func runGenerate(_ *cobra.Command, _ []string) {
+func (e *exitError) Error() string { return e.err.Error() }
+func (e *exitError) Unwrap() error { return e.err }
+
+func exitErr(code int, format string, args ...any) error {
+	return &exitError{code: code, err: fmt.Errorf(format, args...)}
+}
+
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	code := run(ctx, os.Stderr)
+	stop()
+	os.Exit(code)
+}
+
+// run executes rootCmd under ctx, writes any error to stderr and returns the
+// exit code. When ctx is cancelled (SIGINT or SIGTERM) before the command
+// returns, run returns ExitInterrupted at once.
+func run(ctx context.Context, stderr io.Writer) int {
+	err := ctx.Err()
+	if err == nil {
+		done := make(chan error, 1)
+		go func() { done <- rootCmd.ExecuteContext(ctx) }()
+		select {
+		case err = <-done:
+		case <-ctx.Done():
+			err = ctx.Err()
+		}
+	}
+	code := exitCode(err)
+	switch {
+	case err == nil:
+	case code == ExitInterrupted:
+		_, _ = fmt.Fprintln(stderr, "sclgen: interrupted")
+	default:
+		_, _ = fmt.Fprintln(stderr, "sclgen: "+err.Error())
+	}
+	return code
+}
+
+// exitCode classifies an error returned by rootCmd. The commands return
+// *exitError with their code; cancellation is an interruption; anything else
+// comes from cobra's command, flag and argument parsing and is a usage error.
+func exitCode(err error) int {
+	if err == nil {
+		return ExitOK
+	}
+	if ee, ok := errors.AsType[*exitError](err); ok {
+		return ee.code
+	}
+	if errors.Is(err, context.Canceled) {
+		return ExitInterrupted
+	}
+	return ExitUsage
+}
+
+func runGenerate(cmd *cobra.Command, _ []string) error {
 	selected := selectVersions(versions)
 	if len(selected) == 0 {
-		log.Fatal("no versions selected")
+		return exitErr(ExitUsage, "no edition matches --versions %q", versions)
 	}
 
 	for _, vs := range selected {
+		if err := cmd.Context().Err(); err != nil {
+			return err
+		}
 		bundleDir := filepath.Join(specRoot, vs.Dir)
 		pkgDir := filepath.Join(outDir, vs.Version)
 
@@ -119,25 +200,14 @@ func runGenerate(_ *cobra.Command, _ []string) {
 			continue
 		}
 
-		schema, err := genir.ParseBundle(bundleDir, vs.Version)
+		resolved, err := loadBundle(bundleDir, vs)
 		if err != nil {
-			log.Fatalf("parse %s: %v", vs.Label, err)
-		}
-
-		if verbose {
-			log.Printf("  Parsed: %d simpleTypes, %d complexTypes, %d elements, %d attrGroups",
-				len(schema.SimpleTypes), len(schema.ComplexTypes),
-				len(schema.Elements), len(schema.AttributeGroups))
-		}
-
-		resolved, err := genir.Resolve(schema)
-		if err != nil {
-			log.Fatalf("resolve %s: %v", vs.Label, err)
+			return err
 		}
 
 		emitter := genir.NewEmitter(resolved, pkgDir, vs.Version)
 		if err := emitter.Emit(); err != nil {
-			log.Fatalf("emit %s: %v", vs.Label, err)
+			return exitErr(ExitInternal, "emit %s: %w", vs.Label, err)
 		}
 
 		if verbose {
@@ -146,16 +216,38 @@ func runGenerate(_ *cobra.Command, _ []string) {
 	}
 
 	log.Println("sclgen: done")
+	return nil
 }
 
-func runCheck(_ *cobra.Command, _ []string) {
+// loadBundle parses and resolves one XSD bundle; a failure is invalid input.
+func loadBundle(bundleDir string, vs versionSpec) (*genir.Resolved, error) {
+	schema, err := genir.ParseBundle(bundleDir, vs.Version)
+	if err != nil {
+		return nil, exitErr(ExitInvalidInput, "parse %s: %w", vs.Label, err)
+	}
+	if verbose {
+		log.Printf("  Parsed: %d simpleTypes, %d complexTypes, %d elements, %d attrGroups",
+			len(schema.SimpleTypes), len(schema.ComplexTypes),
+			len(schema.Elements), len(schema.AttributeGroups))
+	}
+	resolved, err := genir.Resolve(schema)
+	if err != nil {
+		return nil, exitErr(ExitInvalidInput, "resolve %s: %w", vs.Label, err)
+	}
+	return resolved, nil
+}
+
+func runCheck(cmd *cobra.Command, _ []string) error {
 	selected := selectVersions(versions)
 	if len(selected) == 0 {
-		log.Fatal("no versions selected")
+		return exitErr(ExitUsage, "no edition matches --versions %q", versions)
 	}
 
-	exitCode := 0
+	var stale []string
 	for _, vs := range selected {
+		if err := cmd.Context().Err(); err != nil {
+			return err
+		}
 		bundleDir := filepath.Join(specRoot, vs.Dir)
 		pkgDir := filepath.Join(outDir, vs.Version)
 
@@ -168,39 +260,43 @@ func runCheck(_ *cobra.Command, _ []string) {
 			continue
 		}
 
-		schema, err := genir.ParseBundle(bundleDir, vs.Version)
+		resolved, err := loadBundle(bundleDir, vs)
 		if err != nil {
-			log.Fatalf("parse %s: %v", vs.Label, err)
+			return err
 		}
 
-		resolved, err := genir.Resolve(schema)
-		if err != nil {
-			log.Fatalf("resolve %s: %v", vs.Label, err)
-		}
-
-		tmpDir, err := os.MkdirTemp("", "sclgen-check-*")
-		if err != nil {
-			log.Fatalf("create temp dir: %v", err)
-		}
-
-		emitter := genir.NewEmitter(resolved, tmpDir, vs.Version)
-		if err := emitter.Emit(); err != nil {
-			_ = os.RemoveAll(tmpDir)
-			log.Fatalf("emit %s: %v", vs.Label, err)
-		}
-		defer func() { _ = os.RemoveAll(tmpDir) }()
-
-		if err := compareDir(tmpDir, pkgDir); err != nil {
+		if err := checkEdition(resolved, vs, pkgDir); err != nil {
+			if _, ok := errors.AsType[*exitError](err); ok {
+				return err
+			}
 			log.Printf("CHECK FAILED for %s: %v", vs.Label, err)
-			exitCode = 1
+			stale = append(stale, vs.Label)
 		} else if verbose {
 			log.Printf("  CHECK OK: %s", vs.Label)
 		}
 	}
 
-	if exitCode != 0 {
-		os.Exit(exitCode)
+	if len(stale) > 0 {
+		return exitErr(ExitFindings, "generated files out of date: %s", strings.Join(stale, ", "))
 	}
+	return nil
+}
+
+// checkEdition generates one edition to a temporary directory and compares it
+// with pkgDir. A difference is returned as a plain error; a failure to
+// generate is an *exitError.
+func checkEdition(resolved *genir.Resolved, vs versionSpec, pkgDir string) error {
+	tmpDir, err := os.MkdirTemp("", "sclgen-check-*")
+	if err != nil {
+		return exitErr(ExitInternal, "create temp dir: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	emitter := genir.NewEmitter(resolved, tmpDir, vs.Version)
+	if err := emitter.Emit(); err != nil {
+		return exitErr(ExitInternal, "emit %s: %w", vs.Label, err)
+	}
+	return compareDir(tmpDir, pkgDir)
 }
 
 func selectVersions(spec string) []versionSpec {

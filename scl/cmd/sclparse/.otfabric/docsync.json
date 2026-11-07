@@ -1,0 +1,9 @@
+{
+  "clis": [
+    {
+      "name": "sclparse",
+      "manifest": ".",
+      "exit_codes": "."
+    }
+  ]
+}

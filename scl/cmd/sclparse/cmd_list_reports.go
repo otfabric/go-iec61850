@@ -28,7 +28,7 @@ func init() {
 func runListReports(_ *cobra.Command, args []string) error {
 	doc, err := scl.ParseFile(args[0])
 	if err != nil {
-		return exitErr(exitParseFail, "%v", err)
+		return exitErr(ExitInvalidInput, "%v", err)
 	}
 
 	rows := scl.ExportReports(doc)
@@ -36,7 +36,7 @@ func runListReports(_ *cobra.Command, args []string) error {
 	if listReportsJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		return enc.Encode(rows)
+		return outputErr(enc.Encode(rows))
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)

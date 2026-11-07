@@ -39,12 +39,12 @@ func runDetect(_ *cobra.Command, args []string) error {
 
 	data, err := os.ReadFile(filepath.Clean(path)) // the file named on the command line
 	if err != nil {
-		return exitErr(exitParseFail, "read %s: %v", path, err)
+		return exitErr(ExitInvalidInput, "read %s: %v", path, err)
 	}
 
 	vi, err := scl.DetectVersion(data)
 	if err != nil {
-		return exitErr(exitParseFail, "detect: %v", err)
+		return exitErr(ExitInvalidInput, "detect: %v", err)
 	}
 
 	kind := scl.KindFromPath(path)
@@ -75,8 +75,7 @@ func runDetect(_ *cobra.Command, args []string) error {
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		_ = enc.Encode(out)
-		return nil
+		return outputErr(enc.Encode(out))
 	}
 
 	if detectQuiet {

@@ -41,9 +41,8 @@ sclgen check \
   --out ./scl/internal/raw
 ```
 
-Exits with code 1 and logs `CHECK FAILED` with the first difference for every
-edition whose generated files are out of date; see
-[docs/exitcodes.md](docs/exitcodes.md).
+Logs `CHECK FAILED` with the first difference for every edition whose
+generated files are out of date and exits with code 1 (findings).
 
 ### version
 
@@ -55,3 +54,7 @@ sclgen version
 
 `sclgen completion bash|zsh|fish|powershell` generates the shell completion
 script.
+
+## Exit codes
+
+See [docs/exitcodes.md](docs/exitcodes.md).
