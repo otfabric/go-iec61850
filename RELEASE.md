@@ -1,5 +1,16 @@
 # go-iec61850 Releases
 
+## v1.9.3
+
+**Date:** 2026-11-08
+**Previous release:** v1.9.2
+
+### Changed
+
+- No changes. v1.9.3 was released by mistake from the same commit as v1.9.2, a few seconds later; the library and `sclgen` and `sclparse` are identical to v1.9.2.
+
+---
+
 ## v1.9.2
 
 **Date:** 2026-11-08
