@@ -16,6 +16,7 @@ How to run each test tier. What the tests show per feature is in
 | Benchmarks | `make bench` | nothing | no |
 | Interop | `make interop` | Docker and adapter images | `interop.yml` |
 | GOOSE and SV interop | `make interop-goose` | Linux, root, Docker network | `interop.yml` |
+| SCL corpus | `make corpus` | `IEC61850_SCL_CORPUS`: a checkout of the private otfabric/iec61850-scl-corpus | local only (the corpus is private) |
 | Generated code | `make scl-check-generate` | nothing | `ci.yml`, `generated` job |
 
 `make check` is the pre-commit set: it formats, tidies, then runs vet, lint,

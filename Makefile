@@ -31,7 +31,7 @@ COMMIT     ?= $(shell git rev-parse HEAD 2>/dev/null || echo "")$(DIRTY)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS    := -s -w -X main.version=$(VERSION) -X main.tag=$(TAG) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
 
-.PHONY: e2e interop-goose coverage-check coverage-pkg-check help test test-race test-verbose vet lint fmt fuzz bench tidy check clean coverage coverage-html coverage-clean interop scl-generate scl-check-generate build build-all release-all install ai-print-all ai-print-test ai-print ai-diff ai-digest ai-context vuln docs-check
+.PHONY: corpus e2e interop-goose coverage-check coverage-pkg-check help test test-race test-verbose vet lint fmt fuzz bench tidy check clean coverage coverage-html coverage-clean interop scl-generate scl-check-generate build build-all release-all install ai-print-all ai-print-test ai-print ai-diff ai-digest ai-context vuln docs-check
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "}; /^[a-zA-Z0-9_.-]+:.*## / {printf "%-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -49,6 +49,9 @@ e2e: ## Client against server on loopback TCP, and every example in-process (no 
 interop: ## Run interoperability tests against iec61850-interop adapter images (-tags=interop).
 	@echo "Running interoperability tests"
 	@go test -tags=interop -v -timeout 300s ./interop/...
+
+corpus: ## Parse the OT Fabric SCL corpus and compare with its manifest (IEC61850_SCL_CORPUS=<checkout of the private corpus>)
+	@IEC61850_SCL_CORPUS_REQUIRE=1 go test -count=1 -run TestSCLCorpus ./scl/
 
 interop-goose: ## Run GOOSE and SV interop tests (Linux, root; needs the iec61850-interop-goose network, see interop/README.md)
 	@go test -exec 'sudo -E' -tags=interop -v -timeout 600s -run 'GOOSE|SV_' ./interop/...
