@@ -1,5 +1,16 @@
 # go-iec61850 Releases
 
+## v1.11.1
+
+**Date:** 2026-11-09
+**Previous release:** v1.11.0
+
+### Changed
+
+- The bundled command-line tools (`sclparse`, `sclgen`) are built on v1.11.0. Before, they were built on v1.9.0, so the binaries of v1.10.0 to v1.11.0 lacked that release's library changes. `sclparse validate` now parses unknown schema tuples with a `schema-fallback` warning and reports missing required attributes and file-kind content. Library code is the same as v1.11.0.
+
+---
+
 ## v1.11.0
 
 **Date:** 2026-11-09
