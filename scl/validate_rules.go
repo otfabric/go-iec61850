@@ -10,11 +10,20 @@ import "fmt"
 // pattern requiring a first character, an enumeration). Left out: Header
 // id (xs:normalizedString, may be empty), LN inst (empty on LN0) and
 // numeric attributes, whose absence cannot be told from their zero value.
+// A parsed document without a Header element is reported too
+// (missing-element, from [DocumentMetadata.HasHeader]); a model built in
+// code has no metadata and is not checked for it.
 func ValidateRequired(s *SCL) []Diagnostic {
 	if s == nil {
 		return nil
 	}
 	var diags []Diagnostic
+	if s.Metadata != nil && !s.Metadata.HasHeader {
+		diags = append(diags, Diagnostic{
+			Severity: DiagError, Code: "missing-element", Path: "SCL",
+			Message: "SCL has no Header element (required by the SCL schema)",
+		})
+	}
 	need := func(path, elem, attr, value string) {
 		if value == "" {
 			diags = append(diags, Diagnostic{

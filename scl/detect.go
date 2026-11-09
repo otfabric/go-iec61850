@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -55,12 +56,15 @@ const iecNamespace = "http://www.iec.ch/61850/2003/SCL"
 // DecodeElement), and stops immediately. The full document is never
 // parsed.
 func DetectVersion(data []byte) (VersionInfo, error) {
-	dec := xml.NewDecoder(bytes.NewReader(data))
+	dec := newDecoder(data)
 
 	for {
 		tok, err := dec.Token()
-		if err != nil {
+		if err == io.EOF {
 			return VersionInfo{}, fmt.Errorf("scl: no SCL root element found")
+		}
+		if err != nil {
+			return VersionInfo{}, fmt.Errorf("scl: no SCL root element found: %w", err)
 		}
 
 		se, ok := tok.(xml.StartElement)
@@ -75,6 +79,22 @@ func DetectVersion(data []byte) (VersionInfo, error) {
 		vi := extractVersionInfo(se)
 		return vi, nil
 	}
+}
+
+// newDecoder returns an XML decoder for SCL data. Besides UTF-8 itself it
+// accepts the declarations some tools write for UTF-8 ("utf8", "UTF8")
+// and US-ASCII, a subset of it; any other encoding is refused with its
+// name.
+func newDecoder(data []byte) *xml.Decoder {
+	dec := xml.NewDecoder(bytes.NewReader(data))
+	dec.CharsetReader = func(label string, input io.Reader) (io.Reader, error) {
+		switch strings.ToLower(strings.ReplaceAll(label, "-", "")) {
+		case "utf8", "usascii", "ascii":
+			return input, nil
+		}
+		return nil, fmt.Errorf("unsupported encoding %q", label)
+	}
+	return dec
 }
 
 // DetectFile is a convenience wrapper that reads a file and detects

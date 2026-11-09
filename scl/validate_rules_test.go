@@ -146,3 +146,48 @@ func TestParseValidateKind(t *testing.T) {
 		t.Error("strict parse of an IID without an IED succeeded")
 	}
 }
+
+// A parsed document without a Header element is reported; an empty Header
+// id is schema-valid and is not.
+func TestValidateRequired_HeaderElement(t *testing.T) {
+	const pre = `<?xml version="1.0"?><SCL xmlns="http://www.iec.ch/61850/2003/SCL" version="2007" revision="B" release="4">`
+	for _, tc := range []struct {
+		name, body string
+		want       int
+	}{
+		{"no Header", `<IED name="I1"/>`, 1},
+		{"empty Header id", `<Header id=""/><IED name="I1"/>`, 0},
+		{"Header only deeper", `<IED name="I1"><Private><Header/></Private></IED>`, 1},
+		{"Header present", `<Header id="h"/>`, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := ParseBytes([]byte(pre+tc.body+`</SCL>`), ParseOptions{ValidateSemantic: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := diagPaths(res.Diagnostics, "missing-element"); len(got) != tc.want {
+				t.Errorf("missing-element findings = %v, want %d", got, tc.want)
+			}
+		})
+	}
+	// A model built in code has no metadata: not checked.
+	if got := diagPaths(ValidateRequired(&SCL{}), "missing-element"); len(got) != 0 {
+		t.Errorf("model without metadata: %v", got)
+	}
+}
+
+func TestRootHasChild(t *testing.T) {
+	for in, want := range map[string]bool{
+		`<SCL><Header/></SCL>`:            true,
+		`<SCL><IED/><Header/></SCL>`:      true,
+		`<SCL><IED><Header/></IED></SCL>`: false,
+		`<SCL/>`:                          false,
+		`<SCL><IED>`:                      false,
+		``:                                false,
+		`<?xml version="1.0"?><x:SCL xmlns:x="u"><x:Header/></x:SCL>`: true,
+	} {
+		if got := rootHasChild([]byte(in), "Header"); got != want {
+			t.Errorf("rootHasChild(%q) = %v, want %v", in, got, want)
+		}
+	}
+}

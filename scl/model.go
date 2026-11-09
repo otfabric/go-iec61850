@@ -45,6 +45,11 @@ type DocumentMetadata struct {
 	Kind              DocumentKind
 	OriginalNamespace string
 	VendorNamespaces  []string
+
+	// HasHeader reports whether the document has a Header element (the
+	// schema requires one). The model's [Header] cannot show that: an
+	// absent Header and an empty one decode the same.
+	HasHeader bool
 }
 
 // Private represents a vendor-specific Private element in SCL.

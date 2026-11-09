@@ -133,6 +133,13 @@ type ServerOptions struct {
 	// conformant and lets any associated client change process data.
 	AllowReadOnlyFCWrites bool
 
+	// AllowEmptyReportDatSet serves report control blocks that have no data
+	// set (SCL datSet absent or empty), which SCL and IEC 61850-7-2 allow:
+	// a client writes DatSet before it enables the RCB. By default such a
+	// model is refused, because the RCB cannot report as configured.
+	// Enabling an RCB while its DatSet is still empty is refused either way.
+	AllowEmptyReportDatSet bool
+
 	// Metrics, when non-nil, receives the MMS request and connection
 	// events of the server (see [mms.Metrics]). It is a convenience field
 	// equivalent to MMS.Metrics, which takes precedence when both are set.
@@ -154,7 +161,7 @@ func NewServer(model *servermodel.Model, opts ServerOptions) (*Server, error) {
 		return nil, fmt.Errorf("iec61850: nil server model")
 	}
 
-	if errs := model.Validate(); len(errs) > 0 {
+	if errs := model.ValidateWith(servermodel.ValidateOptions{AllowEmptyReportDatSet: opts.AllowEmptyReportDatSet}); len(errs) > 0 {
 		return nil, fmt.Errorf("iec61850: model validation failed (%d errors): %w", len(errs), errors.Join(errs...))
 	}
 
