@@ -70,8 +70,15 @@ type DialOptions struct {
     Retry      mms.RetryPolicy // passed to iso.WithRetry; zero value: one attempt
     Metrics    mms.Metrics     // used when MMS.Metrics is nil
     MaxTPDULength int          // COTP TPDU size proposed; 0 → 1024, 65531 → omitted
+    Dialer func(ctx context.Context, network, addr string) (net.Conn, error) // passed to iso.WithDialer; nil: net.Dialer
 }
 ```
+
+`Dialer` opens the TCP connection (once per attempt, network `"tcp"`, the
+address given to `Dial`) in place of a zero `net.Dialer`: use it for a
+destination allowlist, a proxy, socket options or an in-memory transport. Its
+error is wrapped by `Dial`, so `errors.Is` matches it. An allowlist refusal is
+retried like any other error unless `Retry.Retryable` says otherwise.
 
 `Retry` covers TCP connect, COTP handshake and MMS association per attempt;
 errors another attempt cannot fix (`mms.IsRetryable`) return at once. Each
@@ -82,7 +89,7 @@ timeouts are set with `MMS.RequestTimeout`; `Client.MMS().Done()` and
 
 ### ISO addressing
 
-`Dial` sends the addressing IEC 61850 IEDs expect (go-mms v1.4.0 defaults, the
+`Dial` sends the addressing IEC 61850 IEDs expect (go-mms defaults since v1.4.0, the
 values libiec61850 sends): T-selector `0001`/`0001` and TPDU size 1024 in the
 COTP CR, S-selector `0001`, P-selector `00000001`, AP-titles `1.1.1.999` /
 `1.1.1.999.1`, AE-qualifier 12. An IED configured otherwise is reached by

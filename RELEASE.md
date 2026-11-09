@@ -1,13 +1,48 @@
 # go-iec61850 Releases
 
-## v1.14.1
+## v1.15.2
+
+**Date:** 2026-11-09
+**Previous release:** v1.15.1
+
+### Changed
+
+- The bundled command-line tools (`sclparse`, `sclgen`) are built on v1.15.1 (they were on v1.15.0). Neither links go-mms, so their behaviour is the same as in v1.15.1. Library code is the same as v1.15.1.
+
+---
+
+## v1.15.1
+
+**Date:** 2026-11-09
+**Previous release:** v1.15.0
+
+### Fixed
+
+- go-mms v1.7.1 (was v1.4.0): `Client.Close` is bounded by its context. Against a peer that stopped reading, such as after a corrupted or hostile byte stream, `Close` could block until the connection failed (otfabric/go-mms#34). The client also closes the connection as soon as the MMS reader stops.
+- Through go-mms v1.7.0: a GetVariableAccessAttributes response that encodes the optional `address` as a primitive (`0x81`, as some servers send it) is now accepted; before, `Client.GetVariableType` failed with "expected typeSpecification".
+
+### Added
+
+- go-mms v1.5.0 to v1.7.0 add `mms.DialOptions.AllowedServices`, reachable through `DialOptions.MMS`, and passive decoding (`mms.DecodeTSDU`, `mms.DecodePDU`). The go-iec61850 API is unchanged.
+
+### Tests
+
+- `TestChaosDialerByteFaults` tears down with `Close`, which must return within its context; it used `Abort` to avoid the go-mms v1.4.0 behaviour.
+
+### Changed
+
+- The bundled command-line tools (`sclparse`, `sclgen`) are built on v1.15.0 (they were on v1.13.0). `sclparse` now carries the v1.14.0 SCL change: every `Val` of an attribute is kept with its setting group, so `sclparse dump-json` writes `Vals` (value and `SGroup`) besides `Val`. Apart from the go-mms version, library code is the same as v1.15.0.
+
+---
+
+## v1.15.0
 
 **Date:** 2026-11-09
 **Previous release:** v1.14.0
 
-### Changed
+### Added
 
-- The bundled command-line tools (`sclparse`, `sclgen`) are built on v1.14.0, so `sclgen` writes every setting-group value and no empty `Val` elements. Library code is the same as v1.14.0.
+- `DialOptions.Dialer` sets the function that opens the TCP connection of `Dial` (passed to go-mms `iso.WithDialer`), for a destination allowlist checked against the resolved IP, a proxy, custom socket options or an in-memory transport. It is called once per attempt; its error is wrapped, so `errors.Is` matches it. Nil keeps the default `net.Dialer`.
 
 ---
 

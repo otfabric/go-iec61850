@@ -25,6 +25,12 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   reports, it owns the MMS client's InformationReport handler.
 - **No automatic model discovery caching persistence** — the client cache is
   in-memory only and does not survive process restarts.
+- **`DialOptions.Dialer` covers only the TCP connect** — the COTP, ACSE
+  and MMS handshakes run on the returned connection; TLS
+  (`iso.WithTLSConfig`) is not reachable from `DialOptions`: dial with
+  go-mms `iso.Dial` (`iso.WithDialer`, `iso.WithTLSConfig`) and wrap the
+  result with `NewClient`, or return a `tls.Conn` from the dialer. `Client` built with
+  `NewClient` dials nothing, and the server ignores the dialer.
 - **Report subscription assumes single-client ownership** — the library does
   not handle multi-client RCB arbitration beyond basic URCB reserve/release.
 

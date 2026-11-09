@@ -31,6 +31,7 @@ independent evidence: the feature must not be described as interoperable.
 | Feature | Client | Server | Own tests | Independent |
 |---|:---:|:---:|---|---|
 | Associate, browse, read, write, dataset read | ✅ | ✅ | TCP, in-memory | all five, both directions |
+| Custom TCP dialer (`DialOptions.Dialer`: allowlist, proxy, fault injection) | ✅ | n/a | TCP, in-memory, chaos | n/a |
 | Create and delete datasets | ✅ | — | in-memory | none |
 | CDC reads: DPS, BCR | ✅ | ✅ | in-memory | all five, both directions |
 | URCB reporting | ✅ | ✅ | TCP, in-memory | all five, both directions; iec61850bean has no `Resv`, iec61850-rust refuses TrgOps/IntgPd writes |
