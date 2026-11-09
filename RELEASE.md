@@ -1,5 +1,16 @@
 # go-iec61850 Releases
 
+## v1.14.1
+
+**Date:** 2026-11-09
+**Previous release:** v1.14.0
+
+### Changed
+
+- The bundled command-line tools (`sclparse`, `sclgen`) are built on v1.14.0, so `sclgen` writes every setting-group value and no empty `Val` elements. Library code is the same as v1.14.0.
+
+---
+
 ## v1.14.0
 
 **Date:** 2026-11-09
