@@ -176,7 +176,11 @@ func convDAI17(r raw.DAI) DAI {
 	if len(r.Val) > 0 {
 		val = r.Val[0].Value
 	}
-	return DAI{Name: r.Name, SAddr: r.SAddr, Val: val}
+	dai := DAI{Name: r.Name, SAddr: r.SAddr, Val: val}
+	for _, v := range r.Val {
+		dai.Vals = append(dai.Vals, Value{Value: v.Value, SGroup: v.SGroup})
+	}
+	return dai
 }
 
 func convDS17(r raw.DataSet) DataSet {
@@ -227,6 +231,9 @@ func convDTT17(r *raw.DataTypeTemplates, _ *[]Diagnostic) DataTypeTemplates {
 			if len(d.Val) > 0 {
 				da.Val = d.Val[0].Value
 			}
+			for _, v := range d.Val {
+				da.Vals = append(da.Vals, Value{Value: v.Value, SGroup: v.SGroup})
+			}
 			t.DAs = append(t.DAs, da)
 		}
 		for _, s := range dot.SDO {
@@ -241,6 +248,9 @@ func convDTT17(r *raw.DataTypeTemplates, _ *[]Diagnostic) DataTypeTemplates {
 			bda.Count = int(b.Count)
 			if len(b.Val) > 0 {
 				bda.Val = b.Val[0].Value
+			}
+			for _, v := range b.Val {
+				bda.Vals = append(bda.Vals, Value{Value: v.Value, SGroup: v.SGroup})
 			}
 			t.BDAs = append(t.BDAs, bda)
 		}
