@@ -234,3 +234,41 @@ func TestParse_EncodingLabels(t *testing.T) {
 		t.Errorf("empty input: %v", err)
 	}
 }
+
+// A root that detection accepts, followed by a body that does not decode,
+// fails with the version's unmarshal error.
+func TestParse_DecodeErrorPerVersion(t *testing.T) {
+	for _, tc := range []struct{ attrs, want string }{
+		{``, "unmarshal v17"},
+		{`version="2007" revision="B"`, "unmarshal v2007b"},
+		{`version="2007" revision="B" release="4"`, "unmarshal v2007b4"},
+		{`version="2007" revision="C" release="5"`, "unmarshal v2007c5"},
+	} {
+		xml := `<SCL xmlns="http://www.iec.ch/61850/2003/SCL" ` + tc.attrs + `><Header id="t"/><IED name="I1"></SCL>`
+		if _, err := ParseBytes([]byte(xml), ParseOptions{}); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%q: err = %v, want %q", tc.attrs, err, tc.want)
+		}
+	}
+}
+
+// MaxDiagnostics truncates the list when it is longer, and leaves a
+// shorter list alone.
+func TestParse_MaxDiagnostics(t *testing.T) {
+	xml := `<SCL xmlns="http://www.iec.ch/61850/2003/SCL" version="2007" revision="B" release="4"><Header id="t"/>` +
+		`<Substation/><Substation/><Substation/></SCL>`
+	full, err := ParseBytes([]byte(xml), ParseOptions{ValidateSemantic: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(full.Diagnostics) < 3 {
+		t.Fatalf("want at least 3 diagnostics, got %+v", full.Diagnostics)
+	}
+	cut, err := ParseBytes([]byte(xml), ParseOptions{ValidateSemantic: true, MaxDiagnostics: 2})
+	if err != nil || len(cut.Diagnostics) != 2 {
+		t.Errorf("MaxDiagnostics 2: %d diagnostics, %v", len(cut.Diagnostics), err)
+	}
+	all, err := ParseBytes([]byte(xml), ParseOptions{ValidateSemantic: true, MaxDiagnostics: 100})
+	if err != nil || len(all.Diagnostics) != len(full.Diagnostics) {
+		t.Errorf("MaxDiagnostics 100: %d diagnostics, want %d", len(all.Diagnostics), len(full.Diagnostics))
+	}
+}

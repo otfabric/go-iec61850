@@ -1,5 +1,17 @@
 # go-iec61850 Releases
 
+## v1.12.1
+
+**Date:** 2026-11-09
+**Previous release:** v1.12.0
+
+### Changed
+
+- The bundled command-line tools (`sclparse`, `sclgen`) are built on v1.12.0, so `sclparse validate` reports a missing `Header` element and reads SCL declared as `utf8`. Library code is the same as v1.12.0.
+- Tests cover the decode errors of every schema version and the `MaxDiagnostics` truncation (the partially covered lines of `scl/parse.go`).
+
+---
+
 ## v1.12.0
 
 **Date:** 2026-11-09
