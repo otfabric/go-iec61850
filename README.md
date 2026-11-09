@@ -195,8 +195,10 @@ func readMeasurement(ctx context.Context, addr string) error {
 `1.1.1.999.1`, AE-qualifier 12). For an IED configured otherwise set
 `MMS.Transport.RemoteTSelector` and `MMS.ISO.Remote*`, or take them from its
 SCL ConnectedAP with `ApplySCLAddress` ([API.md](API.md#iso-addressing)).
-`DialOptions` also takes `Metrics` (an `mms.Metrics`), a model `Cache`
-and the `IEDName` prefix of Edition 1 servers. Examples:
+`DialOptions` also takes `Metrics` (an `mms.Metrics`), a model `Cache`,
+the `IEDName` prefix of Edition 1 servers, and a `Dialer` that opens the TCP
+connection, for a destination allowlist checked against the resolved IP, a
+proxy or an in-memory transport ([SECURITY.md](SECURITY.md#deployment-guidance)). Examples:
 [basic-client](examples/basic-client), [ied-client](examples/ied-client)
 (reports), [resilient-client](examples/resilient-client) (reconnects,
 slog, metrics), [datasets](examples/datasets),
@@ -427,7 +429,7 @@ func main() {
 
 | Function | Description |
 |----------|-------------|
-| `Dial` | Connect to an IEC 61850 server over MMS/TCP (`DialOptions.Retry` for back-off) |
+| `Dial` | Connect to an IEC 61850 server over MMS/TCP (`DialOptions.Retry` for back-off, `DialOptions.Dialer` for a custom TCP dialer) |
 | `NewClient` | Wrap an existing `mms.Client` |
 | `Client.Close` | Graceful close (MMS Conclude) |
 | `Client.Abort` | Immediate abort |
