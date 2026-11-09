@@ -16,6 +16,7 @@ How to run each test tier. What the tests show per feature is in
 | Benchmarks | `make bench` | nothing | no |
 | Interop | `make interop` | Docker and adapter images | `interop.yml` |
 | GOOSE and SV interop | `make interop-goose` | Linux, root, Docker network | `interop.yml` |
+| GOOSE captures | `IEC61850_GOOSE_CAPTURES=<dir> go test -run TestDecodeCaptures ./goose/` | A directory of third-party pcapng/pcap captures (not committed), e.g. the SCL corpus's `external/cache/adsc` | local only |
 | SCL corpus | `make corpus` | `IEC61850_SCL_CORPUS`: a checkout of the private otfabric/iec61850-scl-corpus | local only (the corpus is private) |
 | Generated code | `make scl-check-generate` | nothing | `ci.yml`, `generated` job |
 
