@@ -1,5 +1,17 @@
 # go-iec61850 Releases
 
+## v1.9.4
+
+**Date:** 2026-11-09
+**Previous release:** v1.9.3
+
+### Fixed
+
+- Server reports: a data set member that names a data object or a constructed attribute (an FCD, such as `MMXU1.Hz[MX]` or `Mod[ST]`) is reported as the structure of its attributes of that functional constraint, as GOOSE already did; it was sent as `false`. A change, quality change or update of any attribute below such a member now triggers the report, with every member that holds the attribute included.
+- Server reports: a member attribute that has no value yet is reported with its type's default, the value a client reads, instead of a missing value. Writing that default is no longer reported as a data change.
+
+---
+
 ## v1.9.3
 
 **Date:** 2026-11-08
