@@ -86,7 +86,14 @@ func DetectVersion(data []byte) (VersionInfo, error) {
 // and US-ASCII, a subset of it; any other encoding is refused with its
 // name.
 func newDecoder(data []byte) *xml.Decoder {
+	return newDecoderNS(data, "")
+}
+
+// newDecoderNS is newDecoder with a default namespace for elements that
+// declare none (xml.Decoder.DefaultSpace); "" keeps them unqualified.
+func newDecoderNS(data []byte, defaultSpace string) *xml.Decoder {
 	dec := xml.NewDecoder(bytes.NewReader(data))
+	dec.DefaultSpace = defaultSpace
 	dec.CharsetReader = func(label string, input io.Reader) (io.Reader, error) {
 		switch strings.ToLower(strings.ReplaceAll(label, "-", "")) {
 		case "utf8", "usascii", "ascii":

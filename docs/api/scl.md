@@ -766,6 +766,16 @@ type ParseOptions struct {
 	// MaxDiagnostics, when > 0, truncates the diagnostic list
 	// to at most this many entries.
 	MaxDiagnostics int
+
+	// AssumeSCLNamespace, when true, reads an SCL root element without a
+	// namespace as if it declared the IEC 61850-6 namespace
+	// (http://www.iec.ch/61850/2003/SCL). The SCL schema requires the
+	// namespace, so such a document is refused by default; with this
+	// option it is parsed and a warning diagnostic with code
+	// "namespace-assumed" is added. Without version attributes the
+	// document is then read as the 2003 schema (1.7). A root in any other
+	// namespace is still refused.
+	AssumeSCLNamespace bool
 }
 ```
 

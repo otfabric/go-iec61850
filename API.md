@@ -1894,8 +1894,15 @@ type ParseOptions struct {
     Strict           bool         // return error if any diagnostic has error severity
     Kind             DocumentKind // override document kind detection
     MaxDiagnostics   int          // truncate diagnostics (0 = unlimited)
+    AssumeSCLNamespace bool       // read an SCL root without namespace as the IEC namespace
 }
 ```
+
+The SCL schema requires the IEC namespace (`http://www.iec.ch/61850/2003/SCL`)
+on the root element, so a bare `<SCL>` is refused by default. With
+`AssumeSCLNamespace` it is parsed as if it declared the namespace, with a
+`namespace-assumed` warning; without version attributes it is read as schema
+1.7. A root in another namespace is still refused.
 
 ### Result
 
