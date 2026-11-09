@@ -144,7 +144,7 @@ func TestDecodeV2007C5_OfficialExample(t *testing.T) {
 }
 
 func TestDecodeV2007B4_ABBFile(t *testing.T) {
-	path := filepath.Join(repoRoot(), "scl", "testdata", "abb", "BLG065J1M101Q04A1.cid")
+	path := filepath.Join(repoRoot(), "scl", "testdata", "abb", "SITEBJ1M101Q04A1.cid")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Skipf("ABB sample not found: %v", err)

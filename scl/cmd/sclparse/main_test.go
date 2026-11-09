@@ -60,7 +60,7 @@ func executeCmd(args ...string) error {
 // --- detect ---
 
 func TestDetect_ABB_CID(t *testing.T) {
-	path := fixturePath("scl/testdata/abb/BLG065J1M101Q04A1.cid")
+	path := fixturePath("scl/testdata/abb/SITEBJ1M101Q04A1.cid")
 	if _, err := os.Stat(path); err != nil {
 		t.Skip("ABB fixture not available")
 	}
@@ -82,7 +82,7 @@ func TestDetect_ABB_CID(t *testing.T) {
 }
 
 func TestDetect_JSON(t *testing.T) {
-	path := fixturePath("scl/testdata/abb/BLG065J1M101Q04A1.cid")
+	path := fixturePath("scl/testdata/abb/SITEBJ1M101Q04A1.cid")
 	if _, err := os.Stat(path); err != nil {
 		t.Skip("ABB fixture not available")
 	}
