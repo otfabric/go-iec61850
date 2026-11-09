@@ -1,5 +1,20 @@
 # go-iec61850 Releases
 
+## v1.14.0
+
+**Date:** 2026-11-09
+**Previous release:** v1.13.1
+
+### Added
+
+- `scl.DAI`, `scl.DA` and `scl.BDA` have `Vals []scl.Value`: every `Val` element in document order, with its setting group (`sGroup`, IEC 61850-6) for a setting. Before, only the first value was kept (`Val`, unchanged), so the values of the other setting groups were lost.
+
+### Changed
+
+- `scl.Generate` writes every value of `Vals` with its `sGroup`, or `Val` when a model built in code sets only that. An attribute without a value is now written without an empty `Val` element.
+
+---
+
 ## v1.13.1
 
 **Date:** 2026-11-09

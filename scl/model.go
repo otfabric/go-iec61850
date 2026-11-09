@@ -151,7 +151,20 @@ type SDI struct {
 type DAI struct {
 	Name  string
 	SAddr string
-	Val   string
+	// Val is the first Val element, kept for compatibility; Vals has all of
+	// them.
+	Val string
+	// Vals are the Val elements in document order. A setting (FC SG or SE)
+	// has one per setting group, numbered by SGroup (IEC 61850-6, Val
+	// element); other values have one, with SGroup 0.
+	Vals []Value
+}
+
+// Value is one Val element of SCL: a value as text and, for a setting, the
+// setting group it belongs to (sGroup; 0 when absent).
+type Value struct {
+	Value  string
+	SGroup uint32
 }
 
 // DataSet represents a data set defined in a logical node.
@@ -315,7 +328,8 @@ type DA struct {
 	Type  string
 	Desc  string
 	Count int
-	Val   string
+	Val   string // the first Val element; Vals has all of them
+	Vals  []Value
 }
 
 // DAType defines the structure of a constructed data attribute type.
@@ -332,7 +346,8 @@ type BDA struct {
 	Type  string
 	Desc  string
 	Count int
-	Val   string
+	Val   string // the first Val element; Vals has all of them
+	Vals  []Value
 }
 
 // EnumType defines an enumeration type.

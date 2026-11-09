@@ -2056,6 +2056,14 @@ type SDI struct {
 
 type DAI struct {
     Name, SAddr, Val string
+    Vals             []Value // every Val element, with its setting group
+}
+
+// Value is one SCL Val element; SGroup numbers the setting group of a
+// setting (FC SG or SE), 0 otherwise. Val is the first of Vals.
+type Value struct {
+    Value  string
+    SGroup uint32
 }
 
 type DataSet struct {
@@ -2148,6 +2156,7 @@ type DA struct {
     Name, FC, BType, Type, Desc string
     Count                       int
     Val                         string
+    Vals                        []Value
 }
 
 type DAType struct {
@@ -2159,6 +2168,7 @@ type BDA struct {
     Name, BType, Type, Desc string
     Count                   int
     Val                     string
+    Vals                    []Value
 }
 
 type EnumType struct {

@@ -230,9 +230,35 @@ type genSDI struct {
 }
 
 type genDAI struct {
-	Name  string `xml:"name,attr"`
-	SAddr string `xml:"sAddr,attr"`
-	Val   string `xml:"Val"`
+	Name  string    `xml:"name,attr"`
+	SAddr string    `xml:"sAddr,attr"`
+	Vals  []genSVal `xml:"Val"`
+}
+
+// genSVal is a Val element; sGroup is written for a setting group value.
+type genSVal struct {
+	SGroup uint32 `xml:"sGroup,attr,omitempty"`
+	Value  string `xml:",chardata"`
+}
+
+// genVals writes a model value: every element of vals or, for a model
+// built with Val only, that one value; nothing when there is none.
+func genVals(val string, vals []Value) []genSVal {
+	if len(vals) == 0 {
+		if val == "" {
+			return nil
+		}
+		return []genSVal{{Value: val}}
+	}
+	out := make([]genSVal, len(vals))
+	for i, v := range vals {
+		out[i] = genSVal{SGroup: v.SGroup, Value: v.Value}
+	}
+	return out
+}
+
+func genDAIOf(dai DAI) genDAI {
+	return genDAI{Name: dai.Name, SAddr: dai.SAddr, Vals: genVals(dai.Val, dai.Vals)}
 }
 
 type genDataSet struct {
@@ -323,13 +349,13 @@ type genSDO struct {
 }
 
 type genDA struct {
-	Name  string `xml:"name,attr"`
-	FC    string `xml:"fc,attr"`
-	BType string `xml:"bType,attr"`
-	Type  string `xml:"type,attr"`
-	Desc  string `xml:"desc,attr"`
-	Count string `xml:"count,attr"`
-	Val   string `xml:"Val"`
+	Name  string    `xml:"name,attr"`
+	FC    string    `xml:"fc,attr"`
+	BType string    `xml:"bType,attr"`
+	Type  string    `xml:"type,attr"`
+	Desc  string    `xml:"desc,attr"`
+	Count string    `xml:"count,attr"`
+	Vals  []genSVal `xml:"Val"`
 }
 
 type genDAType struct {
@@ -339,12 +365,12 @@ type genDAType struct {
 }
 
 type genBDA struct {
-	Name  string `xml:"name,attr"`
-	BType string `xml:"bType,attr"`
-	Type  string `xml:"type,attr"`
-	Desc  string `xml:"desc,attr"`
-	Count string `xml:"count,attr"`
-	Val   string `xml:"Val"`
+	Name  string    `xml:"name,attr"`
+	BType string    `xml:"bType,attr"`
+	Type  string    `xml:"type,attr"`
+	Desc  string    `xml:"desc,attr"`
+	Count string    `xml:"count,attr"`
+	Vals  []genSVal `xml:"Val"`
 }
 
 type genEnumType struct {
@@ -511,7 +537,7 @@ func lnToGenXML(ln LN) genLN {
 func doiToGenXML(doi DOI) genDOI {
 	raw := genDOI{Name: doi.Name, Desc: doi.Desc}
 	for _, dai := range doi.DAIs {
-		raw.DAIs = append(raw.DAIs, genDAI(dai))
+		raw.DAIs = append(raw.DAIs, genDAIOf(dai))
 	}
 	for _, sdi := range doi.SDIs {
 		raw.SDIs = append(raw.SDIs, sdiToGenXML(sdi))
@@ -522,7 +548,7 @@ func doiToGenXML(doi DOI) genDOI {
 func sdiToGenXML(sdi SDI) genSDI {
 	raw := genSDI{Name: sdi.Name}
 	for _, dai := range sdi.DAIs {
-		raw.DAIs = append(raw.DAIs, genDAI(dai))
+		raw.DAIs = append(raw.DAIs, genDAIOf(dai))
 	}
 	for _, sub := range sdi.SDIs {
 		raw.SDIs = append(raw.SDIs, sdiToGenXML(sub))
@@ -592,7 +618,7 @@ func dttToGenXML(dtt DataTypeTemplates) genDataTypeTemplates {
 		for _, da := range dot.DAs {
 			rawDA := genDA{
 				Name: da.Name, FC: da.FC, BType: da.BType,
-				Type: da.Type, Desc: da.Desc, Val: da.Val,
+				Type: da.Type, Desc: da.Desc, Vals: genVals(da.Val, da.Vals),
 			}
 			if da.Count > 0 {
 				rawDA.Count = strconv.Itoa(da.Count)
@@ -609,7 +635,7 @@ func dttToGenXML(dtt DataTypeTemplates) genDataTypeTemplates {
 		for _, bda := range dat.BDAs {
 			rawBDA := genBDA{
 				Name: bda.Name, BType: bda.BType, Type: bda.Type,
-				Desc: bda.Desc, Val: bda.Val,
+				Desc: bda.Desc, Vals: genVals(bda.Val, bda.Vals),
 			}
 			if bda.Count > 0 {
 				rawBDA.Count = strconv.Itoa(bda.Count)

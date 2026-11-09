@@ -63,7 +63,8 @@ type BDA struct {
 	Type  string
 	Desc  string
 	Count int
-	Val   string
+	Val   string // the first Val element; Vals has all of them
+	Vals  []Value
 }
 ```
 
@@ -200,7 +201,8 @@ type DA struct {
 	Type  string
 	Desc  string
 	Count int
-	Val   string
+	Val   string // the first Val element; Vals has all of them
+	Vals  []Value
 }
 ```
 
@@ -212,7 +214,13 @@ DA defines a data attribute within a data object type.
 type DAI struct {
 	Name  string
 	SAddr string
-	Val   string
+	// Val is the first Val element, kept for compatibility; Vals has all of
+	// them.
+	Val string
+	// Vals are the Val elements in document order. A setting (FC SG or SE)
+	// has one per setting group, numbered by SGroup (IEC 61850-6, Val
+	// element); other values have one, with SGroup 0.
+	Vals []Value
 }
 ```
 
@@ -1271,6 +1279,17 @@ type TrgOps struct {
 ```
 
 TrgOps contains the trigger options for a report control block.
+
+### type Value
+
+```go
+type Value struct {
+	Value  string
+	SGroup uint32
+}
+```
+
+Value is one Val element of SCL: a value as text and, for a setting, the setting group it belongs to (sGroup; 0 when absent).
 
 ### type VersionInfo
 
