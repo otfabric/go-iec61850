@@ -127,7 +127,10 @@ func (o Origin) toMMS() *mms.Value {
 }
 
 // CheckConditions represents the Check bitstring in a control
-// command. Bit 0 = synchrocheck, Bit 1 = interlockCheck.
+// command: BIT STRING { synchrocheck (0), interlock-check (1) } (IEC
+// 61850-8-1), bit 0 being the most significant bit of the first octet, as
+// libiec61850 reads it (MmsValue_getBitStringBit). The constants are
+// flags of this type, not wire positions.
 type CheckConditions uint8
 
 const (
@@ -138,9 +141,36 @@ const (
 // Has reports whether the given check bit is set.
 func (c CheckConditions) Has(flag CheckConditions) bool { return c&flag != 0 }
 
-// toMMS encodes Check as a 2-bit bitstring.
+// Wire positions of the Check bits: bit 0 (synchrocheck) is 0x80, bit 1
+// (interlock-check) is 0x40.
+const (
+	checkBitSynchro   = 0x80
+	checkBitInterlock = 0x40
+)
+
+// toMMS encodes Check as a 2-bit bitstring. Before v1.10.1 the flags were
+// shifted into the opposite positions.
 func (c CheckConditions) toMMS() *mms.Value {
-	return mms.NewBitStringWithLength([]byte{byte(c) << 6}, 2)
+	var b byte
+	if c.Has(CheckSynchroCheck) {
+		b |= checkBitSynchro
+	}
+	if c.Has(CheckInterlockCheck) {
+		b |= checkBitInterlock
+	}
+	return mms.NewBitStringWithLength([]byte{b}, 2)
+}
+
+// checkFromMMS decodes the first octet of a Check bitstring.
+func checkFromMMS(b byte) CheckConditions {
+	var c CheckConditions
+	if b&checkBitSynchro != 0 {
+		c |= CheckSynchroCheck
+	}
+	if b&checkBitInterlock != 0 {
+		c |= CheckInterlockCheck
+	}
+	return c
 }
 
 // OperateParams contains all parameters for an IEC 61850 control

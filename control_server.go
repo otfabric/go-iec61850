@@ -745,7 +745,7 @@ func decodeControlRequest(ref, operation string, val *mms.Value) (ControlRequest
 		}
 		if checkIdx < len(members) {
 			if bits, ok := members[checkIdx].BitString(); ok && len(bits) > 0 {
-				req.Check = CheckConditions(bits[0] >> 6)
+				req.Check = checkFromMMS(bits[0])
 			}
 		}
 

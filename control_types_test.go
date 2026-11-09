@@ -89,15 +89,32 @@ func TestOrigin_toMMS(t *testing.T) {
 	}
 }
 
-func TestCheckConditions_toMMS(t *testing.T) {
-	c := CheckSynchroCheck | CheckInterlockCheck
-	v := c.toMMS()
-	bits, ok := v.BitString()
-	if !ok {
-		t.Fatal("expected bitstring")
+// The Check bits on the wire: synchrocheck is bit 0 (0x80) and
+// interlock-check bit 1 (0x40), as libiec61850 reads them
+// (src/iec61850/server/mms_mapping/control.c: synchroCheck =
+// MmsValue_getBitStringBit(check, 0), interlockCheck = ...(check, 1)).
+func TestCheckConditions_Wire(t *testing.T) {
+	for _, tt := range []struct {
+		c    CheckConditions
+		wire byte
+	}{
+		{0, 0x00},
+		{CheckSynchroCheck, 0x80},
+		{CheckInterlockCheck, 0x40},
+		{CheckSynchroCheck | CheckInterlockCheck, 0xC0},
+	} {
+		v := tt.c.toMMS()
+		bits, ok := v.BitString()
+		if !ok || len(bits) != 1 || bits[0] != tt.wire {
+			t.Errorf("toMMS(%02b) = %08b, want %08b", tt.c, bits, tt.wire)
+		}
+		if got := checkFromMMS(tt.wire); got != tt.c {
+			t.Errorf("checkFromMMS(%08b) = %02b, want %02b", tt.wire, got, tt.c)
+		}
 	}
-	if len(bits) == 0 || bits[0]>>6 != 3 {
-		t.Errorf("expected top 2 bits set, got %08b", bits[0])
+	// Unused trailing bits are ignored.
+	if got := checkFromMMS(0x9F); got != CheckSynchroCheck {
+		t.Errorf("checkFromMMS(10011111) = %02b", got)
 	}
 }
 
