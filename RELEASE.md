@@ -1,5 +1,16 @@
 # go-iec61850 Releases
 
+## v1.10.1
+
+**Date:** 2026-11-09
+**Previous release:** v1.10.0
+
+### Fixed
+
+- The Check attribute of a control (Oper, SBOw) had its two bits swapped on the wire. IEC 61850-8-1 defines Check as BIT STRING { synchrocheck (0), interlock-check (1) }, and libiec61850 reads bit 0 (the first, 0x80) as synchrocheck. go-iec61850 sent `CheckSynchroCheck` in bit 1 and `CheckInterlockCheck` in bit 0, and its server decoded them the same way, so a go-iec61850 client and server agreed with each other but not with other stacks: an IED asked for an interlock check got a synchrocheck request, and the other way round. Both directions now use the standard positions. A go-iec61850 client and server must be updated together to keep agreeing.
+
+---
+
 ## v1.10.0
 
 **Date:** 2026-11-09
