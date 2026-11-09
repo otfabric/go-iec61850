@@ -85,13 +85,10 @@ func TestE2E_SCLCorpusReadEveryFC(t *testing.T) {
 
 func readEveryFC(t *testing.T, model *servermodel.Model) {
 	t.Helper()
-	srv, err := NewServer(model, ServerOptions{})
+	// SCL allows a report control block without a data set (libiec61850's
+	// substitution example has one); the server serves it on request.
+	srv, err := NewServer(model, ServerOptions{AllowEmptyReportDatSet: true})
 	if err != nil {
-		if strings.Contains(err.Error(), "has empty DatSet") {
-			// SCL allows a report control block without a data set
-			// (datSet is optional); the server model refuses it.
-			t.Skipf("server model refused: %v", err)
-		}
 		t.Fatalf("NewServer: %v", err)
 	}
 	t.Cleanup(srv.Close)

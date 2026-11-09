@@ -1077,6 +1077,10 @@ type ServerOptions struct {
     // AllowReadOnlyFCWrites lets clients write ST, MX, SG, SR, OR and
     // EX (simulators, test fixtures only); default: object-access-denied.
     AllowReadOnlyFCWrites bool
+    // AllowEmptyReportDatSet serves report control blocks without a data
+    // set (SCL datSet absent or empty); enabling one is refused until a
+    // client writes DatSet. Default: the model is refused.
+    AllowEmptyReportDatSet bool
     MMS          mms.ServerOptions // incl. AssociationTimeout
 }
 

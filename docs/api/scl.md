@@ -371,7 +371,7 @@ ValidateKind reports content a document of the given kind must have (IEC 61850-6
 func ValidateRequired(s *SCL) []Diagnostic
 ```
 
-ValidateRequired reports required attributes that are missing or empty. The attributes are those the IEC 61850-6 SCL schemas (specs/, 2007B4) declare use="required" with a type that cannot be empty (tName, tID, a pattern requiring a first character, an enumeration). Left out: Header id (xs:normalizedString, may be empty), LN inst (empty on LN0) and numeric attributes, whose absence cannot be told from their zero value.
+ValidateRequired reports required attributes that are missing or empty. The attributes are those the IEC 61850-6 SCL schemas (specs/, 2007B4) declare use="required" with a type that cannot be empty (tName, tID, a pattern requiring a first character, an enumeration). Left out: Header id (xs:normalizedString, may be empty), LN inst (empty on LN0) and numeric attributes, whose absence cannot be told from their zero value. A parsed document without a Header element is reported too (missing-element, from [DocumentMetadata.HasHeader](#func-documentmetadata-hasheader)); a model built in code has no metadata and is not checked for it.
 
 ### type DocumentKind
 
@@ -425,6 +425,11 @@ type DocumentMetadata struct {
 	Kind              DocumentKind
 	OriginalNamespace string
 	VendorNamespaces  []string
+
+	// HasHeader reports whether the document has a Header element (the
+	// schema requires one). The model's [Header] cannot show that: an
+	// absent Header and an empty one decode the same.
+	HasHeader bool
 }
 ```
 

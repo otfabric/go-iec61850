@@ -3,6 +3,7 @@
 package scl
 
 import (
+	"bytes"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -48,6 +49,7 @@ func ParseBytes(data []byte, opts ParseOptions) (*Result, error) {
 		Kind:              kind,
 		OriginalNamespace: vi.Namespace,
 		VendorNamespaces:  vi.VendorNamespaces,
+		HasHeader:         rootHasChild(data, "Header"),
 	}
 	result.Document = doc
 	result.Diagnostics = diags
@@ -178,6 +180,33 @@ func decodeAndConvert(data []byte, vi VersionInfo) (*SCL, []Diagnostic, error) {
 				vi.Version, vi.Revision, vi.Release, fb),
 		}
 		return doc, append([]Diagnostic{warn}, diags...), nil
+	}
+}
+
+// rootHasChild reports whether the root element of data has a direct
+// child element with the given local name. It stops at the first match
+// and ignores everything deeper than the root's children.
+func rootHasChild(data []byte, name string) bool {
+	d := xml.NewDecoder(bytes.NewReader(data))
+	d.Strict = false
+	depth := 0
+	for {
+		tok, err := d.Token()
+		if err != nil {
+			return false
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			depth++
+			if depth == 2 && t.Name.Local == name {
+				return true
+			}
+		case xml.EndElement:
+			depth--
+			if depth == 0 {
+				return false
+			}
+		}
 	}
 }
 

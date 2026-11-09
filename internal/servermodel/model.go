@@ -235,6 +235,20 @@ type OptFieldsDef struct {
 // This restriction matches the current server runtime, which does
 // not support cross-LN dataset resolution.
 func (m *Model) Validate() []error {
+	return m.ValidateWith(ValidateOptions{})
+}
+
+// ValidateOptions relaxes [Model.ValidateWith].
+type ValidateOptions struct {
+	// AllowEmptyReportDatSet accepts report control blocks without a data
+	// set (SCL datSet absent or empty). IEC 61850-7-2 lets a client set
+	// DatSet before it enables the RCB; enabling one without a data set
+	// is refused at run time.
+	AllowEmptyReportDatSet bool
+}
+
+// ValidateWith is [Model.Validate] with options.
+func (m *Model) ValidateWith(opts ValidateOptions) []error {
 	var errs []error
 
 	if len(m.LogicalDevices) == 0 {
@@ -252,13 +266,13 @@ func (m *Model) Validate() []error {
 		}
 		ldNames[ld.Name] = true
 
-		errs = append(errs, validateLD(ld)...)
+		errs = append(errs, validateLD(ld, opts)...)
 	}
 
 	return errs
 }
 
-func validateLD(ld *LogicalDevice) []error {
+func validateLD(ld *LogicalDevice, opts ValidateOptions) []error {
 	var errs []error
 	lnNames := make(map[string]bool)
 	hasLLN0 := false
@@ -354,7 +368,9 @@ func validateLD(ld *LogicalDevice) []error {
 			}
 			rptNames[rpt.Name] = true
 			if rpt.DatSet == "" {
-				errs = append(errs, fmt.Errorf("model: LD %q LN %q: report %q has empty DatSet", ld.Name, ln.Name, rpt.Name))
+				if !opts.AllowEmptyReportDatSet {
+					errs = append(errs, fmt.Errorf("model: LD %q LN %q: report %q has empty DatSet", ld.Name, ln.Name, rpt.Name))
+				}
 			} else if !dsNames[rpt.DatSet] {
 				errs = append(errs, fmt.Errorf("model: LD %q LN %q: report %q references non-existent dataset %q", ld.Name, ln.Name, rpt.Name, rpt.DatSet))
 			}
