@@ -156,6 +156,30 @@ func TestReportEngine_FCDMemberUnrelated(t *testing.T) {
 	}
 }
 
+// With data-update triggering, writing an unchanged value below a
+// data-object member reports it with reason data-update only.
+func TestReportEngine_FCDMemberDataUpdate(t *testing.T) {
+	model := fcdReportModel()
+	model.LogicalDevices[0].LogicalNodes[0].Reports[0].TrgOps.Dupd = true
+	srv := newTestServer(t, model)
+	engine := srv.EnableReports()
+	t.Cleanup(engine.Stop)
+	ctx := context.Background()
+	if err := engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcbFCD", "RptEna", mms.NewBoolean(true)); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	rt := engine.rcbs["LD1/LLN0$BR$brcbFCD"]
+	srv.SetValue(ctx, servermodel.StoreKey("LD1", "LLN0$ST$Mod$stVal"), mms.NewInteger(0))
+
+	e := lastEntry(t, rt)
+	if !e.inclusion[0] || !e.inclusion[1] {
+		t.Fatalf("inclusion = %v, want both members", e.inclusion)
+	}
+	if e.reasons[0] != ReasonDataUpdate || e.reasons[1] != ReasonDataUpdate {
+		t.Errorf("reasons = %v, want data update only", e.reasons)
+	}
+}
+
 // A member the model cannot resolve keeps the exact-key lookup.
 func TestReportEngine_UnresolvedMember(t *testing.T) {
 	model := fcdReportModel()

@@ -615,8 +615,8 @@ func (re *ReportEngine) resolveDataset(rt *rcbRuntime) error {
 func (re *ReportEngine) readMemberValues(rt *rcbRuntime) []*mms.Value {
 	values := make([]*mms.Value, len(rt.memberKeys))
 	for i, key := range rt.memberKeys {
-		if i < len(rt.memberNodes) && rt.memberNodes[i] != nil {
-			values[i] = re.store.ReadMember(rt.memberNodes[i])
+		if n := rt.memberNodes[i]; n != nil {
+			values[i] = re.store.ReadMember(n)
 			continue
 		}
 		values[i] = re.store.Get(key)
