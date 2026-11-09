@@ -35,19 +35,35 @@ func ParseBytes(data []byte, opts ParseOptions) (*Result, error) {
 		kind = KindUnknown
 	}
 
+	originalNamespace := vi.Namespace
+	defaultSpace := ""
+	var nsDiag []Diagnostic
+	if opts.AssumeSCLNamespace && vi.Namespace == "" {
+		defaultSpace = iecNamespace
+		vi.Namespace = iecNamespace
+		vi.Schema, vi.Confidence, vi.Reasons = classifyVersion(vi)
+		nsDiag = []Diagnostic{{
+			Severity: DiagWarning,
+			Code:     "namespace-assumed",
+			Path:     "SCL",
+			Message:  fmt.Sprintf("the SCL root element has no namespace; read as %s (the schema requires it)", iecNamespace),
+		}}
+	}
+
 	result := &Result{
 		Version: vi,
 		Kind:    kind,
 	}
 
-	doc, diags, err := decodeAndConvert(data, vi)
+	doc, diags, err := decodeAndConvert(data, vi, defaultSpace)
 	if err != nil {
 		return nil, err
 	}
+	diags = append(nsDiag, diags...)
 	doc.Metadata = &DocumentMetadata{
 		Version:           vi,
 		Kind:              kind,
-		OriginalNamespace: vi.Namespace,
+		OriginalNamespace: originalNamespace,
 		VendorNamespaces:  vi.VendorNamespaces,
 		HasHeader:         rootHasChild(data, "Header"),
 	}
@@ -131,32 +147,32 @@ func ParseFileWithOptions(path string, opts ParseOptions) (*Result, error) {
 
 // --- Internal dispatch ---
 
-func decodeAndConvert(data []byte, vi VersionInfo) (*SCL, []Diagnostic, error) {
+func decodeAndConvert(data []byte, vi VersionInfo, defaultSpace string) (*SCL, []Diagnostic, error) {
 	switch vi.Schema {
 	case Version2007C5:
 		var raw v2007c5.SCL
-		if err := newDecoder(data).Decode(&raw); err != nil {
+		if err := newDecoderNS(data, defaultSpace).Decode(&raw); err != nil {
 			return nil, nil, fmt.Errorf("scl: unmarshal v2007c5: %w", err)
 		}
 		return convertV2007C5(&raw)
 
 	case Version2007B4:
 		var raw v2007b4.SCL
-		if err := newDecoder(data).Decode(&raw); err != nil {
+		if err := newDecoderNS(data, defaultSpace).Decode(&raw); err != nil {
 			return nil, nil, fmt.Errorf("scl: unmarshal v2007b4: %w", err)
 		}
 		return convertV2007B4(&raw)
 
 	case Version2007B:
 		var raw v2007b.SCL
-		if err := newDecoder(data).Decode(&raw); err != nil {
+		if err := newDecoderNS(data, defaultSpace).Decode(&raw); err != nil {
 			return nil, nil, fmt.Errorf("scl: unmarshal v2007b: %w", err)
 		}
 		return convertV2007B(&raw)
 
 	case Version17:
 		var raw v17.SCL
-		if err := newDecoder(data).Decode(&raw); err != nil {
+		if err := newDecoderNS(data, defaultSpace).Decode(&raw); err != nil {
 			return nil, nil, fmt.Errorf("scl: unmarshal v17: %w", err)
 		}
 		return convertV17(&raw)
@@ -168,7 +184,7 @@ func decodeAndConvert(data []byte, vi VersionInfo) (*SCL, []Diagnostic, error) {
 		}
 		alt := vi
 		alt.Schema = fb
-		doc, diags, err := decodeAndConvert(data, alt)
+		doc, diags, err := decodeAndConvert(data, alt, defaultSpace)
 		if err != nil {
 			return nil, nil, err
 		}

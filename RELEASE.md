@@ -1,5 +1,16 @@
 # go-iec61850 Releases
 
+## v1.13.0
+
+**Date:** 2026-11-09
+**Previous release:** v1.12.1
+
+### Added
+
+- `scl.ParseOptions.AssumeSCLNamespace` parses an `SCL` root element without a namespace as if it declared the IEC 61850-6 namespace, with a `namespace-assumed` warning; without version attributes the document is read as schema 1.7. Some tools write such files and other stacks accept them. By default they are still refused, as the schema requires the namespace; a root in another namespace is refused either way.
+
+---
+
 ## v1.12.1
 
 **Date:** 2026-11-09
