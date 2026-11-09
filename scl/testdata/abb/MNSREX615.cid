@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--Generated with ABB Asea Brown Boveri Ltd IEC 61850 Libraries 2.13.25021.1 at 11/14/2025 8:18:40 PM.-->
+<!--Generated with ABB Asea Brown Boveri Ltd IEC 61850 Libraries 2.13.25021.1.-->
 <SCL xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://www.iec.ch/61850/2003/SCL" xmlns:sxy="http://www.iec.ch/61850/2003/SCLcoordinates" xmlns:eComm="http://www.abb.com/61850/2015/SCL_ABBCommunication" xmlns:eABB="http://www.abb.com/61850/2010/ABBTranslations" xsi:schemaLocation="http://www.iec.ch/61850/2003/SCL SCL.xsd http://www.iec.ch/61850/2003/SCLcoordinates SCL_Coordinates.xsd http://www.abb.com/61850/2015/SCL_ABBCommunication SCL_ABBCommunication.xsd http://www.abb.com/61850/2010/ABBTranslations SCL_ABBTranslations.xsd" version="2007" revision="B" release="4">
-  <Header id="ELSE CEC" version="1" revision="638987483197749068" toolID="ABB PCM600" />
-  <Substation name="AA1" desc="Training Center">
-    <Private type="ABBPCMInternalObjRef">1f044bee-d6fc-419f-877f-8da54ee94cc3</Private>
+  <Header id="SITE_A" version="1" revision="1" toolID="ABB PCM600" />
+  <Substation name="AA1" desc="Site A">
+    <Private type="ABBPCMInternalObjRef">f0437dd9-43f7-5def-a60c-e6f0d77db2af</Private>
     <VoltageLevel name="J1" desc="415V">
-      <Private type="ABBPCMInternalObjRef">9d6f58c6-bf10-4796-9cdb-3154c022e0ba</Private>
+      <Private type="ABBPCMInternalObjRef">940dee7d-2fb1-5afa-b86e-2d20074259ab</Private>
       <Voltage unit="V" multiplier="k">20</Voltage>
       <Bay name="Q02" desc="MNS3.0_EMAX3">
-        <Private type="ABBPCMInternalObjRef">0c47f71d-bc7a-42b0-8b88-f7ccf3df9901</Private>
+        <Private type="ABBPCMInternalObjRef">223c912a-8ef4-5f0d-98cf-71f762fee95e</Private>
         <LNode iedName="MNSREX615" ldInst="LD0" lnClass="LLN0" />
         <LNode iedName="MNSREX615" ldInst="LD0" prefix="LED" lnClass="GGIO" lnInst="1" />
         <LNode iedName="MNSREX615" ldInst="LD0" prefix="PHI" lnClass="PTOC" lnInst="1" />
@@ -62,7 +62,7 @@
   </Substation>
   <Communication>
     <SubNetwork name="WA1" desc="Subnetwork" type="8-MMS">
-      <Private type="ABBPCMInternalObjRef">17262452-2a82-47b1-94a4-f67f362f2375</Private>
+      <Private type="ABBPCMInternalObjRef">9516df5f-4862-5487-becc-a35e4de884df</Private>
       <Private type="SchneiderElectric-SET-SubnetworkIPV4Plan">
         <SubNetworkIPV4PlanPrivates IsLocked="False" Deployed="No" xmlns="http://www.schneider-electric.com/TSF/CBS/Privates">
           <IPAddress IsWarning="False" IsError="None">
@@ -89,7 +89,7 @@
         <MetaInfosPrivates xmlns="http://www.schneider-electric.com/TSF/CBS/Privates">
           <ElectricalWorkAreas />
           <SystemWorkAreas>
-            <WorkArea WorkAreaIdentification="00000000-0000-0000-0000-000000000002">
+            <WorkArea WorkAreaIdentification="54db3aab-11b7-51d1-b43d-2fff8aa8ff21">
               <GraphicalProperties DuplicateCount="1" IsPlaced="True" IsExpanded="False">
                 <Size Width="35" Height="35" />
                 <Position X="440" Y="402" />
@@ -108,9 +108,9 @@
       <ConnectedAP iedName="Client5" apName="LD0" />
       <ConnectedAP iedName="MNSREX615" apName="AP1">
         <Address>
-          <P type="IP" xsi:type="tP_IP">192.168.100.58</P>
+          <P type="IP" xsi:type="tP_IP">10.10.100.58</P>
           <P type="IP-SUBNET" xsi:type="tP_IP-SUBNET">255.255.255.0</P>
-          <P type="IP-GATEWAY" xsi:type="tP_IP-GATEWAY">192.168.2.1</P>
+          <P type="IP-GATEWAY" xsi:type="tP_IP-GATEWAY">10.10.2.1</P>
           <P type="OSI-PSEL" xsi:type="tP_OSI-PSEL">00000001</P>
           <P type="OSI-SSEL" xsi:type="tP_OSI-SSEL">0001</P>
           <P type="OSI-TSEL" xsi:type="tP_OSI-TSEL">0001</P>
@@ -151,7 +151,7 @@
   </IED>
   <IED name="MNSREX615" desc="REX615" type="REX615" manufacturer="ABB" configVersion="J" originalSclVersion="2007" originalSclRevision="B" originalSclRelease="4">
     <Private type="ABB_PCMObjectTypeName">REX615</Private>
-    <Private type="ABBPCMInternalObjRef">0daababc-7c54-4c56-b92d-a0345e09dac5</Private>
+    <Private type="ABBPCMInternalObjRef">142ecc93-5c33-59d8-be7b-021fe15596b5</Private>
     <Private type="ABB_CommonSA_FunctionListDescriptionsXXX">
       <commonSA:SAObjects xmlns:commonSA="commonSA.abb.com">
         <commonSA:Object type="ApplicationFunctions">
@@ -5669,7 +5669,7 @@
         <LDevice desc="Protection" inst="LD0">
           <LN0 lnClass="LLN0" inst="" lnType="LLN0_REX61X_ED2_J_7">
             <Private type="ABB_CommonSA_FunctionInstanceRef">1</Private>
-            <Private type="ABB_FunctionRefs">75e9ed12-2747-45d1-8c8e-59fab3d7b11a,f6d06903-9d6a-4044-ae26-b48fd3c059e2,77c8e595-b9a6-4eb2-bea4-da0fce8d549f,cea2f892-13c3-426d-bcea-d8eca40e0110,11ad4f66-af74-40b0-aae7-3c61d5ccb98b,03d62dfd-dc2d-43f3-a2f4-bc677912fe71,3d7b9cce-be24-48cc-a0b6-f90098d1ed6c,92306921-9f3f-4b0b-aca1-03cab21df28c,b2de4cbd-684b-499b-94e9-ab24faeef1b5,ec7c4212-e1cc-4a79-86a3-2b0e353507af,f8069fe1-66b4-4fc9-93a5-6af9c0833934,7ba8ec5d-04e5-4720-a5ff-464048e4a51d,3e3712f4-5914-4009-b71f-e26fc4192e5e,b72416ee-e886-4976-87e3-f18b2dd5fd8d,7095f6d0-4cb2-4b65-9112-cb174f614cbc,1db8a4ed-7214-4320-a743-16f3336534c0,0b268595-51ca-438b-aad6-d87f75348164,dee75c98-9fed-40ec-83c7-aaf3d24c62d1,9a51da51-b513-4e31-9cf4-3ecdd1920e94,b04b4e91-5b23-405a-9c63-dc8e5e8fc8f0,d01cba01-79f7-49cf-8660-8f2ccd61d958,0e09f03a-316c-43d1-89d0-7ded51884893,280af00c-3dee-4bf4-8862-ceb271a0fe90,c97fdf40-3c13-4dda-93a4-5fed32fb795e,75846d27-3d6c-44ed-b207-1902f228e10f,d8697572-fbed-4610-a146-8fa977f61857,c524d1c5-2b2f-466c-b0a6-09858708b957,0fdfcfd8-b069-46ce-b523-37ece3b37f53,7bdce324-16cf-4f64-a211-73feb44a2a07,d566a9e4-ac9d-4994-a5e8-7ba76f4c0995,14d59b68-0d3c-4380-8666-905965d33c5a,027dafa9-3fa2-4652-b8cc-3916cf38e415,db1de02e-97ed-4f15-bfc5-339052acf77d,0f1004f4-38a4-41b2-b2a4-83298cd3d1e7,527828df-517a-4279-b079-fcb45bd2fb89,52bcf7f9-854f-4686-aec7-09c2cdce6d2b,59345d3c-3837-419d-aef2-7d7b31c1b6b2,8bf6ed18-3aef-483f-b774-6b70bcbbabfa,a7c28b7b-9cd8-4df4-bfc4-18c686fe4413,90231862-1060-48f9-a1ea-9159cad7ee50,99517b00-d4b0-4d6d-8d3c-f57069f29088,d7d026ab-aa98-4456-9dd2-37db43644a23,aaba58f6-92f6-48b2-a0b4-fbad9f357389,a7f63dcf-b99e-42cf-ab12-0a4a180955cb,cc0d752f-49b5-4c57-b0c5-c851a51216bd,c9b9de06-0de1-45b6-be3a-8c23636f3c5a,a3fc5cc9-10af-423c-affe-8317d47b2418,703f0b31-5603-4b47-9a05-8f9479d995bc</Private>
+            <Private type="ABB_FunctionRefs">2b969b84-6f25-59aa-b61d-19aa725b7f7f,de4fadb5-11fe-50c1-8777-449ad2491acf,fcce205c-c6e3-5d3e-a741-8d6730f5ad94,f4aa8a68-364f-52a4-9e22-b9a9b95be12c,29a71a67-0466-5846-829f-73e46881ca50,912619c4-8262-51bc-9188-af08b5f60a16,23eddfe8-b318-54e6-8604-2550eb0c17d3,e751f0cc-4c24-5dd3-b806-48cb5892ce39,507cb259-0d5d-5ea5-b7c4-cb5aa0fb87ed,d683b26f-d35e-5031-86c7-cf1b3fab36bf,3a921f05-9f90-5389-8cde-a8c204ba37d5,4da195aa-7a2d-5fc9-b2d3-3b7bcb3d21fc,bb62f7be-9310-553b-838d-df0288c58b37,ec8384ac-6984-5c61-950c-acb98cfb7e0b,3e40af17-d4cb-5457-bd17-a0e22fe0318c,fff0a215-147a-5a38-aae4-7349e0c8bb15,f3670263-6595-5755-841a-4148393ebf50,3e8531d9-c1ef-519e-b3dd-585629b1c96d,9047fc84-6602-5a42-b98f-a9e33747be39,fa5b6dc4-c8e9-55ce-b0e5-ac3bb06ae17e,5a0d29d7-9d92-53e2-b4ac-17349e2905ee,744fc931-40cd-5be4-bb47-bbdf19f818cb,4568f68e-ce1e-5a12-bffa-e3bda238e611,cee79203-0e85-5044-bc1c-636626723e38,5d1f9715-e129-56ab-b4b9-9a3d9320bbfc,01d1e8d6-1b2e-55ce-b271-9a8ae50f1611,76e8c6b2-2cf2-5078-afea-7f2780ee113f,85b35cb7-9dc9-5392-a691-4651825f3a0b,e4bad9a5-775c-5d87-850e-f4eedfcb536f,e268ab9c-1ffd-5337-ab98-6455ebef9545,e61f3b12-ed19-5edb-8ff4-4b414177c76a,4dd0a16f-32b9-5126-a1fe-266bd86384c9,b8e7aa29-8bd8-5c69-933f-67e3a09083e2,9375ee9a-4d6a-5b64-b0da-c4649c595bfd,ef7da5c6-66e1-56b2-af73-6e648933f1bd,767942c0-42d2-5aea-8d29-4883d168799c,469d5260-39e7-567a-8069-20962087d654,c9cbd36a-65cc-5667-9c1e-2301f66fc94e,a7e98c7c-f905-50cb-a987-ac8a0f1b5493,e61a1262-751f-5e8c-b15f-3773202e3690,c60900f3-3721-5db7-83c5-02ac07aa533a,6d480067-75db-528d-9354-438784ec8e48,e18a0b03-008d-51b9-a58d-0d377ab7a73c,2dda21a1-0186-5b70-8916-b519086070d6,17da58e0-a1ca-52b2-8226-98a681fd9e5c,343b039e-769d-58dd-a129-773d59224b32,69c9159d-49c1-56c8-a822-c92a5aea9fae,718522a8-baff-543f-84a0-7d2859187310</Private>
             <DataSet name="MeasReg">
               <FCDA ldInst="LD0" prefix="FLT" lnClass="RFRC" lnInst="1" doName="Hz" fc="MX" />
               <FCDA ldInst="LD0" prefix="FLT" lnClass="RFRC" lnInst="1" doName="FltPtRis" fc="MX" />
@@ -6152,7 +6152,7 @@
           </LN0>
           <LN desc="Physical device" lnClass="LPHD" inst="1" lnType="LPHD_REX61X_ED2_J_7">
             <Private type="ABB_CommonSA_FunctionInstanceRef">1</Private>
-            <Private type="ABB_FunctionRefs">f6d06903-9d6a-4044-ae26-b48fd3c059e2</Private>
+            <Private type="ABB_FunctionRefs">de4fadb5-11fe-50c1-8777-449ad2491acf</Private>
             <DOI name="PhyNam" desc="General info">
               <DAI name="vendor">
                 <Val>ABB</Val>
@@ -6206,7 +6206,7 @@
           </LN>
           <LN desc="Customer information" lnClass="LINF" inst="1" lnType="LINF_REX61X_ED2_J_7">
             <Private type="ABB_CommonSA_FunctionInstanceRef">1</Private>
-            <Private type="ABB_FunctionRefs">f6d06903-9d6a-4044-ae26-b48fd3c059e2</Private>
+            <Private type="ABB_FunctionRefs">de4fadb5-11fe-50c1-8777-449ad2491acf</Private>
             <DOI name="NamPlt" desc="Name plate">
               <DAI name="swRev">
                 <Val>J</Val>
@@ -6292,7 +6292,7 @@
           </LN>
           <LN desc="Device" lnClass="LDEV" inst="1" lnType="LDEV_REX61X_ED2_J_7">
             <Private type="ABB_CommonSA_FunctionInstanceRef">1</Private>
-            <Private type="ABB_FunctionRefs">f6d06903-9d6a-4044-ae26-b48fd3c059e2</Private>
+            <Private type="ABB_FunctionRefs">de4fadb5-11fe-50c1-8777-449ad2491acf</Private>
             <DOI name="NamPlt" desc="Name plate">
               <DAI name="swRev">
                 <Val>J</Val>
@@ -6570,12 +6570,12 @@
             <DOI name="UsrLogEna2" desc="Authority Logging" />
             <DOI name="SrvIPAddr1" desc="Remote Server IP">
               <DAI name="setVal">
-                <Val>192.168.2.5</Val>
+                <Val>10.10.2.5</Val>
               </DAI>
             </DOI>
             <DOI name="SrvIPAddr2" desc="Remote Server IP">
               <DAI name="setVal">
-                <Val>192.168.2.6</Val>
+                <Val>10.10.2.6</Val>
               </DAI>
             </DOI>
             <DOI name="SrvPort1" desc="Communication port used">
@@ -6675,7 +6675,7 @@
           </LN>
           <LN desc="Security application" lnClass="GSAL" inst="1" lnType="GSAL_REX61X_ED2_M_33">
             <Private type="ABB_CommonSA_FunctionInstanceRef">379</Private>
-            <Private type="ABB_FunctionRefs">b0c1b0d3-e945-4609-b3a6-46bba1222875</Private>
+            <Private type="ABB_FunctionRefs">8c0108e9-e3b0-5fa6-93f5-3f1b247c4f20</Private>
             <DOI name="OpCntRs" desc="Resetable Security Violations counter">
               <DAI name="stVal" sAddr="MBS02,DA07,DA07,0,16,0,8,1,0,18,-5,INC-stVal,-1,0,0,0,0,0,0,0,0;MBS01,DA07,DA07,0,16,0,8,1,0,18,-5,INC-stVal,-1,0,0,0,0,0,0,0,0;I5C02,DA07,DA07,0,0,100,22,1,0,100,22,1,INC-IntVal,1,0;I5C01,DA07,DA07,0,0,100,22,1,0,100,22,1,INC-IntVal,1,0;DNP02,30,-1,0,5,0,0,0,0,0,0,1,0,1,INC-AI-EvUpd,0;DNP01,30,-1,0,5,0,0,0,0,0,0,1,0,1,INC-AI-EvUpd,0" />
               <DAI name="d">
@@ -6752,7 +6752,7 @@
           </LN>
           <LN desc="SECLDEV1" prefix="SEC" lnClass="LDEV" inst="1" lnType="SECLDEV1_ED2_A_3">
             <Private type="ABB_CommonSA_FunctionInstanceRef">904</Private>
-            <Private type="ABB_FunctionRefs">99945ca1-3265-4737-b9aa-8af91ab5a98d</Private>
+            <Private type="ABB_FunctionRefs">db0d130c-4c85-5fa0-a836-4e5c0add551a</Private>
             <DOI name="NamPlt" desc="Name plate">
               <DAI name="swRev">
                 <Val>A</Val>
@@ -6776,7 +6776,7 @@
           </LN>
           <LN desc="Ethernet Device" prefix="ETH" lnClass="LDEV" inst="1" lnType="ETHLDEV1_REX61X_ED2_C_47_#LIB1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">779</Private>
-            <Private type="ABB_FunctionRefs">f893de65-c9cf-4e0f-8d8b-9d298b190d40</Private>
+            <Private type="ABB_FunctionRefs">89d5ed15-bba5-58bb-ae22-35d855bab411</Private>
             <DOI name="NamPlt" desc="Name plate">
               <DAI name="swRev">
                 <Val>C</Val>
@@ -6787,7 +6787,7 @@
             </DOI>
             <DOI name="IPAddr1" desc="IP address for Network1">
               <DAI name="setVal">
-                <Val>192.168.2.10</Val>
+                <Val>10.10.2.10</Val>
               </DAI>
             </DOI>
             <DOI name="IPSubNtw1" desc="Subnet mask for Network1">
@@ -6797,7 +6797,7 @@
             </DOI>
             <DOI name="IPAddrGtw1" desc="Default gateway for Network1">
               <DAI name="setVal">
-                <Val>192.168.2.1</Val>
+                <Val>10.10.2.1</Val>
               </DAI>
             </DOI>
             <DOI name="Mac1" desc="Mac address for Network1">
@@ -6808,7 +6808,7 @@
           </LN>
           <LN desc="Ethernet Device" prefix="ETH" lnClass="LDEV" inst="2" lnType="ETHLDEV2_REX61X_ED2_C_47_#LIB1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">780</Private>
-            <Private type="ABB_FunctionRefs">a6c8d64f-536a-49f1-8536-b0fe2d18baa3</Private>
+            <Private type="ABB_FunctionRefs">b3cdb189-9e19-50d9-8b0d-008c0bc76599</Private>
             <DOI name="NamPlt" desc="Name plate">
               <DAI name="swRev">
                 <Val>C</Val>
@@ -6819,7 +6819,7 @@
             </DOI>
             <DOI name="IPAddr1" desc="IP address for Network2">
               <DAI name="setVal">
-                <Val>192.168.3.10</Val>
+                <Val>10.10.3.10</Val>
               </DAI>
             </DOI>
             <DOI name="IPSubNtw1" desc="Subnet mask for Network2">
@@ -6841,7 +6841,7 @@
           </LN>
           <LN desc="HMI Device" prefix="HMI" lnClass="LDEV" inst="1" lnType="HMILDEV1_REX61X_ED2_D_49">
             <Private type="ABB_CommonSA_FunctionInstanceRef">781</Private>
-            <Private type="ABB_FunctionRefs">226c1639-ceb5-426a-9380-30ba6608e7fe</Private>
+            <Private type="ABB_FunctionRefs">7135e0f5-5528-5b3c-83d5-23d7e2d485f8</Private>
             <DOI name="NamPlt" desc="Name plate">
               <DAI name="swRev">
                 <Val>D</Val>
@@ -6852,7 +6852,7 @@
             </DOI>
             <DOI name="IPAddr1" desc="IP address for HMI port">
               <DAI name="setVal">
-                <Val>192.168.0.254</Val>
+                <Val>10.10.0.254</Val>
               </DAI>
             </DOI>
             <DOI name="Mac1" desc="Mac address for HMI port">
@@ -6863,7 +6863,7 @@
           </LN>
           <LN desc="Device" lnClass="IHMI" inst="1" lnType="IHMI_REX61X_ED2_H_3_#LIB1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">380</Private>
-            <Private type="ABB_FunctionRefs">7c3efd4a-b6f0-4cc9-b0bc-ef2d44dc9101</Private>
+            <Private type="ABB_FunctionRefs">4e6caf3f-dbbd-5784-af6e-750e5f4b9bee</Private>
             <DOI name="CardNam" desc="Card information">
               <DAI name="vendor">
                 <Val>ABB</Val>
@@ -6886,7 +6886,7 @@
           </LN>
           <LN desc="GSELPRT1" prefix="GSE" lnClass="LPRT" inst="1" lnType="GSELPRT1_ED2_F_4">
             <Private type="ABB_CommonSA_FunctionInstanceRef">202</Private>
-            <Private type="ABB_FunctionRefs">7ba8ec5d-04e5-4720-a5ff-464048e4a51d</Private>
+            <Private type="ABB_FunctionRefs">4da195aa-7a2d-5fc9-b2d3-3b7bcb3d21fc</Private>
             <DOI name="NamPlt" desc="Name plate">
               <DAI name="swRev">
                 <Val>F</Val>
@@ -6971,7 +6971,7 @@
           </LN>
           <LN desc="GNRLLTMS1" prefix="GNRL" lnClass="LTMS" inst="1" lnType="GNRLLTMS1_ED2_G_2_REX">
             <Private type="ABB_CommonSA_FunctionInstanceRef">234</Private>
-            <Private type="ABB_FunctionRefs">cea2f892-13c3-426d-bcea-d8eca40e0110</Private>
+            <Private type="ABB_FunctionRefs">f4aa8a68-364f-52a4-9e22-b9a9b95be12c</Private>
             <DOI name="TmAcc" desc="Number of significant bits in the Fraction Of Second in the time accuracy part of the time stamp.">
               <DAI name="stVal" sAddr="MBS02,DA07,DA07,0,16,0,8,1,0,18,-5,INS-stVal,-1,0,0,0,0,0,0,0,0;MBS01,DA07,DA07,0,16,0,8,1,0,18,-5,INS-stVal,-1,0,0,0,0,0,0,0,0;I5C02,DA07,DA07,0,0,100,22,1,0,100,22,1,INS-IntVal,1,0;I5C01,DA07,DA07,0,0,100,22,1,0,100,22,1,INS-IntVal,1,0;DNP02,30,-1,0,5,0,0,0,0,0,0,1,0,1,INS-AI-EvUpd,0;DNP01,30,-1,0,5,0,0,0,0,0,0,1,0,1,INS-AI-EvUpd,0" />
             </DOI>
@@ -7058,12 +7058,12 @@
             </DOI>
             <DOI name="IPAddrSNTP1" desc="IP address for SNTP primary server">
               <DAI name="setVal">
-                <Val>192.168.2.166</Val>
+                <Val>10.10.2.166</Val>
               </DAI>
             </DOI>
             <DOI name="IPAddrSNTP2" desc="IP address for SNTP secondary server">
               <DAI name="setVal">
-                <Val>192.168.2.165</Val>
+                <Val>10.10.2.165</Val>
               </DAI>
             </DOI>
             <DOI name="ClrStoClk" desc="Clear master clock list">
@@ -7099,7 +7099,7 @@
           </LN>
           <LN desc="GNRLLTIM1" prefix="GNRL" lnClass="LTIM" inst="1" lnType="GNRLLTIM1_ED2_G_2">
             <Private type="ABB_CommonSA_FunctionInstanceRef">234</Private>
-            <Private type="ABB_FunctionRefs">cea2f892-13c3-426d-bcea-d8eca40e0110</Private>
+            <Private type="ABB_FunctionRefs">f4aa8a68-364f-52a4-9e22-b9a9b95be12c</Private>
             <DOI name="TmDT" desc="Indicating if DST is in effect">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
               <DAI name="d">
@@ -7165,7 +7165,7 @@
           </LN>
           <LN desc="61850-8-1 MMS" prefix="MMS" lnClass="LPRT" inst="1" lnType="MMSLPRT1_ED2_I_33">
             <Private type="ABB_CommonSA_FunctionInstanceRef">201</Private>
-            <Private type="ABB_FunctionRefs">cdca389e-16d7-40ef-8040-b140d83b8c19</Private>
+            <Private type="ABB_FunctionRefs">0acae5e3-8f0f-51f7-a238-b17ea8b935fd</Private>
             <DOI name="NamPlt" desc="Name plate">
               <DAI name="swRev">
                 <Val>I</Val>
@@ -7254,7 +7254,7 @@
           </LN>
           <LN desc="FTPLPRT1" prefix="FTP" lnClass="LPRT" inst="1" lnType="FTPLPRT1_ED2_C_2">
             <Private type="ABB_CommonSA_FunctionInstanceRef">774</Private>
-            <Private type="ABB_FunctionRefs">6b1d5ce4-9d9f-44e3-b02f-862fc993447c</Private>
+            <Private type="ABB_FunctionRefs">14ecea48-1007-5b34-a925-894427f82d1f</Private>
             <DOI name="NamPlt" desc="Name plate">
               <DAI name="swRev">
                 <Val>C</Val>
@@ -7266,7 +7266,7 @@
           </LN>
           <LN desc="HTTPLPRT1" prefix="HTTP" lnClass="LPRT" inst="1" lnType="HTTPLPRT1_ED2_C_3">
             <Private type="ABB_CommonSA_FunctionInstanceRef">775</Private>
-            <Private type="ABB_FunctionRefs">acdfdeea-c100-44d9-974c-16a095ea00be</Private>
+            <Private type="ABB_FunctionRefs">8bd12cab-ef98-514a-8683-dac71d35f1f5</Private>
             <DOI name="NamPlt" desc="Name plate">
               <DAI name="swRev">
                 <Val>C</Val>
@@ -7278,7 +7278,7 @@
           </LN>
           <LN desc="Redundant Ethernet" prefix="RCH" lnClass="LCCH" inst="1" lnType="RCHLCCH1_ED2_C_17">
             <Private type="ABB_CommonSA_FunctionInstanceRef">700</Private>
-            <Private type="ABB_FunctionRefs">b2de4cbd-684b-499b-94e9-ab24faeef1b5</Private>
+            <Private type="ABB_FunctionRefs">507cb259-0d5d-5ea5-b7c4-cb5aa0fb87ed</Private>
             <DOI name="ChLiv" desc="Physical channel status of port A">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I3C,DA03,DA03,1,10,90,1,10,90,-1,0,1,0,,0,1,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
               <DAI name="d">
@@ -7427,7 +7427,7 @@
           </LN>
           <LN desc="X1/X16 port Ethernet channel" prefix="SCH" lnClass="LCCH" inst="1" lnType="SCHLCCH1_ED2_D_12">
             <Private type="ABB_CommonSA_FunctionInstanceRef">704</Private>
-            <Private type="ABB_FunctionRefs">11ad4f66-af74-40b0-aae7-3c61d5ccb98b</Private>
+            <Private type="ABB_FunctionRefs">29a71a67-0466-5846-829f-73e46881ca50</Private>
             <DOI name="ChLiv" desc="Physical channel status">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I3C,DA03,DA03,1,10,92,1,10,92,-1,0,1,0,,0,1,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0">
                 <Val>true</Val>
@@ -7571,7 +7571,7 @@
           </LN>
           <LN desc="X2 port Ethernet channel" prefix="SCH" lnClass="LCCH" inst="2" lnType="SCHLCCH2_ED2_D_13">
             <Private type="ABB_CommonSA_FunctionInstanceRef">705</Private>
-            <Private type="ABB_FunctionRefs">ec7c4212-e1cc-4a79-86a3-2b0e353507af</Private>
+            <Private type="ABB_FunctionRefs">d683b26f-d35e-5031-86c7-cf1b3fab36bf</Private>
             <DOI name="ChLiv" desc="Physical channel status">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I3C,DA03,DA03,1,10,93,1,10,93,-1,0,1,0,,0,1,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
               <DAI name="d">
@@ -7711,7 +7711,7 @@
           </LN>
           <LN desc="X3 port Ethernet channel" prefix="SCH" lnClass="LCCH" inst="3" lnType="SCHLCCH3_ED2_D_17_REX">
             <Private type="ABB_CommonSA_FunctionInstanceRef">706</Private>
-            <Private type="ABB_FunctionRefs">f8069fe1-66b4-4fc9-93a5-6af9c0833934</Private>
+            <Private type="ABB_FunctionRefs">3a921f05-9f90-5389-8cde-a8c204ba37d5</Private>
             <DOI name="ChLiv" desc="Physical channel status">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I3C,DA03,DA03,1,10,94,1,10,94,-1,0,1,0,,0,1,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
               <DAI name="d">
@@ -7851,7 +7851,7 @@
           </LN>
           <LN desc="Serial Port 1 Supervision" prefix="SER" lnClass="LCCH" inst="1" lnType="SERLCCH1_ED2_D_4_REX">
             <Private type="ABB_CommonSA_FunctionInstanceRef">708</Private>
-            <Private type="ABB_FunctionRefs">778e4892-3646-45ac-be4b-937bfcd1b8da</Private>
+            <Private type="ABB_FunctionRefs">3ecb6d67-5258-5c26-bc49-71a3ce6fb7b7</Private>
             <DOI name="FibMod" desc="Fiber mode for COM1" />
             <DOI name="SerMod" desc="Serial mode for COM1" />
             <DOI name="CTSDlTmms" desc="CTS delay for COM1">
@@ -7916,7 +7916,7 @@
           </LN>
           <LN desc="Serial Port 2 Supervision" prefix="SER" lnClass="LCCH" inst="2" lnType="SERLCCH2_ED2_D_4_REX">
             <Private type="ABB_CommonSA_FunctionInstanceRef">709</Private>
-            <Private type="ABB_FunctionRefs">efc041a8-8944-4568-ad4a-024b240d0aee</Private>
+            <Private type="ABB_FunctionRefs">582517f6-e484-5491-a88e-eb4fc062ab19</Private>
             <DOI name="FibMod" desc="Fiber mode for COM2" />
             <DOI name="SerMod" desc="Serial mode for COM2" />
             <DOI name="CTSDlTmms" desc="CTS delay for COM2">
@@ -7981,7 +7981,7 @@
           </LN>
           <LN desc="X1/X16 PTP port" prefix="SCH1" lnClass="LTTP" inst="1" lnType="SCH1LTTP1_ED2_A_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">876</Private>
-            <Private type="ABB_FunctionRefs">53d72551-241c-491b-b48c-2b6916f2dca5</Private>
+            <Private type="ABB_FunctionRefs">65d03a68-2420-5bc3-9272-41e344cd8cbb</Private>
             <DOI name="NamPlt" desc="SCH1LTTP1">
               <DAI name="vendor">
                 <Val>ABB</Val>
@@ -8010,7 +8010,7 @@
           </LN>
           <LN desc="X2 PTP port" prefix="SCH1" lnClass="LTTP" inst="2" lnType="SCH1LTTP2_ED2_A_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">877</Private>
-            <Private type="ABB_FunctionRefs">2fb39697-5479-497f-8f51-6dce852d02de</Private>
+            <Private type="ABB_FunctionRefs">4aad3da5-d155-505e-843d-731ee4904814</Private>
             <DOI name="NamPlt" desc="SCH1LTTP2">
               <DAI name="vendor">
                 <Val>ABB</Val>
@@ -8039,7 +8039,7 @@
           </LN>
           <LN desc="X3 PTP port" prefix="SCH1" lnClass="LTTP" inst="3" lnType="SCH1LTTP3_ED2_A_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">878</Private>
-            <Private type="ABB_FunctionRefs">dd17d255-a68b-4f95-bea9-6fc1162edb66</Private>
+            <Private type="ABB_FunctionRefs">b084eb27-661d-5fac-8400-01b592de0e24</Private>
             <DOI name="NamPlt" desc="SCH1LTTP3">
               <DAI name="vendor">
                 <Val>ABB</Val>
@@ -8067,7 +8067,7 @@
             </DOI>
           </LN>
           <LN desc="Global conditioning" prefix="LED" lnClass="PTRC" inst="1" lnType="LEDPTRC_ED2_G_7_#LIB3">
-            <Private type="ABB_FunctionRefs">75e9ed12-2747-45d1-8c8e-59fab3d7b11a</Private>
+            <Private type="ABB_FunctionRefs">2b969b84-6f25-59aa-b61d-19aa725b7f7f</Private>
             <DOI name="Op" desc="Operate">
               <DAI name="general" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,ACT-Gen,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,ACT-Gen,0,0;I3C,DA03,DA03,1,0,68,11,0,68,-1,0,11,0,,0,1,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,ACT-General,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,ACT-General,0,1,0;DNP02,1,-1,0,3,0,0,ACT-gen-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,ACT-gen-BI-EvUpd,0" />
               <DAI name="phsA" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,ACT-PhsA,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,ACT-PhsA,0,0;I3C,DA03,DA03,0,10,65,10,10,65,-1,0,10,0,,0,1,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,ACT-PhsA,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,ACT-PhsA,0,1,0;DNP02,1,-1,0,3,0,0,ACT-phsA-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,ACT-phsA-BI-EvUpd,0" />
@@ -8117,7 +8117,7 @@
           </LN>
           <LN desc="X130 (RTD)" prefix="XR" lnClass="GGIO" inst="130" lnType="XRGGIO130_ED2_D_10">
             <Private type="ABB_CommonSA_FunctionInstanceRef">9</Private>
-            <Private type="ABB_FunctionRefs">3d7b9cce-be24-48cc-a0b6-f90098d1ed6c</Private>
+            <Private type="ABB_FunctionRefs">23eddfe8-b318-54e6-8604-2550eb0c17d3</Private>
             <DOI name="Health" desc="Health">
               <DAI name="stVal" sAddr="MBS02,DA07,DA07,0,16,0,8,1,0,18,-5,ENS-stVal,-1,0,0,0,0,0,0,0,0;MBS01,DA07,DA07,0,16,0,8,1,0,18,-5,ENS-stVal,-1,0,0,0,0,0,0,0,0;I5C02,DA07,DA07,0,0,100,22,1,0,100,22,1,ENS-Enum,1,0;I5C01,DA07,DA07,0,0,100,22,1,0,100,22,1,ENS-Enum,1,0;DNP02,30,-1,0,5,0,0,0,0,0,0,1,0,1,ENS-AI-EvUpd,0;DNP01,30,-1,0,5,0,0,0,0,0,0,1,0,1,ENS-AI-EvUpd,0" />
             </DOI>
@@ -8845,7 +8845,7 @@
           </LN>
           <LN desc="X120 (AIM)" prefix="XA" lnClass="GGIO" inst="120" lnType="XAGGIO120_ED2_C_5">
             <Private type="ABB_CommonSA_FunctionInstanceRef">161</Private>
-            <Private type="ABB_FunctionRefs">a2f9a40b-fe06-4d53-8866-13edc849203f</Private>
+            <Private type="ABB_FunctionRefs">1216dee6-5654-538f-8b7e-5fb7a2478044</Private>
             <DOI name="NamPlt" desc="Name plate">
               <DAI name="swRev">
                 <Val>C</Val>
@@ -8870,7 +8870,7 @@
           </LN>
           <LN desc="X110 (BIO)" prefix="X" lnClass="GGIO" inst="110" lnType="XGGIO110_ED2_F_34">
             <Private type="ABB_CommonSA_FunctionInstanceRef">17</Private>
-            <Private type="ABB_FunctionRefs">92306921-9f3f-4b0b-aca1-03cab21df28c</Private>
+            <Private type="ABB_FunctionRefs">e751f0cc-4c24-5dd3-b806-48cb5892ce39</Private>
             <DOI name="SPCSO1" desc="X110-Output 1">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPC-Pos,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPC-Pos,0,0;I3C,DA03,DA03,0,52,101,1,52,101,-1,0,1,0,,0,1,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPC-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPC-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPC-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPC-BI-EvUpd,0" />
               <DAI name="d">
@@ -9057,7 +9057,7 @@
           </LN>
           <LN desc="X100 (PSM)" prefix="X" lnClass="GGIO" inst="100" lnType="XGGIO100_ED2_E_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">11</Private>
-            <Private type="ABB_FunctionRefs">03d62dfd-dc2d-43f3-a2f4-bc677912fe71</Private>
+            <Private type="ABB_FunctionRefs">912619c4-8262-51bc-9188-af08b5f60a16</Private>
             <DOI name="SPCSO1" desc="X100-Output 1">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPC-Pos,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPC-Pos,0,0;I3C,DA03,DA03,0,53,101,1,53,101,-1,0,1,0,,0,1,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPC-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPC-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPC-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPC-BI-EvUpd,0" />
               <DAI name="d">
@@ -9110,7 +9110,7 @@
           </LN>
           <LN desc="X000 (COM)" prefix="X" lnClass="GGIO" inst="90" lnType="XGGIO90_ED2_F_4_#LIB1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">16</Private>
-            <Private type="ABB_FunctionRefs">f992b5c5-e260-4cdb-9109-8fe17367254f</Private>
+            <Private type="ABB_FunctionRefs">c011b468-6033-5013-93a9-bae6216ce0a8</Private>
             <DOI name="CardNam" desc="Card information">
               <DAI name="hwRev">
                 <Val>F</Val>
@@ -9130,7 +9130,7 @@
           </LN>
           <LN desc="Modbus" prefix="MBS" lnClass="LPRT" inst="1" lnType="MBSLPRT1_ED2_I_62">
             <Private type="ABB_CommonSA_FunctionInstanceRef">200</Private>
-            <Private type="ABB_FunctionRefs">5c504bca-6547-4676-9be3-700ad1eac637</Private>
+            <Private type="ABB_FunctionRefs">4c803896-dd61-555a-bd08-4763bef63a86</Private>
             <DOI name="NamPlt" desc="Name plate">
               <DAI name="vendor">
                 <Val>ABB</Val>
@@ -9324,7 +9324,7 @@
           </LN>
           <LN desc="Programmable LEDs" prefix="LED" lnClass="GGIO" inst="1" lnType="LEDGGIO1_ED2_G_26">
             <Private type="ABB_CommonSA_FunctionInstanceRef">15</Private>
-            <Private type="ABB_FunctionRefs">3e3712f4-5914-4009-b71f-e26fc4192e5e,b72416ee-e886-4976-87e3-f18b2dd5fd8d,7095f6d0-4cb2-4b65-9112-cb174f614cbc</Private>
+            <Private type="ABB_FunctionRefs">bb62f7be-9310-553b-838d-df0288c58b37,ec8384ac-6984-5c61-950c-acb98cfb7e0b,3e40af17-d4cb-5457-bd17-a0e22fe0318c</Private>
             <DOI name="Alm1" desc="Alarm input for LED 1">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0">
                 <Val>true</Val>
@@ -9528,7 +9528,7 @@
           </LN>
           <LN desc="Current (3I)" prefix="IL1" lnClass="TCTR" inst="1" lnType="ILTCTR1_ED2_I_48">
             <Private type="ABB_CommonSA_FunctionInstanceRef">30</Private>
-            <Private type="ABB_FunctionRefs">1db8a4ed-7214-4320-a743-16f3336534c0</Private>
+            <Private type="ABB_FunctionRefs">fff0a215-147a-5a38-aae4-7349e0c8bb15</Private>
             <DOI name="AmpSv" desc="Current (Sampled value) phase A">
               <SDI name="sVC">
                 <DAI name="scaleFactor">
@@ -9663,7 +9663,7 @@
           </LN>
           <LN desc="Current (3I)" prefix="IL2" lnClass="TCTR" inst="1" lnType="ILTCTR1_ED2_I_48">
             <Private type="ABB_CommonSA_FunctionInstanceRef">30</Private>
-            <Private type="ABB_FunctionRefs">1db8a4ed-7214-4320-a743-16f3336534c0</Private>
+            <Private type="ABB_FunctionRefs">fff0a215-147a-5a38-aae4-7349e0c8bb15</Private>
             <DOI name="AmpSv" desc="Current (Sampled value) phase B">
               <SDI name="sVC">
                 <DAI name="scaleFactor">
@@ -9798,7 +9798,7 @@
           </LN>
           <LN desc="Current (3I)" prefix="IL3" lnClass="TCTR" inst="1" lnType="ILTCTR1_ED2_I_48">
             <Private type="ABB_CommonSA_FunctionInstanceRef">30</Private>
-            <Private type="ABB_FunctionRefs">1db8a4ed-7214-4320-a743-16f3336534c0</Private>
+            <Private type="ABB_FunctionRefs">fff0a215-147a-5a38-aae4-7349e0c8bb15</Private>
             <DOI name="AmpSv" desc="Current (Sampled value) phase C">
               <SDI name="sVC">
                 <DAI name="scaleFactor">
@@ -9933,7 +9933,7 @@
           </LN>
           <LN desc="Current (Io)" prefix="RES" lnClass="TCTR" inst="1" lnType="RESTCTR1_ED2_G_16">
             <Private type="ABB_CommonSA_FunctionInstanceRef">31</Private>
-            <Private type="ABB_FunctionRefs">0b268595-51ca-438b-aad6-d87f75348164</Private>
+            <Private type="ABB_FunctionRefs">f3670263-6595-5755-841a-4148393ebf50</Private>
             <DOI name="AmpSv" desc="Current (Sampled value)">
               <SDI name="sVC">
                 <DAI name="scaleFactor">
@@ -10068,7 +10068,7 @@
           </LN>
           <LN desc="PHIPTOC1" prefix="PHI" lnClass="PTOC" inst="1" lnType="PHIPTOC1_ED2_H_3">
             <Private type="ABB_CommonSA_FunctionInstanceRef">22</Private>
-            <Private type="ABB_FunctionRefs">dee75c98-9fed-40ec-83c7-aaf3d24c62d1</Private>
+            <Private type="ABB_FunctionRefs">3e8531d9-c1ef-519e-b3dd-585629b1c96d</Private>
             <DOI name="Mod">
               <SDI name="Oper">
                 <DAI name="ctlVal">
@@ -10184,7 +10184,7 @@
           </LN>
           <LN desc="EFIPTOC1" prefix="EFI" lnClass="PTOC" inst="1" lnType="EFIPTOC1_ED2_I_8">
             <Private type="ABB_CommonSA_FunctionInstanceRef">23</Private>
-            <Private type="ABB_FunctionRefs">9a51da51-b513-4e31-9cf4-3ecdd1920e94</Private>
+            <Private type="ABB_FunctionRefs">9047fc84-6602-5a42-b98f-a9e33747be39</Private>
             <DOI name="Mod">
               <SDI name="Oper">
                 <DAI name="ctlVal">
@@ -10293,7 +10293,7 @@
           </LN>
           <LN desc="FKEY4GGIO1" prefix="FKEY4" lnClass="GGIO" inst="1" lnType="FKEY4GGIO1_ED2_A_11">
             <Private type="ABB_CommonSA_FunctionInstanceRef">549</Private>
-            <Private type="ABB_FunctionRefs">b04b4e91-5b23-405a-9c63-dc8e5e8fc8f0</Private>
+            <Private type="ABB_FunctionRefs">fa5b6dc4-c8e9-55ce-b0e5-ac3bb06ae17e</Private>
             <DOI name="SPCSO1" desc="Function key 1">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPC-Pos,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPC-Pos,0,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPC-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPC-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPC-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPC-BI-EvUpd,0" />
               <DAI name="d">
@@ -10398,7 +10398,7 @@
           </LN>
           <LN desc="SPCGAPC1" prefix="SPC" lnClass="GAPC" inst="1" lnType="SPCGAPC1_ED2_D_7">
             <Private type="ABB_CommonSA_FunctionInstanceRef">125</Private>
-            <Private type="ABB_FunctionRefs">d01cba01-79f7-49cf-8660-8f2ccd61d958</Private>
+            <Private type="ABB_FunctionRefs">5a0d29d7-9d92-53e2-b4ac-17349e2905ee</Private>
             <DOI name="Blk" desc="Block signal for all binary outputs">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
             </DOI>
@@ -10858,7 +10858,7 @@
           </LN>
           <LN desc="CCBRBRF1" prefix="CCB" lnClass="RBRF" inst="1" lnType="CCBRBRF1_ED2_H_9">
             <Private type="ABB_CommonSA_FunctionInstanceRef">51</Private>
-            <Private type="ABB_FunctionRefs">0e09f03a-316c-43d1-89d0-7ded51884893</Private>
+            <Private type="ABB_FunctionRefs">744fc931-40cd-5be4-bb47-bbdf19f818cb</Private>
             <DOI name="Str" desc="Delayed CB failure alarm">
               <DAI name="general" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,ACD-Gen,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,ACD-Gen,0,0;I3C,DA03,DA03,0,240,101,11,240,101,-1,0,11,0,,0,1,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,ACD-General,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,ACD-General,0,1,0;DNP02,1,-1,0,3,0,0,ACD-gen-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,ACD-gen-BI-EvUpd,0" />
               <DAI name="d">
@@ -11007,7 +11007,7 @@
           </LN>
           <LN desc="TRPPTRC1" prefix="TRP" lnClass="PTRC" inst="1" lnType="TRPPTRC1_ED2_H_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">237</Private>
-            <Private type="ABB_FunctionRefs">c97fdf40-3c13-4dda-93a4-5fed32fb795e</Private>
+            <Private type="ABB_FunctionRefs">cee79203-0e85-5044-bc1c-636626723e38</Private>
             <DOI name="Blk" desc="Block signal for all binary outputs">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
             </DOI>
@@ -11065,7 +11065,7 @@
           </LN>
           <LN desc="TRPPTRC2" prefix="TRP" lnClass="PTRC" inst="2" lnType="TRPPTRC2_ED2_H_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">238</Private>
-            <Private type="ABB_FunctionRefs">75846d27-3d6c-44ed-b207-1902f228e10f</Private>
+            <Private type="ABB_FunctionRefs">5d1f9715-e129-56ab-b4b9-9a3d9320bbfc</Private>
             <DOI name="Blk" desc="Block signal for all binary outputs">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
             </DOI>
@@ -11123,7 +11123,7 @@
           </LN>
           <LN desc="SRGAPC1" prefix="SR" lnClass="GAPC" inst="1" lnType="SRGAPC1_ED2_C_58">
             <Private type="ABB_CommonSA_FunctionInstanceRef">550</Private>
-            <Private type="ABB_FunctionRefs">28636cdd-5425-400b-929b-caaaa8688224</Private>
+            <Private type="ABB_FunctionRefs">faad0f7a-9084-50b6-9680-7f2a968348ea</Private>
             <DOI name="Ind1" desc="S1">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
               <DAI name="d">
@@ -11295,7 +11295,7 @@
           </LN>
           <LN desc="INRPHAR1" prefix="INR" lnClass="PHAR" inst="1" lnType="INRPHAR1_ED2_F_4">
             <Private type="ABB_CommonSA_FunctionInstanceRef">100</Private>
-            <Private type="ABB_FunctionRefs">d8697572-fbed-4610-a146-8fa977f61857</Private>
+            <Private type="ABB_FunctionRefs">01d1e8d6-1b2e-55ce-b271-9a8ae50f1611</Private>
             <DOI name="Mod">
               <SDI name="Oper">
                 <DAI name="ctlVal">
@@ -11392,7 +11392,7 @@
           </LN>
           <LN desc="Voltage (3U)" prefix="UL1" lnClass="TVTR" inst="1" lnType="ULTVTR1_ED2_J_56">
             <Private type="ABB_CommonSA_FunctionInstanceRef">33</Private>
-            <Private type="ABB_FunctionRefs">c524d1c5-2b2f-466c-b0a6-09858708b957</Private>
+            <Private type="ABB_FunctionRefs">76e8c6b2-2cf2-5078-afea-7f2780ee113f</Private>
             <DOI name="VolSv" desc="Voltage (sampled value) phase A">
               <SDI name="sVC">
                 <DAI name="scaleFactor">
@@ -11549,7 +11549,7 @@
           </LN>
           <LN desc="Voltage (3U)" prefix="UL2" lnClass="TVTR" inst="1" lnType="ULTVTR1_ED2_J_56">
             <Private type="ABB_CommonSA_FunctionInstanceRef">33</Private>
-            <Private type="ABB_FunctionRefs">c524d1c5-2b2f-466c-b0a6-09858708b957</Private>
+            <Private type="ABB_FunctionRefs">76e8c6b2-2cf2-5078-afea-7f2780ee113f</Private>
             <DOI name="VolSv" desc="Voltage (sampled value) phase B">
               <SDI name="sVC">
                 <DAI name="scaleFactor">
@@ -11706,7 +11706,7 @@
           </LN>
           <LN desc="Voltage (3U)" prefix="UL3" lnClass="TVTR" inst="1" lnType="ULTVTR1_ED2_J_56">
             <Private type="ABB_CommonSA_FunctionInstanceRef">33</Private>
-            <Private type="ABB_FunctionRefs">c524d1c5-2b2f-466c-b0a6-09858708b957</Private>
+            <Private type="ABB_FunctionRefs">76e8c6b2-2cf2-5078-afea-7f2780ee113f</Private>
             <DOI name="VolSv" desc="Voltage (sampled value) phase C">
               <SDI name="sVC">
                 <DAI name="scaleFactor">
@@ -11863,7 +11863,7 @@
           </LN>
           <LN desc="Voltage (Uo)" prefix="RES" lnClass="TVTR" inst="1" lnType="RESTVTR1_ED2_J_56">
             <Private type="ABB_CommonSA_FunctionInstanceRef">33</Private>
-            <Private type="ABB_FunctionRefs">c524d1c5-2b2f-466c-b0a6-09858708b957</Private>
+            <Private type="ABB_FunctionRefs">76e8c6b2-2cf2-5078-afea-7f2780ee113f</Private>
             <DOI name="VolSv" desc="Voltage (sampled value)">
               <SDI name="sVC">
                 <DAI name="scaleFactor">
@@ -11990,7 +11990,7 @@
           </LN>
           <LN desc="TPGAPC1" prefix="TP" lnClass="GAPC" inst="1" lnType="TPGAPC1_ED2_D_7">
             <Private type="ABB_CommonSA_FunctionInstanceRef">501</Private>
-            <Private type="ABB_FunctionRefs">384eeafb-7133-4834-9e01-2ef54c455753</Private>
+            <Private type="ABB_FunctionRefs">1509302d-0504-5174-af6e-2f4019e3c7bf</Private>
             <DOI name="Ind1" desc="IN1">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
               <DAI name="d">
@@ -12026,7 +12026,7 @@
           </LN>
           <LN desc="FLTRFRC1" prefix="FLT" lnClass="RFRC" inst="1" lnType="FLTRFRC0_ED2_K_124">
             <Private type="ABB_CommonSA_FunctionInstanceRef">4</Private>
-            <Private type="ABB_FunctionRefs">0fdfcfd8-b069-46ce-b523-37ece3b37f53</Private>
+            <Private type="ABB_FunctionRefs">85b35cb7-9dc9-5392-a691-4651825f3a0b</Private>
             <DOI name="NamPlt" desc="Name plate">
               <DAI name="swRev">
                 <Val>K</Val>
@@ -12589,7 +12589,7 @@
           </LN>
           <LN desc="FLTRFRC2" prefix="FLT" lnClass="RFRC" inst="2" lnType="FLTRFRC1_ED2_K_124">
             <Private type="ABB_CommonSA_FunctionInstanceRef">4</Private>
-            <Private type="ABB_FunctionRefs">0fdfcfd8-b069-46ce-b523-37ece3b37f53</Private>
+            <Private type="ABB_FunctionRefs">85b35cb7-9dc9-5392-a691-4651825f3a0b</Private>
             <DOI name="NamPlt" desc="Name plate">
               <DAI name="swRev">
                 <Val>K</Val>
@@ -12842,7 +12842,7 @@
           </LN>
           <LN desc="FLTRFRC3" prefix="FLT" lnClass="RFRC" inst="3" lnType="FLTRFRC2_ED2_K_124">
             <Private type="ABB_CommonSA_FunctionInstanceRef">4</Private>
-            <Private type="ABB_FunctionRefs">0fdfcfd8-b069-46ce-b523-37ece3b37f53</Private>
+            <Private type="ABB_FunctionRefs">85b35cb7-9dc9-5392-a691-4651825f3a0b</Private>
             <DOI name="NamPlt" desc="Name plate">
               <DAI name="swRev">
                 <Val>K</Val>
@@ -13095,7 +13095,7 @@
           </LN>
           <LN desc="PHHPTOC2" prefix="PHH" lnClass="PTOC" inst="2" lnType="PHHPTOC2_ED2_I_4">
             <Private type="ABB_CommonSA_FunctionInstanceRef">19</Private>
-            <Private type="ABB_FunctionRefs">d566a9e4-ac9d-4994-a5e8-7ba76f4c0995</Private>
+            <Private type="ABB_FunctionRefs">e268ab9c-1ffd-5337-ab98-6455ebef9545</Private>
             <DOI name="Mod">
               <SDI name="Oper">
                 <DAI name="ctlVal">
@@ -13270,7 +13270,7 @@
           </LN>
           <LN desc="PHHPTOC1" prefix="PHH" lnClass="PTOC" inst="1" lnType="PHHPTOC1_ED2_I_4">
             <Private type="ABB_CommonSA_FunctionInstanceRef">21</Private>
-            <Private type="ABB_FunctionRefs">14d59b68-0d3c-4380-8666-905965d33c5a</Private>
+            <Private type="ABB_FunctionRefs">e61f3b12-ed19-5edb-8ff4-4b414177c76a</Private>
             <DOI name="Mod">
               <SDI name="Oper">
                 <DAI name="ctlVal">
@@ -13445,7 +13445,7 @@
           </LN>
           <LN desc="EFHPTOC1" prefix="EFH" lnClass="PTOC" inst="1" lnType="EFHPTOC1_ED2_I_9">
             <Private type="ABB_CommonSA_FunctionInstanceRef">8</Private>
-            <Private type="ABB_FunctionRefs">027dafa9-3fa2-4652-b8cc-3916cf38e415</Private>
+            <Private type="ABB_FunctionRefs">4dd0a16f-32b9-5126-a1fe-266bd86384c9</Private>
             <DOI name="Mod">
               <SDI name="Oper">
                 <DAI name="ctlVal">
@@ -13613,7 +13613,7 @@
           </LN>
           <LN desc="EFLPTOC1" prefix="EFL" lnClass="PTOC" inst="1" lnType="EFLPTOC1_ED2_J_9">
             <Private type="ABB_CommonSA_FunctionInstanceRef">7</Private>
-            <Private type="ABB_FunctionRefs">db1de02e-97ed-4f15-bfc5-339052acf77d</Private>
+            <Private type="ABB_FunctionRefs">b8e7aa29-8bd8-5c69-933f-67e3a09083e2</Private>
             <DOI name="Mod">
               <SDI name="Oper">
                 <DAI name="ctlVal">
@@ -13781,7 +13781,7 @@
           </LN>
           <LN desc="PHLPTOC1" prefix="PHL" lnClass="PTOC" inst="1" lnType="PHLPTOC1_ED2_H_4">
             <Private type="ABB_CommonSA_FunctionInstanceRef">20</Private>
-            <Private type="ABB_FunctionRefs">0f1004f4-38a4-41b2-b2a4-83298cd3d1e7</Private>
+            <Private type="ABB_FunctionRefs">9375ee9a-4d6a-5b64-b0da-c4649c595bfd</Private>
             <DOI name="Mod">
               <SDI name="Oper">
                 <DAI name="ctlVal">
@@ -13956,7 +13956,7 @@
           </LN>
           <LN desc="NSPTOC1" prefix="NS" lnClass="PTOC" inst="1" lnType="NSPTOC1_ED2_G_5">
             <Private type="ABB_CommonSA_FunctionInstanceRef">95</Private>
-            <Private type="ABB_FunctionRefs">527828df-517a-4279-b079-fcb45bd2fb89</Private>
+            <Private type="ABB_FunctionRefs">ef7da5c6-66e1-56b2-af73-6e648933f1bd</Private>
             <DOI name="Mod">
               <SDI name="Oper">
                 <DAI name="ctlVal">
@@ -14119,7 +14119,7 @@
           </LN>
           <LN desc="NSPTOC2" prefix="NS" lnClass="PTOC" inst="2" lnType="NSPTOC2_ED2_G_5">
             <Private type="ABB_CommonSA_FunctionInstanceRef">96</Private>
-            <Private type="ABB_FunctionRefs">52bcf7f9-854f-4686-aec7-09c2cdce6d2b</Private>
+            <Private type="ABB_FunctionRefs">767942c0-42d2-5aea-8d29-4883d168799c</Private>
             <DOI name="Mod">
               <SDI name="Oper">
                 <DAI name="ctlVal">
@@ -14282,7 +14282,7 @@
           </LN>
           <LN desc="EFLPTOC2" prefix="EFL" lnClass="PTOC" inst="2" lnType="EFLPTOC2_ED2_J_9">
             <Private type="ABB_CommonSA_FunctionInstanceRef">28</Private>
-            <Private type="ABB_FunctionRefs">59345d3c-3837-419d-aef2-7d7b31c1b6b2</Private>
+            <Private type="ABB_FunctionRefs">469d5260-39e7-567a-8069-20962087d654</Private>
             <DOI name="Mod">
               <SDI name="Oper">
                 <DAI name="ctlVal">
@@ -14450,7 +14450,7 @@
           </LN>
           <LN desc="PDNSPTOC1" prefix="PDNS" lnClass="PTOC" inst="1" lnType="PDNSPTOC1_ED2_F_4">
             <Private type="ABB_CommonSA_FunctionInstanceRef">80</Private>
-            <Private type="ABB_FunctionRefs">8bf6ed18-3aef-483f-b774-6b70bcbbabfa</Private>
+            <Private type="ABB_FunctionRefs">c9cbd36a-65cc-5667-9c1e-2301f66fc94e</Private>
             <DOI name="Mod">
               <SDI name="Oper">
                 <DAI name="ctlVal">
@@ -14558,7 +14558,7 @@
           </LN>
           <LN desc="SSCBR1" prefix="S" lnClass="SCBR" inst="1" lnType="SSCBR1_ED2_I_79">
             <Private type="ABB_CommonSA_FunctionInstanceRef">52</Private>
-            <Private type="ABB_FunctionRefs">a7c28b7b-9cd8-4df4-bfc4-18c686fe4413</Private>
+            <Private type="ABB_FunctionRefs">a7e98c7c-f905-50cb-a987-ac8a0f1b5493</Private>
             <DOI name="Blk" desc="Block signal for all binary outputs">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
             </DOI>
@@ -15047,7 +15047,7 @@
           </LN>
           <LN desc="SPH1SCBR1" prefix="SPH1" lnClass="SCBR" inst="1" lnType="SPH1SCBR1_ED2_I_79">
             <Private type="ABB_CommonSA_FunctionInstanceRef">52</Private>
-            <Private type="ABB_FunctionRefs">a7c28b7b-9cd8-4df4-bfc4-18c686fe4413</Private>
+            <Private type="ABB_FunctionRefs">a7e98c7c-f905-50cb-a987-ac8a0f1b5493</Private>
             <DOI name="ColOpn" desc="Open command of trip coil">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
             </DOI>
@@ -15070,7 +15070,7 @@
           </LN>
           <LN desc="SPH2SCBR1" prefix="SPH2" lnClass="SCBR" inst="1" lnType="SPH2SCBR1_ED2_I_79">
             <Private type="ABB_CommonSA_FunctionInstanceRef">52</Private>
-            <Private type="ABB_FunctionRefs">a7c28b7b-9cd8-4df4-bfc4-18c686fe4413</Private>
+            <Private type="ABB_FunctionRefs">a7e98c7c-f905-50cb-a987-ac8a0f1b5493</Private>
             <DOI name="ColOpn" desc="Open command of trip coil">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
             </DOI>
@@ -15093,7 +15093,7 @@
           </LN>
           <LN desc="SPH3SCBR1" prefix="SPH3" lnClass="SCBR" inst="1" lnType="SPH3SCBR1_ED2_I_79">
             <Private type="ABB_CommonSA_FunctionInstanceRef">52</Private>
-            <Private type="ABB_FunctionRefs">a7c28b7b-9cd8-4df4-bfc4-18c686fe4413</Private>
+            <Private type="ABB_FunctionRefs">a7e98c7c-f905-50cb-a987-ac8a0f1b5493</Private>
             <DOI name="ColOpn" desc="Open command of trip coil">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
             </DOI>
@@ -15116,7 +15116,7 @@
           </LN>
           <LN desc="SSIMG1" prefix="S" lnClass="SIMG" inst="1" lnType="SSIMG1_ED2_I_79">
             <Private type="ABB_CommonSA_FunctionInstanceRef">52</Private>
-            <Private type="ABB_FunctionRefs">a7c28b7b-9cd8-4df4-bfc4-18c686fe4413</Private>
+            <Private type="ABB_FunctionRefs">a7e98c7c-f905-50cb-a987-ac8a0f1b5493</Private>
             <DOI name="InsAlm" desc="Pressure below alarm level">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I3C,DA03,DA03,0,242,107,1,242,107,-1,0,1,0,,0,1,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
               <DAI name="d">
@@ -15163,7 +15163,7 @@
           </LN>
           <LN desc="SSOPM1" prefix="S" lnClass="SOPM" inst="1" lnType="SSOPM1_ED2_I_79">
             <Private type="ABB_CommonSA_FunctionInstanceRef">52</Private>
-            <Private type="ABB_FunctionRefs">a7c28b7b-9cd8-4df4-bfc4-18c686fe4413</Private>
+            <Private type="ABB_FunctionRefs">a7e98c7c-f905-50cb-a987-ac8a0f1b5493</Private>
             <DOI name="MotOp" desc="The motor is running">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
               <DAI name="d">
@@ -15213,7 +15213,7 @@
           </LN>
           <LN desc="T1PTTR1" prefix="T1" lnClass="PTTR" inst="1" lnType="T1PTTR1_ED2_H_14">
             <Private type="ABB_CommonSA_FunctionInstanceRef">14</Private>
-            <Private type="ABB_FunctionRefs">90231862-1060-48f9-a1ea-9159cad7ee50</Private>
+            <Private type="ABB_FunctionRefs">e61a1262-751f-5e8c-b15f-3773202e3690</Private>
             <DOI name="Mod">
               <SDI name="Oper">
                 <DAI name="ctlVal">
@@ -15535,7 +15535,7 @@
           </LN>
           <LN desc="CMMXU1" prefix="C" lnClass="MMXU" inst="1" lnType="CMMXU1_ED2_G_12">
             <Private type="ABB_CommonSA_FunctionInstanceRef">40</Private>
-            <Private type="ABB_FunctionRefs">99517b00-d4b0-4d6d-8d3c-f57069f29088</Private>
+            <Private type="ABB_FunctionRefs">c60900f3-3721-5db7-83c5-02ac07aa533a</Private>
             <DOI name="Blk" desc="Block signal for all binary outputs">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
             </DOI>
@@ -15725,7 +15725,7 @@
           </LN>
           <LN desc="CMMXU1" prefix="CAV" lnClass="MMXU" inst="1" lnType="CAVMMXU1_ED2_G_12">
             <Private type="ABB_CommonSA_FunctionInstanceRef">40</Private>
-            <Private type="ABB_FunctionRefs">99517b00-d4b0-4d6d-8d3c-f57069f29088</Private>
+            <Private type="ABB_FunctionRefs">c60900f3-3721-5db7-83c5-02ac07aa533a</Private>
             <DOI name="A" desc="Phase current">
               <SDI name="phsA">
                 <SDI name="cVal">
@@ -15766,7 +15766,7 @@
           </LN>
           <LN desc="CMMXU1" prefix="CMA" lnClass="MMXU" inst="1" lnType="CMAMMXU1_ED2_G_12">
             <Private type="ABB_CommonSA_FunctionInstanceRef">40</Private>
-            <Private type="ABB_FunctionRefs">99517b00-d4b0-4d6d-8d3c-f57069f29088</Private>
+            <Private type="ABB_FunctionRefs">c60900f3-3721-5db7-83c5-02ac07aa533a</Private>
             <DOI name="A" desc="Phase current">
               <SDI name="phsA">
                 <SDI name="cVal">
@@ -15807,7 +15807,7 @@
           </LN>
           <LN desc="CMMXU1" prefix="CMI" lnClass="MMXU" inst="1" lnType="CMIMMXU1_ED2_G_12">
             <Private type="ABB_CommonSA_FunctionInstanceRef">40</Private>
-            <Private type="ABB_FunctionRefs">99517b00-d4b0-4d6d-8d3c-f57069f29088</Private>
+            <Private type="ABB_FunctionRefs">c60900f3-3721-5db7-83c5-02ac07aa533a</Private>
             <DOI name="A" desc="Phase current">
               <SDI name="phsA">
                 <SDI name="cVal">
@@ -15854,7 +15854,7 @@
           </LN>
           <LN desc="TCSSCBR1" prefix="TCS" lnClass="SCBR" inst="1" lnType="TCSSCBR1_ED2_E_6">
             <Private type="ABB_CommonSA_FunctionInstanceRef">110</Private>
-            <Private type="ABB_FunctionRefs">d7d026ab-aa98-4456-9dd2-37db43644a23</Private>
+            <Private type="ABB_FunctionRefs">6d480067-75db-528d-9354-438784ec8e48</Private>
             <DOI name="Blk" desc="Block signal for all binary outputs">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
             </DOI>
@@ -15899,7 +15899,7 @@
           </LN>
           <LN desc="TCSSCBR2" prefix="TCS" lnClass="SCBR" inst="2" lnType="TCSSCBR2_ED2_E_6">
             <Private type="ABB_CommonSA_FunctionInstanceRef">111</Private>
-            <Private type="ABB_FunctionRefs">aaba58f6-92f6-48b2-a0b4-fbad9f357389</Private>
+            <Private type="ABB_FunctionRefs">e18a0b03-008d-51b9-a58d-0d377ab7a73c</Private>
             <DOI name="Blk" desc="Block signal for all binary outputs">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
             </DOI>
@@ -15944,7 +15944,7 @@
           </LN>
           <LN desc="RESCMMXU1" prefix="RESC" lnClass="MMXU" inst="1" lnType="RESCMMXU1_ED2_G_10">
             <Private type="ABB_CommonSA_FunctionInstanceRef">42</Private>
-            <Private type="ABB_FunctionRefs">a7f63dcf-b99e-42cf-ab12-0a4a180955cb</Private>
+            <Private type="ABB_FunctionRefs">2dda21a1-0186-5b70-8916-b519086070d6</Private>
             <DOI name="Blk" desc="Block signal for all binary outputs">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
             </DOI>
@@ -16039,7 +16039,7 @@
           </LN>
           <LN desc="RESCMMXU1" prefix="RCAV" lnClass="MMXU" inst="1" lnType="RCAVMMXU1_ED2_G_10">
             <Private type="ABB_CommonSA_FunctionInstanceRef">42</Private>
-            <Private type="ABB_FunctionRefs">a7f63dcf-b99e-42cf-ab12-0a4a180955cb</Private>
+            <Private type="ABB_FunctionRefs">2dda21a1-0186-5b70-8916-b519086070d6</Private>
             <DOI name="A" desc="Residual current">
               <SDI name="res">
                 <SDI name="cVal">
@@ -16066,7 +16066,7 @@
           </LN>
           <LN desc="RESCMMXU1" prefix="RCMA" lnClass="MMXU" inst="1" lnType="RCMAMMXU1_ED2_G_10">
             <Private type="ABB_CommonSA_FunctionInstanceRef">42</Private>
-            <Private type="ABB_FunctionRefs">a7f63dcf-b99e-42cf-ab12-0a4a180955cb</Private>
+            <Private type="ABB_FunctionRefs">2dda21a1-0186-5b70-8916-b519086070d6</Private>
             <DOI name="A" desc="residual current">
               <SDI name="res">
                 <SDI name="cVal">
@@ -16093,7 +16093,7 @@
           </LN>
           <LN desc="RESCMMXU1" prefix="RCMI" lnClass="MMXU" inst="1" lnType="RCMIMMXU1_ED2_G_10">
             <Private type="ABB_CommonSA_FunctionInstanceRef">42</Private>
-            <Private type="ABB_FunctionRefs">a7f63dcf-b99e-42cf-ab12-0a4a180955cb</Private>
+            <Private type="ABB_FunctionRefs">2dda21a1-0186-5b70-8916-b519086070d6</Private>
             <DOI name="A" desc="residual current">
               <SDI name="res">
                 <SDI name="cVal">
@@ -16122,7 +16122,7 @@
           </LN>
           <LN desc="CSMSQI1" prefix="CS" lnClass="MSQI" inst="1" lnType="CSMSQI1_ED2_E_2">
             <Private type="ABB_CommonSA_FunctionInstanceRef">43</Private>
-            <Private type="ABB_FunctionRefs">cc0d752f-49b5-4c57-b0c5-c851a51216bd</Private>
+            <Private type="ABB_FunctionRefs">17da58e0-a1ca-52b2-8226-98a681fd9e5c</Private>
             <DOI name="SeqA" desc="Positive, Negative and Zero Sequence Current">
               <SDI name="c1">
                 <SDI name="instCVal">
@@ -16344,7 +16344,7 @@
           </LN>
           <LN desc="LDPRLRC1" prefix="LDP" lnClass="RLRC" inst="1" lnType="LDPRLRC1_ED2_G_11">
             <Private type="ABB_CommonSA_FunctionInstanceRef">159</Private>
-            <Private type="ABB_FunctionRefs">c9b9de06-0de1-45b6-be3a-8c23636f3c5a</Private>
+            <Private type="ABB_FunctionRefs">343b039e-769d-58dd-a129-773d59224b32</Private>
             <DOI name="NamPlt" desc="Name plate">
               <DAI name="swRev">
                 <Val>G</Val>
@@ -16386,7 +16386,7 @@
           </LN>
           <LN desc="RESVMMXU1" prefix="RESV" lnClass="MMXU" inst="1" lnType="RESVMMXU1_ED2_G_9">
             <Private type="ABB_CommonSA_FunctionInstanceRef">41</Private>
-            <Private type="ABB_FunctionRefs">a3fc5cc9-10af-423c-affe-8317d47b2418</Private>
+            <Private type="ABB_FunctionRefs">69c9159d-49c1-56c8-a822-c92a5aea9fae</Private>
             <DOI name="Blk" desc="Block signal for all binary outputs">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
             </DOI>
@@ -16481,7 +16481,7 @@
           </LN>
           <LN desc="RESVMMXU1" prefix="RVAV" lnClass="MMXU" inst="1" lnType="RVAVMMXU1_ED2_G_9">
             <Private type="ABB_CommonSA_FunctionInstanceRef">41</Private>
-            <Private type="ABB_FunctionRefs">a3fc5cc9-10af-423c-affe-8317d47b2418</Private>
+            <Private type="ABB_FunctionRefs">69c9159d-49c1-56c8-a822-c92a5aea9fae</Private>
             <DOI name="PhV" desc="Residual voltage">
               <SDI name="res">
                 <SDI name="cVal">
@@ -16507,7 +16507,7 @@
             </DOI>
           </LN>
           <LN desc="RESVMMXU1" prefix="RVMA" lnClass="MMXU" inst="1" lnType="RVMAMMXU1_ED2_G_9">
-            <Private type="ABB_FunctionRefs">a3fc5cc9-10af-423c-affe-8317d47b2418</Private>
+            <Private type="ABB_FunctionRefs">69c9159d-49c1-56c8-a822-c92a5aea9fae</Private>
             <DOI name="PhV" desc="Maximum residual voltage">
               <SDI name="res">
                 <SDI name="cVal">
@@ -16533,7 +16533,7 @@
             </DOI>
           </LN>
           <LN desc="RESVMMXU1" prefix="RVMI" lnClass="MMXU" inst="1" lnType="RVMIMMXU1_ED2_G_9">
-            <Private type="ABB_FunctionRefs">a3fc5cc9-10af-423c-affe-8317d47b2418</Private>
+            <Private type="ABB_FunctionRefs">69c9159d-49c1-56c8-a822-c92a5aea9fae</Private>
             <DOI name="PhV" desc="Minimum residual voltage">
               <SDI name="res">
                 <SDI name="cVal">
@@ -16560,7 +16560,7 @@
           </LN>
           <LN desc="VMMXU1" prefix="V" lnClass="MMXU" inst="1" lnType="VMMXU1_ED2_F_12">
             <Private type="ABB_CommonSA_FunctionInstanceRef">44</Private>
-            <Private type="ABB_FunctionRefs">703f0b31-5603-4b47-9a05-8f9479d995bc</Private>
+            <Private type="ABB_FunctionRefs">718522a8-baff-543f-84a0-7d2859187310</Private>
             <DOI name="PPV" desc="Phase to phase voltages">
               <SDI name="phsAB">
                 <SDI name="instCVal">
@@ -16767,7 +16767,7 @@
           </LN>
           <LN desc="VMMXU1" prefix="VAV" lnClass="MMXU" inst="1" lnType="VAVMMXU1_ED2_F_12">
             <Private type="ABB_CommonSA_FunctionInstanceRef">44</Private>
-            <Private type="ABB_FunctionRefs">703f0b31-5603-4b47-9a05-8f9479d995bc</Private>
+            <Private type="ABB_FunctionRefs">718522a8-baff-543f-84a0-7d2859187310</Private>
             <DOI name="PPV" desc="Phase to phase voltages">
               <SDI name="phsAB">
                 <SDI name="cVal">
@@ -16836,7 +16836,7 @@
         <LDevice inst="CTRL">
           <LN0 lnClass="LLN0" inst="" lnType="CTRL_LLN0_ED2_G_15">
             <Private type="ABB_CommonSA_FunctionInstanceRef">2</Private>
-            <Private type="ABB_FunctionRefs">77c8e595-b9a6-4eb2-bea4-da0fce8d549f</Private>
+            <Private type="ABB_FunctionRefs">fcce205c-c6e3-5d3e-a741-8d6730f5ad94</Private>
             <DOI name="NamPlt" desc="Control">
               <DAI name="vendor">
                 <Val>ABB</Val>
@@ -16905,7 +16905,7 @@
             <DOI name="StaLevSet" desc="Station authority" />
           </LN0>
           <LN desc="Std conformance" lnClass="LPHD" inst="1" lnType="LPHD_CTRL_ED2_G_15">
-            <Private type="ABB_FunctionRefs">77c8e595-b9a6-4eb2-bea4-da0fce8d549f</Private>
+            <Private type="ABB_FunctionRefs">fcce205c-c6e3-5d3e-a741-8d6730f5ad94</Private>
             <DOI name="PhyNam" desc="PhyNam">
               <DAI name="vendor">
                 <Val>ABB</Val>
@@ -16920,7 +16920,7 @@
           </LN>
           <LN desc="CBXCBR1" prefix="CB" lnClass="CILO" inst="1" lnType="BREAKER1_CILO_ED2_H_17">
             <Private type="ABB_CommonSA_FunctionInstanceRef">50</Private>
-            <Private type="ABB_FunctionRefs">280af00c-3dee-4bf4-8862-ceb271a0fe90</Private>
+            <Private type="ABB_FunctionRefs">4568f68e-ce1e-5a12-bffa-e3bda238e611</Private>
             <DOI name="EnaOpn" desc="ENA_OPEN">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I3C,DA03,DA03,1,240,21,1,240,21,-1,0,1,0,,0,1,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
               <DAI name="d">
@@ -16936,7 +16936,7 @@
           </LN>
           <LN desc="CBXCBR1" prefix="CB" lnClass="CSWI" inst="1" lnType="BREAKER1_CSWI_ED2_H_17">
             <Private type="ABB_CommonSA_FunctionInstanceRef">50</Private>
-            <Private type="ABB_FunctionRefs">280af00c-3dee-4bf4-8862-ceb271a0fe90</Private>
+            <Private type="ABB_FunctionRefs">4568f68e-ce1e-5a12-bffa-e3bda238e611</Private>
             <DOI name="Loc" desc="Local operation">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
               <DAI name="d">
@@ -17089,7 +17089,7 @@
           </LN>
           <LN desc="CBXCBR1" prefix="CB" lnClass="XCBR" inst="1" lnType="BREAKER1_XCBR_ED2_H_17">
             <Private type="ABB_CommonSA_FunctionInstanceRef">50</Private>
-            <Private type="ABB_FunctionRefs">280af00c-3dee-4bf4-8862-ceb271a0fe90</Private>
+            <Private type="ABB_FunctionRefs">4568f68e-ce1e-5a12-bffa-e3bda238e611</Private>
             <DOI name="Loc" desc="Local operation">
               <DAI name="stVal" sAddr="MBS02,DA03,DA03,0,0,0,7B,-5,SPS,0,0;MBS01,DA03,DA03,0,0,0,7B,-5,SPS,0,0;I5C02,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;I5C01,DA03,DA03,0,0,100,1,0,100,1,SPS-stVal,0,1,0;DNP02,1,-1,0,3,0,0,SPS-BI-EvUpd,0;DNP01,1,-1,0,3,0,0,SPS-BI-EvUpd,0" />
             </DOI>
@@ -17135,7 +17135,7 @@
         </LDevice>
         <LDevice desc="Disturbance recorder" inst="DR">
           <LN0 lnClass="LLN0" inst="" lnType="DR_LLN0_ED2_J_3">
-            <Private type="ABB_FunctionRefs">7bdce324-16cf-4f64-a211-73feb44a2a07</Private>
+            <Private type="ABB_FunctionRefs">e4bad9a5-775c-5d87-850e-f4eedfcb536f</Private>
             <DOI name="Health" desc="Health">
               <DAI name="stVal" sAddr="MBS02,DA07,DA07,0,16,0,8,1,0,18,-5,ENS-stVal,-1,0,0,0,0,0,0,0,0;MBS01,DA07,DA07,0,16,0,8,1,0,18,-5,ENS-stVal,-1,0,0,0,0,0,0,0,0;I5C02,DA07,DA07,0,0,100,22,1,0,100,22,1,ENS-Enum,1,0;I5C01,DA07,DA07,0,0,100,22,1,0,100,22,1,ENS-Enum,1,0;DNP02,30,-1,0,5,0,0,0,0,0,0,1,0,1,ENS-AI-EvUpd,0;DNP01,30,-1,0,5,0,0,0,0,0,0,1,0,1,ENS-AI-EvUpd,0" />
             </DOI>
@@ -17163,7 +17163,7 @@
             </DOI>
           </LN0>
           <LN desc="Physical device information" lnClass="LPHD" inst="1" lnType="LPHD_M_ED2_J_3">
-            <Private type="ABB_FunctionRefs">7bdce324-16cf-4f64-a211-73feb44a2a07</Private>
+            <Private type="ABB_FunctionRefs">e4bad9a5-775c-5d87-850e-f4eedfcb536f</Private>
             <DOI name="PhyNam" desc="PhyNam">
               <DAI name="vendor">
                 <Val>ABB</Val>
@@ -17178,7 +17178,7 @@
           </LN>
           <LN desc="Analog ch 1" prefix="A1" lnClass="RADR" inst="1" lnType="A1RADR_type_ED2_C_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">769</Private>
-            <Private type="ABB_FunctionRefs">68e01f6d-26a6-439e-8689-09c464051192</Private>
+            <Private type="ABB_FunctionRefs">664ff28f-5340-557f-b259-e7ea3a1a43f3</Private>
             <DOI name="ChTrg" desc="Channel triggered">
               <DAI name="d">
                 <Val>Analog ch 1 input</Val>
@@ -17218,7 +17218,7 @@
           </LN>
           <LN desc="Analog ch 2" prefix="A1" lnClass="RADR" inst="2" lnType="A1RADR_type_ED2_C_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">769</Private>
-            <Private type="ABB_FunctionRefs">68e01f6d-26a6-439e-8689-09c464051192</Private>
+            <Private type="ABB_FunctionRefs">664ff28f-5340-557f-b259-e7ea3a1a43f3</Private>
             <DOI name="ChTrg" desc="Channel triggered">
               <DAI name="d">
                 <Val>Analog ch 2 input</Val>
@@ -17258,7 +17258,7 @@
           </LN>
           <LN desc="Analog ch 3" prefix="A1" lnClass="RADR" inst="3" lnType="A1RADR_type_ED2_C_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">769</Private>
-            <Private type="ABB_FunctionRefs">68e01f6d-26a6-439e-8689-09c464051192</Private>
+            <Private type="ABB_FunctionRefs">664ff28f-5340-557f-b259-e7ea3a1a43f3</Private>
             <DOI name="ChTrg" desc="Channel triggered">
               <DAI name="d">
                 <Val>Analog ch 3 input</Val>
@@ -17298,7 +17298,7 @@
           </LN>
           <LN desc="Analog ch 4" prefix="A1" lnClass="RADR" inst="4" lnType="A1RADR_type_ED2_C_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">769</Private>
-            <Private type="ABB_FunctionRefs">68e01f6d-26a6-439e-8689-09c464051192</Private>
+            <Private type="ABB_FunctionRefs">664ff28f-5340-557f-b259-e7ea3a1a43f3</Private>
             <DOI name="ChTrg" desc="Channel triggered">
               <DAI name="d">
                 <Val>Analog ch 4 input</Val>
@@ -17338,7 +17338,7 @@
           </LN>
           <LN desc="Analog ch 5" prefix="A1" lnClass="RADR" inst="5" lnType="A1RADR_type_ED2_C_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">769</Private>
-            <Private type="ABB_FunctionRefs">68e01f6d-26a6-439e-8689-09c464051192</Private>
+            <Private type="ABB_FunctionRefs">664ff28f-5340-557f-b259-e7ea3a1a43f3</Private>
             <DOI name="ChTrg" desc="Channel triggered">
               <DAI name="d">
                 <Val>Analog ch 5 input</Val>
@@ -17378,7 +17378,7 @@
           </LN>
           <LN desc="Analog ch 6" prefix="A1" lnClass="RADR" inst="6" lnType="A1RADR_type_ED2_C_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">769</Private>
-            <Private type="ABB_FunctionRefs">68e01f6d-26a6-439e-8689-09c464051192</Private>
+            <Private type="ABB_FunctionRefs">664ff28f-5340-557f-b259-e7ea3a1a43f3</Private>
             <DOI name="ChTrg" desc="Channel triggered">
               <DAI name="d">
                 <Val>Analog ch 6 input</Val>
@@ -17418,7 +17418,7 @@
           </LN>
           <LN desc="Analog ch 7" prefix="A1" lnClass="RADR" inst="7" lnType="A1RADR_type_ED2_C_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">769</Private>
-            <Private type="ABB_FunctionRefs">68e01f6d-26a6-439e-8689-09c464051192</Private>
+            <Private type="ABB_FunctionRefs">664ff28f-5340-557f-b259-e7ea3a1a43f3</Private>
             <DOI name="ChTrg" desc="Channel triggered">
               <DAI name="d">
                 <Val>Analog ch 7 input</Val>
@@ -17458,7 +17458,7 @@
           </LN>
           <LN desc="Analog ch 8" prefix="A1" lnClass="RADR" inst="8" lnType="A1RADR_type_ED2_C_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">769</Private>
-            <Private type="ABB_FunctionRefs">68e01f6d-26a6-439e-8689-09c464051192</Private>
+            <Private type="ABB_FunctionRefs">664ff28f-5340-557f-b259-e7ea3a1a43f3</Private>
             <DOI name="ChTrg" desc="Channel triggered">
               <DAI name="d">
                 <Val>Analog ch 8 input</Val>
@@ -17498,7 +17498,7 @@
           </LN>
           <LN desc="Analog ch 9" prefix="A1" lnClass="RADR" inst="9" lnType="A1RADR_type_ED2_C_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">769</Private>
-            <Private type="ABB_FunctionRefs">68e01f6d-26a6-439e-8689-09c464051192</Private>
+            <Private type="ABB_FunctionRefs">664ff28f-5340-557f-b259-e7ea3a1a43f3</Private>
             <DOI name="ChTrg" desc="Channel triggered">
               <DAI name="d">
                 <Val>Analog ch 9 input</Val>
@@ -17538,7 +17538,7 @@
           </LN>
           <LN desc="Analog ch 10" prefix="A1" lnClass="RADR" inst="10" lnType="A1RADR_type_ED2_C_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">769</Private>
-            <Private type="ABB_FunctionRefs">68e01f6d-26a6-439e-8689-09c464051192</Private>
+            <Private type="ABB_FunctionRefs">664ff28f-5340-557f-b259-e7ea3a1a43f3</Private>
             <DOI name="ChTrg" desc="Channel triggered">
               <DAI name="d">
                 <Val>Analog ch 10 input</Val>
@@ -17578,7 +17578,7 @@
           </LN>
           <LN desc="Analog ch 11" prefix="A1" lnClass="RADR" inst="11" lnType="A1RADR_type_ED2_C_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">769</Private>
-            <Private type="ABB_FunctionRefs">68e01f6d-26a6-439e-8689-09c464051192</Private>
+            <Private type="ABB_FunctionRefs">664ff28f-5340-557f-b259-e7ea3a1a43f3</Private>
             <DOI name="ChTrg" desc="Channel triggered">
               <DAI name="d">
                 <Val>Analog ch 11 input</Val>
@@ -17618,7 +17618,7 @@
           </LN>
           <LN desc="Analog ch 12" prefix="A1" lnClass="RADR" inst="12" lnType="A1RADR_type_ED2_C_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">769</Private>
-            <Private type="ABB_FunctionRefs">68e01f6d-26a6-439e-8689-09c464051192</Private>
+            <Private type="ABB_FunctionRefs">664ff28f-5340-557f-b259-e7ea3a1a43f3</Private>
             <DOI name="ChTrg" desc="Channel triggered">
               <DAI name="d">
                 <Val>Analog ch 12 input</Val>
@@ -17658,7 +17658,7 @@
           </LN>
           <LN desc="Binary ch 1" prefix="B1" lnClass="RBDR" inst="1" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17670,7 +17670,7 @@
           </LN>
           <LN desc="Binary ch 2" prefix="B1" lnClass="RBDR" inst="2" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17682,7 +17682,7 @@
           </LN>
           <LN desc="Binary ch 3" prefix="B1" lnClass="RBDR" inst="3" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17694,7 +17694,7 @@
           </LN>
           <LN desc="Binary ch 4" prefix="B1" lnClass="RBDR" inst="4" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17706,7 +17706,7 @@
           </LN>
           <LN desc="Binary ch 5" prefix="B1" lnClass="RBDR" inst="5" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17718,7 +17718,7 @@
           </LN>
           <LN desc="Binary ch 6" prefix="B1" lnClass="RBDR" inst="6" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17730,7 +17730,7 @@
           </LN>
           <LN desc="Binary ch 7" prefix="B1" lnClass="RBDR" inst="7" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17742,7 +17742,7 @@
           </LN>
           <LN desc="Binary ch 8" prefix="B1" lnClass="RBDR" inst="8" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17754,7 +17754,7 @@
           </LN>
           <LN desc="Binary ch 9" prefix="B1" lnClass="RBDR" inst="9" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17766,7 +17766,7 @@
           </LN>
           <LN desc="Binary ch 10" prefix="B1" lnClass="RBDR" inst="10" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17778,7 +17778,7 @@
           </LN>
           <LN desc="Binary ch 11" prefix="B1" lnClass="RBDR" inst="11" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17790,7 +17790,7 @@
           </LN>
           <LN desc="Binary ch 12" prefix="B1" lnClass="RBDR" inst="12" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17802,7 +17802,7 @@
           </LN>
           <LN desc="Binary ch 13" prefix="B1" lnClass="RBDR" inst="13" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17814,7 +17814,7 @@
           </LN>
           <LN desc="Binary ch 14" prefix="B1" lnClass="RBDR" inst="14" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17826,7 +17826,7 @@
           </LN>
           <LN desc="Binary ch 15" prefix="B1" lnClass="RBDR" inst="15" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17838,7 +17838,7 @@
           </LN>
           <LN desc="Binary ch 16" prefix="B1" lnClass="RBDR" inst="16" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17850,7 +17850,7 @@
           </LN>
           <LN desc="Binary ch 17" prefix="B1" lnClass="RBDR" inst="17" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17862,7 +17862,7 @@
           </LN>
           <LN desc="Binary ch 18" prefix="B1" lnClass="RBDR" inst="18" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17874,7 +17874,7 @@
           </LN>
           <LN desc="Binary ch 19" prefix="B1" lnClass="RBDR" inst="19" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17886,7 +17886,7 @@
           </LN>
           <LN desc="Binary ch 20" prefix="B1" lnClass="RBDR" inst="20" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17898,7 +17898,7 @@
           </LN>
           <LN desc="Binary ch 21" prefix="B1" lnClass="RBDR" inst="21" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17910,7 +17910,7 @@
           </LN>
           <LN desc="Binary ch 22" prefix="B1" lnClass="RBDR" inst="22" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17922,7 +17922,7 @@
           </LN>
           <LN desc="Binary ch 23" prefix="B1" lnClass="RBDR" inst="23" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17934,7 +17934,7 @@
           </LN>
           <LN desc="Binary ch 24" prefix="B1" lnClass="RBDR" inst="24" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17946,7 +17946,7 @@
           </LN>
           <LN desc="Binary ch 25" prefix="B1" lnClass="RBDR" inst="25" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17958,7 +17958,7 @@
           </LN>
           <LN desc="Binary ch 26" prefix="B1" lnClass="RBDR" inst="26" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17970,7 +17970,7 @@
           </LN>
           <LN desc="Binary ch 27" prefix="B1" lnClass="RBDR" inst="27" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17982,7 +17982,7 @@
           </LN>
           <LN desc="Binary ch 28" prefix="B1" lnClass="RBDR" inst="28" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -17994,7 +17994,7 @@
           </LN>
           <LN desc="Binary ch 29" prefix="B1" lnClass="RBDR" inst="29" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -18006,7 +18006,7 @@
           </LN>
           <LN desc="Binary ch 30" prefix="B1" lnClass="RBDR" inst="30" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -18018,7 +18018,7 @@
           </LN>
           <LN desc="Binary ch 31" prefix="B1" lnClass="RBDR" inst="31" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -18030,7 +18030,7 @@
           </LN>
           <LN desc="Binary ch 32" prefix="B1" lnClass="RBDR" inst="32" lnType="B1RBDR_type_ED2_B_1">
             <Private type="ABB_CommonSA_FunctionInstanceRef">767</Private>
-            <Private type="ABB_FunctionRefs">965af94b-b5bd-4b58-8b77-eb937fdeef3c</Private>
+            <Private type="ABB_FunctionRefs">7b9a66bc-9bf6-58fd-bf1b-60b0dcaa1c23</Private>
             <DOI name="LevMod" desc="Level trigger mode" />
             <DOI name="StoMod" desc="Storage mode" />
             <DOI name="ExclTmRmn" desc="Exclusion time rem." />
@@ -18042,7 +18042,7 @@
           </LN>
           <LN desc="Disturbance recorder" lnClass="RDRE" inst="1" lnType="RDRE_type_ED2_J_3">
             <Private type="ABB_CommonSA_FunctionInstanceRef">770</Private>
-            <Private type="ABB_FunctionRefs">7bdce324-16cf-4f64-a211-73feb44a2a07</Private>
+            <Private type="ABB_FunctionRefs">e4bad9a5-775c-5d87-850e-f4eedfcb536f</Private>
             <DOI name="RcdTrg" desc="Trig recording">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="MBS02,DA10,DA10,1,-5,0,0,0,SPC-Ctrl,0,0,0;MBS02,DA11,DA11,8,1,0,10,-5,SPC-RegCtrl,0;MBS01,DA10,DA10,1,-5,0,0,0,SPC-Ctrl,0,0,0;MBS01,DA11,DA11,8,1,0,10,-5,SPC-RegCtrl,0;I3C,DA02,DA02,1,10,41,20,10,41,-1,0,20,0,-control only,9,1,0,1,-1;I5C02,DA01,DA01,0,0,20000,50,0,20000,50,SPC-ctlVal-Direct,1,0;I5C01,DA01,DA01,0,0,20000,50,0,20000,50,SPC-ctlVal-Direct,1,0;DNP02,10,-1,0,0,0,SPC-BO-SP,0,1,0;DNP01,10,-1,0,0,0,SPC-BO-SP,0,1,0" />

@@ -94,7 +94,7 @@ func TestPrivate_TypeAndSource(t *testing.T) {
 }
 
 func TestPrivate_ABBFile(t *testing.T) {
-	doc, err := ParseFile("testdata/abb/BLG065J1M101Q04A1.cid")
+	doc, err := ParseFile("testdata/abb/SITEBJ1M101Q04A1.cid")
 	if err != nil {
 		t.Skipf("ABB fixture not available: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestPrivate_ABBFile(t *testing.T) {
 }
 
 func TestPrivate_VendorNamespacesSurvive(t *testing.T) {
-	result, err := ParseFileWithOptions("testdata/abb/BLG065J1M101Q04A1.cid", ParseOptions{})
+	result, err := ParseFileWithOptions("testdata/abb/SITEBJ1M101Q04A1.cid", ParseOptions{})
 	if err != nil {
 		t.Skipf("ABB fixture not available: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestPrivate_VendorNamespacesSurvive(t *testing.T) {
 }
 
 func TestSummary_PrivateCount(t *testing.T) {
-	doc, err := ParseFile("testdata/abb/BLG065J1M101Q04A1.cid")
+	doc, err := ParseFile("testdata/abb/SITEBJ1M101Q04A1.cid")
 	if err != nil {
 		t.Skipf("ABB fixture not available: %v", err)
 	}

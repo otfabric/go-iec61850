@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--Generated with ABB Asea Brown Boveri Ltd IEC 61850 Libraries 2.13.25021.1 at 11/12/2025 9:49:36 PM.-->
+<!--Generated with ABB Asea Brown Boveri Ltd IEC 61850 Libraries 2.13.25021.1.-->
 <SCL xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://www.iec.ch/61850/2003/SCL" xmlns:sxy="http://www.iec.ch/61850/2003/SCLcoordinates" xmlns:eComm="http://www.abb.com/61850/2015/SCL_ABBCommunication" xmlns:eABB="http://www.abb.com/61850/2010/ABBTranslations" xsi:schemaLocation="http://www.iec.ch/61850/2003/SCL SCL.xsd http://www.iec.ch/61850/2003/SCLcoordinates SCL_Coordinates.xsd http://www.abb.com/61850/2015/SCL_ABBCommunication SCL_ABBCommunication.xsd http://www.abb.com/61850/2010/ABBTranslations SCL_ABBTranslations.xsd">
-  <Header id="ELSE CEC" version="1" revision="638985809769215691" toolID="ABB PCM600" nameStructure="IEDName" />
-  <Substation name="AA1" desc="Training Center">
-    <Private type="ABBPCMInternalObjRef">1f044bee-d6fc-419f-877f-8da54ee94cc3</Private>
+  <Header id="SITE_A" version="1" revision="1" toolID="ABB PCM600" nameStructure="IEDName" />
+  <Substation name="AA1" desc="Site A">
+    <Private type="ABBPCMInternalObjRef">f0437dd9-43f7-5def-a60c-e6f0d77db2af</Private>
     <VoltageLevel name="J2" desc="33kV">
-      <Private type="ABBPCMInternalObjRef">8fb94e5d-f36a-43bc-900d-ff9ca4255ebd</Private>
+      <Private type="ABBPCMInternalObjRef">3105802f-d197-5389-9bff-e0ee324f54f7</Private>
       <Voltage unit="V" multiplier="k">20</Voltage>
       <Bay name="Q02" desc="33kV ZX0">
-        <Private type="ABBPCMInternalObjRef">38722550-4181-4659-9ea4-e83ac22c7961</Private>
+        <Private type="ABBPCMInternalObjRef">63ef8ffb-ad86-5a38-bbba-9ed34275471d</Private>
         <LNode iedName="ZX0REF630A1" ldInst="LD0" lnClass="LLN0" />
         <LNode iedName="ZX0REF630A1" ldInst="LD0" prefix="DR" lnClass="RDRE" lnInst="1" />
         <LNode iedName="ZX0REF630A1" ldInst="LD0" prefix="PHL" lnClass="PTOC" lnInst="1" />
@@ -44,7 +44,7 @@
   </Substation>
   <Communication>
     <SubNetwork name="WA1" desc="Subnetwork" type="8-MMS">
-      <Private type="ABBPCMInternalObjRef">17262452-2a82-47b1-94a4-f67f362f2375</Private>
+      <Private type="ABBPCMInternalObjRef">9516df5f-4862-5487-becc-a35e4de884df</Private>
       <Private type="SchneiderElectric-SET-SubnetworkIPV4Plan">
         <SubNetworkIPV4PlanPrivates IsLocked="False" Deployed="No" xmlns="http://www.schneider-electric.com/TSF/CBS/Privates">
           <IPAddress IsWarning="False" IsError="None">
@@ -71,7 +71,7 @@
         <MetaInfosPrivates xmlns="http://www.schneider-electric.com/TSF/CBS/Privates">
           <ElectricalWorkAreas />
           <SystemWorkAreas>
-            <WorkArea WorkAreaIdentification="00000000-0000-0000-0000-000000000002">
+            <WorkArea WorkAreaIdentification="54db3aab-11b7-51d1-b43d-2fff8aa8ff21">
               <GraphicalProperties DuplicateCount="1" IsPlaced="True" IsExpanded="False">
                 <Size Width="35" Height="35" />
                 <Position X="440" Y="402" />
@@ -89,7 +89,7 @@
       <ConnectedAP iedName="Client1" apName="LD0" />
       <ConnectedAP iedName="ZX0REF630A1" apName="S1">
         <Address>
-          <P type="IP" xsi:type="tP_IP">192.168.100.51</P>
+          <P type="IP" xsi:type="tP_IP">10.10.100.51</P>
           <P type="OSI-AE-Qualifier" xsi:type="tP_OSI-AE-Qualifier">23</P>
           <P type="OSI-AP-Title" xsi:type="tP_OSI-AP-Title">1,3,9999,23</P>
           <P type="OSI-PSEL" xsi:type="tP_OSI-PSEL">00000001</P>
@@ -118,7 +118,7 @@
   </IED>
   <IED name="ZX0REF630A1" desc="REF630" type="IED630" manufacturer="ABB" configVersion="REF630ver1.0.0.0">
     <Private type="ABB_PCMObjectTypeName">REF630</Private>
-    <Private type="ABBPCMInternalObjRef">f095e5bb-77d7-4062-b4dc-1db76acfb638</Private>
+    <Private type="ABBPCMInternalObjRef">f6d4f7f6-41b7-576e-81ff-32cc3c1d3cd0</Private>
     <Services>
       <DynAssociation />
       <SettingGroups />
@@ -139,7 +139,7 @@
         <Authentication />
         <LDevice inst="LD0">
           <LN0 lnClass="LLN0" inst="" lnType="ABBIED600_LLN0">
-            <Private type="ABB_FunctionRefs">b06c1cb8-927c-4425-9cc7-20c64d9345a6</Private>
+            <Private type="ABB_FunctionRefs">87e54e7b-f600-5525-98a1-119f50b5bd75</Private>
             <DataSet name="StatNrml">
               <FCDA ldInst="LD0" prefix="DR" lnClass="RDRE" lnInst="1" doName="MemUsedAlm" fc="ST" />
               <FCDA ldInst="LD0" prefix="DR" lnClass="RDRE" lnInst="1" doName="RcdClr" fc="ST" />
@@ -317,7 +317,7 @@
             <SettingControl numOfSGs="4" />
           </LN0>
           <LN lnClass="LPHD" inst="1" lnType="ABBIED600_REV1_LPHD">
-            <Private type="ABB_FunctionRefs">0686c97a-970d-47e9-bedf-1c1279ed3c87</Private>
+            <Private type="ABB_FunctionRefs">dbf14ec7-a1b2-529e-bb14-3b88e3974b81</Private>
             <DOI name="PhyNam" desc="Physical device name plate">
               <DAI name="vendor" sAddr="/DPL/DC/VisString255/+/none/+/-1,-1,-1" />
               <DAI name="swRev" desc="Firmware version" sAddr="/DPL/DC/VisString255/+/none/+/Sys.ProdInfo.1.PARAM.4.Value,-1,-1" />
@@ -338,7 +338,7 @@
             </DOI>
           </LN>
           <LN prefix="DR" lnClass="RDRE" inst="1" lnType="ABBIED600_DRRDRE">
-            <Private type="ABB_FunctionRefs">43216748-c7f7-45b2-a669-b7b0d1ed900a</Private>
+            <Private type="ABB_FunctionRefs">6642d0c5-1193-5d56-a300-18d8b2d764f3</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App9.DRep.1.THIS.0.Mod,49,21" />
@@ -419,7 +419,7 @@
             </DOI>
           </LN>
           <LN prefix="QC" lnClass="CBAY" inst="1" lnType="ABBIED600_QCCBAY">
-            <Private type="ABB_FunctionRefs">4e76f285-5d69-461c-b10f-db457c350d1a</Private>
+            <Private type="ABB_FunctionRefs">e8903013-470f-5607-a000-065ba947a8ae</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App3.BAYCTRL_B.1.THIS.0.Mod,49,21" />
@@ -527,7 +527,7 @@
             </DOI>
           </LN>
           <LN prefix="PHL" lnClass="PTOC" inst="1" lnType="ABBIED600_PHLPTOC">
-            <Private type="ABB_FunctionRefs">0adb9777-b41a-473a-97a5-c633d90b6bee</Private>
+            <Private type="ABB_FunctionRefs">d6887d53-3e01-57f9-bd1e-e9ad1772901e</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App3.OC1_A.5.THIS.0.Mod,49,21" />
@@ -608,7 +608,7 @@
             </DOI>
           </LN>
           <LN prefix="EFL" lnClass="PTOC" inst="1" lnType="ABBIED600_EFLPTOC">
-            <Private type="ABB_FunctionRefs">ea774a6a-9009-42ea-9c5c-409c96032870</Private>
+            <Private type="ABB_FunctionRefs">9d373ded-19e4-5b42-9a01-291b7f5ed4b3</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App3.EF1_A.5.THIS.0.Mod,49,21" />
@@ -680,7 +680,7 @@
             </DOI>
           </LN>
           <LN prefix="TCS" lnClass="SCBR" inst="1" lnType="ABBIED600_TCSSCBR">
-            <Private type="ABB_FunctionRefs">bead2df2-3e38-46d4-8018-26462f8ad5c3</Private>
+            <Private type="ABB_FunctionRefs">f3ab4614-02f2-5824-82de-98192567335a</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App3.TRIPCIRCUITSUPVN_A.1.THIS.0.Mod,49,21" />
@@ -726,7 +726,7 @@
             </DOI>
           </LN>
           <LN prefix="TCS" lnClass="SCBR" inst="2" lnType="ABBIED600_TCSSCBR">
-            <Private type="ABB_FunctionRefs">77f255b3-18b1-4d02-92f6-1bcad7002fde</Private>
+            <Private type="ABB_FunctionRefs">e2ef192a-f778-5003-9ab8-0bd241725fb8</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App3.TRIPCIRCUITSUPVN_A.2.THIS.0.Mod,49,21" />
@@ -772,7 +772,7 @@
             </DOI>
           </LN>
           <LN prefix="TCS" lnClass="SCBR" inst="3" lnType="ABBIED600_TCSSCBR">
-            <Private type="ABB_FunctionRefs">1db75410-2045-4ab7-b173-b18cb0f95f75</Private>
+            <Private type="ABB_FunctionRefs">ddd24e9e-b5f8-5b68-bdf2-9db396a348bc</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App3.TRIPCIRCUITSUPVN_A.3.THIS.0.Mod,49,21" />
@@ -818,7 +818,7 @@
             </DOI>
           </LN>
           <LN prefix="DA" lnClass="XCBR" inst="1" lnType="ABBIED600_DAXCBR">
-            <Private type="ABB_FunctionRefs">afb65c46-8f28-4c7f-9cdb-b18cbb1e814a</Private>
+            <Private type="ABB_FunctionRefs">75253505-170d-5d1a-883a-c41bb8a61c87</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App3.SWITCH_D.1.THIS.0.Mod,49,21" />
@@ -943,7 +943,7 @@
             </DOI>
           </LN>
           <LN prefix="GNRL" lnClass="CSWI" inst="1" lnType="ABBIED600_GNRLCSWI">
-            <Private type="ABB_FunctionRefs">d8fed181-65fe-43ca-961d-2e00ebf39f0e</Private>
+            <Private type="ABB_FunctionRefs">e1cdcc8a-4f82-5d10-b11b-025717a4d7aa</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App3.SWITCHCTRL_C.1.THIS.0.Mod,49,21" />
@@ -1060,7 +1060,7 @@
             </DOI>
           </LN>
           <LN prefix="PHH" lnClass="PTOC" inst="1" lnType="ABBIED600_PHHPTOC">
-            <Private type="ABB_FunctionRefs">b96e2229-3551-4995-9b59-bd79c2271b8b</Private>
+            <Private type="ABB_FunctionRefs">09617b98-b5eb-583c-afa3-d3c400d86788</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App5.OC1_A.9.THIS.0.Mod,49,21" />
@@ -1141,7 +1141,7 @@
             </DOI>
           </LN>
           <LN prefix="PHI" lnClass="PTOC" inst="1" lnType="ABBIED600_PHIPTOC">
-            <Private type="ABB_FunctionRefs">61ca2a83-71b8-40f4-b257-16dacb18aa15</Private>
+            <Private type="ABB_FunctionRefs">2b9d348f-3e10-53ef-ad86-53f138870042</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App5.OC1_A.1.THIS.0.Mod,49,21" />
@@ -1213,7 +1213,7 @@
             </DOI>
           </LN>
           <LN prefix="EFH" lnClass="PTOC" inst="1" lnType="ABBIED600_EFHPTOC">
-            <Private type="ABB_FunctionRefs">5e31103b-8cf3-4b10-bc3f-e8492f9ea169</Private>
+            <Private type="ABB_FunctionRefs">24924a76-9883-57cd-936d-9ef7f1eeaafe</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App5.EF1_A.9.THIS.0.Mod,49,21" />
@@ -1285,7 +1285,7 @@
             </DOI>
           </LN>
           <LN prefix="EFI" lnClass="PTOC" inst="1" lnType="ABBIED600_EFIPTOC">
-            <Private type="ABB_FunctionRefs">91f957f2-c894-44c8-aa2d-658a9d2f68f8</Private>
+            <Private type="ABB_FunctionRefs">12e63ebd-a58b-5c42-8921-297cc9c8c1f6</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App5.EF1_A.1.THIS.0.Mod,49,21" />
@@ -1348,7 +1348,7 @@
             </DOI>
           </LN>
           <LN prefix="INR" lnClass="PHAR" inst="1" lnType="ABBIED600_INRPHAR">
-            <Private type="ABB_FunctionRefs">0638df59-7681-4ab8-87de-f9a58450ddc5</Private>
+            <Private type="ABB_FunctionRefs">e1e0c674-d33d-5fb6-9848-cbb60c6fb926</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App5.HARMPPVTRCURR_B.1.THIS.0.Mod,49,21" />
@@ -1400,7 +1400,7 @@
             </DOI>
           </LN>
           <LN prefix="TRP" lnClass="PTRC" inst="1" lnType="ABBIED600_TRPPTRC">
-            <Private type="ABB_FunctionRefs">1393cd75-472d-4af6-bf24-0c437f8e9088</Private>
+            <Private type="ABB_FunctionRefs">f0fa399d-2f02-569b-af56-ecfcd6dafa7d</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App5.TRIP_A.1.THIS.0.Mod,49,21" />
@@ -1475,7 +1475,7 @@
             </DOI>
           </LN>
           <LN prefix="DA" lnClass="XSWI" inst="1" lnType="ABBIED600_DAXSWI">
-            <Private type="ABB_FunctionRefs">730d5437-ca91-4434-bd0f-b1eec31cd1c0</Private>
+            <Private type="ABB_FunctionRefs">2a92e853-1e9c-516b-9687-4ad82f7e5ce2</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App4.SWITCH_D.11.THIS.0.Mod,49,21" />
@@ -1606,7 +1606,7 @@
             </DOI>
           </LN>
           <LN prefix="DA" lnClass="XSWI" inst="2" lnType="ABBIED600_DAXSWI">
-            <Private type="ABB_FunctionRefs">18678cc7-5164-4d40-a8e0-38481a5441db</Private>
+            <Private type="ABB_FunctionRefs">2f80420a-0624-5b3c-9893-40461cad3598</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App4.SWITCH_D.12.THIS.0.Mod,49,21" />
@@ -1737,7 +1737,7 @@
             </DOI>
           </LN>
           <LN prefix="PWR" lnClass="MMXU" inst="1" lnType="ABBIED600_PWRMMXU">
-            <Private type="ABB_FunctionRefs">e0f1dac5-c762-41fa-b5e3-adbd35791b51</Private>
+            <Private type="ABB_FunctionRefs">36cf0809-7c93-511f-9256-cb87697868a3</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App4.MEASURE_POWER_A.1.THIS.0.Mod,49,21" />
@@ -2021,7 +2021,7 @@
             </DOI>
           </LN>
           <LN prefix="GNRL" lnClass="CSWI" inst="3" lnType="ABBIED600_GNRLCSWI">
-            <Private type="ABB_FunctionRefs">28af60dd-199d-4706-9d31-a24a398e0399</Private>
+            <Private type="ABB_FunctionRefs">d4e18d29-c353-5770-9287-0185deeb32ae</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App4.SWITCHCTRL_C.3.THIS.0.Mod,49,21" />
@@ -2138,7 +2138,7 @@
             </DOI>
           </LN>
           <LN prefix="GNRL" lnClass="CSWI" inst="4" lnType="ABBIED600_GNRLCSWI">
-            <Private type="ABB_FunctionRefs">ae00589e-6156-4c80-8b17-40ca908e3b2a</Private>
+            <Private type="ABB_FunctionRefs">8e2275b1-a6e6-5327-8dc5-692073880efd</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App4.SWITCHCTRL_C.4.THIS.0.Mod,49,21" />
@@ -2255,7 +2255,7 @@
             </DOI>
           </LN>
           <LN prefix="CPH" lnClass="MMXU" inst="1" lnType="ABBIED600_CPHMMXU">
-            <Private type="ABB_FunctionRefs">9bf3f732-99d8-4358-9321-a791d9d411d2</Private>
+            <Private type="ABB_FunctionRefs">c2194aa8-8fc7-5b5e-849e-6ab8840186c7</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App4.THREEPHSIGMON_B.1.THIS.0.Mod,49,21" />
@@ -2447,7 +2447,7 @@
             </DOI>
           </LN>
           <LN prefix="RESC" lnClass="MMXU" inst="1" lnType="ABBIED600_RESCMMXU">
-            <Private type="ABB_FunctionRefs">f1b54afd-0712-46b4-8c3c-2c36893c7440</Private>
+            <Private type="ABB_FunctionRefs">7fe94884-4baa-5ec6-a901-5e38c69df114</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App4.THREEPHSIGMON_B.10.THIS.0.Mod,49,21" />
@@ -2539,7 +2539,7 @@
             </DOI>
           </LN>
           <LN prefix="VPH" lnClass="MMXU" inst="1" lnType="ABBIED600_VPHMMXU">
-            <Private type="ABB_FunctionRefs">9621b7dd-77ed-4979-9028-cbb23ffc8245</Private>
+            <Private type="ABB_FunctionRefs">aa5e82f9-e7d0-51af-8d66-846ae83512cb</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App4.THREEPHSIGMON_B.4.THIS.0.Mod,49,21" />
@@ -2731,7 +2731,7 @@
             </DOI>
           </LN>
           <LN prefix="VPP" lnClass="MMXU" inst="1" lnType="ABBIED600_VPPMMXU">
-            <Private type="ABB_FunctionRefs">9e779564-4d74-41f8-85d9-39b43ef59b87</Private>
+            <Private type="ABB_FunctionRefs">c6c607fd-0112-5d6f-b475-27647aa06524</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App4.THREEPHSIGMON_B.7.THIS.0.Mod,49,21" />
@@ -2923,7 +2923,7 @@
             </DOI>
           </LN>
           <LN prefix="S" lnClass="CILO" inst="1" lnType="ABBIED600_REV1_SCILO">
-            <Private type="ABB_FunctionRefs">db82776d-c9b7-47b8-bdbc-c61fb328260b</Private>
+            <Private type="ABB_FunctionRefs">2ccc5f7a-4835-597e-96d7-f4949c8face5</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App8.INTERLOCK_A.1.THIS.0.Mod,49,21" />
@@ -2974,7 +2974,7 @@
             </DOI>
           </LN>
           <LN prefix="S" lnClass="CILO" inst="2" lnType="ABBIED600_REV1_SCILO">
-            <Private type="ABB_FunctionRefs">f11b064b-1a7d-48f7-9504-d048211ccc6c</Private>
+            <Private type="ABB_FunctionRefs">3ba2c0b8-7230-560f-9d26-2180249845c3</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App8.INTERLOCK_A.2.THIS.0.Mod,49,21" />
@@ -3025,7 +3025,7 @@
             </DOI>
           </LN>
           <LN prefix="S" lnClass="CILO" inst="3" lnType="ABBIED600_REV1_SCILO">
-            <Private type="ABB_FunctionRefs">99034030-2340-452a-a491-b5c0b6529e0c</Private>
+            <Private type="ABB_FunctionRefs">739ee3be-495c-50a8-a8b9-94a8994e3a99</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App8.INTERLOCK_A.3.THIS.0.Mod,49,21" />
@@ -3076,7 +3076,7 @@
             </DOI>
           </LN>
           <LN desc="Generic single point status" prefix="SP" lnClass="GGIO" inst="7" lnType="ABBIED600_REV1_SPGGIO">
-            <Private type="ABB_FunctionRefs">3f69af9a-f4c3-45e8-b9a8-3c6f6b030f67</Private>
+            <Private type="ABB_FunctionRefs">a24edd45-1e0c-5581-a879-69fbbc44a60f</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App5.GGIOSP.7.THIS.0.Mod,49,21" />
@@ -3121,7 +3121,7 @@
             </DOI>
           </LN>
           <LN desc="Generic single point status" prefix="SP" lnClass="GGIO" inst="8" lnType="ABBIED600_REV1_SPGGIO">
-            <Private type="ABB_FunctionRefs">0f4b1623-73b6-4cfb-adbe-a2a41ea8f73a</Private>
+            <Private type="ABB_FunctionRefs">748d3e0a-cb54-5caa-836d-29b5d005e785</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App5.GGIOSP.8.THIS.0.Mod,49,21" />
@@ -3166,7 +3166,7 @@
             </DOI>
           </LN>
           <LN desc="Generic single point status" prefix="SP" lnClass="GGIO" inst="9" lnType="ABBIED600_REV1_SPGGIO">
-            <Private type="ABB_FunctionRefs">8e1a1fb8-0b3a-4b0a-987e-789f3d59c8b7</Private>
+            <Private type="ABB_FunctionRefs">979e1186-d913-58f4-bb3f-66ce3c934701</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App5.GGIOSP.9.THIS.0.Mod,49,21" />
@@ -3211,7 +3211,7 @@
             </DOI>
           </LN>
           <LN desc="Generic single point status" prefix="SP" lnClass="GGIO" inst="10" lnType="ABBIED600_REV1_SPGGIO">
-            <Private type="ABB_FunctionRefs">a44fab7b-f81e-40ea-bd29-9819dcd31986</Private>
+            <Private type="ABB_FunctionRefs">5ae9bb5b-6ccf-507e-afc4-0abc22e8bc4a</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App5.GGIOSP.10.THIS.0.Mod,49,21" />
@@ -3256,7 +3256,7 @@
             </DOI>
           </LN>
           <LN desc="Generic single point status" prefix="SP" lnClass="GGIO" inst="11" lnType="ABBIED600_REV1_SPGGIO">
-            <Private type="ABB_FunctionRefs">616d3588-4c3e-403c-9ab6-f788ced88d05</Private>
+            <Private type="ABB_FunctionRefs">bc8d06e1-2ef3-5a1a-a0a0-93ee31233c7a</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App5.GGIOSP.11.THIS.0.Mod,49,21" />
@@ -3301,7 +3301,7 @@
             </DOI>
           </LN>
           <LN desc="Generic single point status" prefix="SP" lnClass="GGIO" inst="12" lnType="ABBIED600_REV1_SPGGIO">
-            <Private type="ABB_FunctionRefs">1b183dc8-2d15-4254-b972-702e6210a139</Private>
+            <Private type="ABB_FunctionRefs">0c5d3bb2-b0b8-5655-8911-d93fbc97e851</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" sAddr="/INC/CO/Enum/+/none/Mod/App5.GGIOSP.12.THIS.0.Mod,49,21" />
@@ -3348,7 +3348,7 @@
         </LDevice>
         <LDevice inst="DOCL_1">
           <LN0 lnClass="LLN0" inst="" lnType="ABBIED600_PHBLLN0">
-            <Private type="ABB_FunctionRefs">a3682c94-3fca-4a87-994f-6c16f4427565</Private>
+            <Private type="ABB_FunctionRefs">1e181a5e-a03d-575e-80fd-4f02cdfd0bcb</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" desc="Mode parameter for 61850" sAddr="/INC/CO/Enum/+/none/Mod/App3.OC1_A.13.THIS.0.Mod,49,21" />
@@ -3390,7 +3390,7 @@
             </DOI>
           </LN0>
           <LN lnClass="LPHD" inst="1" lnType="ABBIED600_REV1_LPHD">
-            <Private type="ABB_FunctionRefs">a3682c94-3fca-4a87-994f-6c16f4427565</Private>
+            <Private type="ABB_FunctionRefs">1e181a5e-a03d-575e-80fd-4f02cdfd0bcb</Private>
             <DOI name="PhyNam" desc="Physical device name plate">
               <DAI name="vendor" sAddr="/DPL/DC/VisString255/+/none/+/-1,-1,-1" />
               <DAI name="swRev" desc="Firmware version" sAddr="/DPL/DC/VisString255/+/none/+/Sys.ProdInfo.1.PARAM.4.Value,-1,-1" />
@@ -3411,7 +3411,7 @@
             </DOI>
           </LN>
           <LN prefix="DPH" lnClass="RDIR" inst="1" lnType="ABBIED600_DPHRDIR">
-            <Private type="ABB_FunctionRefs">a3682c94-3fca-4a87-994f-6c16f4427565</Private>
+            <Private type="ABB_FunctionRefs">1e181a5e-a03d-575e-80fd-4f02cdfd0bcb</Private>
             <DOI name="Mod" desc="Mode">
               <DAI name="stVal" desc="Mode status parameter for 61850" sAddr="/INC/ST/Enum/+/dchg/Mod/App3.OC1_A.13.THIS.0.ModSt,152,29" />
               <DAI name="q" desc="Mode status parameter for 61850" sAddr="/INC/ST/Quality/+/qchg/+/App3.OC1_A.13.THIS.0.ModSt,152,100" />
@@ -3452,7 +3452,7 @@
             </DOI>
           </LN>
           <LN prefix="DPH" lnClass="PTOC" inst="1" lnType="ABBIED600_DPHPTOC">
-            <Private type="ABB_FunctionRefs">a3682c94-3fca-4a87-994f-6c16f4427565</Private>
+            <Private type="ABB_FunctionRefs">1e181a5e-a03d-575e-80fd-4f02cdfd0bcb</Private>
             <DOI name="Mod" desc="Mode">
               <DAI name="stVal" desc="Mode status parameter for 61850" sAddr="/INC/ST/Enum/+/dchg/Mod/App3.OC1_A.13.THIS.0.ModSt,152,29" />
               <DAI name="q" desc="Mode status parameter for 61850" sAddr="/INC/ST/Quality/+/qchg/+/App3.OC1_A.13.THIS.0.ModSt,152,100" />
@@ -3524,7 +3524,7 @@
         </LDevice>
         <LDevice inst="DOCH_1">
           <LN0 lnClass="LLN0" inst="" lnType="ABBIED600_PHBLLN0">
-            <Private type="ABB_FunctionRefs">2fe0785b-1255-4090-b3f5-1376048a5aa7</Private>
+            <Private type="ABB_FunctionRefs">6e8eb95d-f551-5877-a201-eca55d18ecd3</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" desc="Mode parameter for 61850" sAddr="/INC/CO/Enum/+/none/Mod/App3.OC1_A.17.THIS.0.Mod,49,21" />
@@ -3566,7 +3566,7 @@
             </DOI>
           </LN0>
           <LN lnClass="LPHD" inst="1" lnType="ABBIED600_REV1_LPHD">
-            <Private type="ABB_FunctionRefs">2fe0785b-1255-4090-b3f5-1376048a5aa7</Private>
+            <Private type="ABB_FunctionRefs">6e8eb95d-f551-5877-a201-eca55d18ecd3</Private>
             <DOI name="PhyNam" desc="Physical device name plate">
               <DAI name="vendor" sAddr="/DPL/DC/VisString255/+/none/+/-1,-1,-1" />
               <DAI name="swRev" desc="Firmware version" sAddr="/DPL/DC/VisString255/+/none/+/Sys.ProdInfo.1.PARAM.4.Value,-1,-1" />
@@ -3587,7 +3587,7 @@
             </DOI>
           </LN>
           <LN prefix="DPH" lnClass="PTOC" inst="1" lnType="ABBIED600_DPHPTOC">
-            <Private type="ABB_FunctionRefs">2fe0785b-1255-4090-b3f5-1376048a5aa7</Private>
+            <Private type="ABB_FunctionRefs">6e8eb95d-f551-5877-a201-eca55d18ecd3</Private>
             <DOI name="Mod" desc="Mode">
               <DAI name="stVal" desc="Mode status parameter for 61850" sAddr="/INC/ST/Enum/+/dchg/Mod/App3.OC1_A.17.THIS.0.ModSt,152,29" />
               <DAI name="q" desc="Mode status parameter for 61850" sAddr="/INC/ST/Quality/+/qchg/+/App3.OC1_A.17.THIS.0.ModSt,152,100" />
@@ -3657,7 +3657,7 @@
             </DOI>
           </LN>
           <LN prefix="DPH" lnClass="RDIR" inst="1" lnType="ABBIED600_DPHRDIR">
-            <Private type="ABB_FunctionRefs">2fe0785b-1255-4090-b3f5-1376048a5aa7</Private>
+            <Private type="ABB_FunctionRefs">6e8eb95d-f551-5877-a201-eca55d18ecd3</Private>
             <DOI name="Mod" desc="Mode">
               <DAI name="stVal" desc="Mode status parameter for 61850" sAddr="/INC/ST/Enum/+/dchg/Mod/App3.OC1_A.17.THIS.0.ModSt,152,29" />
               <DAI name="q" desc="Mode status parameter for 61850" sAddr="/INC/ST/Quality/+/qchg/+/App3.OC1_A.17.THIS.0.ModSt,152,100" />
@@ -3700,7 +3700,7 @@
         </LDevice>
         <LDevice inst="DEFL_1">
           <LN0 lnClass="LLN0" inst="" lnType="ABBIED600_DEFLLN0">
-            <Private type="ABB_FunctionRefs">53a00b45-a56f-4b79-94ac-1e6b4e1cfa56</Private>
+            <Private type="ABB_FunctionRefs">5e85fd6c-3d4a-56f8-bae4-544385145392</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" desc="Mode parameter for 61850" sAddr="/INC/CO/Enum/+/none/Mod/App3.EF1_A.13.THIS.0.Mod,49,21" />
@@ -3742,7 +3742,7 @@
             </DOI>
           </LN0>
           <LN lnClass="LPHD" inst="1" lnType="ABBIED600_REV1_LPHD">
-            <Private type="ABB_FunctionRefs">53a00b45-a56f-4b79-94ac-1e6b4e1cfa56</Private>
+            <Private type="ABB_FunctionRefs">5e85fd6c-3d4a-56f8-bae4-544385145392</Private>
             <DOI name="PhyNam" desc="Physical device name plate">
               <DAI name="vendor" sAddr="/DPL/DC/VisString255/+/none/+/-1,-1,-1" />
               <DAI name="swRev" desc="Firmware version" sAddr="/DPL/DC/VisString255/+/none/+/Sys.ProdInfo.1.PARAM.4.Value,-1,-1" />
@@ -3763,7 +3763,7 @@
             </DOI>
           </LN>
           <LN prefix="DEF" lnClass="RDIR" inst="1" lnType="ABBIED600_DEFRDIR">
-            <Private type="ABB_FunctionRefs">53a00b45-a56f-4b79-94ac-1e6b4e1cfa56</Private>
+            <Private type="ABB_FunctionRefs">5e85fd6c-3d4a-56f8-bae4-544385145392</Private>
             <DOI name="Mod" desc="Mode">
               <DAI name="stVal" desc="Mode status parameter for 61850" sAddr="/INC/ST/Enum/+/dchg/Mod/App3.EF1_A.13.THIS.0.ModSt,152,29" />
               <DAI name="q" desc="Mode status parameter for 61850" sAddr="/INC/ST/Quality/+/qchg/+/App3.EF1_A.13.THIS.0.ModSt,152,100" />
@@ -3831,7 +3831,7 @@
             </DOI>
           </LN>
           <LN prefix="DEF" lnClass="PTOC" inst="1" lnType="ABBIED600_DEFPTOC">
-            <Private type="ABB_FunctionRefs">53a00b45-a56f-4b79-94ac-1e6b4e1cfa56</Private>
+            <Private type="ABB_FunctionRefs">5e85fd6c-3d4a-56f8-bae4-544385145392</Private>
             <DOI name="Mod" desc="Mode">
               <DAI name="stVal" desc="Mode status parameter for 61850" sAddr="/INC/ST/Enum/+/dchg/Mod/App3.EF1_A.13.THIS.0.ModSt,152,29" />
               <DAI name="q" desc="Mode status parameter for 61850" sAddr="/INC/ST/Quality/+/qchg/+/App3.EF1_A.13.THIS.0.ModSt,152,100" />
@@ -3894,7 +3894,7 @@
         </LDevice>
         <LDevice inst="DEFH_1">
           <LN0 lnClass="LLN0" inst="" lnType="ABBIED600_DEFLLN0">
-            <Private type="ABB_FunctionRefs">194f7189-5613-4e5a-9627-4133806e339a</Private>
+            <Private type="ABB_FunctionRefs">c94c2352-e1fd-539f-82ca-4b96087f7276</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" desc="Mode parameter for 61850" sAddr="/INC/CO/Enum/+/none/Mod/App3.EF1_A.17.THIS.0.Mod,49,21" />
@@ -3936,7 +3936,7 @@
             </DOI>
           </LN0>
           <LN lnClass="LPHD" inst="1" lnType="ABBIED600_REV1_LPHD">
-            <Private type="ABB_FunctionRefs">194f7189-5613-4e5a-9627-4133806e339a</Private>
+            <Private type="ABB_FunctionRefs">c94c2352-e1fd-539f-82ca-4b96087f7276</Private>
             <DOI name="PhyNam" desc="Physical device name plate">
               <DAI name="vendor" sAddr="/DPL/DC/VisString255/+/none/+/-1,-1,-1" />
               <DAI name="swRev" desc="Firmware version" sAddr="/DPL/DC/VisString255/+/none/+/Sys.ProdInfo.1.PARAM.4.Value,-1,-1" />
@@ -3957,7 +3957,7 @@
             </DOI>
           </LN>
           <LN prefix="DEF" lnClass="PTOC" inst="1" lnType="ABBIED600_DEFPTOC">
-            <Private type="ABB_FunctionRefs">194f7189-5613-4e5a-9627-4133806e339a</Private>
+            <Private type="ABB_FunctionRefs">c94c2352-e1fd-539f-82ca-4b96087f7276</Private>
             <DOI name="Mod" desc="Mode">
               <DAI name="stVal" desc="Mode status parameter for 61850" sAddr="/INC/ST/Enum/+/dchg/Mod/App3.EF1_A.17.THIS.0.ModSt,152,29" />
               <DAI name="q" desc="Mode status parameter for 61850" sAddr="/INC/ST/Quality/+/qchg/+/App3.EF1_A.17.THIS.0.ModSt,152,100" />
@@ -4018,7 +4018,7 @@
             </DOI>
           </LN>
           <LN prefix="DEF" lnClass="RDIR" inst="1" lnType="ABBIED600_DEFRDIR">
-            <Private type="ABB_FunctionRefs">194f7189-5613-4e5a-9627-4133806e339a</Private>
+            <Private type="ABB_FunctionRefs">c94c2352-e1fd-539f-82ca-4b96087f7276</Private>
             <DOI name="Mod" desc="Mode">
               <DAI name="stVal" desc="Mode status parameter for 61850" sAddr="/INC/ST/Enum/+/dchg/Mod/App3.EF1_A.17.THIS.0.ModSt,152,29" />
               <DAI name="q" desc="Mode status parameter for 61850" sAddr="/INC/ST/Quality/+/qchg/+/App3.EF1_A.17.THIS.0.ModSt,152,100" />
@@ -4088,7 +4088,7 @@
         </LDevice>
         <LDevice inst="RESV_1">
           <LN0 lnClass="LLN0" inst="" lnType="ABBIED600_GNRLLLN0">
-            <Private type="ABB_FunctionRefs">1002b5ae-f532-40f6-a2a6-99e8c806fecd</Private>
+            <Private type="ABB_FunctionRefs">0403d285-39e3-5991-a1a0-78c6854acce6</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" desc="Mode parameter for 61850" sAddr="/INC/CO/Enum/+/none/Mod/App4.THREEPHSIGMON_B.13.THIS.0.Mod,49,21" />
@@ -4130,7 +4130,7 @@
             </DOI>
           </LN0>
           <LN lnClass="LPHD" inst="1" lnType="ABBIED600_REV1_LPHD">
-            <Private type="ABB_FunctionRefs">1002b5ae-f532-40f6-a2a6-99e8c806fecd</Private>
+            <Private type="ABB_FunctionRefs">0403d285-39e3-5991-a1a0-78c6854acce6</Private>
             <DOI name="PhyNam" desc="Physical device name plate">
               <DAI name="vendor" sAddr="/DPL/DC/VisString255/+/none/+/-1,-1,-1" />
               <DAI name="swRev" desc="Firmware version" sAddr="/DPL/DC/VisString255/+/none/+/Sys.ProdInfo.1.PARAM.4.Value,-1,-1" />
@@ -4151,7 +4151,7 @@
             </DOI>
           </LN>
           <LN prefix="RESV" lnClass="MMXU" inst="1" lnType="ABBIED600_RESVMMXU">
-            <Private type="ABB_FunctionRefs">1002b5ae-f532-40f6-a2a6-99e8c806fecd</Private>
+            <Private type="ABB_FunctionRefs">0403d285-39e3-5991-a1a0-78c6854acce6</Private>
             <DOI name="Mod" desc="Mode">
               <DAI name="stVal" desc="Mode status parameter for 61850" sAddr="/INC/ST/Enum/+/dchg/Mod/App4.THREEPHSIGMON_B.13.THIS.0.ModSt,152,29" />
               <DAI name="q" desc="Mode status parameter for 61850" sAddr="/INC/ST/Quality/+/qchg/+/App4.THREEPHSIGMON_B.13.THIS.0.ModSt,152,100" />
@@ -4232,7 +4232,7 @@
             </DOI>
           </LN>
           <LN prefix="VRES" lnClass="MMXU" inst="2" lnType="ABBIED600_VRESMMXU">
-            <Private type="ABB_FunctionRefs">1002b5ae-f532-40f6-a2a6-99e8c806fecd</Private>
+            <Private type="ABB_FunctionRefs">0403d285-39e3-5991-a1a0-78c6854acce6</Private>
             <DOI name="Mod" desc="Mode">
               <DAI name="stVal" desc="Mode status parameter for 61850" sAddr="/INC/ST/Enum/+/dchg/Mod/App4.THREEPHSIGMON_B.13.THIS.0.ModSt,152,29" />
               <DAI name="q" desc="Mode status parameter for 61850" sAddr="/INC/ST/Quality/+/qchg/+/App4.THREEPHSIGMON_B.13.THIS.0.ModSt,152,100" />
@@ -4315,7 +4315,7 @@
         </LDevice>
         <LDevice inst="EPD_1">
           <LN0 lnClass="LLN0" inst="" lnType="ABBIED600_EPDLLN0">
-            <Private type="ABB_FunctionRefs">30a79007-e5b7-49a0-b021-0b49d5b0bc22</Private>
+            <Private type="ABB_FunctionRefs">d718027d-91b7-51f7-ac92-ac76c9bf3868</Private>
             <DOI name="Mod" desc="Mode">
               <SDI name="Oper">
                 <DAI name="ctlVal" desc="Mode parameter for 61850" sAddr="/INC/CO/Enum/+/none/Mod/App8.MEASENER_A.1.THIS.0.Mod,49,21" />
@@ -4357,7 +4357,7 @@
             </DOI>
           </LN0>
           <LN lnClass="LPHD" inst="1" lnType="ABBIED600_REV1_LPHD">
-            <Private type="ABB_FunctionRefs">30a79007-e5b7-49a0-b021-0b49d5b0bc22</Private>
+            <Private type="ABB_FunctionRefs">d718027d-91b7-51f7-ac92-ac76c9bf3868</Private>
             <DOI name="PhyNam" desc="Physical device name plate">
               <DAI name="vendor" sAddr="/DPL/DC/VisString255/+/none/+/-1,-1,-1" />
               <DAI name="swRev" desc="Firmware version" sAddr="/DPL/DC/VisString255/+/none/+/Sys.ProdInfo.1.PARAM.4.Value,-1,-1" />
@@ -4378,7 +4378,7 @@
             </DOI>
           </LN>
           <LN prefix="EPD" lnClass="MMTR" inst="1" lnType="ABBIED600_EPDMMTR">
-            <Private type="ABB_FunctionRefs">30a79007-e5b7-49a0-b021-0b49d5b0bc22</Private>
+            <Private type="ABB_FunctionRefs">d718027d-91b7-51f7-ac92-ac76c9bf3868</Private>
             <DOI name="Mod" desc="Mode">
               <DAI name="stVal" desc="Mode status parameter for 61850" sAddr="/INC/ST/Enum/+/dchg/Mod/App8.MEASENER_A.1.THIS.0.ModSt,152,29" />
               <DAI name="q" desc="Mode status parameter for 61850" sAddr="/INC/ST/Quality/+/qchg/+/App8.MEASENER_A.1.THIS.0.ModSt,152,100" />
@@ -4592,7 +4592,7 @@
             </DOI>
           </LN>
           <LN prefix="EPD" lnClass="MMXU" inst="1" lnType="ABBIED600_EPDMMXU">
-            <Private type="ABB_FunctionRefs">30a79007-e5b7-49a0-b021-0b49d5b0bc22</Private>
+            <Private type="ABB_FunctionRefs">d718027d-91b7-51f7-ac92-ac76c9bf3868</Private>
             <DOI name="Mod" desc="Mode">
               <DAI name="stVal" desc="Mode status parameter for 61850" sAddr="/INC/ST/Enum/+/dchg/Mod/App8.MEASENER_A.1.THIS.0.ModSt,152,29" />
               <DAI name="q" desc="Mode status parameter for 61850" sAddr="/INC/ST/Quality/+/qchg/+/App8.MEASENER_A.1.THIS.0.ModSt,152,100" />

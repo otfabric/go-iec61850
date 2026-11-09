@@ -21,14 +21,7 @@ func TestE2E_Version2007C5(t *testing.T) {
 }
 
 func TestE2E_ABB_V2007B4(t *testing.T) {
-	files, err := filepath.Glob("testdata/abb/*.cid")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(files) == 0 {
-		t.Skip("no ABB CID files found")
-	}
-	runE2E(t, files[0], Version2007B4, KindCID)
+	runE2E(t, "testdata/abb/SITEBJ1M101Q04A1.cid", Version2007B4, KindCID)
 }
 
 func runE2E(t *testing.T, path string, wantVersion SchemaVersion, wantKind DocumentKind) {
