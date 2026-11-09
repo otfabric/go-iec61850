@@ -21,11 +21,17 @@ type Options struct {
 	SkipDatasets      bool
 	SkipControls      bool
 	SkipTopology      bool
+	SkipRequired      bool
+
+	// Kind, when set, checks the content the document kind requires
+	// ([scl.ValidateKind]).
+	Kind scl.DocumentKind
 }
 
 // All runs every validation pass and returns the combined diagnostics.
 // The index build diagnostics (duplicates) are included first, followed
-// by template, IED, communication, dataset, control, and topology checks.
+// by template, IED, communication, dataset, control, topology and
+// required-attribute checks.
 func All(s *scl.SCL, idx *index.Index, indexDiags []scl.Diagnostic) []scl.Diagnostic {
 	return WithOptions(s, idx, indexDiags, Options{})
 }
@@ -51,6 +57,12 @@ func WithOptions(s *scl.SCL, idx *index.Index, indexDiags []scl.Diagnostic, opts
 	}
 	if !opts.SkipTopology {
 		diags = append(diags, Topology(s, idx)...)
+	}
+	if !opts.SkipRequired {
+		diags = append(diags, scl.ValidateRequired(s)...)
+	}
+	if opts.Kind != "" {
+		diags = append(diags, scl.ValidateKind(s, opts.Kind)...)
 	}
 	return diags
 }

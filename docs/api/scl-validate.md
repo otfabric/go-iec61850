@@ -18,7 +18,7 @@ Validation is split into independent passes that each check a specific aspect of
 func All(s *scl.SCL, idx *index.Index, indexDiags []scl.Diagnostic) []scl.Diagnostic
 ```
 
-All runs every validation pass and returns the combined diagnostics. The index build diagnostics (duplicates) are included first, followed by template, IED, communication, dataset, control, and topology checks.
+All runs every validation pass and returns the combined diagnostics. The index build diagnostics (duplicates) are included first, followed by template, IED, communication, dataset, control, topology and required-attribute checks.
 
 ### func Communication
 
@@ -88,6 +88,11 @@ type Options struct {
 	SkipDatasets      bool
 	SkipControls      bool
 	SkipTopology      bool
+	SkipRequired      bool
+
+	// Kind, when set, checks the content the document kind requires
+	// ([scl.ValidateKind]).
+	Kind scl.DocumentKind
 }
 ```
 

@@ -162,7 +162,9 @@ func TestDispatch_ExampleCIDFiles(t *testing.T) {
 		t.Skip("no example CID files found")
 	}
 
-	unsupported := map[string]bool{
+	// Declared as version 2007 revision A (a draft revision): parsed with
+	// the 2007B schema and reported.
+	fallback := map[string]bool{
 		"cid_example_deadband.cid": true,
 		"substitution_example.cid": true,
 	}
@@ -171,14 +173,10 @@ func TestDispatch_ExampleCIDFiles(t *testing.T) {
 		rel, _ := filepath.Rel("testdata/examples", path)
 		t.Run(rel, func(t *testing.T) {
 			result, err := ParseFileWithOptions(path, ParseOptions{})
-			if unsupported[filepath.Base(path)] {
-				if err == nil {
-					t.Fatal("expected error for unsupported schema version")
+			if err == nil && fallback[filepath.Base(path)] {
+				if len(result.Diagnostics) == 0 || result.Diagnostics[0].Code != "schema-fallback" {
+					t.Errorf("diagnostics = %+v, want schema-fallback first", result.Diagnostics)
 				}
-				if !strings.Contains(err.Error(), "unsupported schema version") {
-					t.Errorf("unexpected error: %v", err)
-				}
-				return
 			}
 			if err != nil {
 				t.Fatalf("ParseFileWithOptions: %v", err)

@@ -6,7 +6,7 @@ import "fmt"
 
 // Validate performs semantic validation on an SCL model beyond basic
 // parsing. It checks cross-references, type chains, logical
-// consistency, and topology LNode references.
+// consistency, topology LNode references and required attributes.
 //
 // Deprecated: Use [validate.All] from the scl/validate package for
 // pass-based validation with a shared index. This function is kept
@@ -25,6 +25,7 @@ func Validate(s *SCL) []Diagnostic {
 	v.validateIEDs(s)
 	v.validateCommunication(s)
 	v.validateTopology(s)
+	v.diags = append(v.diags, ValidateRequired(s)...)
 
 	return v.diags
 }
