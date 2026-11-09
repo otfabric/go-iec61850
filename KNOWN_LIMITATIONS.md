@@ -101,6 +101,9 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   detected as unknown and parsed with the closest bindings, with a
   `schema-fallback` warning; elements those bindings do not define are
   ignored. A foreign namespace or a malformed release is refused.
+- **Encodings** — SCL files are read as UTF-8 (declared as UTF-8, utf8 or
+  US-ASCII); other encodings such as ISO-8859-1 are refused with an error
+  naming the encoding. An `SCL` root without the IEC namespace is refused.
 - **Validation is semantic, not XSD** — `ValidateRequired` checks the
   required attributes of the normalized model whose schema type cannot be
   empty (and, for a parsed document, a missing `Header` element), and

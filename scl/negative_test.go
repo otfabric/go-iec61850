@@ -215,3 +215,22 @@ func TestNeg_BrokenFile(t *testing.T) {
 		}
 	}
 }
+
+// Tools write UTF-8 under other names ("utf8"); those and US-ASCII parse,
+// any other encoding is refused with its name.
+func TestParse_EncodingLabels(t *testing.T) {
+	body := `<SCL xmlns="http://www.iec.ch/61850/2003/SCL" version="2007" revision="B" release="4"><Header id="t"/><IED name="I1"/></SCL>`
+	for _, enc := range []string{"utf8", "UTF8", "UTF-8", "us-ascii", "ASCII"} {
+		res, err := ParseBytes([]byte(`<?xml version='1.0' encoding='`+enc+`'?>`+body), ParseOptions{})
+		if err != nil || res.Document.Header.ID != "t" || len(res.Document.IEDs) != 1 {
+			t.Errorf("encoding %q: %v", enc, err)
+		}
+	}
+	_, err := ParseBytes([]byte(`<?xml version='1.0' encoding='ISO-8859-1'?>`+body), ParseOptions{})
+	if err == nil || !strings.Contains(err.Error(), `unsupported encoding "ISO-8859-1"`) {
+		t.Errorf("ISO-8859-1: err = %v, want the encoding named", err)
+	}
+	if _, err := DetectVersion(nil); err == nil || err.Error() != "scl: no SCL root element found" {
+		t.Errorf("empty input: %v", err)
+	}
+}

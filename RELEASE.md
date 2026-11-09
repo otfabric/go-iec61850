@@ -10,6 +10,10 @@
 - `ServerOptions.AllowEmptyReportDatSet` serves report control blocks that have no data set (SCL `datSet` absent or empty), which SCL and IEC 61850-7-2 allow: a client writes `DatSet` before it enables the RCB. By default such a model is still refused. Enabling an RCB whose `DatSet` is empty is refused either way.
 - `DocumentMetadata.HasHeader` reports whether a parsed document has a `Header` element. `scl.ValidateRequired` reports a parsed document without one (`missing-element`, error). An empty Header `id` stays valid, and a model built in code is not checked for it.
 
+### Fixed
+
+- SCL files that declare UTF-8 under another name (`encoding='utf8'`, as some tools write), or US-ASCII, were refused with "no SCL root element found". They now parse. Any other encoding is refused with an error that names it.
+
 ---
 
 ## v1.11.1
