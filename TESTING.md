@@ -79,6 +79,11 @@ Run with `make test`:
 
 - MMS: `TestChaosMMS*` (`chaos_test.go`) corrupt, truncate and drop frames
   from fixed seeds, and drop the connection.
+- Dialer: `TestChaosDialerHandshakeFaults` and `TestChaosDialerByteFaults`
+  (`dial_dialer_test.go`) dial through a `DialOptions.Dialer` that resets
+  connections during the handshake, or corrupts, truncates and resets the
+  byte stream from fixed seeds over an in-memory `net.Pipe`; `Dial`, every
+  operation and `Abort` must end within their deadlines.
 - GOOSE: `TestChaosLossReorderDuplicate`, `TestChaosCorruption`.
 - SV: `TestChaosAccounting`, `TestChaosMutation`.
 - Hostile clients: `TestChaosHostileClientsAgainstSCLModel`

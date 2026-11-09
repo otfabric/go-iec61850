@@ -106,6 +106,9 @@ func Dial(ctx context.Context, addr string, opts DialOptions) (*Client, error) {
 	if opts.MaxTPDULength != 0 {
 		isoOpts = append(isoOpts, iso.WithMaxTPDULength(opts.MaxTPDULength))
 	}
+	if opts.Dialer != nil {
+		isoOpts = append(isoOpts, iso.WithDialer(opts.Dialer))
+	}
 	mmsClient, err := iso.Dial(ctx, addr, isoOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("iec61850: dial %s: %w", addr, err)

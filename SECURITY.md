@@ -81,6 +81,12 @@ support.
   confidentiality. Configure control models (SBO, enhanced security) and
   handler checks for every operable object; the library does not decide
   who may operate what.
+- **Restricting destinations** — an application that lets users choose
+  which IED to reach should enforce its allowlist in `DialOptions.Dialer`,
+  for example a `net.Dialer` with a `Control` hook, which sees the resolved
+  IP right before connecting; checking the host name before `Dial` leaves a
+  DNS-rebinding gap. `Dial` is the only path that opens a connection: reports
+  arrive on the same association, and GOOSE/SV are layer 2.
 - **GOOSE and SV** — these are layer-2 multicast without authentication.
   Run them on a dedicated, physically or VLAN-separated process bus;
   restrict which ports may source the multicast addresses (switch port
