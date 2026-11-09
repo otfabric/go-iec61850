@@ -1,5 +1,16 @@
 # go-iec61850 Releases
 
+## v1.15.2
+
+**Date:** 2026-11-09
+**Previous release:** v1.15.1
+
+### Changed
+
+- The bundled command-line tools (`sclparse`, `sclgen`) are built on v1.15.1 (they were on v1.15.0). Neither links go-mms, so their behaviour is the same as in v1.15.1. Library code is the same as v1.15.1.
+
+---
+
 ## v1.15.1
 
 **Date:** 2026-11-09
@@ -12,7 +23,7 @@
 
 ### Added
 
-- Through go-mms v1.5.0 to v1.7.0 add `mms.DialOptions.AllowedServices`, reachable through `DialOptions.MMS`, and passive decoding (`mms.DecodeTSDU`, `mms.DecodePDU`). The go-iec61850 API is unchanged.
+- go-mms v1.5.0 to v1.7.0 add `mms.DialOptions.AllowedServices`, reachable through `DialOptions.MMS`, and passive decoding (`mms.DecodeTSDU`, `mms.DecodePDU`). The go-iec61850 API is unchanged.
 
 ### Tests
 
