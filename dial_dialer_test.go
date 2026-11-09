@@ -379,8 +379,8 @@ func (c *byteFaultConn) Read(b []byte) (int, error) {
 
 // TestChaosDialerByteFaults: for fixed seeds, a dialer whose connections
 // corrupt, truncate or reset the byte stream at random offsets. Dial and
-// every operation must end, with a result or an error, within their
-// deadlines; nothing may panic or hang.
+// every operation and Close must end, with a result or an error, within
+// their deadlines; nothing may panic or hang.
 func TestChaosDialerByteFaults(t *testing.T) {
 	pl := startPipeServer(t)
 	var dialed, failedDials, okOps, failedOps int
@@ -410,17 +410,16 @@ func TestChaosDialerByteFaults(t *testing.T) {
 			ok, failed := chaosOps(t, c, 6)
 			okOps += ok
 			failedOps += failed
-			// Abort, not Close: go-mms v1.4.0 Client.Close does not bound
-			// the Conclude write by its context, so it blocks while a
-			// write to a peer that stopped reading holds the send lock.
-			// Abort closes the transport when its context is done.
-			actx, acancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+			// Close must be bounded by its context even when a write to
+			// a peer that stopped reading holds the send lock (go-mms
+			// v1.7.1, otfabric/go-mms#34).
+			cctx, ccancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 			start := time.Now()
-			_ = c.Abort(actx)
-			acancel()
+			_ = c.Close(cctx)
+			ccancel()
 			if d := time.Since(start); d > 2*time.Second {
 				cancel()
-				t.Fatalf("seed %d: Abort took %v", seed, d)
+				t.Fatalf("seed %d: Close took %v", seed, d)
 			}
 		}
 		cancel()

@@ -89,7 +89,7 @@ timeouts are set with `MMS.RequestTimeout`; `Client.MMS().Done()` and
 
 ### ISO addressing
 
-`Dial` sends the addressing IEC 61850 IEDs expect (go-mms v1.4.0 defaults, the
+`Dial` sends the addressing IEC 61850 IEDs expect (go-mms defaults since v1.4.0, the
 values libiec61850 sends): T-selector `0001`/`0001` and TPDU size 1024 in the
 COTP CR, S-selector `0001`, P-selector `00000001`, AP-titles `1.1.1.999` /
 `1.1.1.999.1`, AE-qualifier 12. An IED configured otherwise is reached by
