@@ -82,8 +82,10 @@ type rcbRuntime struct {
 	entryID     uint64 // BRCB: auto-incrementing entry ID
 
 	// Dataset member resolution cache.
-	memberKeys []string         // store keys for dataset members
-	memberVars []mms.ObjectName // MMS variable names for report encoding
+	memberKeys  []string                  // store keys for dataset members
+	memberVars  []mms.ObjectName          // MMS variable names for report encoding
+	memberNodes []*servermodel.MemberNode // value layout per member; nil if unresolved
+	leafMembers map[string][]int          // store key of a leaf -> members containing it
 
 	// Previous values for change detection.
 	prevValues []*mms.Value
@@ -576,6 +578,8 @@ func (re *ReportEngine) resolveDataset(rt *rcbRuntime) error {
 
 	rt.memberKeys = make([]string, len(ds.Members))
 	rt.memberVars = make([]mms.ObjectName, len(ds.Members))
+	rt.memberNodes = make([]*servermodel.MemberNode, len(ds.Members))
+	rt.leafMembers = make(map[string][]int)
 
 	for i, m := range ds.Members {
 		ldInst := m.LDInst
@@ -590,6 +594,18 @@ func (re *ReportEngine) resolveDataset(rt *rcbRuntime) error {
 			Domain: mms.DomainID(ldInst),
 			ItemID: mms.ItemID(itemID),
 		}
+		// A member may name a data object or a constructed attribute
+		// (FCD): its value is the structure of all attributes of its FC
+		// below it, and a change of any of them concerns the member.
+		// A member the model cannot resolve keeps the exact-key lookup.
+		keys := []string{rt.memberKeys[i]}
+		if n, err := re.model.ResolveMember(rt.ldName, m); err == nil {
+			rt.memberNodes[i] = n
+			keys = n.Keys()
+		}
+		for _, k := range keys {
+			rt.leafMembers[k] = append(rt.leafMembers[k], i)
+		}
 	}
 
 	return nil
@@ -599,6 +615,10 @@ func (re *ReportEngine) resolveDataset(rt *rcbRuntime) error {
 func (re *ReportEngine) readMemberValues(rt *rcbRuntime) []*mms.Value {
 	values := make([]*mms.Value, len(rt.memberKeys))
 	for i, key := range rt.memberKeys {
+		if i < len(rt.memberNodes) && rt.memberNodes[i] != nil {
+			values[i] = re.store.ReadMember(rt.memberNodes[i])
+			continue
+		}
 		values[i] = re.store.Get(key)
 	}
 	return values
@@ -626,45 +646,44 @@ func (re *ReportEngine) NotifyValueChanged(ctx context.Context, storeKey string)
 			continue
 		}
 
-		memberIdx := -1
-		for i, k := range rt.memberKeys {
-			if k == storeKey {
-				memberIdx = i
-				break
-			}
-		}
-		if memberIdx < 0 {
+		members := rt.leafMembers[storeKey]
+		if len(members) == 0 {
 			rt.mu.Unlock()
 			continue
 		}
-
-		newVal := re.store.Get(storeKey)
-		prevVal := rt.prevValues[memberIdx]
-
-		var reason ReasonCode
-		if rt.trgOps.Has(TrgOpDataChanged) && !valuesEqual(prevVal, newVal) {
-			reason |= ReasonDataChanged
-		}
-		if rt.trgOps.Has(TrgOpQualityChanged) && qualityChanged(prevVal, newVal) {
-			reason |= ReasonQualityChanged
-		}
-		if rt.trgOps.Has(TrgOpDataUpdate) {
-			reason |= ReasonDataUpdate
-		}
-
-		if reason == 0 {
-			rt.mu.Unlock()
-			continue
-		}
-
-		rt.prevValues[memberIdx] = newVal
-
-		inclusion := make([]bool, len(rt.memberKeys))
-		reasons := make([]ReasonCode, len(rt.memberKeys))
-		inclusion[memberIdx] = true
-		reasons[memberIdx] = reason
 
 		currentValues := re.readMemberValues(rt)
+		inclusion := make([]bool, len(rt.memberKeys))
+		reasons := make([]ReasonCode, len(rt.memberKeys))
+		included := false
+		for _, memberIdx := range members {
+			newVal := currentValues[memberIdx]
+			prevVal := rt.prevValues[memberIdx]
+
+			var reason ReasonCode
+			if rt.trgOps.Has(TrgOpDataChanged) && !valuesEqual(prevVal, newVal) {
+				reason |= ReasonDataChanged
+			}
+			if rt.trgOps.Has(TrgOpQualityChanged) && qualityChanged(prevVal, newVal) {
+				reason |= ReasonQualityChanged
+			}
+			if rt.trgOps.Has(TrgOpDataUpdate) {
+				reason |= ReasonDataUpdate
+			}
+			if reason == 0 {
+				continue
+			}
+			rt.prevValues[memberIdx] = newVal
+			inclusion[memberIdx] = true
+			reasons[memberIdx] = reason
+			included = true
+		}
+
+		if !included {
+			rt.mu.Unlock()
+			continue
+		}
+
 		rt.seqNum++
 		seqNum := rt.seqNum
 

@@ -630,7 +630,7 @@ func TestReportEngine_SequenceNumbering(t *testing.T) {
 	storeKey := servermodel.StoreKey("LD1", "LLN0$ST$Mod$stVal")
 
 	for i := range 10 {
-		srv.SetValue(ctx, storeKey, mms.NewInteger(int64(i*100)))
+		srv.SetValue(ctx, storeKey, mms.NewInteger(int64((i+1)*100)))
 	}
 
 	rt.mu.Lock()
