@@ -1,5 +1,13 @@
 # go-iec61850 Releases
 
+## Unreleased
+
+### Added
+
+- `DialOptions.Dialer` sets the function that opens the TCP connection of `Dial` (passed to go-mms `iso.WithDialer`), for a destination allowlist checked against the resolved IP, a proxy, custom socket options or an in-memory transport. It is called once per attempt; its error is wrapped, so `errors.Is` matches it. Nil keeps the default `net.Dialer`.
+
+---
+
 ## v1.14.0
 
 **Date:** 2026-11-09
