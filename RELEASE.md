@@ -8,7 +8,7 @@
 ### Fixed
 
 - go-mms v1.7.1 (was v1.4.0): `Client.Close` is bounded by its context. Against a peer that stopped reading, such as after a corrupted or hostile byte stream, `Close` could block until the connection failed (otfabric/go-mms#34). The client also closes the connection as soon as the MMS reader stops.
-- Through go-mms v1.7.0: a GetVariableAccessAttributes response that encodes the optional `address` as a primitive (`0x81`, as some servers send it) is now accepted; before, `GetVariableType` and browsing that reads types failed with "expected typeSpecification".
+- Through go-mms v1.7.0: a GetVariableAccessAttributes response that encodes the optional `address` as a primitive (`0x81`, as some servers send it) is now accepted; before, `Client.GetVariableType` failed with "expected typeSpecification".
 
 ### Added
 
