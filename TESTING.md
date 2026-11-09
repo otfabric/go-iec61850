@@ -83,7 +83,7 @@ Run with `make test`:
   (`dial_dialer_test.go`) dial through a `DialOptions.Dialer` that resets
   connections during the handshake, or corrupts, truncates and resets the
   byte stream from fixed seeds over an in-memory `net.Pipe`; `Dial`, every
-  operation and `Abort` must end within their deadlines.
+  operation and `Close` must end within their deadlines.
 - GOOSE: `TestChaosLossReorderDuplicate`, `TestChaosCorruption`.
 - SV: `TestChaosAccounting`, `TestChaosMutation`.
 - Hostile clients: `TestChaosHostileClientsAgainstSCLModel`
