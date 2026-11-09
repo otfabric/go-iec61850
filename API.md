@@ -553,6 +553,25 @@ func (c *Client) SelectWithValue(ctx context.Context, ref Ref, params OperatePar
 func (c *Client) Cancel(ctx context.Context, ref Ref, params CancelParams) error
 func (c *Client) ReadCtlModel(ctx context.Context, ref Ref) (CtlModel, error)
 func (c *Client) ReadLastApplError(ctx context.Context, ref Ref) (*LastApplError, error)
+func (c *Client) OperateWait(ctx context.Context, ref Ref, params OperateParams) (*CommandTermination, error)
+```
+
+A refused `Operate`, `SelectWithValue` or `Cancel` returns a `*ControlError`
+carrying the `LastApplError` the server reported before the negative write
+response (and its `AddCause`). `OperateWait` operates a control with enhanced
+security and waits for its CommandTermination; a negative termination returns
+the termination and a `*ControlError` wrapping `ErrCommandTerminationNegative`.
+
+### CommandTermination
+
+```go
+type CommandTermination struct {
+    Ref           string
+    Oper          *mms.Value
+    LastApplError *LastApplError // set when negative
+}
+
+func (t *CommandTermination) Positive() bool
 ```
 
 ### CtlModel
@@ -641,7 +660,9 @@ func (c CheckConditions) Has(flag CheckConditions) bool
 ```go
 type AddCause int
 
-// Values 0–17: AddCauseUnknown through AddCauseBlockedByProcess
+// Values 0–27 of IEC 61850-7-2: AddCauseUnknown through AddCauseLockedByOtherClient
+// (AddCauseObjectNotSelected = 18, AddCauseInconsistentParameters = 26, ...).
+// Deprecated aliases: AddCauseBlockedBySwitch, AddCause1of1, AddCauseAbort.
 
 func (c AddCause) String() string
 ```
@@ -650,9 +671,10 @@ func (c AddCause) String() string
 
 ```go
 type LastApplError struct {
-    CntrlObj string
+    CntrlObj string // e.g. "LD/GGIO1$CO$SPCSO1$Oper"
     Error    int
     Origin   Origin
+    CtlNum   uint8
     AddCause AddCause
 }
 ```
@@ -1122,6 +1144,7 @@ type ControlHandler struct {
     OnSelect  func(ctx context.Context, req ControlRequest) error
     OnOperate func(ctx context.Context, req ControlRequest) error
     OnCancel  func(ctx context.Context, req ControlRequest) error
+    OnExecute func(ctx context.Context, req ControlRequest) error // enhanced security: after operate, before the CommandTermination; error = negative
 }
 
 type ControlRequest struct {

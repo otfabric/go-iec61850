@@ -5,6 +5,7 @@ package iec61850
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync/atomic"
 
 	"github.com/otfabric/go-mms"
@@ -65,12 +66,8 @@ func (c *Client) Operate(ctx context.Context, ref Ref, params OperateParams) err
 	operRef := controlSubRef(ref, "Oper")
 	operVal := buildOper(params)
 
-	if err := c.writeControlValue(ctx, operRef, operVal); err != nil {
-		return &ControlError{
-			Ref:       ref.String(),
-			Operation: "operate",
-			Wrapped:   err,
-		}
+	if lae, err := c.writeControlValue(ctx, operRef, operVal); err != nil {
+		return controlError(ref, "operate", lae, err)
 	}
 
 	c.logger.Debug("iec61850: operate", "ref", ref.String(), "ctlNum", params.CtlNum)
@@ -168,12 +165,8 @@ func (c *Client) SelectWithValue(ctx context.Context, ref Ref, params OperatePar
 	sbowRef := controlSubRef(ref, "SBOw")
 	operVal := buildOper(params)
 
-	if err := c.writeControlValue(ctx, sbowRef, operVal); err != nil {
-		return &ControlError{
-			Ref:       ref.String(),
-			Operation: "select",
-			Wrapped:   err,
-		}
+	if lae, err := c.writeControlValue(ctx, sbowRef, operVal); err != nil {
+		return controlError(ref, "select", lae, err)
 	}
 
 	c.logger.Debug("iec61850: select-with-value", "ref", ref.String(), "ctlNum", params.CtlNum)
@@ -198,12 +191,8 @@ func (c *Client) Cancel(ctx context.Context, ref Ref, params CancelParams) error
 	cancelRef := controlSubRef(ref, "Cancel")
 	cancelVal := buildCancel(params)
 
-	if err := c.writeControlValue(ctx, cancelRef, cancelVal); err != nil {
-		return &ControlError{
-			Ref:       ref.String(),
-			Operation: "cancel",
-			Wrapped:   err,
-		}
+	if lae, err := c.writeControlValue(ctx, cancelRef, cancelVal); err != nil {
+		return controlError(ref, "cancel", lae, err)
 	}
 
 	c.logger.Debug("iec61850: cancel", "ref", ref.String(), "ctlNum", params.CtlNum)
@@ -271,8 +260,10 @@ func (c *Client) ReadLastApplError(ctx context.Context, ref Ref) (*LastApplError
 	return decodeLastApplError(raw)
 }
 
-// decodeLastApplError decodes an MMS structure into a LastApplError.
-// LastApplError ::= SEQUENCE { CntrlObj, Error, Origin, AddCause }
+// decodeLastApplError decodes an MMS structure into a LastApplError:
+// { CntrlObj, Error, Origin, ctlNum, AddCause } (IEC 61850-8-1; the
+// layout libiec61850 sends). The four-member layout without ctlNum is
+// accepted too.
 //
 // The decode is strict: each member must be present and have the
 // expected type. Malformed payloads return an error rather than a
@@ -313,9 +304,25 @@ func decodeLastApplError(v *mms.Value) (*LastApplError, error) {
 	}
 	lae.Origin.OrIdent = ident
 
-	cause, ok := members[3].Int32()
+	causeIdx := 3
+	if len(members) >= 5 {
+		n, ok := members[3].Uint64()
+		if !ok {
+			i, iok := members[3].Int64()
+			if !iok || i < 0 {
+				return nil, fmt.Errorf("iec61850: LastApplError: ctlNum: expected unsigned, got %s", members[3].Type())
+			}
+			n = uint64(i)
+		}
+		if n > math.MaxUint8 {
+			return nil, fmt.Errorf("iec61850: LastApplError: ctlNum %d out of range", n)
+		}
+		lae.CtlNum = uint8(n)
+		causeIdx = 4
+	}
+	cause, ok := members[causeIdx].Int32()
 	if !ok {
-		return nil, fmt.Errorf("iec61850: LastApplError: AddCause: expected integer, got %s", members[3].Type())
+		return nil, fmt.Errorf("iec61850: LastApplError: AddCause: expected integer, got %s", members[causeIdx].Type())
 	}
 	lae.AddCause = AddCause(cause)
 
@@ -352,17 +359,36 @@ func controlSubRef(ref Ref, subAttr string) Ref {
 	}
 }
 
-// writeControlValue writes an MMS structure to a control sub-attribute.
-func (c *Client) writeControlValue(ctx context.Context, ref Ref, value *mms.Value) error {
+// writeControlValue writes an MMS structure to a control sub-attribute
+// and returns the LastApplError the server reported for a refused write
+// (sent as an InformationReport before the write response).
+func (c *Client) writeControlValue(ctx context.Context, ref Ref, value *mms.Value) (*LastApplError, error) {
 	domainID, itemID, err := c.refToMMS(ref)
 	if err != nil {
-		return err
+		return nil, err
 	}
+
+	c.initReportDispatch()
+	w := c.watchLastApplError(controlKey(string(domainID), string(itemID)))
+	defer c.unwatchLastApplError(w)
 
 	_, err = c.mmsClient.Write(ctx, mms.WriteRequest{
 		DomainID: domainID,
 		ItemID:   itemID,
 		Value:    value,
 	})
-	return err
+	if err != nil {
+		return w.result(), err
+	}
+	return nil, nil
+}
+
+// controlError wraps a failed control write with the server's
+// LastApplError, if any.
+func controlError(ref Ref, op string, lae *LastApplError, err error) *ControlError {
+	ce := &ControlError{Ref: ref.String(), Operation: op, LastApplError: lae, Wrapped: err}
+	if lae != nil {
+		ce.AddCause = lae.AddCause
+	}
+	return ce
 }

@@ -54,6 +54,12 @@ type Client struct {
 	reportMu   sync.RWMutex
 	reportSubs map[string][]*ReportSubscription
 
+	// Control model reports (control_termination.go).
+	ctlMu      sync.Mutex
+	ctlClosed  bool
+	ctlWaiters map[string][]*terminationWaiter
+	ctlWrites  map[*lastApplErrorWatch]struct{}
+
 	// Test hooks for intercepting fetch calls (unexported, test-only).
 	fetchLDsFn   func(ctx context.Context) ([]LogicalDevice, error)
 	fetchItemsFn func(ctx context.Context, ld string) ([]string, error)
@@ -141,6 +147,11 @@ func Dial(ctx context.Context, addr string, opts DialOptions) (*Client, error) {
 //
 // Use this when you need custom MMS connection setup or want to share
 // a single MMS client across layers.
+//
+// The client installs its own InformationReport handler on the MMS
+// client ([mms.Client.OnInformationReport]) when it first subscribes to
+// reports or sends a control (to receive LastApplError and
+// CommandTermination), replacing a handler set before.
 func NewClient(mmsClient *mms.Client, opts ClientOptions) (*Client, error) {
 	if mmsClient == nil {
 		return nil, fmt.Errorf("iec61850: new client: nil mms client")
@@ -191,6 +202,7 @@ func (c *Client) Close(ctx context.Context) error {
 	c.logger.Info("iec61850: closing")
 
 	c.closeAllSubscriptions()
+	c.closeControlWaiters()
 
 	c.mu.Lock()
 	c.state = clientClosed
@@ -222,6 +234,7 @@ func (c *Client) Abort(ctx context.Context) error {
 	c.logger.Info("iec61850: aborting")
 
 	c.closeAllSubscriptions()
+	c.closeControlWaiters()
 
 	c.mu.Lock()
 	c.state = clientClosed

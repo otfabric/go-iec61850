@@ -4,6 +4,7 @@ package iec61850
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -65,6 +66,15 @@ type ControlHandler struct {
 	//
 	// If nil, cancels are accepted unconditionally.
 	OnCancel func(ctx context.Context, req ControlRequest) error
+
+	// OnExecute, for controls with enhanced security, runs after a
+	// successful operate and before the CommandTermination: nil sends a
+	// positive termination, an error a negative one with a LastApplError
+	// whose AddCause is the error's [ControlError.AddCause] (unknown
+	// otherwise). It runs in the background with the request's values,
+	// ending when the server closes. Nil means the operate completes
+	// with OnOperate.
+	OnExecute func(ctx context.Context, req ControlRequest) error
 }
 
 // ControlRequest contains the decoded parameters from a client
@@ -194,23 +204,82 @@ func (s *Server) handleControlWrite(ctx context.Context, ldName, lnName string, 
 		return fmt.Errorf("iec61850: control %s: decode: %w", ref, err)
 	}
 
+	item := lnName + "$CO$" + strings.Join(doPath, "$") + "$" + subAttr
 	switch subAttr {
 	case "Oper":
 		if err := s.executeOperate(ctx, reg, req); err != nil {
+			s.sendLastApplError(ctx, ldName, item, req, err)
 			return err
 		}
 		if reg.ctlModel.IsEnhanced() {
-			s.sendCommandTermination(ctx, ldName, lnName+"$CO$"+strings.Join(doPath, "$")+"$Oper", val)
+			s.sendCommandTermination(ctx, ldName, item, val, reg.handler.OnExecute, req)
 		}
 		return nil
 	case "SBO":
 		return s.executeSelect(ctx, reg, req)
 	case "SBOw":
-		return s.executeSelectWithValue(ctx, reg, req)
+		err := s.executeSelectWithValue(ctx, reg, req)
+		if err != nil {
+			s.sendLastApplError(ctx, ldName, item, req, err)
+		}
+		return err
 	case "Cancel":
-		return s.executeCancel(ctx, reg, req)
+		err := s.executeCancel(ctx, reg, req)
+		if err != nil {
+			s.sendLastApplError(ctx, ldName, item, req, err)
+		}
+		return err
 	default:
 		return nil
+	}
+}
+
+// lastApplErrorValue encodes a LastApplError (IEC 61850-8-1):
+// { CntrlObj, Error, Origin, ctlNum, AddCause }, the layout libiec61850
+// sends; Error is 0 (no error) as libiec61850 sends for refusals.
+func lastApplErrorValue(cntrlObj string, req ControlRequest, cause AddCause) *mms.Value {
+	return mms.NewStructure([]*mms.Value{
+		mms.NewVisibleString(cntrlObj),
+		mms.NewInteger(0),
+		req.Origin.toMMS(),
+		mms.NewUnsigned(uint64(req.CtlNum)),
+		mms.NewInteger(int64(cause)),
+	})
+}
+
+// addCauseOf returns the AddCause of a control error, unknown when it
+// has none.
+func addCauseOf(err error) AddCause {
+	var ce *ControlError
+	if errors.As(err, &ce) {
+		return ce.AddCause
+	}
+	return AddCauseUnknown
+}
+
+// sendLastApplError reports why a control write is refused: an
+// InformationReport of the VMD-specific variable LastApplError, sent
+// before the write's negative response (IEC 61850-8-1, as libiec61850
+// does).
+func (s *Server) sendLastApplError(ctx context.Context, domain, item string, req ControlRequest, err error) {
+	sc := mms.ServerConnFromContext(ctx)
+	if sc == nil {
+		return
+	}
+	report := &mms.InformationReportRequest{
+		Variables: []mms.ObjectName{{Scope: mms.ObjectScopeVMD, ItemID: "LastApplError"}},
+		Values:    []*mms.Value{lastApplErrorValue(domain+"/"+item, req, addCauseOf(err))},
+	}
+	sendCtx, cancel := context.WithTimeout(ctx, unsolicitedSendTimeout)
+	defer cancel()
+	s.logSendFailure("LastApplError", domain+"/"+item, sc.SendInformationReport(sendCtx, report))
+}
+
+// logSendFailure logs a control-model InformationReport that could not
+// be sent; the client then only sees the write response.
+func (s *Server) logSendFailure(what, ref string, err error) {
+	if err != nil {
+		s.logger.Debug("iec61850: "+what+" send failed", "ref", ref, "error", err)
 	}
 }
 
@@ -263,23 +332,21 @@ func (b *backgroundTasks) stop() {
 	b.wg.Wait()
 }
 
-// sendCommandTermination sends a positive CommandTermination (IEC
-// 61850-8-1 clause 20.6) to the connection that operated an
-// enhanced-security control: an InformationReport of the Oper attribute
-// with the operated value.
+// sendCommandTermination sends the CommandTermination (IEC 61850-8-1
+// clause 20.6) to the connection that operated an enhanced-security
+// control: an InformationReport of the Oper attribute with the operated
+// value, preceded by a LastApplError when execute fails (negative).
 //
 // The send runs after the Write response, so it must not inherit the
 // request's cancellation; it keeps the request's values, ends when the
 // server is closed and is bounded by unsolicitedSendTimeout.
-func (s *Server) sendCommandTermination(ctx context.Context, domain, operItem string, oper *mms.Value) {
+func (s *Server) sendCommandTermination(ctx context.Context, domain, operItem string, oper *mms.Value, execute func(context.Context, ControlRequest) error, creq ControlRequest) {
 	sc := mms.ServerConnFromContext(ctx)
 	if sc == nil || oper == nil {
 		return
 	}
-	req := &mms.InformationReportRequest{
-		Variables: []mms.ObjectName{{Scope: mms.ObjectScopeDomain, Domain: mms.DomainID(domain), ItemID: mms.ItemID(operItem)}},
-		Values:    []*mms.Value{oper.Clone()},
-	}
+	operName := mms.ObjectName{Scope: mms.ObjectScopeDomain, Domain: mms.DomainID(domain), ItemID: mms.ItemID(operItem)}
+	operVal := oper.Clone()
 	reqCtx := context.WithoutCancel(ctx)
 	s.bg.start(func(life context.Context) {
 		sendCtx, cancel := context.WithTimeout(reqCtx, commandTerminationDelay+unsolicitedSendTimeout)
@@ -292,6 +359,21 @@ func (s *Server) sendCommandTermination(ctx context.Context, domain, operItem st
 		case <-sendCtx.Done():
 			s.logger.Debug("iec61850: CommandTermination abandoned", "oper", domain+"/"+operItem, "error", sendCtx.Err())
 			return
+		}
+		req := &mms.InformationReportRequest{Variables: []mms.ObjectName{operName}, Values: []*mms.Value{operVal}}
+		if execute != nil {
+			execCtx, stop := context.WithCancel(reqCtx)
+			stopAfter := context.AfterFunc(life, stop)
+			err := callControlHandler(execute, execCtx, creq)
+			stopAfter()
+			stop()
+			if err != nil {
+				req = &mms.InformationReportRequest{
+					Variables: []mms.ObjectName{{Scope: mms.ObjectScopeVMD, ItemID: "LastApplError"}, operName},
+					Values:    []*mms.Value{lastApplErrorValue(domain+"/"+operItem, creq, addCauseOf(err)), operVal},
+				}
+				s.logger.Debug("iec61850: execute failed", "oper", domain+"/"+operItem, "error", err)
+			}
 		}
 		if err := sc.SendInformationReport(sendCtx, req); err != nil {
 			s.logger.Debug("iec61850: CommandTermination send failed", "oper", domain+"/"+operItem, "error", err)
@@ -320,7 +402,7 @@ func (s *Server) executeOperate(ctx context.Context, reg *controlRegistration, r
 				return &ControlError{
 					Ref:       req.Ref,
 					Operation: "operate",
-					AddCause:  AddCauseSelectFailed,
+					AddCause:  AddCauseObjectNotSelected,
 					Wrapped:   ErrOperateFailed,
 				}
 			}
@@ -332,7 +414,7 @@ func (s *Server) executeOperate(ctx context.Context, reg *controlRegistration, r
 				return &ControlError{
 					Ref:       req.Ref,
 					Operation: "operate",
-					AddCause:  AddCauseSelectFailed,
+					AddCause:  AddCauseObjectNotSelected,
 					Wrapped:   ErrOperateFailed,
 				}
 			}
@@ -344,7 +426,7 @@ func (s *Server) executeOperate(ctx context.Context, reg *controlRegistration, r
 				return &ControlError{
 					Ref:       req.Ref,
 					Operation: "operate",
-					AddCause:  AddCauseSelectFailed,
+					AddCause:  AddCauseLockedByOtherClient,
 					Wrapped:   ErrOperateFailed,
 				}
 			}
@@ -358,7 +440,7 @@ func (s *Server) executeOperate(ctx context.Context, reg *controlRegistration, r
 					return &ControlError{
 						Ref:       req.Ref,
 						Operation: "operate",
-						AddCause:  AddCauseSelectFailed,
+						AddCause:  AddCauseLockedByOtherClient,
 						Wrapped:   ErrOperateFailed,
 					}
 				}
@@ -382,7 +464,7 @@ func (s *Server) executeOperate(ctx context.Context, reg *controlRegistration, r
 				return &ControlError{
 					Ref:       req.Ref,
 					Operation: "operate",
-					AddCause:  AddCauseSelectFailed,
+					AddCause:  AddCauseObjectNotSelected,
 					Wrapped:   ErrOperateFailed,
 				}
 			}
@@ -393,7 +475,7 @@ func (s *Server) executeOperate(ctx context.Context, reg *controlRegistration, r
 				return &ControlError{
 					Ref:       req.Ref,
 					Operation: "operate",
-					AddCause:  AddCauseSelectFailed,
+					AddCause:  AddCauseLockedByOtherClient,
 					Wrapped:   ErrOperateFailed,
 				}
 			}
@@ -404,7 +486,7 @@ func (s *Server) executeOperate(ctx context.Context, reg *controlRegistration, r
 				return &ControlError{
 					Ref:       req.Ref,
 					Operation: "operate",
-					AddCause:  AddCauseSelectFailed,
+					AddCause:  AddCauseLockedByOtherClient,
 					Wrapped:   ErrOperateFailed,
 				}
 			}
@@ -415,7 +497,7 @@ func (s *Server) executeOperate(ctx context.Context, reg *controlRegistration, r
 				return &ControlError{
 					Ref:       req.Ref,
 					Operation: "operate",
-					AddCause:  AddCauseSelectFailed,
+					AddCause:  AddCauseInconsistentParameters,
 					Wrapped:   ErrOperateFailed,
 				}
 			}
@@ -427,7 +509,7 @@ func (s *Server) executeOperate(ctx context.Context, reg *controlRegistration, r
 				return &ControlError{
 					Ref:       req.Ref,
 					Operation: "operate",
-					AddCause:  AddCauseParameterChange,
+					AddCause:  AddCauseInconsistentParameters,
 					Wrapped:   ErrOperateFailed,
 				}
 			}
@@ -491,7 +573,7 @@ func (s *Server) executeSelect(ctx context.Context, reg *controlRegistration, re
 			return &ControlError{
 				Ref:       req.Ref,
 				Operation: "select",
-				AddCause:  AddCauseSelectFailed,
+				AddCause:  AddCauseObjectAlreadySelected,
 				Wrapped:   ErrSelectFailed,
 			}
 		}

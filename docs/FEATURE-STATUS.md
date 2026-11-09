@@ -37,7 +37,8 @@ independent evidence: the feature must not be described as interoperable.
 | BRCB reporting, EntryID resume, overflow | ✅ | ✅ | in-memory, go-to-go in `interop/` | none |
 | Direct and SBO control | ✅ | ✅ | in-memory | all five, both directions |
 | SBOw (enhanced security) | ✅ | ✅ | in-memory | libiec61850, dscsystems, iec61850-rust, cbsigma; not iec61850bean |
-| CommandTermination | ◐ not awaited | ◐ positive only | in-memory | dscsystems's controller waits for it |
+| CommandTermination | ✅ `OperateWait` | ✅ positive; negative via `OnExecute` | in-memory | positive: libiec61850, dscsystems, iec61850-rust, cbsigma (client); dscsystems's controller waits for ours; negative: none |
+| LastApplError on refused controls | ✅ in `ControlError` | ✅ | in-memory | libiec61850, dscsystems, cbsigma (client); iec61850-rust sends none |
 | Quality and timestamps | ✅ | ✅ | in-memory, go-to-go in `interop/` | none as a dedicated scenario |
 | Several clients at once | ✅ | ✅ | TCP, go-to-go in `interop/` | none |
 | Setting groups | ✅ | ◐ no value banks | in-memory, TCP | none |

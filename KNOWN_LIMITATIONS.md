@@ -17,12 +17,12 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
 
 ## Client limitations
 
-- **Control: no CommandTermination wait, no time-activated operate** —
-  the control models (direct, SBO, SBOw, normal and enhanced security) are
-  typed APIs (`Operate`, `Select`, `SelectWithValue`, `Cancel`), but the
-  client does not wait for or surface the CommandTermination of an
-  enhanced-security operate, and does not schedule time-activated
-  operations (`operTm`).
+- **Control: no time-activated operate** — the control models (direct,
+  SBO, SBOw, normal and enhanced security) are typed APIs (`Operate`,
+  `Select`, `SelectWithValue`, `Cancel`, and `OperateWait`, which waits for
+  the CommandTermination), but the client does not schedule time-activated
+  operations (`operTm`). Once the client sends a control or subscribes to
+  reports, it owns the MMS client's InformationReport handler.
 - **No automatic model discovery caching persistence** — the client cache is
   in-memory only and does not survive process restarts.
 - **Report subscription assumes single-client ownership** — the library does
@@ -40,13 +40,13 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   buffer does not survive a server restart. Multi-client RCB
   ownership arbitration and segmented report generation are not yet
   implemented.
-- **Controls: no interlocking, no negative CommandTermination** — control handlers
-  (`RegisterControl`) support select/operate/cancel dispatch with
-  SBO timeout tracking, but interlocking and synchrocheck are
-  application-responsibility via callbacks. After a successful
-  enhanced-security operate the server sends a positive
-  CommandTermination; negative termination (an operate that fails after
-  it was accepted) is not generated.
+- **Controls: no interlocking** — control handlers (`RegisterControl`)
+  support select/operate/cancel dispatch with SBO timeout tracking, but
+  interlocking and synchrocheck are application-responsibility via
+  callbacks. A refused control write is preceded by a LastApplError. After
+  a successful enhanced-security operate the server sends a positive
+  CommandTermination, or a negative one when `ControlHandler.OnExecute`
+  fails.
 - **Setting groups: no per-group value banks** — the server supports SGCB
   registration, active/edit group selection, confirmation, handler
   callbacks, and automatic dispatch from MMS client writes. However,

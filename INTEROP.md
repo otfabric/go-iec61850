@@ -201,6 +201,8 @@ Sub-topics are appended after a second underscore: `TestLibIECClient_URCB_DataCh
 | SBOw — operate without select rejected | n/a | n/a | n/a | ✓ |
 | SBOw — cancel clears select | n/a | n/a | n/a | ✓ |
 | SBOw — CommandTermination+ after operate | n/a | ✓² | n/a | — |
+| SBOw — CommandTermination+ awaited (`OperateWait`) | ✓³ | n/a | n/a | n/a |
+| Refused operate — LastApplError (object-not-selected, ctlNum) | ✓³ | n/a | n/a | n/a |
 | Cancel | ✓ | ✓ | — | — |
 
 **Notes:**
@@ -212,6 +214,12 @@ Sub-topics are appended after a second underscore: `TestLibIECClient_URCB_DataCh
   enhanced-security operate; the Go server sends it since v1.1.0.
 - The same libiec61850 columns also pass against dscsystems
   (`IEC61850_PEER_STACK=dscsystems`).
+- ³ `interop/termination_test.go`, against libiec61850, dscsystems,
+  iec61850-rust and cbsigma: all four send the positive CommandTermination.
+  libiec61850, dscsystems and cbsigma send LastApplError in the five-member
+  layout (CntrlObj, Error, Origin, ctlNum, AddCause) with AddCause 18
+  (object-not-selected); iec61850-rust refuses the write without a
+  LastApplError (skipped).
 
 ### GOOSE
 
@@ -339,7 +347,8 @@ in iec61850-interop.
 | SelectWithValue | ✓ | ✓ | SBOw enhanced |
 | Cancel | ✓ | ✓ | |
 | Operate | ✓ | ✓ | direct and SBO/SBOw |
-| CommandTermination | — | ✓ | positive termination after enhanced-security operate |
+| CommandTermination | ✓ | ✓ | client: `OperateWait`; server: positive, negative via `ControlHandler.OnExecute` |
+| LastApplError | ✓ | ✓ | client: in `ControlError`; server: sent before a refused control write |
 | TimeActivatedOperate | — | — | |
 
 ### Common Data Classes (IEC 61850-7-3)
@@ -389,7 +398,7 @@ in iec61850-interop.
 | GOOSE security (IEC 62351-6), fixed-offset encoding | not implemented | see [GOOSE.md](GOOSE.md#limitations) |
 | SV security (IEC 62351), unicast SV (USVCB) | not implemented | see [SV.md](SV.md#limitations) |
 | Dynamic dataset creation | not implemented | deferred |
-| CommandTermination− (negative), client-side termination handling | not implemented | deferred |
+| CommandTermination− (negative) | own tests only | no peer in the matrix sends one on demand |
 | TimeActivatedOperate | not implemented | deferred |
 | iec61850bean SBOw | known gap (upstream) | iec61850bean does not expose `SBOw[CO]` |
 | Edition 2.1 extensions | partial | not all 2007B4 features validated |

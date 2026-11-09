@@ -4,6 +4,7 @@ package iec61850
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -45,42 +46,38 @@ func TestServerCommandTermination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reports := make(chan *mms.InformationReportIndication, 8)
-	mc.OnInformationReport(func(r *mms.InformationReportIndication) { reports <- r })
 	c, _ := NewClient(mc, ClientOptions{})
 	defer func() { _ = c.Close(ctx) }()
 
+	// Normal security: no CommandTermination, so OperateWait times out.
 	direct := mustParseRef(t, "InteropIEDInteropLD/GGIO1.SPCSO1")
-	if err := c.Operate(ctx, direct, OperateParams{CtlVal: BoolCtlVal(true)}); err != nil {
-		t.Fatal(err)
+	wctx, wcancel := context.WithTimeout(ctx, 2*commandTerminationDelay)
+	_, err = c.OperateWait(wctx, direct, OperateParams{CtlVal: BoolCtlVal(true)})
+	wcancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("OperateWait on a normal-security control = %v, want deadline exceeded", err)
 	}
+
 	sbow := mustParseRef(t, "InteropIEDInteropLD/GGIO1.SPCSO3")
 	params := OperateParams{CtlVal: BoolCtlVal(true), CtlNum: 7}
 	if err := c.SelectWithValue(ctx, sbow, params); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Operate(ctx, sbow, params); err != nil {
+	wctx, wcancel = context.WithTimeout(ctx, 3*time.Second)
+	defer wcancel()
+	term, err := c.OperateWait(wctx, sbow, params)
+	if err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case r := <-reports:
-		if len(r.Variables) != 1 || r.Variables[0].Domain != "InteropIEDInteropLD" || r.Variables[0].ItemID != "GGIO1$CO$SPCSO3$Oper" || len(r.Values) != 1 {
-			t.Fatalf("CommandTermination = %+v", r)
-		}
-		oper, ok := r.Values[0].Structure()
-		if !ok || len(oper) == 0 {
-			t.Fatalf("Oper value %v", r.Values[0])
-		}
-		if b, _ := oper[0].Bool(); !b {
-			t.Errorf("ctlVal = %v", oper[0])
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("no CommandTermination")
+	if !term.Positive() || term.Ref != sbow.String() {
+		t.Fatalf("CommandTermination = %+v", term)
 	}
-	select {
-	case r := <-reports:
-		t.Errorf("unexpected report %+v", r)
-	case <-time.After(2 * commandTerminationDelay):
+	oper, ok := term.Oper.Structure()
+	if !ok || len(oper) == 0 {
+		t.Fatalf("Oper value %v", term.Oper)
+	}
+	if b, _ := oper[0].Bool(); !b {
+		t.Errorf("ctlVal = %v", oper[0])
 	}
 }
 

@@ -218,31 +218,51 @@ func TestBuildCancel_DefaultOriginAndOperTm(t *testing.T) {
 }
 
 func TestAddCause_String(t *testing.T) {
+	// Values and names of IEC 61850-7-2 AddCause, as libiec61850
+	// (iec61850_common.h, ControlAddCause) encodes them.
 	tests := []struct {
 		c    AddCause
+		n    int
 		want string
 	}{
-		{AddCauseUnknown, "unknown"},
-		{AddCauseNotSupported, "not-supported"},
-		{AddCauseBlocked, "blocked-by-switching-hierarchy"},
-		{AddCauseSelectFailed, "select-failed"},
-		{AddCauseInvalidPosition, "invalid-position"},
-		{AddCausePositionReached, "position-reached"},
-		{AddCauseParameterChange, "parameter-change-in-execution"},
-		{AddCauseStepLimit, "step-limit"},
-		{AddCauseBlockedBySwitch, "blocked-by-other"},
-		{AddCauseBlockedByInterlocking, "blocked-by-interlocking"},
-		{AddCauseBlockedBySynchrocheck, "blocked-by-synchrocheck"},
-		{AddCauseCommandAlreadyExec, "command-already-in-execution"},
-		{AddCauseBlockedByHealth, "blocked-by-health"},
-		{AddCause1of1, "1-of-n-control"},
-		{AddCauseAbort, "abort"},
-		{AddCauseTimeLimit, "time-limit-over"},
-		{AddCauseBlockedByMode, "blocked-by-mode"},
-		{AddCauseBlockedByProcess, "blocked-by-process"},
-		{AddCause(99), "addCause(99)"},
+		{AddCauseUnknown, 0, "unknown"},
+		{AddCauseNotSupported, 1, "not-supported"},
+		{AddCauseBlocked, 2, "blocked-by-switching-hierarchy"},
+		{AddCauseSelectFailed, 3, "select-failed"},
+		{AddCauseInvalidPosition, 4, "invalid-position"},
+		{AddCausePositionReached, 5, "position-reached"},
+		{AddCauseParameterChange, 6, "parameter-change-in-execution"},
+		{AddCauseStepLimit, 7, "step-limit"},
+		{AddCauseBlockedByMode, 8, "blocked-by-mode"},
+		{AddCauseBlockedByProcess, 9, "blocked-by-process"},
+		{AddCauseBlockedByInterlocking, 10, "blocked-by-interlocking"},
+		{AddCauseBlockedBySynchrocheck, 11, "blocked-by-synchrocheck"},
+		{AddCauseCommandAlreadyExec, 12, "command-already-in-execution"},
+		{AddCauseBlockedByHealth, 13, "blocked-by-health"},
+		{AddCause1ofN, 14, "1-of-n-control"},
+		{AddCauseAbortionByCancel, 15, "abortion-by-cancel"},
+		{AddCauseTimeLimit, 16, "time-limit-over"},
+		{AddCauseAbortionByTrip, 17, "abortion-by-trip"},
+		{AddCauseObjectNotSelected, 18, "object-not-selected"},
+		{AddCauseObjectAlreadySelected, 19, "object-already-selected"},
+		{AddCauseNoAccessAuthority, 20, "no-access-authority"},
+		{AddCauseEndedWithOvershoot, 21, "ended-with-overshoot"},
+		{AddCauseAbortionDueToDeviation, 22, "abortion-due-to-deviation"},
+		{AddCauseAbortionByCommunicationLoss, 23, "abortion-by-communication-loss"},
+		{AddCauseBlockedByCommand, 24, "blocked-by-command"},
+		{AddCauseNone, 25, "none"},
+		{AddCauseInconsistentParameters, 26, "inconsistent-parameters"},
+		{AddCauseLockedByOtherClient, 27, "locked-by-other-client"},
+		{AddCauseBlockedBySwitch, 2, "blocked-by-switching-hierarchy"},
+		{AddCause1of1, 14, "1-of-n-control"},
+		{AddCauseAbort, 15, "abortion-by-cancel"},
+		{AddCause(99), 99, "addCause(99)"},
+		{AddCause(-1), -1, "addCause(-1)"},
 	}
 	for _, tt := range tests {
+		if int(tt.c) != tt.n {
+			t.Errorf("%s = %d, want %d", tt.want, int(tt.c), tt.n)
+		}
 		if got := tt.c.String(); got != tt.want {
 			t.Errorf("AddCause(%d).String() = %q, want %q", int(tt.c), got, tt.want)
 		}
