@@ -353,9 +353,25 @@ Diagnostic represents a single issue found during parsing or validation.
 func Validate(s *SCL) []Diagnostic
 ```
 
-Validate performs semantic validation on an SCL model beyond basic parsing. It checks cross-references, type chains, logical consistency, and topology LNode references.
+Validate performs semantic validation on an SCL model beyond basic parsing. It checks cross-references, type chains, logical consistency, topology LNode references and required attributes.
 
 Deprecated: Use \[validate.All] from the scl/validate package for pass-based validation with a shared index. This function is kept for convenience but may not cover all checks that the pass-based validator provides.
+
+#### func ValidateKind
+
+```go
+func ValidateKind(s *SCL, kind DocumentKind) []Diagnostic
+```
+
+ValidateKind reports content a document of the given kind must have (IEC 61850-6, SCL file types): an ICD, IID or CID describes an IED, so it has at least one IED section; an ICD or IID describes exactly one (vendor CIDs also carry their client IEDs, so CID is not limited); an SSD specifies a substation. KindUnknown and KindSCD add nothing.
+
+#### func ValidateRequired
+
+```go
+func ValidateRequired(s *SCL) []Diagnostic
+```
+
+ValidateRequired reports required attributes that are missing or empty. The attributes are those the IEC 61850-6 SCL schemas (specs/, 2007B4) declare use="required" with a type that cannot be empty (tName, tID, a pattern requiring a first character, an enumeration). Left out: Header id (xs:normalizedString, may be empty), LN inst (empty on LN0) and numeric attributes, whose absence cannot be told from their zero value.
 
 ### type DocumentKind
 

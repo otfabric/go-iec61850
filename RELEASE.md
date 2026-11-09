@@ -1,5 +1,26 @@
 # go-iec61850 Releases
 
+## v1.11.0
+
+**Date:** 2026-11-09
+**Previous release:** v1.10.1
+
+### Added
+
+- `scl.ValidateRequired` reports required attributes that are missing or empty (`missing-attribute`, error). These are the attributes the IEC 61850-6 schemas declare `use="required"` with a type that cannot be empty, such as the `name` of a Substation, VoltageLevel, Bay, IED or AccessPoint, LDevice `inst`, LN `lnClass` and `lnType`, FCDA `fc`, and the `id`, `cdc`, `bType` and `fc` attributes of the type templates.
+- `scl.ValidateKind` reports content a file kind needs (`kind-content`):
+  - an ICD, IID or CID without an IED is an error;
+  - an ICD or IID with more than one IED, and an SSD without a substation, are warnings.
+- `ParseOptions.ValidateSemantic` applies both, the kind rule with the parse's kind. The `scl/validate` package runs `ValidateRequired` as a pass (`Options.SkipRequired`) and `ValidateKind` when `Options.Kind` is set.
+
+### Changed
+
+- A document in the IEC namespace whose version tuple is not one of the supported schemas is parsed instead of refused: 2007A uses the 2007B bindings, other releases of revision B use 2007B4, revision C or later and versions other than 2007 use 2007C5. Detection still reports the schema as unknown, and the parse adds a `schema-fallback` warning; elements the chosen bindings do not define are ignored. A foreign namespace or a malformed release is still refused.
+
+Found with the OT Fabric SCL corpus: OpenSCD's 2007B5 and 2019B1 test files and libiec61850's 2007A examples now parse; a Substation without a name and an IID without an IED are now reported.
+
+---
+
 ## v1.10.1
 
 **Date:** 2026-11-09

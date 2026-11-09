@@ -1864,7 +1864,8 @@ Sentinels: `ErrClosed`, `ErrUnsupportedPlatform`, `ErrPermission`,
 
 Package `scl` parses, validates, and exports IEC 61850 SCL (Substation
 Configuration Language) files. Supports schema versions 1.7, 2007B, 2007B4,
-and 2007C5.
+and 2007C5; other version tuples in the IEC namespace are parsed with the
+closest of these, with a `schema-fallback` warning.
 
 ### Parsing
 
@@ -2422,7 +2423,17 @@ type Options struct {
     SkipDatasets      bool
     SkipControls      bool
     SkipTopology      bool
+    SkipRequired      bool             // required attributes (scl.ValidateRequired)
+    Kind              scl.DocumentKind // when set: content the kind needs (scl.ValidateKind)
 }
+```
+
+The required-attribute and document-kind rules are also exported from `scl`
+and applied by `ParseOptions.ValidateSemantic` (with the parse's kind):
+
+```go
+func ValidateRequired(s *SCL) []Diagnostic                    // code missing-attribute
+func ValidateKind(s *SCL, kind DocumentKind) []Diagnostic     // code kind-content
 ```
 
 ### Individual passes

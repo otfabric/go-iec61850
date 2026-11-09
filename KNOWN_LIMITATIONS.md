@@ -95,9 +95,17 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
 
 ## SCL limitations
 
-- **Supported schema versions** — the SCL parser supports IEC 61850-6 schema
-  versions 1.7, 2007B, 2007B4, and 2007C5. Other versions (e.g. 2007A) are
-  detected and rejected with a clear error.
+- **Supported schema versions** — the SCL parser has bindings for IEC 61850-6
+  schema versions 1.7, 2007B, 2007B4 and 2007C5. A document in the IEC
+  namespace with another version tuple (2007A, 2007B5, a non-2007 version) is
+  detected as unknown and parsed with the closest bindings, with a
+  `schema-fallback` warning; elements those bindings do not define are
+  ignored. A foreign namespace or a malformed release is refused.
+- **Validation is semantic, not XSD** — `ValidateRequired` checks the
+  required attributes of the normalized model whose schema type cannot be
+  empty, and `ValidateKind` the content a file kind needs; there is no full
+  XML Schema validation (patterns, enumerations, element order), and an
+  absent `Header` element cannot be told from an empty one.
 - **Normalized model coverage** — the normalized model covers IEDs, access
   points, servers, logical devices, logical nodes (LN0 and regular LN),
   data objects (DOI/DAI/SDI), datasets, report control blocks, GSE control

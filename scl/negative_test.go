@@ -7,14 +7,47 @@ import (
 	"testing"
 )
 
+// A version tuple that is not a published schema is parsed with the
+// closest bindings and reported; one in a foreign namespace or with a
+// malformed release is refused.
 func TestNeg_UnknownSchemaTuple(t *testing.T) {
-	xml := `<?xml version="1.0"?><SCL xmlns="http://www.iec.ch/61850/2003/SCL" version="2007" revision="A"><Header id="t"/></SCL>`
-	_, err := ParseBytes([]byte(xml), ParseOptions{})
-	if err == nil {
-		t.Fatal("expected error for unknown schema tuple 2007A")
+	for _, tc := range []struct {
+		name, attrs string
+		want        SchemaVersion
+	}{
+		{"draft revision A", `version="2007" revision="A"`, Version2007B},
+		{"release 5 of B", `version="2007" revision="B" release="5"`, Version2007B4},
+		{"release 3 of B", `version="2007" revision="B" release="3"`, Version2007B4},
+		{"release 6 of C", `version="2007" revision="C" release="6"`, Version2007C5},
+		{"revision D", `version="2007" revision="D" release="1"`, Version2007C5},
+		{"other version", `version="2019" revision="B" release="1"`, Version2007C5},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			xml := `<?xml version="1.0"?><SCL xmlns="http://www.iec.ch/61850/2003/SCL" ` + tc.attrs + `><Header id="t"/><IED name="I1"/></SCL>`
+			res, err := ParseBytes([]byte(xml), ParseOptions{})
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			if res.Version.Schema != VersionUnknown {
+				t.Errorf("detected schema = %q, want unknown (detection is unchanged)", res.Version.Schema)
+			}
+			if len(res.Diagnostics) == 0 || res.Diagnostics[0].Code != "schema-fallback" || res.Diagnostics[0].Severity != DiagWarning ||
+				!strings.Contains(res.Diagnostics[0].Message, string(tc.want)) {
+				t.Errorf("diagnostics = %+v, want a schema-fallback warning naming %s", res.Diagnostics, tc.want)
+			}
+			if res.Document == nil || res.Document.Header.ID != "t" || len(res.Document.IEDs) != 1 {
+				t.Errorf("document = %+v", res.Document)
+			}
+		})
 	}
-	if !strings.Contains(err.Error(), "unsupported") {
-		t.Errorf("error = %v, want 'unsupported'", err)
+	for name, xml := range map[string]string{
+		"fallback decode fails": `<?xml version="1.0"?><SCL xmlns="http://www.iec.ch/61850/2003/SCL" version="2019" revision="B" release="1"><Header id="t"/><IED name="x"></SCL>`,
+		"foreign namespace":     `<?xml version="1.0"?><SCL xmlns="urn:custom" version="2019"><Header id="t"/></SCL>`,
+		"malformed release":     `<?xml version="1.0"?><SCL xmlns="http://www.iec.ch/61850/2003/SCL" version="2007" revision="B" release="x"><Header id="t"/></SCL>`,
+	} {
+		if _, err := ParseBytes([]byte(xml), ParseOptions{}); err == nil {
+			t.Errorf("%s: parsed, want an error", name)
+		}
 	}
 }
 

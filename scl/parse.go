@@ -54,6 +54,7 @@ func ParseBytes(data []byte, opts ParseOptions) (*Result, error) {
 
 	if opts.ValidateSemantic {
 		result.Diagnostics = append(result.Diagnostics, Validate(doc)...)
+		result.Diagnostics = append(result.Diagnostics, ValidateKind(doc, kind)...)
 	}
 
 	if opts.MaxDiagnostics > 0 && len(result.Diagnostics) > opts.MaxDiagnostics {
@@ -159,7 +160,47 @@ func decodeAndConvert(data []byte, vi VersionInfo) (*SCL, []Diagnostic, error) {
 		return convertV17(&raw)
 
 	default:
-		return nil, nil, fmt.Errorf("scl: unsupported schema version (version=%q revision=%q release=%q)", vi.Version, vi.Revision, vi.Release)
+		fb, ok := fallbackSchema(vi)
+		if !ok {
+			return nil, nil, fmt.Errorf("scl: unsupported schema version (version=%q revision=%q release=%q)", vi.Version, vi.Revision, vi.Release)
+		}
+		alt := vi
+		alt.Schema = fb
+		doc, diags, err := decodeAndConvert(data, alt)
+		if err != nil {
+			return nil, nil, err
+		}
+		warn := Diagnostic{
+			Severity: DiagWarning,
+			Code:     "schema-fallback",
+			Path:     "SCL",
+			Message: fmt.Sprintf("schema version=%q revision=%q release=%q is not a published SCL schema this library knows; parsed with the %s schema, elements it does not define are ignored",
+				vi.Version, vi.Revision, vi.Release, fb),
+		}
+		return doc, append([]Diagnostic{warn}, diags...), nil
+	}
+}
+
+// fallbackSchema chooses the schema bindings for an SCL document in the
+// IEC namespace whose version tuple is not one of the published schemas
+// (IEC 61850-6 fixes version to 2007, with revision B release 4 or
+// revision C release 5 for the schemas in specs/): the closest
+// revision of version 2007, or the newest schema for any other version.
+// A foreign namespace or a malformed release is not parsed.
+func fallbackSchema(vi VersionInfo) (SchemaVersion, bool) {
+	if vi.Namespace != iecNamespace || (vi.Release != "" && vi.ReleaseNum == 0) {
+		return VersionUnknown, false
+	}
+	if vi.Version != "2007" {
+		return Version2007C5, true
+	}
+	switch {
+	case vi.Revision < "B":
+		return Version2007B, true
+	case vi.Revision == "B":
+		return Version2007B4, true
+	default:
+		return Version2007C5, true
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 
 func testModel() *scl.SCL {
 	return &scl.SCL{
+		Header: scl.Header{ID: "test"},
 		IEDs: []scl.IED{{
 			Name: "IED1",
 			AccessPoints: []scl.AccessPoint{{
@@ -271,5 +272,27 @@ func TestControls_GSE_MissingDataset(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected missing-dataset diagnostic for GSEControl")
+	}
+}
+
+// Options.Kind applies the document-kind rule; SkipRequired skips the
+// required-attribute pass.
+func TestWithOptions_KindAndRequired(t *testing.T) {
+	s := &scl.SCL{Substations: []scl.Substation{{}}}
+	idx, idxDiags := index.Build(s)
+	codes := func(diags []scl.Diagnostic) map[string]int {
+		out := map[string]int{}
+		for _, d := range diags {
+			out[d.Code]++
+		}
+		return out
+	}
+	got := codes(WithOptions(s, idx, idxDiags, Options{Kind: scl.KindIID}))
+	if got["kind-content"] != 1 || got["missing-attribute"] != 1 {
+		t.Errorf("with Kind = %v, want one kind-content and one missing-attribute", got)
+	}
+	got = codes(WithOptions(s, idx, idxDiags, Options{SkipRequired: true}))
+	if got["kind-content"] != 0 || got["missing-attribute"] != 0 {
+		t.Errorf("without Kind, SkipRequired = %v", got)
 	}
 }
