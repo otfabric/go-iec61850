@@ -20,6 +20,17 @@ sclparse <subcommand> [flags] <file>
 Most subcommands accept a `--json` flag to emit machine-readable JSON instead
 of the default human-readable text output.
 
+The SCL schema requires the IEC 61850-6 namespace on the root element, so a
+file whose `<SCL>` declares no namespace is refused (exit code 3). The global
+flag `--assume-namespace` reads such a file as if it declared the namespace,
+with a `namespace-assumed` warning; without version attributes it is read as
+schema 1.7. It applies to every subcommand that parses the file (not
+`detect`, which reports what the file declares).
+
+```bash
+sclparse validate --assume-namespace demo.icd
+```
+
 ## Subcommands
 
 ### summary

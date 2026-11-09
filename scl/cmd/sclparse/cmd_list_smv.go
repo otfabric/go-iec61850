@@ -26,7 +26,7 @@ func init() {
 }
 
 func runListSMV(_ *cobra.Command, args []string) error {
-	doc, err := scl.ParseFile(args[0])
+	doc, err := parseDoc(args[0])
 	if err != nil {
 		return exitErr(ExitInvalidInput, "%v", err)
 	}

@@ -39,7 +39,7 @@ func init() {
 func runSummary(_ *cobra.Command, args []string) error {
 	path := args[0]
 
-	result, err := scl.ParseFileOpts(path, scl.ParseOptions{})
+	result, err := parseFile(path)
 	if err != nil {
 		return exitErr(ExitInvalidInput, "%v", err)
 	}
