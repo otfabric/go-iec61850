@@ -1,5 +1,16 @@
 # go-iec61850 Releases
 
+## v1.15.1
+
+**Date:** 2026-11-09
+**Previous release:** v1.15.0
+
+### Changed
+
+- The bundled command-line tools (`sclparse`, `sclgen`) are built on v1.15.0 (they were on v1.13.0). `sclparse` now carries the v1.14.0 SCL change: every `Val` of an attribute is kept with its setting group, so `sclparse dump-json` writes `Vals` (value and `SGroup`) besides `Val`. Library code is the same as v1.15.0.
+
+---
+
 ## v1.15.0
 
 **Date:** 2026-11-09
