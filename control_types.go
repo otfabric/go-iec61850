@@ -196,85 +196,93 @@ type CancelParams struct {
 }
 
 // AddCause represents the AdditionalCause field in LastApplError,
-// indicating why a control command was refused or failed.
+// indicating why a control command was refused or failed. The values are
+// the AddCause enumeration of IEC 61850-7-2 (control model, clause 20),
+// as libiec61850 encodes them on the wire.
 type AddCause int
 
+// AddCause values (IEC 61850-7-2, clause 20).
 const (
-	AddCauseUnknown               AddCause = 0
-	AddCauseNotSupported          AddCause = 1
-	AddCauseBlocked               AddCause = 2
-	AddCauseSelectFailed          AddCause = 3
-	AddCauseInvalidPosition       AddCause = 4
-	AddCausePositionReached       AddCause = 5
-	AddCauseParameterChange       AddCause = 6
-	AddCauseStepLimit             AddCause = 7
-	AddCauseBlockedBySwitch       AddCause = 8
-	AddCauseBlockedByInterlocking AddCause = 9
-	AddCauseBlockedBySynchrocheck AddCause = 10
-	AddCauseCommandAlreadyExec    AddCause = 11
-	AddCauseBlockedByHealth       AddCause = 12
-	AddCause1of1                  AddCause = 13
-	AddCauseAbort                 AddCause = 14
-	AddCauseTimeLimit             AddCause = 15
-	AddCauseBlockedByMode         AddCause = 16
-	AddCauseBlockedByProcess      AddCause = 17
+	AddCauseUnknown                     AddCause = 0
+	AddCauseNotSupported                AddCause = 1
+	AddCauseBlocked                     AddCause = 2 // blocked by switching hierarchy
+	AddCauseSelectFailed                AddCause = 3
+	AddCauseInvalidPosition             AddCause = 4
+	AddCausePositionReached             AddCause = 5
+	AddCauseParameterChange             AddCause = 6
+	AddCauseStepLimit                   AddCause = 7
+	AddCauseBlockedByMode               AddCause = 8
+	AddCauseBlockedByProcess            AddCause = 9
+	AddCauseBlockedByInterlocking       AddCause = 10
+	AddCauseBlockedBySynchrocheck       AddCause = 11
+	AddCauseCommandAlreadyExec          AddCause = 12
+	AddCauseBlockedByHealth             AddCause = 13
+	AddCause1ofN                        AddCause = 14
+	AddCauseAbortionByCancel            AddCause = 15
+	AddCauseTimeLimit                   AddCause = 16
+	AddCauseAbortionByTrip              AddCause = 17
+	AddCauseObjectNotSelected           AddCause = 18
+	AddCauseObjectAlreadySelected       AddCause = 19
+	AddCauseNoAccessAuthority           AddCause = 20
+	AddCauseEndedWithOvershoot          AddCause = 21
+	AddCauseAbortionDueToDeviation      AddCause = 22
+	AddCauseAbortionByCommunicationLoss AddCause = 23
+	AddCauseBlockedByCommand            AddCause = 24
+	AddCauseNone                        AddCause = 25
+	AddCauseInconsistentParameters      AddCause = 26
+	AddCauseLockedByOtherClient         AddCause = 27
 )
 
-// String returns the additional cause name.
-func (c AddCause) String() string {
-	switch c {
-	case AddCauseUnknown:
-		return "unknown"
-	case AddCauseNotSupported:
-		return "not-supported"
-	case AddCauseBlocked:
-		return "blocked-by-switching-hierarchy"
-	case AddCauseSelectFailed:
-		return "select-failed"
-	case AddCauseInvalidPosition:
-		return "invalid-position"
-	case AddCausePositionReached:
-		return "position-reached"
-	case AddCauseParameterChange:
-		return "parameter-change-in-execution"
-	case AddCauseStepLimit:
-		return "step-limit"
-	case AddCauseBlockedBySwitch:
-		return "blocked-by-other"
-	case AddCauseBlockedByInterlocking:
-		return "blocked-by-interlocking"
-	case AddCauseBlockedBySynchrocheck:
-		return "blocked-by-synchrocheck"
-	case AddCauseCommandAlreadyExec:
-		return "command-already-in-execution"
-	case AddCauseBlockedByHealth:
-		return "blocked-by-health"
-	case AddCause1of1:
-		return "1-of-n-control"
-	case AddCauseAbort:
-		return "abort"
-	case AddCauseTimeLimit:
-		return "time-limit-over"
-	case AddCauseBlockedByMode:
-		return "blocked-by-mode"
-	case AddCauseBlockedByProcess:
-		return "blocked-by-process"
-	default:
-		return fmt.Sprintf("addCause(%d)", int(c))
-	}
+// Deprecated AddCause names. Before v1.10.0 the values from 8 on did
+// not follow IEC 61850-7-2; these names map to the standard values.
+const (
+	// Deprecated: no such cause exists; use [AddCauseBlocked]
+	// (blocked by switching hierarchy).
+	AddCauseBlockedBySwitch = AddCauseBlocked
+	// Deprecated: use [AddCause1ofN].
+	AddCause1of1 = AddCause1ofN
+	// Deprecated: use [AddCauseAbortionByCancel].
+	AddCauseAbort = AddCauseAbortionByCancel
+)
+
+var addCauseNames = [...]string{
+	"unknown", "not-supported", "blocked-by-switching-hierarchy", "select-failed",
+	"invalid-position", "position-reached", "parameter-change-in-execution", "step-limit",
+	"blocked-by-mode", "blocked-by-process", "blocked-by-interlocking", "blocked-by-synchrocheck",
+	"command-already-in-execution", "blocked-by-health", "1-of-n-control", "abortion-by-cancel",
+	"time-limit-over", "abortion-by-trip", "object-not-selected", "object-already-selected",
+	"no-access-authority", "ended-with-overshoot", "abortion-due-to-deviation",
+	"abortion-by-communication-loss", "blocked-by-command", "none", "inconsistent-parameters",
+	"locked-by-other-client",
 }
 
-// LastApplError contains the decoded result of a LastApplError read,
-// providing server-side failure reason for a control command.
+// String returns the additional cause name as IEC 61850-7-2 spells it.
+func (c AddCause) String() string {
+	if c >= 0 && int(c) < len(addCauseNames) {
+		return addCauseNames[c]
+	}
+	return fmt.Sprintf("addCause(%d)", int(c))
+}
+
+// LastApplError is the reason a server gives for a refused or failed
+// control (IEC 61850-8-1, LastApplError): sent as an InformationReport
+// before the negative response to a control write, and as part of a
+// negative CommandTermination.
 type LastApplError struct {
-	// CntrlObj is the object reference of the control that failed.
+	// CntrlObj is the MMS reference of the control attribute that failed,
+	// such as "LD/GGIO1$CO$SPCSO1$Oper".
 	CntrlObj string
 
-	// Error is the IEC 61850 service error class.
+	// Error is the service error: 0 no error, 1 unknown, 2 timeout test
+	// not ok, 3 operator test not ok.
 	Error int
 
 	// Origin is the originator that issued the failed command.
 	Origin Origin
+
+	// CtlNum is the control number of the failed command. Zero when the
+	// server sent the four-member layout without it.
+	CtlNum uint8
 
 	// AddCause provides the specific additional cause.
 	AddCause AddCause

@@ -249,9 +249,14 @@ type ControlError struct {
     Ref       string   // the control object reference
     Operation string   // "select", "operate", or "cancel"
     AddCause  AddCause // server-reported cause via LastApplError (0 = unknown)
+    LastApplError *LastApplError // the server's LastApplError, nil if it sent none
     Wrapped   error    // underlying error, if any
 }
 ```
+
+`Client.OperateWait` returns a `*ControlError` wrapping
+`ErrCommandTerminationNegative` when the server ends an accepted operate with a
+negative CommandTermination; `AddCause` and `LastApplError` come from it.
 
 Matches the operation-specific sentinel (`ErrSelectFailed`, `ErrOperateFailed`,
 `ErrCancelFailed`; `ErrControlFailed` for any other operation) and `Wrapped`

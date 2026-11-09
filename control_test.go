@@ -1124,8 +1124,8 @@ func TestExecuteOperate_SBOwCtlValMismatch(t *testing.T) {
 	if !errors.As(err, &ce) {
 		t.Fatalf("want *ControlError, got %T", err)
 	}
-	if ce.AddCause != AddCauseParameterChange {
-		t.Errorf("AddCause = %v, want AddCauseParameterChange", ce.AddCause)
+	if ce.AddCause != AddCauseInconsistentParameters {
+		t.Errorf("AddCause = %v, want AddCauseInconsistentParameters", ce.AddCause)
 	}
 }
 

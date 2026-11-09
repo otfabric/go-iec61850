@@ -252,6 +252,11 @@ type ControlError struct {
 	// LastApplError, if available. Zero means unknown or not read.
 	AddCause AddCause
 
+	// LastApplError is the LastApplError the server reported for the
+	// failed control write or in a negative CommandTermination; nil when
+	// it sent none.
+	LastApplError *LastApplError
+
 	// Wrapped is the underlying error.
 	Wrapped error
 }

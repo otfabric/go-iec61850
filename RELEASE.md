@@ -1,5 +1,30 @@
 # go-iec61850 Releases
 
+## v1.10.0
+
+**Date:** 2026-11-09
+**Previous release:** v1.9.4
+
+### Added
+
+- `Client.OperateWait` operates a control with enhanced security and waits for its CommandTermination (IEC 61850-8-1). It returns a `CommandTermination`; a negative termination also returns a `ControlError` wrapping the new `ErrCommandTerminationNegative`, with the AddCause and LastApplError the server reported.
+- A refused `Operate`, `SelectWithValue` or `Cancel` returns a `ControlError` with the `LastApplError` the server sent before the negative write response (new field `ControlError.LastApplError`), and its `AddCause`.
+- Server: a refused control write (Oper, SBOw, Cancel) is preceded by a LastApplError InformationReport, as libiec61850 does. `ControlHandler.OnExecute` runs after a successful enhanced-security operate: an error turns the CommandTermination negative (LastApplError and Oper).
+- `LastApplError.CtlNum`, and the AddCause values 18 to 27 (`AddCauseObjectNotSelected` … `AddCauseLockedByOtherClient`).
+- Interop: `OperateWait` receives the positive CommandTermination of libiec61850, dscsystems, iec61850-rust and cbsigma; the LastApplError of a refused operate is decoded from libiec61850, dscsystems and cbsigma (`interop/termination_test.go`).
+
+### Fixed
+
+- `AddCause` values 8 to 17 followed no standard. They now follow IEC 61850-7-2 and libiec61850: for example `AddCauseBlockedByInterlocking` is 10 (was 9), `AddCauseBlockedByMode` 8 (was 16). Code that compares against the named constants keeps working; code that stored raw numbers must be checked. `AddCauseBlockedBySwitch`, `AddCause1of1` and `AddCauseAbort` are deprecated aliases of `AddCauseBlocked`, `AddCause1ofN` and `AddCauseAbortionByCancel`; `String` returns the names of the standard.
+- The LastApplError decoder read the fourth member as AddCause. Servers send five members (CntrlObj, Error, Origin, ctlNum, AddCause), so the control number was reported as the cause. The four-member layout is still accepted.
+- Server: an operate is refused with AddCause object-not-selected when there is no valid select (was select-failed), locked-by-other-client when another client holds it, and inconsistent-parameters when ctlNum or ctlVal differ from the select (was select-failed and parameter-change-in-execution). A select held by another client is refused with object-already-selected. These match libiec61850.
+
+### Changed
+
+- The client installs its InformationReport handler on the MMS client when it first sends a control, as it already did for report subscriptions, replacing a handler set on an `mms.Client` passed to `NewClient`.
+
+---
+
 ## v1.9.4
 
 **Date:** 2026-11-09

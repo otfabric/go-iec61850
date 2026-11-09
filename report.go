@@ -1598,6 +1598,9 @@ func (c *Client) handleInformationReport(report *mms.InformationReportIndication
 		c.logger.Debug("iec61850: received empty information report")
 		return
 	}
+	if c.handleControlReport(report) {
+		return
+	}
 
 	ri, err := decodeReportIndication(report.Values, c.logger)
 	if err != nil {

@@ -90,7 +90,7 @@ with raw MMS domain names, item IDs, BER or Ethernet frames.
 **MMS server**
 
 - SCL-driven model; reports (URCB/BRCB), controls (SBO/SBOw state machine,
-  CommandTermination), setting groups, journals, file services, Identify
+  CommandTermination, LastApplError), setting groups, journals, file services, Identify
   and Status; connection hooks, authentication hook, graceful `Shutdown`
 - One `SetValue` call drives reports, journals, GOOSE and SV
 
