@@ -76,6 +76,8 @@ func init() {
 	rootCmd.AddCommand(listTypesCmd)
 	rootCmd.AddCommand(inspectCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.PersistentFlags().BoolVar(&assumeNamespace, "assume-namespace", false,
+		"read an SCL root without namespace as the IEC 61850-6 namespace (with a warning)")
 	rootCmd.CompletionOptions.HiddenDefaultCmd = false
 }
 

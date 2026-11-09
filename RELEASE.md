@@ -1,5 +1,18 @@
 # go-iec61850 Releases
 
+## v1.13.1
+
+**Date:** 2026-11-09
+**Previous release:** v1.13.0
+
+### Changed
+
+- The bundled command-line tools (`sclparse`, `sclgen`) are built on v1.13.0. Library code is the same as v1.13.0.
+- `sclparse --assume-namespace` (global flag) reads an SCL file whose root element declares no namespace as the IEC 61850-6 namespace, with a `namespace-assumed` warning (`ParseOptions.AssumeSCLNamespace`). Without it such a file is still refused with exit code 3. It applies to every subcommand that parses the file; `detect` reports what the file declares.
+- `sclparse inspect` takes the schema version from the parse result instead of detecting it separately.
+
+---
+
 ## v1.13.0
 
 **Date:** 2026-11-09

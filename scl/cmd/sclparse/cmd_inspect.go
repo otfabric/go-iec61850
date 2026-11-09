@@ -41,15 +41,11 @@ type inspectResult struct {
 func runInspect(_ *cobra.Command, args []string) error {
 	path := args[0]
 
-	vi, err := scl.DetectFile(path)
+	res, err := parseFile(path)
 	if err != nil {
 		return exitErr(ExitInvalidInput, "%v", err)
 	}
-
-	doc, err := scl.ParseFile(path)
-	if err != nil {
-		return exitErr(ExitInvalidInput, "%v", err)
-	}
+	vi, doc := res.Version, res.Document
 
 	privateTypes := make(map[string]int)
 	totalPrivate := 0

@@ -53,6 +53,7 @@ func executeCmd(args ...string) error {
 	listTypesJSON = false
 	inspectJSON = false
 	versionJSON = false
+	assumeNamespace = false
 
 	return rootCmd.Execute()
 }
