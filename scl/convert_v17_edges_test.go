@@ -28,7 +28,7 @@ func TestConvV17_PrivateSMVSettingControl(t *testing.T) {
 					Private: []raw.Private{{Type: "ln0Priv"}},
 					SampledValueControl: []raw.SampledValueControl{{
 						Name: "smv1", SmvID: "SV1", DatSet: "ds1",
-						ConfRev: 1, SmpRate: 4800, NofASDU: 1, Multicast: true,
+						ConfRev: 1, SmpRate: 4800, NofASDU: 1, Multicast: new(true),
 					}},
 					SettingControl: &raw.SettingControl{NumOfSGs: 4, ActSG: 1},
 					LogControl:     []raw.LogControl{{Name: "log1", Desc: "d"}},

@@ -31,7 +31,7 @@ COMMIT     ?= $(shell git rev-parse HEAD 2>/dev/null || echo "")$(DIRTY)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS    := -s -w -X main.version=$(VERSION) -X main.tag=$(TAG) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
 
-.PHONY: corpus e2e interop-goose coverage-check coverage-pkg-check help test test-race test-verbose vet lint fmt fuzz bench tidy check clean coverage coverage-html coverage-clean interop scl-generate scl-check-generate build build-all release-all install ai-print-all ai-print-test ai-print ai-diff ai-digest ai-context vuln docs-check
+.PHONY: sclgen-mod corpus e2e interop-goose coverage-check coverage-pkg-check help test test-race test-verbose vet lint fmt fuzz bench tidy check clean coverage coverage-html coverage-clean interop scl-generate scl-check-generate build build-all release-all install ai-print-all ai-print-test ai-print ai-diff ai-digest ai-context vuln docs-check
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "}; /^[a-zA-Z0-9_.-]+:.*## / {printf "%-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -151,13 +151,22 @@ tidy: ## Tidy and verify module files
 	@go mod verify
 	@for d in $(CLI_DIRS); do (cd $$d && go mod verify) || exit 1; done
 
-scl-generate: ## Generate SCL raw types from XSD schemas
-	@echo "Generating SCL raw types from XSD schemas"
-	@go -C scl/cmd/sclgen run . generate --spec-root $(CURDIR)/scl/specs --out $(CURDIR)/scl/internal/raw
+# sclgen is a nested module that pins a released library. Generating and checking use the
+# generator of this checkout (scl/internal/genir) instead: a copy of sclgen's go.mod in
+# bin/sclgen-mod replaces the library with the checkout.
+SCLGEN_MOD = $(CURDIR)/bin/sclgen-mod
+sclgen-mod:
+	@mkdir -p $(SCLGEN_MOD)
+	@cp scl/cmd/sclgen/go.mod scl/cmd/sclgen/go.sum $(SCLGEN_MOD)/
+	@go mod edit -modfile=$(SCLGEN_MOD)/go.mod -replace github.com/otfabric/go-iec61850=$(CURDIR)
 
-scl-check-generate: ## Verify generated SCL code is up to date
+scl-generate: sclgen-mod ## Generate SCL raw types from XSD schemas (with this checkout's generator)
+	@echo "Generating SCL raw types from XSD schemas"
+	@cd scl/cmd/sclgen && GOWORK=off go run -mod=mod -modfile=$(SCLGEN_MOD)/go.mod . generate --spec-root $(CURDIR)/scl/specs --out $(CURDIR)/scl/internal/raw
+
+scl-check-generate: sclgen-mod ## Verify generated SCL code is up to date (with this checkout's generator)
 	@echo "Verifying generated SCL code is up to date"
-	@go -C scl/cmd/sclgen run . check --spec-root $(CURDIR)/scl/specs --out $(CURDIR)/scl/internal/raw
+	@cd scl/cmd/sclgen && GOWORK=off go run -mod=mod -modfile=$(SCLGEN_MOD)/go.mod . check --spec-root $(CURDIR)/scl/specs --out $(CURDIR)/scl/internal/raw
 
 build: ## Build all commands for the current platform
 	@echo "Building all commands for the current platform"

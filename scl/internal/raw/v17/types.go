@@ -472,8 +472,8 @@ type LogControl struct {
 	TrgOps        *TrgOps     `xml:"TrgOps,omitempty"`
 	ExtraElements []xml.Token `xml:",any"`
 	LogName       string      `xml:"logName,attr"`
-	LogEna        bool        `xml:"logEna,attr,omitempty"`
-	ReasonCode    bool        `xml:"reasonCode,attr,omitempty"`
+	LogEna        *bool       `xml:"logEna,attr,omitempty"`
+	ReasonCode    *bool       `xml:"reasonCode,attr,omitempty"`
 	IntgPd        uint32      `xml:"intgPd,attr,omitempty"`
 	DatSet        string      `xml:"datSet,attr,omitempty"`
 	Name          string      `xml:"name,attr"`
@@ -705,7 +705,7 @@ type SampledValueControl struct {
 	SmvOpts       SmvOptsInline `xml:"SmvOpts"`
 	ExtraElements []xml.Token   `xml:",any"`
 	SmvID         string        `xml:"smvID,attr"`
-	Multicast     bool          `xml:"multicast,attr,omitempty"`
+	Multicast     *bool         `xml:"multicast,attr,omitempty"`
 	SmpRate       uint32        `xml:"smpRate,attr"`
 	NofASDU       uint32        `xml:"nofASDU,attr"`
 	ConfRev       uint32        `xml:"confRev,attr,omitempty"`
@@ -732,7 +732,7 @@ type ServiceWithMax struct {
 }
 
 type ServiceWithMaxAndClient struct {
-	Client bool   `xml:"client,attr,omitempty"`
+	Client *bool  `xml:"client,attr,omitempty"`
 	Max    uint32 `xml:"max,attr"`
 }
 
@@ -742,13 +742,13 @@ type ServiceWithMaxAndMaxAttributes struct {
 }
 
 type ServiceWithMaxAndMaxAttributesAndModify struct {
-	Modify        bool   `xml:"modify,attr,omitempty"`
+	Modify        *bool  `xml:"modify,attr,omitempty"`
 	MaxAttributes uint32 `xml:"maxAttributes,attr,omitempty"`
 	Max           uint32 `xml:"max,attr"`
 }
 
 type ServiceWithMaxAndModify struct {
-	Modify bool   `xml:"modify,attr,omitempty"`
+	Modify *bool  `xml:"modify,attr,omitempty"`
 	Max    uint32 `xml:"max,attr"`
 }
 
@@ -927,11 +927,11 @@ type VoltageLevel struct {
 }
 
 type AuthenticationInline struct {
-	None        bool `xml:"none,attr,omitempty"`
-	Password    bool `xml:"password,attr,omitempty"`
-	Weak        bool `xml:"weak,attr,omitempty"`
-	Strong      bool `xml:"strong,attr,omitempty"`
-	Certificate bool `xml:"certificate,attr,omitempty"`
+	None        *bool `xml:"none,attr,omitempty"`
+	Password    bool  `xml:"password,attr,omitempty"`
+	Weak        bool  `xml:"weak,attr,omitempty"`
+	Strong      bool  `xml:"strong,attr,omitempty"`
+	Certificate bool  `xml:"certificate,attr,omitempty"`
 }
 
 type HistoryInline struct {

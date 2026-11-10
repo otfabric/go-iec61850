@@ -1,5 +1,26 @@
 # go-iec61850 Releases
 
+## v1.16.1
+
+**Date:** 2026-11-10
+**Previous release:** v1.16.0
+
+### Fixed
+
+- **SCL: an address written `<P type="IP" xsi:type="tP_IP">` keeps its type.** encoding/xml binds an attribute named `type` whatever its namespace, so the `xsi:type` after `type`, the order ABB's tools write, replaced the address type with `tP_IP`: the IP addresses, subnets, gateways, OSI selectors and GOOSE and SV MAC addresses of such files were lost (every anonymized ABB CID in `scl/testdata/abb` was affected). Attributes of the XML Schema instance namespace are now left out before binding; no binding reads one.
+- **SCL: an optional boolean attribute whose schema default is true reads true when absent.** The bindings had no way to tell an absent attribute from false, so a file that leaves out the default read `gi` of TrgOps, `bufOvfl` of OptFields, `multicast` of an SMV control block and `modify` of ConfDataSet as false. The generator now emits these attributes as `*bool` and the converters apply the default (`default="true"` in the schemas).
+- **SCL: an Edition 1 (schema 1.7) report control block allows general interrogation.** The 2003 schema's TrgOps has no `gi` attribute, so GI was always false; the 2007 schemas added `gi` with default true, which an Edition 1 file cannot turn off.
+
+### Changed
+
+- `make scl-generate` and `make scl-check-generate` run the generator of the checkout (`scl/internal/genir`) instead of the one of the released library that the nested `sclgen` module pins, so the check compares the bindings with the generator in the same commit.
+
+### Tests
+
+- `TestXSITypeAfterType` and `TestABBAddresses` (every ABB fixture keeps a valid IP address), `TestDefaultTrueAttributes`, `TestEdition1GI`, `TestEmitAttrField_DefaultTrueBoolean`. Found by the demo set of otfabric/iec61850-explorer.
+
+---
+
 ## v1.16.0
 
 **Date:** 2026-11-10

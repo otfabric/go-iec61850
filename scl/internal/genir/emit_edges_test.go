@@ -345,3 +345,26 @@ func TestParseBundle_IncludeConfined(t *testing.T) {
 		t.Fatal("missing bundle accepted")
 	}
 }
+
+// TestEmitAttrField_DefaultTrueBoolean: an optional boolean attribute whose
+// default is true becomes a pointer, so that absence is told apart from
+// false; a required one, a default-false one and other types do not.
+func TestEmitAttrField_DefaultTrueBoolean(t *testing.T) {
+	e := NewEmitter(&Resolved{Schema: &Schema{}}, t.TempDir(), "pkg")
+	for _, tc := range []struct {
+		attr Attribute
+		want string
+	}{
+		{Attribute{Name: "gi", Type: "xs:boolean", Use: "optional", Default: "true"}, "\tGi *bool `xml:\"gi,attr,omitempty\"`\n"},
+		{Attribute{Name: "multicast", Type: "xs:boolean", Default: "true"}, "\tMulticast *bool `xml:\"multicast,attr,omitempty\"`\n"},
+		{Attribute{Name: "dchg", Type: "xs:boolean", Use: "optional", Default: "false"}, "\tDchg bool `xml:\"dchg,attr,omitempty\"`\n"},
+		{Attribute{Name: "buffered", Type: "xs:boolean", Use: "required", Default: "true"}, "\tBuffered bool `xml:\"buffered,attr\"`\n"},
+		{Attribute{Name: "name", Type: "xs:string", Default: "true"}, "\tName string `xml:\"name,attr,omitempty\"`\n"},
+	} {
+		var b strings.Builder
+		e.emitAttrField(&b, &tc.attr)
+		if b.String() != tc.want {
+			t.Errorf("%s: %q, want %q", tc.attr.Name, b.String(), tc.want)
+		}
+	}
+}

@@ -199,3 +199,36 @@ func classifyVersion(vi VersionInfo) (SchemaVersion, Confidence, []string) {
 		}
 	}
 }
+
+// xsiNamespace is the XML Schema instance namespace (xsi:type,
+// xsi:schemaLocation).
+const xsiNamespace = "http://www.w3.org/2001/XMLSchema-instance"
+
+// decodeSCL decodes data into v with the attributes of the XML Schema
+// instance namespace left out. encoding/xml binds an attribute to a field
+// tagged "type,attr" whatever its namespace, so in <P type="IP"
+// xsi:type="tP_IP">, as some engineering tools write it, the later
+// xsi:type would replace the address type. No SCL binding reads an xsi
+// attribute.
+func decodeSCL(data []byte, defaultSpace string, v any) error {
+	return xml.NewTokenDecoder(dropXSI{newDecoderNS(data, defaultSpace)}).Decode(v)
+}
+
+// dropXSI passes on the tokens of d without attributes in the XML Schema
+// instance namespace.
+type dropXSI struct{ d *xml.Decoder }
+
+func (f dropXSI) Token() (xml.Token, error) {
+	t, err := f.d.Token()
+	if se, ok := t.(xml.StartElement); ok {
+		kept := make([]xml.Attr, 0, len(se.Attr))
+		for _, a := range se.Attr {
+			if a.Name.Space != xsiNamespace {
+				kept = append(kept, a)
+			}
+		}
+		se.Attr = kept
+		t = se
+	}
+	return t, err
+}
