@@ -696,3 +696,105 @@ func TestSamplesChannelOwnsData(t *testing.T) {
 		t.Fatalf("first sample changed: %+v %+v", a.Frame.VLAN, a.ASDU)
 	}
 }
+
+// TestSpec_9_2_Table14_SmpCntResetResync: 9-2 Table 14 smpCnt "shall be
+// set to zero" by a synchronising pulse; the subscriber must not drop
+// the samples that follow (SV-01).
+func TestSpec_9_2_Table14_SmpCntResetResync(t *testing.T) {
+	now := time.Unix(1000, 0)
+	s, _ := NewSubscriber(nil, SubscriberConfig{Now: func() time.Time { return now }})
+	delivered := 0
+	sub, _ := s.Subscribe(SubscriptionConfig{SvID: "MU01", SmpCntWrap: 4000, OnASDU: func(*Sample) { delivered++ }})
+	send := func(c uint16) {
+		t.Helper()
+		f := &Frame{Dst: MAC{1, 0x0c, 0xcd, 4, 0, 1}, AppID: 0x4000, PDU: PDU{ASDUs: []ASDU{{SvID: "MU01", SmpCnt: c, ConfRev: 1, Sample: make([]byte, 8)}}}}
+		b, err := Encode(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.HandleFrame(b)
+		now = now.Add(250 * time.Microsecond)
+	}
+	for c := uint16(990); c <= 1000; c++ {
+		send(c)
+	}
+	for c := uint16(0); c < 100; c++ {
+		send(c)
+	}
+	if delivered != 111 {
+		t.Errorf("delivered %d, want 111", delivered)
+	}
+	st := sub.Stats()[0]
+	if st.OutOfOrder != 0 || st.Resyncs != 1 || st.LastSmpCnt != 99 {
+		t.Errorf("stats %+v", st)
+	}
+	var resync int
+	for _, e := range drainEvents(sub) {
+		if e.Kind == EventResync {
+			resync++
+			if e.SmpCnt != 0 || e.Lost != 0 {
+				t.Errorf("resync event %+v", e)
+			}
+		}
+	}
+	if resync != 1 {
+		t.Errorf("resync events %d", resync)
+	}
+
+	// A genuine reorder (1000, 998) stays out of order, but a counter
+	// that jumped back is followed after ResyncAfter frames.
+	for _, c := range []uint16{1000, 998, 1001} {
+		send(c)
+	}
+	if st := sub.Stats()[0]; st.OutOfOrder != 1 || st.LastSmpCnt != 1001 {
+		t.Errorf("reorder stats %+v", st)
+	}
+	before := delivered
+	for c := uint16(500); c < 510; c++ {
+		send(c)
+	}
+	if got := delivered - before; got != 10-(ResyncAfter-1) {
+		t.Errorf("after jump back delivered %d", got)
+	}
+	if st := sub.Stats()[0]; st.Resyncs != 2 || st.OutOfOrder != uint64(1+ResyncAfter-1) || st.LastSmpCnt != 509 {
+		t.Errorf("jump stats %+v", st)
+	}
+	if EventResync.String() != "resync" {
+		t.Error(EventResync.String())
+	}
+}
+
+// TestSV_SimulationPerStream: with AcceptSimulation, once a simulated
+// ASDU of a stream arrived the real ASDUs of that stream are ignored
+// (7-4 LPHD.Sim, as for GOOSE), so the two counters are not
+// interleaved (SV-07).
+func TestSV_SimulationPerStream(t *testing.T) {
+	now := time.Unix(1000, 0)
+	m := &countMetrics{}
+	s, _ := NewSubscriber(nil, SubscriberConfig{Now: func() time.Time { return now }, AcceptSimulation: true, Metrics: m})
+	var got []uint16
+	sub, _ := s.Subscribe(SubscriptionConfig{SvID: "MU01", SmpCntWrap: 4000, OnASDU: func(x *Sample) { got = append(got, x.ASDU.SmpCnt) }})
+	send := func(c uint16, sim bool) {
+		f := &Frame{Dst: MAC{1, 0x0c, 0xcd, 4, 0, 1}, AppID: 0x4000, Simulation: sim, PDU: PDU{ASDUs: []ASDU{{SvID: "MU01", SmpCnt: c, ConfRev: 1, Sample: make([]byte, 8)}}}}
+		b, err := Encode(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.HandleFrame(b)
+	}
+	send(0, false) // real stream before simulation starts
+	for i := range uint16(10) {
+		send(i+1, false)
+		send(500+i, true)
+	}
+	if len(got) != 12 || got[0] != 0 || got[1] != 1 || got[2] != 500 || got[11] != 509 {
+		t.Errorf("delivered %v", got)
+	}
+	st := sub.Stats()[0]
+	if st.OutOfOrder != 0 || st.Lost != 498 || !st.Simulation {
+		t.Errorf("stats %+v", st)
+	}
+	if m.dropped["simulation"] != 9 {
+		t.Errorf("dropped %v", m.dropped)
+	}
+}

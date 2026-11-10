@@ -196,7 +196,13 @@ for ev := range sub.Events() { … }             // gaps, timeouts, …
   configured with `SmpCntWrap`, or learned from the first wrap to 0.
   A forward jump is a gap (`EventGap`, `Sample.Lost`), a repeat of the
   last counter a duplicate, and an older counter out of order; duplicate
-  and late ASDUs are counted and not delivered.
+  and late ASDUs are counted and not delivered. An out-of-sequence
+  `smpCnt` of 0 (9-2 Table 14: the counter is set to zero by a
+  synchronising pulse; also a publisher restart) and the
+  `ResyncAfter`-th (3) consecutive out-of-order counter resynchronise the
+  stream: `EventResync`, the ASDU is delivered and `Stats.Resyncs` counts
+  it. The first ASDU after a timeout is accepted even if its counter is
+  older (a forward jump is still a gap).
 - Supervision: `EventStart`, `EventTimeout` (no ASDU within `Timeout`,
   default 100 ms), `EventRestored`, `EventSynch` (`smpSynch` changed),
   `EventConfRev` (when `ConfRev` is not configured).
@@ -206,10 +212,13 @@ for ev := range sub.Events() { … }             // gaps, timeouts, …
   to `Events()` (`EventQueue`, default 256).
 - `Stats()` returns per stream: `Status` (ok, timeout, invalid), frame
   and ASDU counts, `Lost`, `Duplicates`, `OutOfOrder`, `Invalid`,
-  `Timeouts`, `QueueDrops`, `LastSmpCnt`, `SmpSynch`, `ConfRev`,
+  `Timeouts`, `QueueDrops`, `Resyncs`, `LastSmpCnt`, `SmpSynch`, `ConfRev`,
   `Simulation`, the wrap and the measured `Rate` (samples/s over 500 ms).
 - Frames with the simulation bit are dropped unless
-  `SubscriberConfig.AcceptSimulation` is set.
+  `SubscriberConfig.AcceptSimulation` is set. With it, once a simulated
+  ASDU of a stream was accepted the non-simulated ASDUs of that stream
+  are dropped (metrics reason `simulation`), as for GOOSE (7-4 LPHD.Sim),
+  so the real and simulated counters are not interleaved.
 - `HandleFrame` and `CheckTimeouts` drive the subscriber without a
   transport (e.g. from a pcap).
 
