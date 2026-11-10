@@ -509,7 +509,7 @@ func (s *Server) Serve(ctx context.Context, conn mms.Transport) error {
 // Each accepted connection is handled by [Server.Serve] in its own
 // goroutine, which ensures that connection lifecycle hooks are invoked.
 func (s *Server) ListenAndServe(ctx context.Context, ln mms.TransportListener) error {
-	if s.onConnect == nil && s.onDisconnect == nil && s.reportEngine == nil {
+	if s.onConnect == nil && s.onDisconnect == nil {
 		return s.mms.ListenAndServe(ctx, ln)
 	}
 	return s.listenAndServeWithHooks(ctx, ln)
