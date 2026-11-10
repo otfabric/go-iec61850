@@ -1,5 +1,16 @@
 # go-iec61850 Releases
 
+## v1.16.2
+
+**Date:** 2026-11-10
+**Previous release:** v1.16.1
+
+### Changed
+
+- **Built on go-mms v1.7.2** (was v1.7.1). A TimeOfDay (BinaryTime) whose millisecond field is one day or more now decodes instead of failing the whole PDU: ISO 9506-2:2003 §7.5.1 only requires bits 28–31 to be zero, so a 4-octet value keeps the field as is (up to 2^28−1 ms, a deadline past midnight) and a 6-octet value carries it into the following days. A field with bits 28–31 set is rejected (otfabric/go-mms#30). This applies to BinaryTime data attributes and to report and log entry times (TimeOfEntry, EntryTime). `mms.NewBinaryTime` now also sends 0 to 2^28−1 in the 4-octet form and instants after 2163-06-05 on the last day the form carries.
+
+---
+
 ## v1.16.1
 
 **Date:** 2026-11-10
