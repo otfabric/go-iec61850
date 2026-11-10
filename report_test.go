@@ -5,6 +5,7 @@ package iec61850
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -1299,7 +1300,9 @@ func TestSegmentedReportReassembly(t *testing.T) {
 			mms.NewUnsigned(10),  // SeqNum
 			mms.NewUnsigned(0),   // SubSeqNum
 			mms.NewBoolean(true), // MoreSegments
-			mms.NewBitStringWithLength([]byte{0x80}, 1),
+			// IEC 61850-8-1 §17.2.1: full-width (2 members) inclusion,
+			// this segment carries member 0.
+			mms.NewBitStringWithLength([]byte{0x80}, 2),
 			mms.NewInteger(100),
 		},
 	})
@@ -1310,10 +1313,10 @@ func TestSegmentedReportReassembly(t *testing.T) {
 		Values: []*mms.Value{
 			mms.NewVisibleString("segRpt"),
 			segOptFlds,
-			mms.NewUnsigned(10),   // SeqNum (same)
-			mms.NewUnsigned(1),    // SubSeqNum
-			mms.NewBoolean(false), // MoreSegments = false (last)
-			mms.NewBitStringWithLength([]byte{0x80}, 1),
+			mms.NewUnsigned(10),                         // SeqNum (same)
+			mms.NewUnsigned(1),                          // SubSeqNum
+			mms.NewBoolean(false),                       // MoreSegments = false (last)
+			mms.NewBitStringWithLength([]byte{0x40}, 2), // member 1
 			mms.NewInteger(200),
 		},
 	})
@@ -1324,7 +1327,17 @@ func TestSegmentedReportReassembly(t *testing.T) {
 			t.Errorf("RptID = %q", ri.RptID)
 		}
 		if len(ri.Values) != 2 {
-			t.Errorf("assembled values = %d, want 2", len(ri.Values))
+			t.Fatalf("assembled values = %d, want 2", len(ri.Values))
+		}
+		// The inclusion bitstrings are ORed, not concatenated (RPT-22).
+		if !reflect.DeepEqual(ri.Inclusion, []bool{true, true}) {
+			t.Errorf("Inclusion = %v, want [true true]", ri.Inclusion)
+		}
+		if a, _ := ri.Values[0].Int64(); a != 100 {
+			t.Errorf("value[0] = %d, want 100", a)
+		}
+		if b, _ := ri.Values[1].Int64(); b != 200 {
+			t.Errorf("value[1] = %d, want 200", b)
 		}
 		if ri.SeqNum != 10 {
 			t.Errorf("SeqNum = %d, want 10", ri.SeqNum)
@@ -1422,7 +1435,7 @@ func TestSegmentedReport_NonContiguousSubSeqNum(t *testing.T) {
 			mms.NewUnsigned(5),   // SeqNum
 			mms.NewUnsigned(0),   // SubSeqNum
 			mms.NewBoolean(true), // MoreSegments
-			mms.NewBitStringWithLength([]byte{0x80}, 1),
+			mms.NewBitStringWithLength([]byte{0x80}, 2),
 			mms.NewInteger(10),
 		},
 	})
@@ -1436,7 +1449,7 @@ func TestSegmentedReport_NonContiguousSubSeqNum(t *testing.T) {
 			mms.NewUnsigned(5),    // SeqNum (same)
 			mms.NewUnsigned(2),    // SubSeqNum (gap from 0)
 			mms.NewBoolean(false), // MoreSegments = false
-			mms.NewBitStringWithLength([]byte{0x80}, 1),
+			mms.NewBitStringWithLength([]byte{0x40}, 2),
 			mms.NewInteger(30),
 		},
 	})

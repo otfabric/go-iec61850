@@ -227,7 +227,9 @@ type ReportControlBlock struct {
 	// Resv is the reservation flag (URCB only).
 	Resv bool
 
-	// ResvTms is the reservation time in ms (BRCB only, optional).
+	// ResvTms is the reservation time in seconds (BRCB only, optional;
+	// IEC 61850-7-2 §17.2.2.17: -1 reserved by configuration, 0 not
+	// reserved).
 	ResvTms int32
 
 	// EntryID is the entry identifier (BRCB only).
@@ -576,18 +578,27 @@ func decodeRCB(ld, rcbItemID string, rcbType RCBType, v *mms.Value) (*ReportCont
 		}
 		// TimeOfEntry skipped (binary time, not always present)
 		_ = get()
-
-		if idx < len(elems) {
-			if val := get(); val != nil {
-				if i, ok := val.Int32(); ok {
-					rcb.ResvTms = i
-				}
-			}
-		}
 	}
 
-	if idx < len(elems) {
-		if val := get(); val != nil {
+	// The optional trailing components are ResvTms (BRCB only; INT16 in
+	// IEC 61850-7-2 Table 37, Unsigned in IEC 61850-8-1 Table 61) and
+	// Owner (OCTET STRING, 8-1 §17.1.2). Either may be absent, so they
+	// are told apart by type rather than by position.
+	for idx < len(elems) {
+		val := get()
+		if val == nil {
+			continue
+		}
+		switch val.Type() {
+		case mms.ValueTypeInteger:
+			if i, ok := val.Int32(); ok && rcbType == RCBBuffered {
+				rcb.ResvTms = i
+			}
+		case mms.ValueTypeUnsigned:
+			if u, ok := val.Uint32(); ok && rcbType == RCBBuffered && u <= math.MaxInt32 {
+				rcb.ResvTms = int32(u)
+			}
+		case mms.ValueTypeOctetString:
 			if bs, ok := val.OctetString(); ok {
 				rcb.Owner = append([]byte(nil), bs...)
 			}
@@ -721,7 +732,7 @@ const (
 	RCBFieldResv     RCBFieldMask = 1 << 8  // Write Resv (URCB)
 	RCBFieldPurgeBuf RCBFieldMask = 1 << 9  // Write PurgeBuf (BRCB)
 	RCBFieldEntryID  RCBFieldMask = 1 << 10 // Write EntryID (BRCB)
-	RCBFieldResvTms  RCBFieldMask = 1 << 11 // Write ResvTms (URCB)
+	RCBFieldResvTms  RCBFieldMask = 1 << 11 // Write ResvTms (BRCB)
 )
 
 // RCBUpdate specifies the RCB fields to write and their new values.
@@ -768,12 +779,30 @@ func (c *Client) SetReportControlBlock(ctx context.Context, ld, rcbItemID string
 		value     *mms.Value
 	}
 
-	// Configuration fields are written first. RptEna is always written
-	// last (if requested) to ensure all other attributes are in place
-	// before enabling the report — this ordering is an IEC 61850
-	// invariant that must not be reordered.
+	// Write order (IEC 61850-7-2 §17.2, IEC 61850-8-1 §17.1):
+	//
+	//  1. RptEna=FALSE: the configuration attributes, Resv, PurgeBuf and
+	//     EntryID "May not be written when RptEna=TRUE" (8-1 Tables 61
+	//     and 63; 7-2 Table 37 c1/c2).
+	//  2. Resv, ResvTms: the reservation precedes the configuration, since
+	//     "no other client shall have access rights to set the control
+	//     block attributes" once it is reserved (7-2 §17.2.1, §17.2.4.5).
+	//  3. Configuration (RptID, DatSet, OptFlds, BufTm, TrgOps, IntgPd),
+	//     then PurgeBuf and EntryID (resync, 7-2 Figure 24).
+	//  4. RptEna=TRUE.
+	//  5. GI last: a GI request on a disabled RCB is answered with
+	//     GI.response– (7-2 §17.2.2.13 Figure 28 "NO GI ALLOWED").
 	var writes []fieldWrite
 
+	if update.Fields&RCBFieldRptEna != 0 && !update.RptEna {
+		writes = append(writes, fieldWrite{rcbAttrRptEna, mms.NewBoolean(false)})
+	}
+	if update.Fields&RCBFieldResv != 0 {
+		writes = append(writes, fieldWrite{rcbAttrResv, mms.NewBoolean(update.Resv)})
+	}
+	if update.Fields&RCBFieldResvTms != 0 {
+		writes = append(writes, fieldWrite{rcbAttrResvTms, mms.NewInteger(int64(update.ResvTms))})
+	}
 	if update.Fields&RCBFieldRptID != 0 {
 		writes = append(writes, fieldWrite{rcbAttrRptID, mms.NewVisibleString(update.RptID)})
 	}
@@ -792,27 +821,17 @@ func (c *Client) SetReportControlBlock(ctx context.Context, ld, rcbItemID string
 	if update.Fields&RCBFieldIntgPd != 0 {
 		writes = append(writes, fieldWrite{rcbAttrIntgPd, mms.NewUnsigned(uint64(update.IntgPd))})
 	}
-	if update.Fields&RCBFieldGI != 0 {
-		writes = append(writes, fieldWrite{rcbAttrGI, mms.NewBoolean(update.GI)})
-	}
-	if update.Fields&RCBFieldResv != 0 {
-		writes = append(writes, fieldWrite{rcbAttrResv, mms.NewBoolean(update.Resv)})
-	}
 	if update.Fields&RCBFieldPurgeBuf != 0 {
 		writes = append(writes, fieldWrite{rcbAttrPurgeBuf, mms.NewBoolean(update.PurgeBuf)})
 	}
 	if update.Fields&RCBFieldEntryID != 0 {
 		writes = append(writes, fieldWrite{rcbAttrEntryID, mms.NewOctetString(update.EntryID)})
 	}
-	if update.Fields&RCBFieldResvTms != 0 {
-		writes = append(writes, fieldWrite{rcbAttrResvTms, mms.NewInteger(int64(update.ResvTms))})
+	if update.Fields&RCBFieldRptEna != 0 && update.RptEna {
+		writes = append(writes, fieldWrite{rcbAttrRptEna, mms.NewBoolean(true)})
 	}
-
-	// RptEna MUST be last: enabling the report before configuration
-	// fields are set can cause the server to send reports with stale
-	// or incomplete parameters.
-	if update.Fields&RCBFieldRptEna != 0 {
-		writes = append(writes, fieldWrite{rcbAttrRptEna, mms.NewBoolean(update.RptEna)})
+	if update.Fields&RCBFieldGI != 0 {
+		writes = append(writes, fieldWrite{rcbAttrGI, mms.NewBoolean(update.GI)})
 	}
 
 	for _, w := range writes {
@@ -1847,7 +1866,26 @@ func (s *ReportSubscription) assembleSegments() *ReportIndication {
 	hasDataRefs := first.OptFlds.Has(OptFldDataRef)
 	hasReasonCodes := first.OptFlds.Has(OptFldReasonCode)
 
+	// IEC 61850-8-1 §17.2.1: "The number of used bits, within the
+	// bitstring, shall be equal to the number of members of the
+	// NamedVariableList designated as the DataSet": every segment carries
+	// a full-width inclusion bitstring with the bits of its own members.
+	// The assembled report ORs them and lists the members in data set
+	// order.
+	width := len(first.Inclusion)
+	type member struct {
+		value  *Value
+		ref    string
+		reason ReasonCode
+	}
+	members := make([]*member, width)
+
 	for _, seg := range s.segBuf {
+		if len(seg.Inclusion) != width {
+			s.client.logger.Warn("iec61850: segment inclusion width mismatch, dropping buffer",
+				"rptID", first.RptID, "expected", width, "got", len(seg.Inclusion))
+			return first
+		}
 		segIncCount := 0
 		for _, inc := range seg.Inclusion {
 			if inc {
@@ -1871,10 +1909,41 @@ func (s *ReportSubscription) assembleSegments() *ReportIndication {
 			return first
 		}
 
-		result.Inclusion = append(result.Inclusion, seg.Inclusion...)
-		result.Values = append(result.Values, seg.Values...)
-		result.ReasonCodes = append(result.ReasonCodes, seg.ReasonCodes...)
-		result.DataReferences = append(result.DataReferences, seg.DataReferences...)
+		k := 0
+		for i, inc := range seg.Inclusion {
+			if !inc {
+				continue
+			}
+			if members[i] != nil {
+				s.client.logger.Warn("iec61850: member reported in two segments, dropping buffer",
+					"rptID", first.RptID, "member", i)
+				return first
+			}
+			m := &member{value: seg.Values[k]}
+			if hasDataRefs {
+				m.ref = seg.DataReferences[k]
+			}
+			if hasReasonCodes {
+				m.reason = seg.ReasonCodes[k]
+			}
+			members[i] = m
+			k++
+		}
+	}
+
+	result.Inclusion = make([]bool, width)
+	for i, m := range members {
+		if m == nil {
+			continue
+		}
+		result.Inclusion[i] = true
+		result.Values = append(result.Values, m.value)
+		if hasDataRefs {
+			result.DataReferences = append(result.DataReferences, m.ref)
+		}
+		if hasReasonCodes {
+			result.ReasonCodes = append(result.ReasonCodes, m.reason)
+		}
 	}
 
 	return result
