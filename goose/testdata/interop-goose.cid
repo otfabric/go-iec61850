@@ -238,7 +238,7 @@
       <DA name="Oper"     fc="CO" bType="Struct"     type="OperSPC_Type"/>
       <DA name="SBO"      fc="CO" bType="VisString255"/>
       <DA name="SBOw"     fc="CO" bType="Struct"     type="OperSPC_Type"/>
-      <DA name="Cancel"   fc="CO" bType="Struct"     type="OperSPC_Type"/>
+      <DA name="Cancel"   fc="CO" bType="Struct"     type="CancelSPC_Type"/>
     </DOType>
 
     <!-- MV: Measured value (MMXU1.TotW) -->
@@ -285,6 +285,15 @@
       <BDA name="T"      bType="Timestamp"/>
       <BDA name="Test"   bType="BOOLEAN"/>
       <BDA name="Check"  bType="Check"/>
+    </DAType>
+
+    <!-- CancelSPC: the Cancel structure has no Check (IEC 61850-8-1 Table 88) -->
+    <DAType id="CancelSPC_Type" desc="Cancel structure for SPC">
+      <BDA name="ctlVal" bType="BOOLEAN"/>
+      <BDA name="origin" bType="Struct"    type="Originator_Type"/>
+      <BDA name="ctlNum" bType="INT8U"/>
+      <BDA name="T"      bType="Timestamp"/>
+      <BDA name="Test"   bType="BOOLEAN"/>
     </DAType>
 
     <!-- Originator: originatorCategory + orIdent -->

@@ -32,20 +32,26 @@ func defaultMMSValue(ts mms.TypeSpec) *mms.Value {
 
 // btypeToMMS maps IEC 61850 basic types to MMS TypeSpec values.
 var btypeToMMS = map[string]mms.TypeSpec{
-	"BOOLEAN":      {Type: mms.ValueTypeBoolean},
-	"INT8":         {Type: mms.ValueTypeInteger, Size: 8},
-	"INT16":        {Type: mms.ValueTypeInteger, Size: 16},
-	"INT32":        {Type: mms.ValueTypeInteger, Size: 32},
-	"INT64":        {Type: mms.ValueTypeInteger, Size: 64},
-	"INT128":       {Type: mms.ValueTypeInteger, Size: 128},
-	"INT8U":        {Type: mms.ValueTypeUnsigned, Size: 8},
-	"INT16U":       {Type: mms.ValueTypeUnsigned, Size: 16},
-	"INT32U":       {Type: mms.ValueTypeUnsigned, Size: 32},
-	"FLOAT32":      {Type: mms.ValueTypeFloat, FormatWidth: 32, ExponentWidth: 8},
-	"FLOAT64":      {Type: mms.ValueTypeFloat, FormatWidth: 64, ExponentWidth: 11},
-	"Enum":         {Type: mms.ValueTypeInteger, Size: 8},
-	"Dbpos":        {Type: mms.ValueTypeBitString, Size: 2},
-	"Tcmd":         {Type: mms.ValueTypeInteger, Size: 8},
+	"BOOLEAN": {Type: mms.ValueTypeBoolean},
+	"INT8":    {Type: mms.ValueTypeInteger, Size: 8},
+	"INT16":   {Type: mms.ValueTypeInteger, Size: 16},
+	"INT24":   {Type: mms.ValueTypeInteger, Size: 24},
+	"INT32":   {Type: mms.ValueTypeInteger, Size: 32},
+	"INT64":   {Type: mms.ValueTypeInteger, Size: 64},
+	"INT128":  {Type: mms.ValueTypeInteger, Size: 128},
+	"INT8U":   {Type: mms.ValueTypeUnsigned, Size: 8},
+	"INT16U":  {Type: mms.ValueTypeUnsigned, Size: 16},
+	"INT24U":  {Type: mms.ValueTypeUnsigned, Size: 24},
+	"INT32U":  {Type: mms.ValueTypeUnsigned, Size: 32},
+	"FLOAT32": {Type: mms.ValueTypeFloat, FormatWidth: 32, ExponentWidth: 8},
+	"FLOAT64": {Type: mms.ValueTypeFloat, FormatWidth: 64, ExponentWidth: 11},
+	"Enum":    {Type: mms.ValueTypeInteger, Size: 8},
+	"Dbpos":   {Type: mms.ValueTypeBitString, Size: 2},
+	// Tcmd is a CODED ENUM (stop | lower | higher | reserved, IEC 61850-7-3
+	// BSC/BAC ctlVal); IEC 61850-8-1 8.1.2.3 maps a CODED ENUM to a
+	// bit-string sized for its largest value: BIT STRING(2). Before
+	// v1.17.0 it was served as INT8 Integer.
+	"Tcmd":         {Type: mms.ValueTypeBitString, Size: 2},
 	"Quality":      {Type: mms.ValueTypeBitString, Size: 13},
 	"Timestamp":    {Type: mms.ValueTypeUTCTime},
 	"VisString32":  {Type: mms.ValueTypeVisibleString, Size: 32},
@@ -63,6 +69,22 @@ var btypeToMMS = map[string]mms.TypeSpec{
 	"OptFlds":      {Type: mms.ValueTypeBitString, Size: 10},
 	"TrgOps":       {Type: mms.ValueTypeBitString, Size: 6},
 	"EntryTime":    {Type: mms.ValueTypeBinaryTime},
+	// The remaining basic types of IEC 61850-6 (tPredefinedBasicTypeEnum)
+	// that a model may use for service-tracking and control-block
+	// attributes. EntryID is an 8-octet OCTET STRING (IEC 61850-8-1
+	// 8.1.3.5); SvOptFlds is the 5-bit OptFlds of an MSVCB (IEC 61850-9-2);
+	// Currency is the ISO 4217 three-character code (IEC 61850-7-3);
+	// PhyComAddr is {Addr, PRIORITY, VID, APPID} (IEC 61850-8-1, GoCB and
+	// MSVCB DstAddress).
+	"EntryID":   {Type: mms.ValueTypeOctetString, Size: 8},
+	"SvOptFlds": {Type: mms.ValueTypeBitString, Size: 5},
+	"Currency":  {Type: mms.ValueTypeVisibleString, Size: 3},
+	"PhyComAddr": {Type: mms.ValueTypeStructure, Elements: []mms.TypeSpecElement{
+		{Name: "Addr", Type: mms.TypeSpec{Type: mms.ValueTypeOctetString, Size: 6}},
+		{Name: "PRIORITY", Type: mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 8}},
+		{Name: "VID", Type: mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 16}},
+		{Name: "APPID", Type: mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 16}},
+	}},
 }
 
 // StoreKey builds a domain-qualified key for the [ValueStore].
@@ -689,8 +711,32 @@ func registerDAWithFC(srv *mms.Server, vs *ValueStore, ldName, lnName string, pa
 	itemID := lnName + "$" + attr.FC + "$" + strings.Join(fullPath, "$")
 	storeKey := StoreKey(ldName, itemID)
 	var write func(context.Context, *mms.Value) error
-	if vs.allowReadOnlyFCWrites || clientWritableFC(attr.FC) {
+	compoundTS := elem.Type
+	switch {
+	case attr.FC == "CO":
+		// Control services are writes of the whole Oper, SBOw or Cancel
+		// structure (IEC 61850-8-1 20.6.3, 20.7.3, 20.8.3); a component of
+		// them (Oper$origin) is not writable (SRV-03). The control model
+		// decides before the value is kept.
+		if isControlServiceAttr(attr.Name) {
+			write = func(ctx context.Context, val *mms.Value) error {
+				if err := CheckWriteValue(val, compoundTS); err != nil {
+					return fmt.Errorf("write %s: %w", storeKey, err)
+				}
+				if _, err := vs.callInterceptor(ctx, storeKey, val); err != nil {
+					return err
+				}
+				vs.Set(storeKey, val)
+				return nil
+			}
+		}
+	case vs.allowReadOnlyFCWrites || clientWritableFC(attr.FC):
 		write = func(ctx context.Context, val *mms.Value) error {
+			// The value must match the declared structure (IEC 61850-8-1
+			// 8.1.3.4.4.2): before v1.17.0 any value was stored.
+			if err := CheckWriteValue(val, compoundTS); err != nil {
+				return fmt.Errorf("write %s: %w", storeKey, err)
+			}
 			// Store the compound value so the interceptor can read it if needed.
 			vs.Set(storeKey, val)
 			if handled, err := vs.callInterceptor(ctx, storeKey, val); handled || err != nil {
@@ -782,15 +828,14 @@ func registerDA(srv *mms.Server, vs *ValueStore, ldName, lnName string, path []s
 			return defaultMMSValue(ts), nil
 		},
 		Write: func(ctx context.Context, val *mms.Value) error {
-			if val == nil {
-				return fmt.Errorf("nil value for %s", storeKey)
+			// A refused write carries the DataAccessError of IEC 61850-8-1
+			// Table 23 (type-inconsistent, object-value-invalid); before
+			// v1.17.0 every refusal became temporarily-unavailable.
+			if err := CheckWriteValue(val, ts); err != nil {
+				return fmt.Errorf("write %s: %w", storeKey, err)
 			}
-			if val.Type() != ts.Type {
-				return fmt.Errorf("type mismatch for %s: got %v, want %v",
-					storeKey, val.Type(), ts.Type)
-			}
-			if err := validateWriteSize(val, ts); err != nil {
-				return fmt.Errorf("write validation for %s: %w", storeKey, err)
+			if err := checkEnumValue(val, attr); err != nil {
+				return fmt.Errorf("write %s: %w", storeKey, err)
 			}
 			vs.Set(storeKey, val)
 			// Notify any installed interceptor (e.g. the ReportEngine) that
@@ -803,11 +848,20 @@ func registerDA(srv *mms.Server, vs *ValueStore, ldName, lnName string, path []s
 			return nil
 		},
 	}
-	if !vs.allowReadOnlyFCWrites && !clientWritableFC(attr.FC) {
-		v.Write = nil // go-mms answers object-access-denied
+	if !vs.allowReadOnlyFCWrites && !clientWritableFC(attr.FC) || attr.FC == "CO" {
+		// go-mms answers object-access-denied. A CO leaf is a component of
+		// Oper/SBOw/Cancel, or the read-only SBO (IEC 61850-8-1 20.5: Select
+		// is a Read of SBO); writing it bypassed the control model.
+		v.Write = nil
 	}
 
 	return srv.RegisterVariable(v)
+}
+
+// isControlServiceAttr reports whether name is a control service
+// attribute written as a whole (IEC 61850-8-1 20.6-20.8).
+func isControlServiceAttr(name string) bool {
+	return name == "Oper" || name == "SBOw" || name == "Cancel"
 }
 
 // clientWritableFC reports whether a client may write data attributes of
@@ -1176,7 +1230,7 @@ func parseInitialValue(btype, val string, enumNames map[string]int) (*mms.Value,
 			return nil, fmt.Errorf("invalid BOOLEAN value %q", val)
 		}
 
-	case "INT8", "INT16", "INT32", "INT64", "INT128", "Tcmd":
+	case "INT8", "INT16", "INT24", "INT32", "INT64", "INT128":
 		i, err := strconv.ParseInt(val, 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("invalid integer value %q for %s: %w", val, btype, err)
@@ -1197,7 +1251,7 @@ func parseInitialValue(btype, val string, enumNames map[string]int) (*mms.Value,
 		}
 		return nil, fmt.Errorf("invalid integer value %q for %s: not a valid ordinal or enum name", val, btype)
 
-	case "INT8U", "INT16U", "INT32U":
+	case "INT8U", "INT16U", "INT24U", "INT32U":
 		u, err := strconv.ParseUint(val, 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("invalid unsigned value %q for %s: %w", val, btype, err)
@@ -1211,7 +1265,7 @@ func parseInitialValue(btype, val string, enumNames map[string]int) (*mms.Value,
 		}
 		return mms.NewFloat(f), nil
 
-	case "VisString32", "VisString64", "VisString65", "VisString129", "VisString255", "ObjRef":
+	case "VisString32", "VisString64", "VisString65", "VisString129", "VisString255", "ObjRef", "Currency":
 		return mms.NewVisibleString(val), nil
 
 	case "Unicode255":
@@ -1228,6 +1282,25 @@ func parseInitialValue(btype, val string, enumNames map[string]int) (*mms.Value,
 			return mms.NewBitStringWithLength([]byte{b}, 2), nil
 		}
 		return parseInitialBitString(val, 2)
+
+	case "Tcmd":
+		// CODED ENUM stop(0) | lower(1) | higher(2) | reserved(3) (IEC
+		// 61850-7-3 BSC), encoded as the unsigned value in BIT STRING(2),
+		// first bit in the high bit of the octet (IEC 61850-8-1 8.1.2.3).
+		if b, ok := tcmdLiterals[val]; ok {
+			return mms.NewBitStringWithLength([]byte{b}, 2), nil
+		}
+		u, err := strconv.ParseUint(val, 10, 8)
+		if err != nil || u > 3 {
+			return nil, fmt.Errorf("invalid Tcmd value %q", val)
+		}
+		return mms.NewBitStringWithLength([]byte{byte(u) << 6}, 2), nil
+
+	case "SvOptFlds":
+		return parseInitialBitString(val, 5)
+
+	case "EntryID":
+		return parseInitialOctetString(val, 8)
 
 	case "Check":
 		return parseInitialBitString(val, 2)
@@ -1261,9 +1334,15 @@ func parseInitialValue(btype, val string, enumNames map[string]int) (*mms.Value,
 	}
 }
 
-// parseInitialBitString parses an integer string into a bit string of
-// the specified bit length. The integer value populates the bits in
-// MSB-first order.
+// tcmdLiterals maps the Tcmd literals to their two-bit encoding, first
+// bit in the high bit of the octet.
+var tcmdLiterals = map[string]byte{
+	"stop":     0x00,
+	"lower":    0x40,
+	"higher":   0x80,
+	"reserved": 0xc0,
+}
+
 // dbposLiterals maps the Dbpos literals to their two-bit encoding,
 // first bit in the high bit of the octet.
 var dbposLiterals = map[string]byte{
@@ -1273,6 +1352,9 @@ var dbposLiterals = map[string]byte{
 	"bad-state":          0xc0,
 }
 
+// parseInitialBitString parses an integer string into a bit string of
+// the specified bit length. The integer value populates the bits in
+// MSB-first order.
 func parseInitialBitString(val string, bits int) (*mms.Value, error) {
 	u, err := strconv.ParseUint(val, 0, 64)
 	if err != nil {
