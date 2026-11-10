@@ -3,6 +3,7 @@
 package scl
 
 import (
+	"fmt"
 	"net/netip"
 	"path/filepath"
 	"strings"
@@ -77,7 +78,7 @@ func TestABBAddresses(t *testing.T) {
 }
 
 const defaultsDoc = `<?xml version="1.0"?>
-<SCL xmlns="http://www.iec.ch/61850/2003/SCL" version="2007" revision="B" release="4">
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL" %s>
 <Header id="x"/>
 <IED name="I"><Services><ConfDataSet max="10" maxAttributes="100"/></Services>
 <AccessPoint name="AP"><Server><Authentication/><LDevice inst="LD0">
@@ -92,9 +93,21 @@ const defaultsDoc = `<?xml version="1.0"?>
 </SCL>`
 
 // TestDefaultTrueAttributes: an optional boolean attribute whose schema
-// default is true reads true when absent and false only when written so.
+// default is true reads true when absent and false only when written so,
+// in each of the 2007 schemas.
 func TestDefaultTrueAttributes(t *testing.T) {
-	s, err := Parse(strings.NewReader(defaultsDoc))
+	for name, version := range map[string]string{
+		"2007B":  `version="2007" revision="B"`,
+		"2007B4": `version="2007" revision="B" release="4"`,
+		"2007C5": `version="2007" revision="C" release="5"`,
+	} {
+		t.Run(name, func(t *testing.T) { checkDefaultTrue(t, fmt.Sprintf(defaultsDoc, version)) })
+	}
+}
+
+func checkDefaultTrue(t *testing.T, doc string) {
+	t.Helper()
+	s, err := Parse(strings.NewReader(doc))
 	if err != nil {
 		t.Fatal(err)
 	}
