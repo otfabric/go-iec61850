@@ -23,11 +23,11 @@ func TestDecodeGoCBRanges(t *testing.T) {
 			mms.NewUnsigned(minT), mms.NewUnsigned(maxT),
 		})
 	}
-	cb, err := decodeGoCB("r", gocb(math.MaxUint32, math.MaxUint8, math.MaxUint16, math.MaxUint16, math.MaxUint32, math.MaxUint32))
+	cb, err := decodeGoCB("r", gocb(math.MaxUint32, 7, 0x0fff, math.MaxUint16, math.MaxUint32, math.MaxUint32))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cb.ConfRev != math.MaxUint32 || cb.DstAddress.Priority != math.MaxUint8 || cb.DstAddress.VID != math.MaxUint16 ||
+	if cb.ConfRev != math.MaxUint32 || cb.DstAddress.Priority != 7 || cb.DstAddress.VID != 0x0fff ||
 		cb.DstAddress.AppID != math.MaxUint16 || cb.MinTime != math.MaxUint32 || cb.MaxTime != math.MaxUint32 || !cb.HasTimes {
 		t.Fatalf("in-range maxima: %+v", cb)
 	}
@@ -35,9 +35,12 @@ func TestDecodeGoCBRanges(t *testing.T) {
 		"ConfRev":  gocb(math.MaxUint32+1, 4, 0, 1, 10, 1000),
 		"PRIORITY": gocb(1, math.MaxUint8+1, 0, 1, 10, 1000),
 		"VID":      gocb(1, 4, math.MaxUint16+1, 1, 10, 1000),
-		"APPID":    gocb(1, 4, 0, math.MaxUint16+1, 10, 1000),
-		"MinTime":  gocb(1, 4, 0, 1, math.MaxUint32+1, 1000),
-		"MaxTime":  gocb(1, 4, 0, 1, 10, math.MaxUint32+1),
+		// 8-1 Table 12: PRIORITY 0..7, VID 0..4095 (GSE-14).
+		"PRIORITY 8": gocb(1, 8, 0, 1, 10, 1000),
+		"VID 4096":   gocb(1, 4, 0x1000, 1, 10, 1000),
+		"APPID":      gocb(1, 4, 0, math.MaxUint16+1, 10, 1000),
+		"MinTime":    gocb(1, 4, 0, 1, math.MaxUint32+1, 1000),
+		"MaxTime":    gocb(1, 4, 0, 1, 10, math.MaxUint32+1),
 	} {
 		if cb, err := decodeGoCB("r", v); !errors.Is(err, ErrProtocol) {
 			t.Errorf("%s out of range: %+v, %v; want ErrProtocol", name, cb, err)

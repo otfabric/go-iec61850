@@ -188,6 +188,15 @@ func convertLD(s *scl.SCL, sclLD *scl.LDevice, dotIdx map[string]*scl.DOType, da
 		}
 		for i := range sclLD.LN0.SMVControls {
 			sc := &sclLD.LN0.SMVControls[i]
+			if !sc.Multicast {
+				// 6 Table 30: multicast="false" is a unicast (USVCB)
+				// block (7-2 19.3), which is not implemented; serving
+				// it as an MSVCB would misrepresent it.
+				if warnings != nil {
+					*warnings = append(*warnings, fmt.Sprintf("%s/%s: SampledValueControl %q is unicast (multicast=\"false\", USVCB): not supported, skipped", sclLD.Inst, ln.Name, sc.Name))
+				}
+				continue
+			}
 			ln.SvCBs = append(ln.SvCBs, convertSvCB(sc, smv[sclLD.Inst+"/"+sc.Name], sclLD.Inst+"/"+ln.Name, warnings))
 		}
 		ld.LogicalNodes = append(ld.LogicalNodes, *ln)

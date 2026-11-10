@@ -36,12 +36,39 @@ func TestParseGSEAddress(t *testing.T) {
 		{{Type: "MAC-Address", Value: "01-0C-CD-01-00-01"}, {Type: "APPID", Value: "1"}, {Type: "VLAN-ID", Value: "1000"}},
 		{{Type: "MAC-Address", Value: "01-0C-CD-01-00-01"}, {Type: "APPID", Value: "1"}, {Type: "VLAN-PRIORITY", Value: "8"}},
 		{{Type: "APPID", Value: "1"}},
-		{{Type: "MAC-Address", Value: "01-0C-CD-01-00-01"}},
 	}
 	for i, ps := range bad {
 		if _, err := ParseGSEAddress(ps); err == nil {
 			t.Errorf("case %d accepted", i)
 		}
+	}
+}
+
+// TestSpec_8_1_Table133_OptionalAddressParameters: APPID and
+// VLAN-PRIORITY are optional (8-1 Table 133, 9-2 Table 19); without
+// VLAN-PRIORITY the Table C.1 default priority 4 applies (GSE-04, GSE-05).
+func TestSpec_8_1_Table133_OptionalAddressParameters(t *testing.T) {
+	a, err := ParseGSEAddress([]scl.P{{Type: "MAC-Address", Value: "01-0C-CD-01-00-01"}})
+	if err != nil || a.HasAppID || a.AppID != 0 || a.HasVLAN {
+		t.Fatalf("%+v %v", a, err)
+	}
+	a, err = ParseGSEAddress([]scl.P{{Type: "MAC-Address", Value: "01-0C-CD-01-00-01"}, {Type: "VLAN-ID", Value: "005"}})
+	if err != nil || !a.HasVLAN || a.HasPriority || a.VLANPriority != DefaultVLANPriority || a.VLANID != 5 {
+		t.Fatalf("%+v %v", a, err)
+	}
+	a, err = ParseGSEAddress([]scl.P{{Type: "MAC-Address", Value: "01-0C-CD-01-00-01"}, {Type: "VLAN-ID", Value: "005"}, {Type: "VLAN-PRIORITY", Value: "0"}})
+	if err != nil || a.VLANPriority != 0 || !a.HasPriority {
+		t.Fatalf("explicit priority 0: %+v %v", a, err)
+	}
+	var w []string
+	g := convertGoCB(&scl.GSEControl{Name: "g"}, &scl.GSEAddress{Address: []scl.P{{Type: "MAC-Address", Value: "01-0C-CD-01-00-01"}}}, "LD/LLN0", &w)
+	if !g.HasAddress || g.AppID != DefaultGOOSEAppID || len(w) != 1 || !strings.Contains(w[0], "no APPID") {
+		t.Errorf("GoCB %+v %v", g, w)
+	}
+	w = nil
+	sv := convertSvCB(&scl.SMVControl{Name: "s", SmpRate: 80, NofASDU: 1, Multicast: true}, &scl.SMVAddress{Address: []scl.P{{Type: "MAC-Address", Value: "01-0C-CD-04-00-01"}}}, "LD/LLN0", &w)
+	if !sv.HasAddress || sv.AppID != DefaultSVAppID || len(w) != 1 {
+		t.Errorf("SvCB %+v %v", sv, w)
 	}
 }
 

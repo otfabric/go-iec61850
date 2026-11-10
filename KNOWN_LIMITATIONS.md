@@ -87,12 +87,18 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   `AF_PACKET` and needs `CAP_NET_RAW` (or root); macOS/BSD use BPF and need
   read/write access to `/dev/bpf*`. Other platforms (Windows) return
   `ErrUnsupportedPlatform`; the in-memory `Hub` works everywhere.
-- **GOOSE** — no fixed-offset (IEC 61850-8-1 Ed. 2.1) encoding, no GSSE and
-  no GOOSE management APDUs (GetGoReference/GetGOOSEElementNumber).
+- **GOOSE** — no GSSE and no GOOSE management APDUs
+  (GetGoReference/GetGOOSEElementNumber). The fixed-length encoding
+  (IEC 61850-8-1:2011 Annex A.3, `fixedOffs`) is implemented but sends
+  FLOAT32 in 5 octets (not the 4 of Table A.2), limits OCTET/VISIBLE
+  STRING members to 20/35 octets and is not verified against an
+  independent fixed-length implementation. Without VLAN parameters in
+  the GSE address frames are sent untagged.
   Received GOOSE values are not mapped into a server model (no `ExtRef` /
   `InRef` binding); applications map them from subscriber events.
 - **Sampled Values** — multicast control blocks (MSVCB) only: no unicast
-  SV (USVCB, `SendUSVMessage`). The server's SV engine publishes the
+  SV (USVCB, `SendUSVMessage`); an SCL `SampledValueControl` with
+  `multicast="false"` is skipped with a model warning. The server's SV engine publishes the
   dataset values from its value store at `smpRate`; waveform sources feed
   the engine's publishers (`SVEngine.Publisher`) directly. Software timing
   is subject to OS scheduling: the publisher paces on an absolute schedule

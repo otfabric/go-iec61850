@@ -200,7 +200,9 @@ func TestSVServerMSVCBOverMMS(t *testing.T) {
 	}
 	s := f.wait(t, id, func(*sv.Sample) bool { return true })
 	if !s.ASDU.HasSmpRate || s.ASDU.SmpRate != 4000 || !s.ASDU.HasSmpMod || s.ASDU.SmpMod != sv.SmpPerSec ||
-		!s.ASDU.HasRefrTm || s.ASDU.DatSet != ds || s.ASDU.ConfRev != 1 {
+		!s.ASDU.HasRefrTm || s.ASDU.DatSet != ds || s.ASDU.ConfRev != 5 {
+		// 7-2 19.2.1.6: the MsvID, SmpRate, SmpMod and OptFlds changes
+		// are counted (1 + 4); the unchanged DatSet is not (SV-02).
 		t.Fatalf("after reconfigure %+v", s.ASDU)
 	}
 	cb, _ = f.client.GetMSVCB(ctx, "MUIEDMU01", "LLN0$MS$MSVCB01")
@@ -216,12 +218,24 @@ func TestSVServerMSVCBOverMMS(t *testing.T) {
 			t.Errorf("update %d accepted", i)
 		}
 	}
-	// The same DatSet is a no-op.
-	if err := f.client.SetMSVCB(ctx, "MUIEDMU01", "LLN0$MS$MSVCB01", MSVCBUpdate{DatSet: &ds}); err != nil {
+	// The same DatSet (also by its bare name, stored qualified, 9-2
+	// Table 9, SV-04) and the same SmpRate are not changes (7-2
+	// 19.2.1.6).
+	bare := "PhsMeas1"
+	for _, u := range []MSVCBUpdate{{DatSet: &ds}, {DatSet: &bare}, {SmpRate: &rate}} {
+		if err := f.client.SetMSVCB(ctx, "MUIEDMU01", "LLN0$MS$MSVCB01", u); err != nil {
+			t.Error(err)
+		}
+	}
+	if cb, _ = f.client.GetMSVCB(ctx, "MUIEDMU01", "LLN0$MS$MSVCB01"); cb.ConfRev != 5 || cb.SvEna || cb.DatSet != ds {
+		t.Errorf("after no-op: %+v", cb)
+	}
+	rate2 := uint16(80)
+	if err := f.client.SetMSVCB(ctx, "MUIEDMU01", "LLN0$MS$MSVCB01", MSVCBUpdate{SmpRate: &rate2}); err != nil {
 		t.Error(err)
 	}
-	if cb, _ = f.client.GetMSVCB(ctx, "MUIEDMU01", "LLN0$MS$MSVCB01"); cb.ConfRev != 1 || cb.SvEna {
-		t.Errorf("after no-op: %+v", cb)
+	if cb, _ = f.client.GetMSVCB(ctx, "MUIEDMU01", "LLN0$MS$MSVCB01"); cb.ConfRev != 6 {
+		t.Errorf("after SmpRate change: %+v", cb)
 	}
 }
 

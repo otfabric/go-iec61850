@@ -400,13 +400,17 @@ func (e *SVEngine) handleWrite(storeKey string, val *mms.Value) (bool, error) {
 	case "OptFlds":
 	case "DatSet":
 		ds, _ := val.VisibleString()
-		if def, _ := e.s.model.FindDataSet(rt.ldName, ds); def == nil {
+		def, ln := e.s.model.FindDataSet(rt.ldName, ds)
+		if def == nil {
 			return true, invalid
 		}
-		if ds == rt.str("DatSet") {
+		// The MSVCB and the ASDU datSet carry the IEC reference of the
+		// dataset (9-2 Table 9), also when written by its bare name.
+		qds := servermodel.QualifiedDatSet(rt.ldName, ln.Name, def.Name)
+		if qds == rt.str("DatSet") {
 			return true, nil
 		}
-		e.s.store.Set(storeKey, val)
+		e.s.store.Set(storeKey, mms.NewVisibleString(qds))
 		e.s.store.Set(rt.key("ConfRev"), mms.NewUnsigned(rt.uint("ConfRev")+1))
 		if err := rt.resolveLocked(); err != nil {
 			e.log.Warn("iec61850: SvCB DatSet unusable", "svcbRef", rt.prefix, "error", err)
@@ -414,6 +418,11 @@ func (e *SVEngine) handleWrite(storeKey string, val *mms.Value) (bool, error) {
 		return true, nil
 	default:
 		return false, nil
+	}
+	// 7-2 19.2.1.6: any change of the value of MsvID, DatSet, SmpMod,
+	// SmpRate or OptFlds is counted in ConfRev.
+	if !val.Equal(e.s.store.Get(storeKey)) {
+		e.s.store.Set(rt.key("ConfRev"), mms.NewUnsigned(rt.uint("ConfRev")+1))
 	}
 	e.s.store.Set(storeKey, val)
 	return true, nil

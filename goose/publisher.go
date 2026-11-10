@@ -65,7 +65,8 @@ type PublisherConfig struct {
 	// Required unless NdsCom is set.
 	DatSet string
 
-	// GoID is the GOOSE identifier. Empty uses GocbRef.
+	// GoID is the GOOSE identifier, at most [MaxGoIDLen] octets. Empty
+	// uses GocbRef (not length-checked).
 	GoID string
 
 	// ConfRev is the configuration revision.
@@ -176,11 +177,13 @@ func (c *PublisherConfig) normalize() error {
 	if c.TimeAllowedToLive <= c.MaxTime {
 		return configErr("TimeAllowedToLive", "%v not greater than MaxTime %v (8-1 18.1.2.5.1 Figure 10)", c.TimeAllowedToLive, c.MaxTime)
 	}
-	if c.GoID == "" {
-		c.GoID = c.GocbRef
-	}
 	if len(c.GoID) > MaxGoIDLen {
 		return configErr("GoID", "longer than %d octets (8-1 18.1.2.5.2)", MaxGoIDLen)
+	}
+	if c.GoID == "" {
+		// The default GoID is the GoCB reference (8-1 Table 73), which
+		// may be longer than 65 octets; it is sent as is.
+		c.GoID = c.GocbRef
 	}
 	if c.TimeQuality == 0 {
 		c.TimeQuality = DefaultTimeQuality

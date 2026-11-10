@@ -162,7 +162,9 @@ func decodeGoCB(ref string, v *mms.Value) (*GoCB, error) {
 	if !ok1 || !ok2 || !ok3 {
 		return nil, bad("DstAddress: unexpected attribute types")
 	}
-	if p > math.MaxUint8 || vid > math.MaxUint16 || app > math.MaxUint16 {
+	// 8-1 Table 12 limits PRIORITY to 0..7 and VID to 0..4095 (the
+	// 802.1Q TCI fields).
+	if p > 7 || vid > 0x0fff || app > math.MaxUint16 {
 		return nil, bad("DstAddress: PRIORITY %d / VID %d / APPID %d out of range", p, vid, app)
 	}
 	cb.DstAddress.Priority, cb.DstAddress.VID, cb.DstAddress.AppID = uint8(p), uint16(vid), uint16(app)
