@@ -187,7 +187,8 @@ Unwraps to `Wrapped` when set, otherwise to `ErrModelMismatch`.
 ### `*ReportError`
 
 Returned when a report subscription encounters a protocol-level problem
-after the subscription has been established.
+after the subscription has been established, and by `DecodeReport` for
+report values that do not follow the report format.
 
 ```go
 type ReportError struct {

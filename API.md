@@ -531,6 +531,14 @@ type ReportIndication struct {
 }
 ```
 
+### DecodeReport
+
+```go
+func DecodeReport(values []*mms.Value) (*ReportIndication, error)
+```
+
+Decodes the access results of an MMS InformationReport that carries an IEC 61850 report, for reports not received through a subscription, such as those of a capture decoded with go-mms `mms.DecodeTSDU`. It reads the fields in the order of the IEC 61850-8-1 report format: RptID, OptFlds, the optional fields OptFlds announces, the inclusion bit string, then per included member its data reference, value and reason for inclusion. It is strict: a missing or nil value, a field of the wrong MMS type, and values left over after the last member are a `*ReportError`. A `Client` decoding the reports it subscribed to stays lenient about field types.
+
 ### ReasonCode
 
 ```go
