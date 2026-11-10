@@ -128,6 +128,7 @@ fuzz: ## Run all fuzz targets for FUZZTIME each (default 15s)
 	@go test -fuzz=^FuzzDecodeQuality$$              -fuzztime=$(FUZZTIME) .
 	@go test -fuzz=^FuzzNewValue$$                   -fuzztime=$(FUZZTIME) .
 	@go test -fuzz=^FuzzDecodeReportIndication$$     -fuzztime=$(FUZZTIME) .
+	@go test -fuzz=^FuzzDecodeReport$$               -fuzztime=$(FUZZTIME) .
 	@go test -fuzz=^FuzzDecodeOptFlds$$              -fuzztime=$(FUZZTIME) .
 	@go test -fuzz=^FuzzDecodeTrgOps$$               -fuzztime=$(FUZZTIME) .
 	@go test -fuzz=^FuzzDecodeReportIndication_NilValues$$ -fuzztime=$(FUZZTIME) .

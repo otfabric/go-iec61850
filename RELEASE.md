@@ -1,5 +1,20 @@
 # go-iec61850 Releases
 
+## v1.16.0
+
+**Date:** 2026-11-10
+**Previous release:** v1.15.2
+
+### Added
+
+- `DecodeReport(values []*mms.Value) (*ReportIndication, error)` decodes the access results of an InformationReport that carries an IEC 61850 report, for reports not received through a subscription: those of a capture decoded with go-mms `mms.DecodeTSDU`, as the trace analysis of otfabric/iec61850-explorer does. It is strict: a missing or nil value, a field of the wrong MMS type and values left over after the last member are a `*ReportError`. A `Client` decoding the reports it subscribed to is unchanged.
+
+### Tests
+
+- `TestDecodeReportRoundTrip` decodes what the server's report engine encodes, for every optional field, and checks it against the client's decoder; `TestDecodeReportErrors` covers every field missing, nil or of the wrong type, and values left over. `FuzzDecodeReport` (4.6 million inputs locally, no failure) is in `make fuzz`.
+
+---
+
 ## v1.15.2
 
 **Date:** 2026-11-09
