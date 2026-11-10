@@ -150,7 +150,7 @@ Supervision is per stream (source MAC, APPID, gocbRef):
 | `EventSqNumGap` | sqNum skipped retransmissions |
 | `EventDuplicate` | same stNum and sqNum again |
 | `EventOutOfOrder` | an older stNum/sqNum |
-| `EventRestart` | stNum restarted at 1 (publisher restart), told apart from reordering by the frame time |
+| `EventRestart` | publisher restart: stNum went back to 1, or stNum/sqNum did not advance (or stNum went down) while `T` is newer than that of the last accepted state (7-2 18.2.3.5: T only changes with a new state); a frame with an older `T` is reordering |
 | `EventInvalid` | validation failed |
 | `EventSupervision` | the stream status changed |
 

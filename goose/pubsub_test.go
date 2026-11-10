@@ -729,3 +729,75 @@ func TestEventAndStatusStrings(t *testing.T) {
 		}
 	}
 }
+
+// TestSpec_8_1_18_1_2_5_RestartWithNewerT covers a publisher restart
+// that keeps stNum 1 (never changed state) or lowers a persisted stNum:
+// 7-2 18.2.3.5 T changes only with a new state, so a newer T together
+// with a non-advancing stNum/sqNum is a restart (7-2 18.2.3.6), not an
+// out-of-order frame (GSE-01).
+func TestSpec_8_1_18_1_2_5_RestartWithNewerT(t *testing.T) {
+	t.Parallel()
+	t0, t1 := time.Unix(1_900_000_000, 0), time.Unix(1_950_000_000, 0)
+	feed := func(h *subHarness, st, sq uint32, tt time.Time) {
+		h.feed(func(f *Frame) { f.PDU.StNum, f.PDU.SqNum, f.PDU.T = st, sq, tt })
+	}
+
+	t.Run("same stNum, sqNum restarts", func(t *testing.T) {
+		h := newSubHarness(t, SubscriptionConfig{QueueSize: 4096}, SubscriberConfig{})
+		for sq := uint32(0); sq <= 500; sq++ {
+			feed(h, 1, sq, t0)
+		}
+		h.drain()
+		feed(h, 1, 0, t1)
+		evs := h.drain()
+		if !eqKinds(kinds(evs), EventRestart, EventMessage) || !evs[1].NewState {
+			t.Fatalf("events %v", kinds(evs))
+		}
+		for sq := uint32(1); sq < 100; sq++ {
+			feed(h, 1, sq, t1)
+		}
+		evs = h.drain()
+		if len(evs) != 99 {
+			t.Fatalf("delivered %d of 99 after restart: %v", len(evs), kinds(evs))
+		}
+		s := h.sub.Supervision()[0]
+		if s.LastSqNum != 99 || s.Restarts != 1 || s.OutOfOrder != 0 {
+			t.Errorf("supervision %+v", s)
+		}
+		// A late frame with the old T stays out of order.
+		feed(h, 1, 3, t0)
+		if evs := h.drain(); !eqKinds(kinds(evs), EventOutOfOrder) {
+			t.Errorf("late frame: %v", kinds(evs))
+		}
+	})
+
+	t.Run("duplicate with newer T", func(t *testing.T) {
+		h := newSubHarness(t, SubscriptionConfig{}, SubscriberConfig{})
+		feed(h, 1, 0, t0)
+		h.drain()
+		feed(h, 1, 0, t1)
+		if evs := h.drain(); !eqKinds(kinds(evs), EventRestart, EventMessage) {
+			t.Fatalf("events %v", kinds(evs))
+		}
+	})
+
+	t.Run("persisted stNum lowered", func(t *testing.T) {
+		h := newSubHarness(t, SubscriptionConfig{}, SubscriberConfig{})
+		feed(h, 7, 0, t0)
+		feed(h, 7, 1, t0)
+		h.drain()
+		feed(h, 3, 0, t1)
+		evs := h.drain()
+		if !eqKinds(kinds(evs), EventRestart, EventMessage) || !evs[1].NewState {
+			t.Fatalf("events %v", kinds(evs))
+		}
+		if s := h.sub.Supervision()[0]; s.LastStNum != 3 || s.LastSqNum != 0 {
+			t.Errorf("supervision %+v", s)
+		}
+		// Older stNum with an older T is still out of order.
+		feed(h, 2, 0, t0)
+		if evs := h.drain(); !eqKinds(kinds(evs), EventOutOfOrder) {
+			t.Errorf("late frame: %v", kinds(evs))
+		}
+	})
+}
