@@ -447,6 +447,9 @@ func (s *Server) Close() {
 		s.svEngine.Stop()
 	}
 	s.journalEngine = nil
+	if s.sgEngine != nil {
+		s.sgEngine.stop()
+	}
 	s.sgEngine = nil
 	s.logger.Info("iec61850: server closed")
 }

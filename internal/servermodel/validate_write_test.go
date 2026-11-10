@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/otfabric/go-mms"
 )
@@ -215,5 +216,96 @@ func TestRegister_RefusedControlWriteNotStored(t *testing.T) {
 	}
 	if vs.Get(StoreKey("LD1", "GGIO1$CO$Do1$Oper")) != nil {
 		t.Error("refused Oper stored")
+	}
+}
+
+// IEC 61850-8-1 8.1.3.4.4.2: a write that changes a read-only component
+// of the SGCB is object-access-denied; an unchanged EditSG write still
+// reaches the setting-group engine (a re-select, IEC 61850-7-2 16.3.3.1).
+func TestSpec_8_1_SGCBWholeStructureWrite(t *testing.T) {
+	srv := mms.NewServer(mms.ServerOptions{
+		MMS: mms.ServerMMSOptions{MaxPDUSize: 65000, MaxOutstandingCalling: 5, MaxOutstandingCalled: 5, DataStructureNestingLevel: 10},
+	})
+	m := &Model{LogicalDevices: []LogicalDevice{{
+		Name: "LD1",
+		LogicalNodes: []LogicalNode{{
+			Name: "LLN0", LNClass: "LLN0",
+			DataObjects: []DataObject{{Name: "Set1", Attributes: []DataAttribute{
+				{Name: "setVal", FC: "SE", BType: "INT32"},
+				{Name: "cmp", FC: "SE", Children: []DataAttribute{{Name: "i", BType: "INT32"}}},
+			}}},
+			SettingGroup: &SettingGroupDef{NumOfSGs: 3, ActSG: 1},
+		}},
+	}}}
+	vs, err := RegisterModel(srv, m, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seen []string
+	vs.SetWriteInterceptor(func(_ context.Context, key string, _ *mms.Value) (bool, error) {
+		seen = append(seen, key)
+		return false, nil
+	})
+	editAllowed := false
+	var guarded []string
+	vs.SetEditGuard(func(_ context.Context, key string, write bool) error {
+		guarded = append(guarded, key)
+		if !editAllowed {
+			return &mms.DataAccessError{Code: mms.DataAccessErrorTemporarilyUnavailable}
+		}
+		return nil
+	})
+	ctx := context.Background()
+	clientT, serverT := loopbackPair()
+	go func() { _ = srv.Serve(ctx, serverT) }()
+	client, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close(ctx) })
+
+	read, err := client.Read(ctx, mms.ReadRequest{DomainID: "LD1", ItemID: "LLN0$SP$SGCB"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	elems, _ := read.Value.Structure()
+	// Written back unchanged (LActTm went over the wire): only EditSG
+	// reaches the interceptor.
+	if _, err := client.Write(ctx, mms.WriteRequest{DomainID: "LD1", ItemID: "LLN0$SP$SGCB", Value: read.Value}); err != nil {
+		t.Fatalf("unchanged write: %v", err)
+	}
+	if len(seen) != 1 || !strings.HasSuffix(seen[0], "$EditSG") {
+		t.Errorf("intercepted = %v, want EditSG only", seen)
+	}
+	changed := append([]*mms.Value(nil), elems...)
+	changed[0] = mms.NewUnsigned(9) // NumOfSG
+	if _, err := client.Write(ctx, mms.WriteRequest{DomainID: "LD1", ItemID: "LLN0$SP$SGCB", Value: mms.NewStructure(changed)}); daeCode(err) != mms.DataAccessErrorObjectAccessDenied {
+		t.Errorf("NumOfSG change = %v, want object-access-denied", err)
+	}
+
+	// FC=SE leaf and compound accesses consult the edit guard first.
+	for _, item := range []string{"LLN0$SE$Set1$setVal", "LLN0$SE$Set1$cmp"} {
+		if _, err := client.Read(ctx, mms.ReadRequest{DomainID: "LD1", ItemID: mms.ItemID(item)}); daeCode(err) != mms.DataAccessErrorTemporarilyUnavailable {
+			t.Errorf("%s read refused = %v", item, err)
+		}
+	}
+	if _, err := client.Write(ctx, mms.WriteRequest{DomainID: "LD1", ItemID: "LLN0$SE$Set1$setVal", Value: mms.NewInteger(3)}); daeCode(err) != mms.DataAccessErrorTemporarilyUnavailable {
+		t.Errorf("SE write refused = %v", err)
+	}
+	if vs.Get(StoreKey("LD1", "LLN0$SE$Set1$setVal")) != nil {
+		t.Error("refused SE write stored")
+	}
+	editAllowed = true
+	if _, err := client.Write(ctx, mms.WriteRequest{DomainID: "LD1", ItemID: "LLN0$SE$Set1$cmp", Value: mms.NewStructure([]*mms.Value{mms.NewInteger(3)})}); err != nil {
+		t.Errorf("SE compound write: %v", err)
+	}
+	if _, err := client.Read(ctx, mms.ReadRequest{DomainID: "LD1", ItemID: "LLN0$SE$Set1$cmp"}); err != nil {
+		t.Errorf("SE compound read: %v", err)
+	}
+	if len(guarded) < 5 {
+		t.Errorf("edit guard calls = %v", guarded)
+	}
+	if sameSGCBMember(mms.NewUTCTime(time.Unix(5, 0)), mms.NewBoolean(true)) {
+		t.Error("UtcTime equal to a boolean")
 	}
 }

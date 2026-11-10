@@ -125,7 +125,13 @@ type ValueStore struct {
 
 	interceptorMu sync.RWMutex
 	interceptor   WriteInterceptor
+	editGuard     EditGuard
 }
+
+// EditGuard decides whether a client may read (write=false) or write the
+// FC=SE (edit setting group) attribute under storeKey; a non-nil error
+// refuses the access before the store is read or changed.
+type EditGuard func(ctx context.Context, storeKey string, write bool) error
 
 // ValueStoreOptions configures [ValueStore] behavior.
 type ValueStoreOptions struct {
@@ -227,6 +233,29 @@ func (vs *ValueStore) SetWriteInterceptor(fn WriteInterceptor) {
 	vs.interceptorMu.Lock()
 	vs.interceptor = fn
 	vs.interceptorMu.Unlock()
+}
+
+// SetEditGuard installs the [EditGuard] consulted for every client read
+// and write of an FC=SE attribute (IEC 61850-7-2 16.2.2.5: with no edit
+// group selected, SetEditSGValue and GetEditSGValue get Response-).
+func (vs *ValueStore) SetEditGuard(fn EditGuard) {
+	vs.interceptorMu.Lock()
+	vs.editGuard = fn
+	vs.interceptorMu.Unlock()
+}
+
+// checkEdit runs the edit guard for an FC=SE access.
+func (vs *ValueStore) checkEdit(ctx context.Context, fc, key string, write bool) error {
+	if fc != "SE" {
+		return nil
+	}
+	vs.interceptorMu.RLock()
+	fn := vs.editGuard
+	vs.interceptorMu.RUnlock()
+	if fn == nil {
+		return nil
+	}
+	return fn(ctx, key, write)
 }
 
 func (vs *ValueStore) callInterceptor(ctx context.Context, key string, val *mms.Value) (bool, error) {
@@ -745,6 +774,23 @@ func registerDAWithFC(srv *mms.Server, vs *ValueStore, ldName, lnName string, pa
 			return nil
 		}
 	}
+	if attr.FC == "SE" {
+		baseRead, baseWrite, fc := read, write, attr.FC
+		read = func(ctx context.Context) (*mms.Value, error) {
+			if err := vs.checkEdit(ctx, fc, storeKey, false); err != nil {
+				return nil, err
+			}
+			return baseRead(ctx)
+		}
+		if baseWrite != nil {
+			write = func(ctx context.Context, val *mms.Value) error {
+				if err := vs.checkEdit(ctx, fc, storeKey, true); err != nil {
+					return err
+				}
+				return baseWrite(ctx, val)
+			}
+		}
+	}
 	if err := srv.RegisterVariable(mms.Variable{
 		Name: mms.ObjectName{
 			Scope:  mms.ObjectScopeDomain,
@@ -820,7 +866,10 @@ func registerDA(srv *mms.Server, vs *ValueStore, ldName, lnName string, path []s
 			ItemID: mms.ItemID(itemID),
 		},
 		TypeSpec: typeSpec,
-		Read: func(_ context.Context) (*mms.Value, error) {
+		Read: func(ctx context.Context) (*mms.Value, error) {
+			if err := vs.checkEdit(ctx, attr.FC, storeKey, false); err != nil {
+				return nil, err
+			}
 			val := vs.Get(storeKey)
 			if val != nil {
 				return val, nil
@@ -828,6 +877,9 @@ func registerDA(srv *mms.Server, vs *ValueStore, ldName, lnName string, path []s
 			return defaultMMSValue(ts), nil
 		},
 		Write: func(ctx context.Context, val *mms.Value) error {
+			if err := vs.checkEdit(ctx, attr.FC, storeKey, true); err != nil {
+				return err
+			}
 			// A refused write carries the DataAccessError of IEC 61850-8-1
 			// Table 23 (type-inconsistent, object-value-invalid); before
 			// v1.17.0 every refusal became temporarily-unavailable.
@@ -1079,6 +1131,22 @@ func registerRCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, rpt *Re
 	})
 }
 
+// sameSGCBMember compares a written SGCB member with the current one. A
+// UtcTime (LActTm) that went over the wire keeps only a 24-bit fraction
+// of a second (IEC 61850-8-1 8.1.3.7), so times within a millisecond, of
+// any TimeQuality, are the same.
+func sameSGCBMember(cur, written *mms.Value) bool {
+	if ct, ok := cur.UTCTime(); ok {
+		wt, ok := written.UTCTime()
+		if !ok {
+			return false
+		}
+		d := ct.Sub(wt)
+		return d > -time.Millisecond && d < time.Millisecond
+	}
+	return cur.Equal(written)
+}
+
 // sgcbWritable are the SGCB attributes a client may write.
 var sgcbWritable = map[string]bool{"ActSG": true, "EditSG": true, "CnfEdit": true}
 
@@ -1086,11 +1154,13 @@ func registerSGCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, sg *Se
 	sgcbItemID := lnName + "$SP$SGCB"
 
 	fields := []rcbField{
-		{"NumOfSGs", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 8}, mms.NewUnsigned(uint64(sg.NumOfSGs))},
+		// The component is NumOfSG (IEC 61850-8-1 Table 60, IEC 61850-7-2
+		// Table 36); before v1.17.0 it was served as NumOfSGs.
+		{"NumOfSG", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 8}, mms.NewUnsigned(uint64(sg.NumOfSGs))},
 		{"ActSG", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 8}, mms.NewUnsigned(uint64(sg.ActSG))},
 		{"EditSG", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 8}, mms.NewUnsigned(0)},
 		{"CnfEdit", mms.TypeSpec{Type: mms.ValueTypeBoolean}, mms.NewBoolean(false)},
-		{"LActTm", mms.TypeSpec{Type: mms.ValueTypeUTCTime}, mms.NewUTCTime(time.Time{})},
+		{"LActTm", mms.TypeSpec{Type: mms.ValueTypeUTCTime}, mms.NewUTCTime(time.Unix(0, 0).UTC())},
 		{"ResvTms", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 16}, mms.NewUnsigned(uint64(sg.ResvTms))},
 	}
 
@@ -1155,19 +1225,36 @@ func registerSGCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, sg *Se
 		// alternate access to one component arrives, goes through the
 		// interceptor for every changed writable subfield (ActSG,
 		// EditSG, CnfEdit), in the order of the structure, as a write
-		// of that subfield would. NumOfSGs, LActTm and ResvTms are
+		// of that subfield would. NumOfSG, LActTm and ResvTms are
 		// read-only (IEC 61850-7-2) and keep their values.
 		Write: func(ctx context.Context, val *mms.Value) error {
 			elems, ok := val.Structure()
 			if !ok || len(elems) != len(fields) {
-				return fmt.Errorf("SGCB write: expected structure with %d elements", len(fields))
+				return writeRefused(mms.DataAccessErrorTypeInconsistent, "SGCB write: expected structure with %d elements", len(fields))
+			}
+			// Changing a read-only member is object-access-denied (IEC
+			// 61850-8-1 8.1.3.4.4.2: a read-only sub-component).
+			changed := false
+			for i, f := range fields {
+				cur := vs.Get(StoreKey(ldName, sgcbItemID+"$"+f.suffix))
+				if cur == nil || sameSGCBMember(cur, elems[i]) {
+					continue
+				}
+				if !sgcbWritable[f.suffix] {
+					return writeRefused(mms.DataAccessErrorObjectAccessDenied, "SGCB write: %s is read-only", f.suffix)
+				}
+				changed = true
 			}
 			for i, f := range fields {
 				if !sgcbWritable[f.suffix] {
 					continue
 				}
 				subKey := StoreKey(ldName, sgcbItemID+"$"+f.suffix)
-				if cur := vs.Get(subKey); cur != nil && cur.Equal(elems[i]) {
+				// An unchanged EditSG still goes to the interceptor when
+				// nothing else changed: a SelectEditSG of the group already
+				// selected, which only the reservation holder may issue
+				// (IEC 61850-7-2 16.3.3.1).
+				if cur := vs.Get(subKey); cur != nil && cur.Equal(elems[i]) && (changed || f.suffix != "EditSG") {
 					continue
 				}
 				if handled, err := vs.callInterceptor(ctx, subKey, elems[i]); err != nil {

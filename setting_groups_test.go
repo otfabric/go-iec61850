@@ -224,9 +224,11 @@ func TestSettingGroupEngine_EditSG_Conflict(t *testing.T) {
 	if err := engine.HandleSGCBWrite(ctx, "LD1", "EditSG", mms.NewUnsigned(2)); err != nil {
 		t.Fatalf("first select: %v", err)
 	}
-	// Another client tries to edit a different group.
-	if err := engine.HandleSGCBWrite(ctx, "LD1", "EditSG", mms.NewUnsigned(3)); err == nil {
-		t.Error("expected conflict error when another edit session is active")
+	// The same client (the reservation holder) may switch the group (IEC
+	// 61850-7-2 16.3.3.1: the reservation is per client); conflicts
+	// between clients are in TestSpec_7_2_16_3_3_1_EditReservation.
+	if err := engine.HandleSGCBWrite(ctx, "LD1", "EditSG", mms.NewUnsigned(3)); err != nil {
+		t.Errorf("holder switching group: %v", err)
 	}
 	// Same group re-select should succeed.
 	if err := engine.HandleSGCBWrite(ctx, "LD1", "EditSG", mms.NewUnsigned(2)); err != nil {
@@ -329,7 +331,7 @@ func TestSettingGroupEngine_ReadOnlySubfield(t *testing.T) {
 	srv.EnableSettingGroups(SettingGroupHandler{})
 
 	ctx := context.Background()
-	if err := srv.SettingGroupEngine().HandleSGCBWrite(ctx, "LD1", "NumOfSGs", mms.NewUnsigned(10)); err == nil {
+	if err := srv.SettingGroupEngine().HandleSGCBWrite(ctx, "LD1", "NumOfSG", mms.NewUnsigned(10)); err == nil {
 		t.Error("expected error for read-only subfield")
 	}
 }
@@ -361,7 +363,7 @@ func TestSettingGroupEngine_SGCBInStore(t *testing.T) {
 	srv.EnableSettingGroups(SettingGroupHandler{})
 
 	vs := srv.ValueStore()
-	numOfSGs := vs.Get(servermodel.StoreKey("LD1", "LLN0$SP$SGCB$NumOfSGs"))
+	numOfSGs := vs.Get(servermodel.StoreKey("LD1", "LLN0$SP$SGCB$NumOfSG"))
 	if numOfSGs == nil {
 		t.Fatal("NumOfSGs not in store")
 	}

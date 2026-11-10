@@ -364,9 +364,11 @@ func TestSettingGroup_DoubleEditReject(t *testing.T) {
 		t.Fatalf("first edit: %v", err)
 	}
 
-	err := srv.sgEngine.HandleSGCBWrite(ctx, "LD1", "EditSG", mms.NewUnsigned(2))
-	if err == nil {
-		t.Error("expected error for second edit while first is active")
+	// The reservation belongs to the client (IEC 61850-7-2 16.3.3.1): the
+	// holder may select another group (as libiec61850 allows); another
+	// client is refused (TestSpec_7_2_16_3_3_1_EditReservation).
+	if err := srv.sgEngine.HandleSGCBWrite(ctx, "LD1", "EditSG", mms.NewUnsigned(2)); err != nil {
+		t.Errorf("holder re-selecting another group: %v", err)
 	}
 
 	if err := srv.sgEngine.HandleSGCBWrite(ctx, "LD1", "EditSG", mms.NewUnsigned(0)); err != nil {
@@ -390,7 +392,7 @@ func TestSettingGroup_ReadOnlySubfield(t *testing.T) {
 	srv := newTestServer(t, model)
 	srv.EnableSettingGroups(SettingGroupHandler{})
 
-	err := srv.sgEngine.HandleSGCBWrite(context.Background(), "LD1", "NumOfSGs", mms.NewUnsigned(5))
+	err := srv.sgEngine.HandleSGCBWrite(context.Background(), "LD1", "NumOfSG", mms.NewUnsigned(5))
 	if err == nil {
 		t.Error("expected error for write to read-only subfield")
 	}
