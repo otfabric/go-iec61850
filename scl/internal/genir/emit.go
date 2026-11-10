@@ -435,6 +435,12 @@ func (e *Emitter) emitAttrFieldWithSuffix(b *strings.Builder, attr *Attribute, s
 	omit := ""
 	if attr.Use != "required" {
 		omit = ",omitempty"
+		// An optional boolean whose schema default is true is a pointer,
+		// so that an absent attribute (nil, the default) is told apart
+		// from an explicit false.
+		if goType == "bool" && attr.Default == "true" {
+			goType = "*bool"
+		}
 	}
 	fmt.Fprintf(b, "\t%s %s `xml:\"%s,attr%s\"`\n", goName, goType, attr.Name, omit)
 }

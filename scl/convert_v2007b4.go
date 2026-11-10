@@ -105,7 +105,7 @@ func convLN0B4(r raw.LN0, diags *[]Diagnostic) LN {
 		ln.SMVControls = append(ln.SMVControls, SMVControl{
 			Name: sv.Name, Desc: sv.Desc, SmvID: sv.SmvID,
 			DatSet: sv.DatSet, ConfRev: sv.ConfRev,
-			SmpRate: sv.SmpRate, NofASDU: sv.NofASDU, Multicast: sv.Multicast,
+			SmpRate: sv.SmpRate, NofASDU: sv.NofASDU, Multicast: defaultTrue(sv.Multicast),
 			SmpMod: string(sv.SmpMod), SecurityEnable: string(sv.SecurityEnable),
 			SmvOpts: SmvOpts{
 				RefreshTime: sv.SmvOpts.RefreshTime, SampleSynchronized: sv.SmvOpts.SampleSynchronized,
@@ -199,14 +199,14 @@ func convRCB4(r raw.ReportControl) ReportControl {
 	if r.TrgOps != nil {
 		rc.TrgOps = TrgOps{
 			Dchg: r.TrgOps.Dchg, Qchg: r.TrgOps.Qchg, Dupd: r.TrgOps.Dupd,
-			Period: r.TrgOps.Period, GI: r.TrgOps.Gi,
+			Period: r.TrgOps.Period, GI: defaultTrue(r.TrgOps.Gi),
 		}
 	}
 	rc.OptFields = OptFields{
 		SeqNum: r.OptFields.SeqNum, TimeStamp: r.OptFields.TimeStamp,
 		DataSet: r.OptFields.DataSet, ReasonCode: r.OptFields.ReasonCode,
 		DataRef: r.OptFields.DataRef, EntryID: r.OptFields.EntryID,
-		ConfigRef: r.OptFields.ConfigRef, BufOvfl: r.OptFields.BufOvfl,
+		ConfigRef: r.OptFields.ConfigRef, BufOvfl: defaultTrue(r.OptFields.BufOvfl),
 	}
 	return rc
 }
@@ -379,7 +379,7 @@ func convServicesB4(r *raw.Services) *Services {
 	if r.ConfDataSet != nil {
 		svc.ConfDataSet = &ConfDataSet{
 			Max: int(r.ConfDataSet.Max), MaxAttributes: int(r.ConfDataSet.MaxAttributes),
-			Modify: r.ConfDataSet.Modify,
+			Modify: defaultTrue(r.ConfDataSet.Modify),
 		}
 	}
 	if r.ConfReportControl != nil {

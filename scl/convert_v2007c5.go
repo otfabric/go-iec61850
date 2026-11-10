@@ -115,7 +115,7 @@ func convLN02007c5(r raw.LN0, diags *[]Diagnostic) LN {
 		ln.SMVControls = append(ln.SMVControls, SMVControl{
 			Name: sv.Name, Desc: sv.Desc, SmvID: sv.SmvID,
 			DatSet: sv.DatSet, ConfRev: sv.ConfRev,
-			SmpRate: sv.SmpRate, NofASDU: sv.NofASDU, Multicast: sv.Multicast,
+			SmpRate: sv.SmpRate, NofASDU: sv.NofASDU, Multicast: defaultTrue(sv.Multicast),
 			SmpMod: string(sv.SmpMod), SecurityEnable: string(sv.SecurityEnable),
 			SmvOpts: SmvOpts{
 				RefreshTime: sv.SmvOpts.RefreshTime, SampleSynchronized: sv.SmvOpts.SampleSynchronized,
@@ -229,7 +229,7 @@ func convRC2007c5(r raw.ReportControl) ReportControl {
 			Qchg:   r.TrgOps.Qchg,
 			Dupd:   r.TrgOps.Dupd,
 			Period: r.TrgOps.Period,
-			GI:     r.TrgOps.Gi,
+			GI:     defaultTrue(r.TrgOps.Gi),
 		}
 	}
 	rc.OptFields = OptFields{
@@ -240,7 +240,7 @@ func convRC2007c5(r raw.ReportControl) ReportControl {
 		DataRef:    r.OptFields.DataRef,
 		EntryID:    r.OptFields.EntryID,
 		ConfigRef:  r.OptFields.ConfigRef,
-		BufOvfl:    r.OptFields.BufOvfl,
+		BufOvfl:    defaultTrue(r.OptFields.BufOvfl),
 	}
 	return rc
 }
@@ -427,7 +427,7 @@ func convServices2007c5(r *raw.Services) *Services {
 		svc.ConfDataSet = &ConfDataSet{
 			Max:           int(r.ConfDataSet.Max),
 			MaxAttributes: int(r.ConfDataSet.MaxAttributes),
-			Modify:        r.ConfDataSet.Modify,
+			Modify:        defaultTrue(r.ConfDataSet.Modify),
 		}
 	}
 	if r.ConfReportControl != nil {

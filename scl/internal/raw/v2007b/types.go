@@ -374,9 +374,9 @@ type FCDA struct {
 }
 
 type FileHandling struct {
-	Mms  bool `xml:"mms,attr,omitempty"`
-	Ftp  bool `xml:"ftp,attr,omitempty"`
-	Ftps bool `xml:"ftps,attr,omitempty"`
+	Mms  *bool `xml:"mms,attr,omitempty"`
+	Ftp  bool  `xml:"ftp,attr,omitempty"`
+	Ftps bool  `xml:"ftps,attr,omitempty"`
 }
 
 type Function struct {
@@ -613,8 +613,8 @@ type LogControl struct {
 	LnClass       string      `xml:"lnClass,attr,omitempty"`
 	LnInst        string      `xml:"lnInst,attr,omitempty"`
 	LogName       string      `xml:"logName,attr"`
-	LogEna        bool        `xml:"logEna,attr,omitempty"`
-	ReasonCode    bool        `xml:"reasonCode,attr,omitempty"`
+	LogEna        *bool       `xml:"logEna,attr,omitempty"`
+	ReasonCode    *bool       `xml:"reasonCode,attr,omitempty"`
 	BufTime       uint32      `xml:"bufTime,attr,omitempty"`
 	IntgPd        uint32      `xml:"intgPd,attr,omitempty"`
 	Name          string      `xml:"name,attr"`
@@ -833,7 +833,7 @@ type ReportControl struct {
 	ConfRev       uint32          `xml:"confRev,attr"`
 	Buffered      bool            `xml:"buffered,attr,omitempty"`
 	BufTime       uint32          `xml:"bufTime,attr,omitempty"`
-	Indexed       bool            `xml:"indexed,attr,omitempty"`
+	Indexed       *bool           `xml:"indexed,attr,omitempty"`
 	IntgPd        uint32          `xml:"intgPd,attr,omitempty"`
 	Name          string          `xml:"name,attr"`
 	DatSet        string          `xml:"datSet,attr,omitempty"`
@@ -925,7 +925,7 @@ type SampledValueControl struct {
 	Protocol       *Protocol                    `xml:"Protocol,omitempty"`
 	ExtraElements  []xml.Token                  `xml:",any"`
 	SmvID          string                       `xml:"smvID,attr"`
-	Multicast      bool                         `xml:"multicast,attr,omitempty"`
+	Multicast      *bool                        `xml:"multicast,attr,omitempty"`
 	SmpRate        uint32                       `xml:"smpRate,attr"`
 	NofASDU        uint32                       `xml:"nofASDU,attr"`
 	SmpMod         SmpMod                       `xml:"smpMod,attr,omitempty"`
@@ -965,7 +965,7 @@ type ServiceConfReportControl struct {
 }
 
 type ServiceForConfDataSet struct {
-	Modify        bool   `xml:"modify,attr,omitempty"`
+	Modify        *bool  `xml:"modify,attr,omitempty"`
 	MaxAttributes uint32 `xml:"maxAttributes,attr,omitempty"`
 	Max           uint32 `xml:"max,attr"`
 }
@@ -980,7 +980,7 @@ type ServiceWithMaxAndMaxAttributes struct {
 }
 
 type ServiceWithMaxAndModify struct {
-	Modify bool   `xml:"modify,attr,omitempty"`
+	Modify *bool  `xml:"modify,attr,omitempty"`
 	Max    uint32 `xml:"max,attr"`
 }
 
@@ -1142,9 +1142,9 @@ type Text struct {
 }
 
 type TimeSyncProt struct {
-	Sntp    bool `xml:"sntp,attr,omitempty"`
-	C37_238 bool `xml:"c37_238,attr,omitempty"`
-	Other   bool `xml:"other,attr,omitempty"`
+	Sntp    *bool `xml:"sntp,attr,omitempty"`
+	C37_238 bool  `xml:"c37_238,attr,omitempty"`
+	Other   bool  `xml:"other,attr,omitempty"`
 }
 
 type TransformerWinding struct {
@@ -1165,11 +1165,11 @@ type TransformerWinding struct {
 }
 
 type TrgOps struct {
-	Dchg   bool `xml:"dchg,attr,omitempty"`
-	Qchg   bool `xml:"qchg,attr,omitempty"`
-	Dupd   bool `xml:"dupd,attr,omitempty"`
-	Period bool `xml:"period,attr,omitempty"`
-	Gi     bool `xml:"gi,attr,omitempty"`
+	Dchg   bool  `xml:"dchg,attr,omitempty"`
+	Qchg   bool  `xml:"qchg,attr,omitempty"`
+	Dupd   bool  `xml:"dupd,attr,omitempty"`
+	Period bool  `xml:"period,attr,omitempty"`
+	Gi     *bool `xml:"gi,attr,omitempty"`
 }
 
 type Val struct {
@@ -1211,11 +1211,11 @@ type VoltageLevel struct {
 }
 
 type AuthenticationInline struct {
-	None        bool `xml:"none,attr,omitempty"`
-	Password    bool `xml:"password,attr,omitempty"`
-	Weak        bool `xml:"weak,attr,omitempty"`
-	Strong      bool `xml:"strong,attr,omitempty"`
-	Certificate bool `xml:"certificate,attr,omitempty"`
+	None        *bool `xml:"none,attr,omitempty"`
+	Password    bool  `xml:"password,attr,omitempty"`
+	Weak        bool  `xml:"weak,attr,omitempty"`
+	Strong      bool  `xml:"strong,attr,omitempty"`
+	Certificate bool  `xml:"certificate,attr,omitempty"`
 }
 
 type ConfSGInline struct {
@@ -1235,14 +1235,14 @@ type IEDNameInline struct {
 }
 
 type OptFieldsInline struct {
-	SeqNum     bool `xml:"seqNum,attr,omitempty"`
-	TimeStamp  bool `xml:"timeStamp,attr,omitempty"`
-	DataSet    bool `xml:"dataSet,attr,omitempty"`
-	ReasonCode bool `xml:"reasonCode,attr,omitempty"`
-	DataRef    bool `xml:"dataRef,attr,omitempty"`
-	EntryID    bool `xml:"entryID,attr,omitempty"`
-	ConfigRef  bool `xml:"configRef,attr,omitempty"`
-	BufOvfl    bool `xml:"bufOvfl,attr,omitempty"`
+	SeqNum     bool  `xml:"seqNum,attr,omitempty"`
+	TimeStamp  bool  `xml:"timeStamp,attr,omitempty"`
+	DataSet    bool  `xml:"dataSet,attr,omitempty"`
+	ReasonCode bool  `xml:"reasonCode,attr,omitempty"`
+	DataRef    bool  `xml:"dataRef,attr,omitempty"`
+	EntryID    bool  `xml:"entryID,attr,omitempty"`
+	ConfigRef  bool  `xml:"configRef,attr,omitempty"`
+	BufOvfl    *bool `xml:"bufOvfl,attr,omitempty"`
 }
 
 type SGEditInline struct {

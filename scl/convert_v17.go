@@ -104,7 +104,7 @@ func convLN017(r raw.LN0, diags *[]Diagnostic) LN {
 		ln.SMVControls = append(ln.SMVControls, SMVControl{
 			Name: sv.Name, Desc: sv.Desc, SmvID: sv.SmvID,
 			DatSet: sv.DatSet, ConfRev: sv.ConfRev,
-			SmpRate: sv.SmpRate, NofASDU: sv.NofASDU, Multicast: sv.Multicast,
+			SmpRate: sv.SmpRate, NofASDU: sv.NofASDU, Multicast: defaultTrue(sv.Multicast),
 			SmvOpts: SmvOpts{
 				RefreshTime: sv.SmvOpts.RefreshTime, SampleSynchronized: sv.SmvOpts.SampleSynchronized,
 				SampleRate: sv.SmvOpts.SampleRate, Security: sv.SmvOpts.Security, DataRef: sv.SmvOpts.DataRef,
@@ -200,9 +200,12 @@ func convRC17(r raw.ReportControl) ReportControl {
 		ConfRev: r.ConfRev, Buffered: r.Buffered, BufTime: r.BufTime, IntgPd: r.IntgPd,
 	}
 	if r.TrgOps != nil {
+		// The 2003 schema's tTrgOps has no gi attribute. The 2007 schemas
+		// added it with default="true": general interrogation is allowed
+		// unless a file turns it off, which an Edition 1 file cannot.
 		rc.TrgOps = TrgOps{
 			Dchg: r.TrgOps.Dchg, Qchg: r.TrgOps.Qchg, Dupd: r.TrgOps.Dupd,
-			Period: r.TrgOps.Period,
+			Period: r.TrgOps.Period, GI: true,
 		}
 	}
 	rc.OptFields = OptFields{
@@ -360,7 +363,7 @@ func convServices17(r *raw.Services) *Services {
 	if r.ConfDataSet != nil {
 		svc.ConfDataSet = &ConfDataSet{
 			Max: int(r.ConfDataSet.Max), MaxAttributes: int(r.ConfDataSet.MaxAttributes),
-			Modify: r.ConfDataSet.Modify,
+			Modify: defaultTrue(r.ConfDataSet.Modify),
 		}
 	}
 	if r.ConfReportControl != nil {

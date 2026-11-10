@@ -151,28 +151,28 @@ func decodeAndConvert(data []byte, vi VersionInfo, defaultSpace string) (*SCL, [
 	switch vi.Schema {
 	case Version2007C5:
 		var raw v2007c5.SCL
-		if err := newDecoderNS(data, defaultSpace).Decode(&raw); err != nil {
+		if err := decodeSCL(data, defaultSpace, &raw); err != nil {
 			return nil, nil, fmt.Errorf("scl: unmarshal v2007c5: %w", err)
 		}
 		return convertV2007C5(&raw)
 
 	case Version2007B4:
 		var raw v2007b4.SCL
-		if err := newDecoderNS(data, defaultSpace).Decode(&raw); err != nil {
+		if err := decodeSCL(data, defaultSpace, &raw); err != nil {
 			return nil, nil, fmt.Errorf("scl: unmarshal v2007b4: %w", err)
 		}
 		return convertV2007B4(&raw)
 
 	case Version2007B:
 		var raw v2007b.SCL
-		if err := newDecoderNS(data, defaultSpace).Decode(&raw); err != nil {
+		if err := decodeSCL(data, defaultSpace, &raw); err != nil {
 			return nil, nil, fmt.Errorf("scl: unmarshal v2007b: %w", err)
 		}
 		return convertV2007B(&raw)
 
 	case Version17:
 		var raw v17.SCL
-		if err := newDecoderNS(data, defaultSpace).Decode(&raw); err != nil {
+		if err := decodeSCL(data, defaultSpace, &raw); err != nil {
 			return nil, nil, fmt.Errorf("scl: unmarshal v17: %w", err)
 		}
 		return convertV17(&raw)
