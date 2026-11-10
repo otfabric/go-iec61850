@@ -67,6 +67,7 @@ type Server struct {
 	controls  map[string]*controlRegistration
 
 	reportEngine       *ReportEngine
+	reportMaxPDU       int // MMS MaxPDUSize bounding one InformationReport
 	sgEngine           *SettingGroupEngine
 	journalEngine      *JournalEngine
 	mmsJournalProvider *MemoryJournalProvider
@@ -212,6 +213,7 @@ func NewServer(model *servermodel.Model, opts ServerOptions) (*Server, error) {
 		hasFileProvider:    mmsOpts.FileProvider != nil,
 		onConnect:          opts.OnConnect,
 		onDisconnect:       opts.OnDisconnect,
+		reportMaxPDU:       mmsOpts.MMS.MaxPDUSize,
 	}
 
 	if opts.Identity != nil {
@@ -489,6 +491,11 @@ func (s *Server) Serve(ctx context.Context, conn mms.Transport) error {
 		s.onConnect(ConnectionEvent{})
 	}
 	err := s.mms.Serve(ctx, conn)
+	// The association has ended: release the report control blocks it
+	// owned (IEC 61850-7-2 §17.2.2.5 Figure 24, §17.2.4.4).
+	if s.reportEngine != nil {
+		s.reportEngine.reapClosedConns()
+	}
 	if s.onDisconnect != nil {
 		s.onDisconnect(ConnectionEvent{})
 	}
@@ -502,7 +509,7 @@ func (s *Server) Serve(ctx context.Context, conn mms.Transport) error {
 // Each accepted connection is handled by [Server.Serve] in its own
 // goroutine, which ensures that connection lifecycle hooks are invoked.
 func (s *Server) ListenAndServe(ctx context.Context, ln mms.TransportListener) error {
-	if s.onConnect == nil && s.onDisconnect == nil {
+	if s.onConnect == nil && s.onDisconnect == nil && s.reportEngine == nil {
 		return s.mms.ListenAndServe(ctx, ln)
 	}
 	return s.listenAndServeWithHooks(ctx, ln)

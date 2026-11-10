@@ -76,7 +76,8 @@ func TestReasonCode_String(t *testing.T) {
 		{ReasonGI, "GI"},
 		{0, "not-included"},
 		{ReasonDataChanged | ReasonGI, "data-change,GI"},
-		{0xFF, "data-change,quality-change,data-update,integrity,GI"},
+		{ReasonApplicationTrigger, "application-trigger"},
+		{0xFF, "data-change,quality-change,data-update,integrity,GI,application-trigger"},
 	}
 	for _, tc := range tests {
 		if got := tc.r.String(); got != tc.want {
@@ -1909,20 +1910,28 @@ func TestSetRCBBufMax(t *testing.T) {
 	}
 }
 
-// TestReplayBRCBEntries_Empty verifies that replayBRCBEntries with zero
-// buffered entries completes without panic after the fixed 150 ms delay.
-func TestReplayBRCBEntries_Empty(t *testing.T) {
-	re := &ReportEngine{logger: discardLogger()}
+// TestSenderLoop_NothingToSend verifies that the delivery goroutine
+// with no entries to send idles and ends when its session stops.
+func TestSenderLoop_NothingToSend(t *testing.T) {
+	re := &ReportEngine{logger: discardLogger(), stopCh: make(chan struct{})}
 	var sc mms.ServerConn
+	rt := &rcbRuntime{rcbItemID: "LLN0$BR$brcb01", buffered: true}
+	stop, wake := make(chan struct{}), make(chan struct{}, 1)
+	rt.sendStop = stop
+	rt.enabled = true
+	wake <- struct{}{}
 
 	done := make(chan struct{})
+	re.wg.Add(1)
 	go func() {
 		defer close(done)
-		re.replayBRCBEntries("LLN0$BR$brcb01", "rptID", OptFlds(0), 1, "LD1/dsInterop", nil, nil, &sc)
+		re.senderLoop(rt, &sc, stop, wake)
 	}()
+	time.Sleep(2 * reportDispatchDelay)
+	close(stop)
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		t.Fatal("replayBRCBEntries with empty entries did not complete in time")
+		t.Fatal("senderLoop did not end after its session stopped")
 	}
 }

@@ -39,13 +39,16 @@ func TestReportEngine_ConcurrentSetValue(t *testing.T) {
 	}
 	wg.Wait()
 
+	// A local enable has no delivery target, so SqNum (assigned when a
+	// report is formatted for transmission, IEC 61850-7-2 §17.2.2.10)
+	// stays 0; the entries are buffered.
 	rt := engine.rcbs["LD1/LLN0$BR$brcb01"]
 	rt.mu.Lock()
-	seq := rt.seqNum
+	entries := rt.entryID
 	rt.mu.Unlock()
 
-	if seq == 0 {
-		t.Error("expected some reports to be generated")
+	if entries == 0 {
+		t.Error("expected some report entries to be generated")
 	}
 }
 
@@ -243,9 +246,11 @@ func TestReportEngine_InvalidSubfield(t *testing.T) {
 	defer engine.Stop()
 
 	ctx := context.Background()
+	// IEC 61850-8-1 §8.1.3.4.4.2: a write of an object that does not
+	// exist is answered with object-non-existent.
 	err := engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "UnknownField", mms.NewBoolean(true))
-	if err != nil {
-		t.Errorf("unknown subfield should be silently ignored, got: %v", err)
+	if code := dataAccessCode(err); code != mms.DataAccessErrorObjectNonExistent {
+		t.Errorf("unknown subfield: err = %v, want object-non-existent", err)
 	}
 }
 
@@ -656,11 +661,11 @@ func TestServer_SetValue_TriggersReportAndJournal(t *testing.T) {
 
 	rt := engine.rcbs["LD1/LLN0$BR$brcb01"]
 	rt.mu.Lock()
-	seq := rt.seqNum
+	entries := rt.entryID
 	rt.mu.Unlock()
 
-	if seq == 0 {
-		t.Error("expected report to be generated")
+	if entries == 0 {
+		t.Error("expected a report entry to be generated")
 	}
 
 	count := je.Provider().EntryCount("LD1", "LLN0$log1")

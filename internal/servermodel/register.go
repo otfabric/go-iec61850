@@ -888,9 +888,11 @@ func buildRCBFields(rpt *ReportDef, rptID, ldName, lnName string) []rcbField {
 	fields = append(fields,
 		rcbField{"DatSet", mms.TypeSpec{Type: mms.ValueTypeVisibleString, Size: 129}, mms.NewVisibleString(datSet)},
 		rcbField{"ConfRev", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 32}, mms.NewUnsigned(uint64(rpt.ConfRev))},
-		rcbField{"OptFlds", mms.TypeSpec{Type: mms.ValueTypeBitString, Size: 10}, encodeOptFieldsDef(rpt.OptFlds)},
+		rcbField{"OptFlds", mms.TypeSpec{Type: mms.ValueTypeBitString, Size: 10}, encodeOptFieldsDef(rcbOptFields(rpt))},
 		rcbField{"BufTm", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 32}, mms.NewUnsigned(uint64(rpt.BufTime))},
-		rcbField{"SqNum", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 32}, mms.NewUnsigned(0)},
+		// IEC 61850-7-2 Table 37 (BRCB SqNum INT16U) and §17.2.4.1 (URCB
+		// SqNum INT8U).
+		rcbField{"SqNum", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: sqNumBits(rpt.Buffered)}, mms.NewUnsigned(0)},
 		rcbField{"TrgOps", mms.TypeSpec{Type: mms.ValueTypeBitString, Size: 6}, encodeTrgOpsDef(rpt.TrgOps)},
 		rcbField{"IntgPd", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 32}, mms.NewUnsigned(uint64(rpt.IntgPd))},
 		rcbField{"GI", mms.TypeSpec{Type: mms.ValueTypeBoolean}, mms.NewBoolean(false)},
@@ -905,6 +907,40 @@ func buildRCBFields(rpt *ReportDef, rptID, ldName, lnName string) []rcbField {
 	return fields
 }
 
+// sqNumBits is the SqNum size of a BRCB (INT16U) or URCB (INT8U).
+func sqNumBits(buffered bool) int {
+	if buffered {
+		return 16
+	}
+	return 8
+}
+
+// rcbOptFields returns the OptFlds a client reads back: a URCB never
+// reports buffer-overflow or entryID, and "The value returned for
+// OptFlds.buffer-overflow and OptFlds.entryID shall always be false"
+// (IEC 61850-8-1 Table 63).
+func rcbOptFields(rpt *ReportDef) OptFieldsDef {
+	o := rpt.OptFlds
+	if !rpt.Buffered {
+		o.BufOvfl = false
+		o.EntryID = false
+	}
+	return o
+}
+
+// rcbReadOnly are the RCB attributes a client may not write
+// (IEC 61850-8-1 Table 61/63 "May not be written"; IEC 61850-7-2 Table 37
+// "r"). go-mms answers a write with object-access-denied (8-1
+// §8.1.3.4.4.2).
+var rcbReadOnly = map[string]bool{"ConfRev": true, "SqNum": true, "TimeOfEntry": true, "Owner": true}
+
+// rcbWriteErr is the DataAccessError for a write whose type or size does
+// not match the RCB attribute (IEC 61850-8-1 §8.1.3.4.4.2, Table 23
+// type-conflict).
+func rcbWriteErr(item string, err error) error {
+	return fmt.Errorf("RCB write %s: %w: %w", item, err, &mms.DataAccessError{Code: mms.DataAccessErrorTypeInconsistent})
+}
+
 // registerRCB registers an RCB structure variable and its individual
 // subfield variables with the MMS server.
 //
@@ -912,12 +948,16 @@ func buildRCBFields(rpt *ReportDef, rptID, ldName, lnName string) []rcbField {
 // BufTm, SqNum, TrgOps, IntgPd, GI.
 // URCB-specific: Resv.
 // BRCB-specific: PurgeBuf, EntryID, TimeOfEntry.
+// Not modelled: Owner and ResvTms (both optional, IEC 61850-7-2 Table 37
+// c3/c4).
 //
-// Not currently implemented: Owner, ResvTms decode/use, runtime
-// RptEna sequencing validation, URCB/BRCB field-type restrictions.
-// The write path accepts any structurally matching value; semantic
-// checks (e.g., "RptEna must be disabled before changing DatSet")
-// are not enforced.
+// ConfRev, SqNum and TimeOfEntry are read-only. A write of a writable
+// subfield is type- and size-checked here and then handed to the write
+// interceptor (the report engine), which applies the IEC 61850-7-2 §17.2
+// rules and commits the value; without an interceptor the value is
+// stored as written. A write of the whole RCB structure is refused with
+// object-access-denied, because the structure has read-only components
+// (IEC 61850-8-1 §8.1.3.4.4.2).
 func registerRCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, rpt *ReportDef) error {
 	prefix := "RP"
 	if rpt.Buffered {
@@ -942,7 +982,7 @@ func registerRCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, rpt *Re
 
 		subSK := sk
 		subTS := f.typeSpec
-		if err := srv.RegisterVariable(mms.Variable{
+		v := mms.Variable{
 			Name: mms.ObjectName{
 				Scope:  mms.ObjectScopeDomain,
 				Domain: mms.DomainID(ldName),
@@ -957,23 +997,25 @@ func registerRCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, rpt *Re
 				return defaultMMSValue(subTS), nil
 			},
 			Write: func(ctx context.Context, val *mms.Value) error {
-				prev := vs.Get(subSK)
-				vs.Set(subSK, val)
-				if handled, err := vs.callInterceptor(ctx, subSK, val); err != nil {
-					// Restore previous value so the store stays consistent
-					// when an access-control rejection overrides a write.
-					if prev != nil {
-						vs.Set(subSK, prev)
-					} else {
-						vs.Set(subSK, defaultMMSValue(subTS))
-					}
-					return err
-				} else if handled {
-					return nil
+				if val == nil || val.Type() != subTS.Type {
+					return rcbWriteErr(subItemID, fmt.Errorf("type mismatch"))
 				}
+				if err := validateWriteSize(val, subTS); err != nil {
+					return rcbWriteErr(subItemID, err)
+				}
+				// The interceptor validates and commits the write; a
+				// rejection leaves the store unchanged.
+				if handled, err := vs.callInterceptor(ctx, subSK, val); err != nil || handled {
+					return err
+				}
+				vs.Set(subSK, val)
 				return nil
 			},
-		}); err != nil {
+		}
+		if rcbReadOnly[f.suffix] {
+			v.Write = nil // go-mms answers object-access-denied
+		}
+		if err := srv.RegisterVariable(v); err != nil {
 			return fmt.Errorf("register RCB subfield %s: %w", subItemID, err)
 		}
 	}
@@ -999,28 +1041,13 @@ func registerRCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, rpt *Re
 			}
 			return mms.NewStructure(elems), nil
 		},
-		Write: func(_ context.Context, val *mms.Value) error {
-			elems, ok := val.Structure()
-			if !ok || len(elems) != len(fields) {
-				return fmt.Errorf("RCB write: expected structure with %d elements", len(fields))
-			}
-			for i, f := range fields {
-				if elems[i] == nil {
-					return fmt.Errorf("RCB write: nil element at position %d (%s)", i, f.suffix)
-				}
-				if elems[i].Type() != f.typeSpec.Type {
-					return fmt.Errorf("RCB write: type mismatch for %s: got %v, want %v",
-						f.suffix, elems[i].Type(), f.typeSpec.Type)
-				}
-				if err := validateWriteSize(elems[i], f.typeSpec); err != nil {
-					return fmt.Errorf("RCB write %s: %w", f.suffix, err)
-				}
-			}
-			for i, f := range fields {
-				subKey := StoreKey(ldName, rcbItemID+"$"+f.suffix)
-				vs.Set(subKey, elems[i])
-			}
-			return nil
+		// IEC 61850-8-1 §8.1.3.4.4.2: object-access-denied "shall be
+		// returned if the entire VariableAccessSpecification is read-only
+		// or one or more of its sub-components is read-only"; the RCB
+		// structure contains ConfRev, SqNum (and TimeOfEntry). Clients
+		// write the attributes one by one (SetBRCBValues, 8-1 §17.2.3).
+		Write: func(context.Context, *mms.Value) error {
+			return &mms.DataAccessError{Code: mms.DataAccessErrorObjectAccessDenied}
 		},
 	})
 }

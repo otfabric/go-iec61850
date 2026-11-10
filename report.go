@@ -118,6 +118,9 @@ const (
 	ReasonDataUpdate     ReasonCode = 1 << 2 // Included due to data update
 	ReasonIntegrity      ReasonCode = 1 << 3 // Included due to integrity scan
 	ReasonGI             ReasonCode = 1 << 4 // Included due to GI
+	// ReasonApplicationTrigger is bit 6 of the IEC 61850-8-1 §8.1.3.10
+	// ExtendedTriggerConditions (application-trigger).
+	ReasonApplicationTrigger ReasonCode = 1 << 5
 )
 
 // String returns a comma-separated list of set reason flags, matching
@@ -136,6 +139,7 @@ func (r ReasonCode) String() string {
 		{ReasonDataUpdate, "data-update"},
 		{ReasonIntegrity, "integrity"},
 		{ReasonGI, "GI"},
+		{ReasonApplicationTrigger, "application-trigger"},
 	}
 	for _, fl := range flags {
 		if r&fl.f != 0 {
