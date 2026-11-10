@@ -240,6 +240,7 @@ func (cb *ControlBlock) PublisherConfig() (PublisherConfig, error) {
 		Dst: cb.Dst, VLAN: vlan, AppID: cb.AppID, GocbRef: cb.GocbRef, DatSet: cb.DatSet,
 		GoID: cb.GoID, ConfRev: cb.ConfRev, MinTime: cb.MinTime, MaxTime: cb.MaxTime,
 		NdsCom: cb.DatSet == "", Values: cb.DefaultValues(),
+		FixedOffs: cb.FixedOffs, MemberTypes: cb.MemberTypes(),
 	}, nil
 }
 

@@ -16,9 +16,27 @@ import (
 // values to configuration; these match common SCL MinTime/MaxTime
 // defaults).
 const (
-	// timeQuality is the TimeQuality of T: clock synchronised, 10 bits
-	// of sub-second accuracy.
+	// timeQuality is the TimeQuality of zero values (ZeroValue): no
+	// flags, 10 bits of sub-second accuracy.
 	timeQuality uint8 = 0x0a
+
+	// DefaultTimeQuality is the TimeQuality octet of T when
+	// PublisherConfig.TimeQuality is zero: ClockNotSynchronized (0x20,
+	// 7-2 TimeQuality / 8-1 8.1.3.7) with 10 bits of sub-second
+	// accuracy. The publisher cannot know whether the host clock is
+	// synchronised, so it does not claim it.
+	DefaultTimeQuality uint8 = 0x2a
+
+	// MaxRefLen and MaxGoIDLen are the maximum gocbRef/datSet and goID
+	// lengths (IEC 61850-8-1 18.1.2.5.2: VISIBLE-STRING up to 129 and
+	// 65 octets).
+	MaxRefLen  = 129
+	MaxGoIDLen = 65
+
+	// MaxRetransmission bounds MaxTime: the retransmission interval
+	// "shall be less than 60 s" (IEC 61850-8-1 18.1.2.5.1 Figure 10
+	// key 4).
+	MaxRetransmission = 60 * time.Second
 
 	DefaultMinTime = 10 * time.Millisecond
 	DefaultMaxTime = 1000 * time.Millisecond
@@ -63,7 +81,23 @@ type PublisherConfig struct {
 	MaxTime time.Duration
 
 	// TimeAllowedToLive is sent in every message. Zero uses 2*MaxTime.
+	// It must be at least 1 ms and greater than MaxTime (8-1 18.1.2.5.1
+	// Figure 10 key 2: the retransmission time is less than the
+	// timeAllowedToLive).
 	TimeAllowedToLive time.Duration
+
+	// TimeQuality is the TimeQuality octet of T. Zero uses
+	// [DefaultTimeQuality] (clock not synchronised); set it (for
+	// example 0x0a) when the host clock is known to be synchronised.
+	TimeQuality uint8
+
+	// FixedOffs selects the fixed-length encoding of IEC 61850-8-1
+	// Annex A.3 (SCL fixedOffs="true", see [EncodePDUFixedLength]).
+	FixedOffs bool
+
+	// MemberTypes are the MMS types of the dataset members, used by
+	// FixedOffs for the integer and float widths. Optional.
+	MemberTypes []mms.TypeSpec
 
 	// Test sets the goosePdu test/simulation field.
 	Test bool
@@ -98,8 +132,16 @@ func (c *PublisherConfig) normalize() error {
 	if c.Dst.IsZero() {
 		return configErr("Dst", "destination address required")
 	}
+	if c.Dst[0]&0x01 == 0 {
+		// 8-1 Table 12: DstAddress "shall be an Ethernet address that
+		// has the multicast bit set to TRUE".
+		return configErr("Dst", "%s is not a multicast address", c.Dst)
+	}
 	if c.GocbRef == "" {
 		return configErr("GocbRef", "required")
+	}
+	if len(c.GocbRef) > MaxRefLen || len(c.DatSet) > MaxRefLen {
+		return configErr("GocbRef/DatSet", "longer than %d octets (8-1 18.1.2.5.2)", MaxRefLen)
 	}
 	if c.DatSet == "" && !c.NdsCom {
 		return configErr("DatSet", "required unless NdsCom is set")
@@ -119,14 +161,29 @@ func (c *PublisherConfig) normalize() error {
 	if c.MinTime > c.MaxTime {
 		return configErr("MinTime", "%v greater than MaxTime %v", c.MinTime, c.MaxTime)
 	}
+	if c.MaxTime >= MaxRetransmission {
+		return configErr("MaxTime", "%v not less than %v (8-1 18.1.2.5.1)", c.MaxTime, MaxRetransmission)
+	}
 	if c.TimeAllowedToLive == 0 {
 		c.TimeAllowedToLive = 2 * c.MaxTime
+	}
+	if c.TimeAllowedToLive < time.Millisecond {
+		return configErr("TimeAllowedToLive", "%v below 1 ms (8-1 18.1.2.5.2: 1..2^32-1 ms)", c.TimeAllowedToLive)
 	}
 	if c.TimeAllowedToLive/time.Millisecond > 0xffffffff {
 		return configErr("TimeAllowedToLive", "exceeds 2^32-1 ms")
 	}
+	if c.TimeAllowedToLive <= c.MaxTime {
+		return configErr("TimeAllowedToLive", "%v not greater than MaxTime %v (8-1 18.1.2.5.1 Figure 10)", c.TimeAllowedToLive, c.MaxTime)
+	}
 	if c.GoID == "" {
 		c.GoID = c.GocbRef
+	}
+	if len(c.GoID) > MaxGoIDLen {
+		return configErr("GoID", "longer than %d octets (8-1 18.1.2.5.2)", MaxGoIDLen)
+	}
+	if c.TimeQuality == 0 {
+		c.TimeQuality = DefaultTimeQuality
 	}
 	if c.InitialStNum == 0 {
 		c.InitialStNum = 1
@@ -171,6 +228,7 @@ type Publisher struct {
 	sent     uint64
 	buf      []byte
 	frame    Frame
+	fx       *fixedLength // non-nil for FixedOffs
 
 	wake      chan struct{}
 	closed    chan struct{}
@@ -199,10 +257,13 @@ func NewPublisher(t Transport, cfg PublisherConfig) (*Publisher, error) {
 		wake:    make(chan struct{}, 1),
 		closed:  make(chan struct{}),
 	}
+	if cfg.FixedOffs {
+		p.fx = &fixedLength{types: cfg.MemberTypes}
+	}
 	if cfg.Values != nil {
 		p.values = cloneValues(cfg.Values)
 		// Validate encodability up front.
-		if _, err := encodeAllData(p.values); err != nil {
+		if _, err := p.fx.encodeAllData(p.values); err != nil {
 			return nil, err
 		}
 	}
@@ -249,7 +310,7 @@ func (p *Publisher) Publish(values []*mms.Value) error {
 			}
 		}
 	}
-	if _, err := encodeAllData(vals); err != nil {
+	if _, err := p.fx.encodeAllData(vals); err != nil {
 		return err
 	}
 	p.values = vals
@@ -275,7 +336,9 @@ func (p *Publisher) SetFlags(test, simulation, ndsCom bool) error {
 }
 
 // SetEnabled starts or stops transmission (GoEna). Re-enabling sends
-// the current values as a new state.
+// the current values as a new state with stNum 1 (IEC 61850-7-2
+// 18.2.3.6: "The initial value for StNum upon a transition of GoEna to
+// TRUE shall be 1").
 func (p *Publisher) SetEnabled(enabled bool) error {
 	if err := p.checkOpen(); err != nil {
 		return err
@@ -288,6 +351,7 @@ func (p *Publisher) SetEnabled(enabled bool) error {
 	p.enabled = enabled
 	p.logger.Info("goose: publisher enabled changed", "enabled", enabled)
 	if enabled && p.values != nil {
+		p.stNum = 0 // newStateLocked makes it 1 (7-2 18.2.3.6)
 		return p.newStateLocked()
 	}
 	p.signal()
@@ -328,7 +392,7 @@ func (p *Publisher) sendLocked(retrans bool) error {
 			DatSet:            c.DatSet,
 			GoID:              c.GoID,
 			T:                 p.tChange,
-			TimeQuality:       timeQuality,
+			TimeQuality:       c.TimeQuality,
 			StNum:             p.stNum,
 			SqNum:             p.sqNum,
 			Test:              c.Test,
@@ -338,7 +402,7 @@ func (p *Publisher) sendLocked(retrans bool) error {
 		},
 	}
 	var err error
-	p.buf, err = AppendFrame(p.buf[:0], &p.frame)
+	p.buf, err = appendFrame(p.buf[:0], &p.frame, p.fx)
 	if err != nil {
 		return err
 	}

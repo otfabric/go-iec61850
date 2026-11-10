@@ -137,6 +137,8 @@ fuzz: ## Run all fuzz targets for FUZZTIME each (default 15s)
 	@go test -fuzz=^FuzzDecodeGoCB$$                 -fuzztime=$(FUZZTIME) .
 	@go test -fuzz=^FuzzDecode$$                  -fuzztime=$(FUZZTIME) ./goose
 	@go test -fuzz=^FuzzDecodeData$$                 -fuzztime=$(FUZZTIME) ./goose
+	@go test -fuzz=^FuzzDecodePDU$$                  -fuzztime=$(FUZZTIME) ./goose
+	@go test -fuzz=^FuzzEncodeFixedLength$$          -fuzztime=$(FUZZTIME) ./goose
 	@go test -fuzz=^FuzzParseGSEAddress$$            -fuzztime=$(FUZZTIME) ./internal/servermodel
 
 bench: ## Run all benchmarks

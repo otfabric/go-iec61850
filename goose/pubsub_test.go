@@ -186,8 +186,10 @@ func TestPublisherPublishErrorsAndFlags(t *testing.T) {
 	frames := recvFrames(ctx, t, rx)
 	c := pubConfig()
 	c.Values = nil
-	c.MaxTime = time.Hour
-	c.MinTime = time.Hour
+	// No retransmission during the test; MaxTime must stay below 60 s
+	// (8-1 18.1.2.5.1 Figure 10 key 4).
+	c.MaxTime = 59 * time.Second
+	c.MinTime = 59 * time.Second
 	p, err := NewPublisher(tx, c)
 	if err != nil {
 		t.Fatal(err)
@@ -237,7 +239,8 @@ func TestPublisherPublishErrorsAndFlags(t *testing.T) {
 	if err := p.SetEnabled(true); err != nil {
 		t.Fatal(err)
 	}
-	if f := nextFrame(t, frames); f.PDU.StNum != 4 || !f.PDU.AllData[0].Equal(mms.NewBoolean(false)) {
+	// 7-2 18.2.3.6: StNum restarts at 1 when GoEna goes TRUE (GSE-09).
+	if f := nextFrame(t, frames); f.PDU.StNum != 1 || f.PDU.SqNum != 0 || !f.PDU.AllData[0].Equal(mms.NewBoolean(false)) {
 		t.Fatalf("re-enable: %+v", f.PDU)
 	}
 	_ = p.Close()

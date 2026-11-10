@@ -298,6 +298,11 @@ func (d *dataDecoder) decodeOne(e tlv, base, depth int) (*mms.Value, error) {
 		}
 		return mms.NewBoolean(c[0] != 0), nil
 	case tagInteger, tagBCD:
+		if len(c) == 9 && signExtension(c) {
+			// 8-1 Annex A.3 Table A.2: fixed-length INT64 is 9 octets;
+			// the first is a pure sign extension of the 64-bit value.
+			c = c[1:]
+		}
 		if len(c) == 0 || len(c) > 8 {
 			return nil, bad("integer of %d octets", len(c))
 		}
@@ -333,6 +338,11 @@ func (d *dataDecoder) decodeOne(e tlv, base, depth int) (*mms.Value, error) {
 			return mms.NewFloat(float64(math.Float32frombits(binary.BigEndian.Uint32(c[1:])))), nil
 		case len(c) == 9 && c[0] == 11:
 			return mms.NewFloat(math.Float64frombits(binary.BigEndian.Uint64(c[1:]))), nil
+		case len(c) == 4:
+			// 8-1 Annex A.3 Table A.2 lists fixed-length FLOAT32 with
+			// length 4 (IEEE 754 single without the exponent-width
+			// octet); accepted for backward compatibility (A.3).
+			return mms.NewFloat(float64(math.Float32frombits(binary.BigEndian.Uint32(c)))), nil
 		default:
 			return nil, bad("unsupported floating-point format (%d octets)", len(c))
 		}
@@ -348,6 +358,7 @@ func (d *dataDecoder) decodeOne(e tlv, base, depth int) (*mms.Value, error) {
 	case tagOctetString:
 		return mms.NewOctetString(c), nil
 	case tagVisibleStr:
+		c = stripNULPadding(c)
 		for _, ch := range c {
 			if ch < 0x20 || ch > 0x7e {
 				return nil, bad("non-visible character 0x%02x in VisibleString", ch)
@@ -391,6 +402,26 @@ func (d *dataDecoder) decodeOne(e tlv, base, depth int) (*mms.Value, error) {
 	default:
 		return nil, bad("unsupported Data tag 0x%02x", e.tag)
 	}
+}
+
+// signExtension reports whether the first octet of c (len >= 2) only
+// sign-extends the rest: 0x00 before a clear high bit or 0xff before a
+// set one.
+func signExtension(c []byte) bool {
+	return (c[0] == 0x00 && c[1]&0x80 == 0) || (c[0] == 0xff && c[1]&0x80 != 0)
+}
+
+// stripNULPadding removes trailing NUL padding: 8-1 Annex A.3 Tables
+// A.1/A.2 encode strings in a fixed-length GOOSE message as "Null
+// terminated" fixed-size fields. Only a run of NULs reaching the end is
+// removed; a NUL followed by another octet is left in place (and then
+// rejected as a non-visible character).
+func stripNULPadding(c []byte) []byte {
+	i := len(c)
+	for i > 0 && c[i-1] == 0 {
+		i--
+	}
+	return c[:i]
 }
 
 func parseGeneralizedTime(s string) (time.Time, error) {
