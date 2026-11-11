@@ -841,8 +841,8 @@ func zeroOperTm(oper *mms.Value) *mms.Value {
 // the CommandTermination (IEC 61850-8-1 20.9) to the connection that
 // operated an enhanced-security control: an InformationReport of the
 // Oper attribute with the operated value, preceded by a LastApplError
-// when execute fails (negative). The control stays in execution until
-// then.
+// when execute fails (negative). The control leaves execution just
+// before the termination is sent.
 //
 // The send runs after the Write response, so it must not inherit the
 // request's cancellation; it keeps the request's values, ends when the
@@ -885,10 +885,12 @@ func (s *Server) runExecuteAndTerminate(reqCtx, life context.Context, reg *contr
 		stopAfter()
 		stop()
 	}
+	// Leave execution first, so a client acting on the termination finds
+	// the control free.
+	s.finishOperation(reqCtx, reg, err == nil)
 	if reg.ctlModel.IsEnhanced() || timeActivated {
 		s.sendTermination(reqCtx, life, reg, operItem, oper, creq, err, timeActivated)
 	}
-	s.finishOperation(reqCtx, reg, err == nil)
 }
 
 // sendTermination sends a CommandTermination: positive (the Oper alone)
