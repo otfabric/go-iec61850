@@ -110,7 +110,7 @@ func (g *tsapGate) serve(c net.Conn, upstream string) {
 		}
 		return
 	}
-	up, err := net.DialTimeout("tcp", upstream, 5*time.Second)
+	up, err := dialUpstream(upstream)
 	if err != nil {
 		return
 	}
@@ -123,6 +123,21 @@ func (g *tsapGate) serve(c net.Conn, upstream string) {
 	go func() { _, _ = io.Copy(up, c); done <- struct{}{} }()
 	go func() { _, _ = io.Copy(c, up); done <- struct{}{} }()
 	<-done
+}
+
+// dialUpstream connects to the peer server, retrying for up to 5 s: a
+// Docker-published port can refuse connections for a moment after the
+// container reports ready (Docker Desktop's port forwarder), the same race
+// iedServerHandle.dial retries over.
+func dialUpstream(addr string) (net.Conn, error) {
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		up, err := net.DialTimeout("tcp", addr, time.Second)
+		if err == nil || time.Now().After(deadline) {
+			return up, err
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 // readTPKT reads one RFC 1006 TPKT and returns the whole frame and its
