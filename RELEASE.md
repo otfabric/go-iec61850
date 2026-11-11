@@ -1,5 +1,16 @@
 # go-iec61850 Releases
 
+## v1.17.1
+
+**Date:** 2026-11-11
+**Previous release:** v1.17.0
+
+### Changed
+
+- The bundled command-line tools (`sclparse`, `sclgen`) are built on v1.17.0; they were on v1.15.1. They now apply the v1.17.0 SCL checks: XSD keys, required attributes, FCDA resolution, address formats and ranges, and the `Flatten` status rows. Library code is the same as v1.17.0.
+
+---
+
 ## v1.17.0
 
 **Date:** 2026-11-11
