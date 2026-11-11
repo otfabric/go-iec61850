@@ -1,5 +1,83 @@
 # go-iec61850 Releases
 
+## v1.17.0
+
+**Date:** 2026-11-11
+**Previous release:** v1.16.2
+
+Spec review against IEC 61850-7-2:2010, 7-3:2010, 8-1:2011, 9-2:2011 and 6 Ed2 (and the 2003 Edition 1 texts where they differ). The API is additive; many server and client behaviours change to what the standard requires, and each is listed under **Changed** with its clause. Interop with the pinned iec61850-interop images (libiec61850, iec61850bean, dscsystems, iec61850-rust, cB-Sigma) passes except `TestTSAPGate_ConfiguredSelector`, which fails on v1.16.2 as well.
+
+### Changed
+
+**Reporting (IEC 61850-7-2 §17.2, 8-1 §17.2)**
+
+- Report control blocks are owned per association: an RCB enabled or reserved by one client is temporarily-unavailable to the others and released when that association ends. Reports go only to the owner, in order, through a per-association queue (§17.2.4.4/5).
+- SqNum starts at 0 and wraps at INT8U (URCB) or INT16U (BRCB).
+- ConfRev, SqNum and TimeOfEntry are read-only; a write to the whole RCB structure is denied; an unknown component gives object-non-existent; attributes that may not change while RptEna=TRUE are refused, not stored. Write refusals use the 8-1 §8.1.3.4.4.2 codes.
+- A GI on a disabled RCB fails. URCB OptFlds bits without URCB meaning are masked.
+- BRCBs buffer while disabled; GI reports are not buffered; BufOvfl is set only when unsent entries are discarded; EntryID is kept on disable, an EntryID not in the buffer gives object-value-invalid, and replay keeps each entry's TimeOfEntry.
+- Indexed ReportControl instances are `<name>01..<name>NN` (IEC 61850-6 §9.3.8, default indexed=true): `urcb` becomes `urcb01`, libiec61850-style `urcb01` becomes `urcb0101`.
+- The reason for inclusion follows the per-attribute trigger options of the model.
+- Client `SetReportControlBlock` writes in the 8-1 §17.1.2 order (RptEna last when enabling, first when disabling).
+
+**Logging (7-2 §17.3, 8-1 §17.3)**
+
+- `LogValueWrite` journals only writes that match an enabled LCB's data set and TrgOps; ReadJournal on an unknown journal is object-non-existent; zero time bounds mean the whole BinaryTime range.
+
+**Control (7-2 §20 Table 47, 8-1 §20)**
+
+- Server state machine per Table 47: services during execution or before operTm get command-already-in-execution (12); a re-select while Ready gets object-already-selected (19); Cancel by another client gets locked-by-other-client (27); parameters differing from the SBOw (ctlVal, ctlNum, origin, Test, Check) get inconsistent-parameters (26) and release the selection.
+- TimeActivatedOperate waits for operTm; CF sboTimeout, sboClass (operate-many) and operTimeout take effect; an SBO-normal Select calls `OnSelect`; a lost association releases its selections.
+- A control write without `RegisterControl`, a write to SBO or to a single Oper/SBOw/Cancel member, and a client write of a registered control's CF ctlModel are object-access-denied. Refusals use the 8-1 Table 87 codes (as libiec61850: 12/19/27 temporarily-unavailable, other refusals object-access-denied, malformed type-inconsistent).
+- The Oper/SBOw/Cancel decoder is strict (member count and types); a Cancel that carries a trailing Check (models reusing the Oper type) is accepted.
+- The default operate writes ctlVal only when it fits stVal (BOOLEAN to Dbpos for a DPC) and updates t, ctlNum, origin and stSeld.
+- LastApplError.Error is 1, 2 or 3 per 8-1 §20.11. A granted SBO read returns `LD/LN$CO$DO`, as libiec61850 servers do. `ControlRequest.Operation` is `"cancel"` for a Cancel.
+- Client: SelectWithValue followed by Operate or Cancel reuses the ctlNum; operTm (all zero when immediate) is sent when the server's type has it; Cancel carries Test, and Check when the server's Cancel type has one; a LastApplError is matched by ctlNum.
+
+**Server data, setting groups, data sets, types**
+
+- Write refusals carry the DataAccessError of 8-1 Table 23 (type-inconsistent, object-value-invalid, object-access-denied) instead of temporarily-unavailable; structure writes are type-checked; enum values are range-checked.
+- `Tcmd` maps to BIT STRING(2), not INT8 (8-1 §8.1.2.3).
+- SGCB: the edit reservation belongs to one association (ResvTms, released on association loss); FC=SE access without an edit group is temporarily-unavailable; the member is `NumOfSG` (8-1 Table 60).
+- Control blocks are no longer listed as data objects; the LN variable lists FCs in 8-1 Figure 4 order.
+- `CreateDataSet` and `ParseRefStrict` check names and lengths (7-2 §22.2, Table 4); `DecodeQuality` accepts short bit strings (8-1 §8.2).
+
+**GOOSE and SV (8-1 §18, Annex A; 9-2)**
+
+- The GOOSE subscriber recognises a publisher restart by a newer `T` (`EventRestart`); `SetEnabled(true)` restarts stNum at 1.
+- `NewPublisher` rejects a non-multicast destination, over-long GoCBRef/GoID, MaxTime ≥ 60 s and a TimeAllowedToLive not above MaxTime; `MaxPayload` is 1499; the default TimeQuality is 0x2a (not synchronised).
+- A GoCB with an unconfigured or unicast MAC is left disabled with NdsCom TRUE instead of failing `EnableGOOSE`; GoEna is refused while ConfRev is 0; every DatSet write increments ConfRev (and MSVCB ConfRev on MsvID/SmpRate/SmpMod/OptFlds changes); DatSet is stored qualified.
+- GSE/SMV addresses without APPID use 0x0000/0x4000; VLAN priority defaults to 4. A unicast SampledValueControl (USVCB) is skipped with a warning.
+- The SV subscriber resyncs on an smpCnt reset (`EventResync`); reserved smpSynch values are rejected; SV has the per-stream simulation switch of GOOSE.
+
+**SCL (IEC 61850-6 Ed2, SCL 2007B schemas)**
+
+- New errors: missing required attributes in LN0/DataSet/FCDA/ReportControl/GSEControl/SampledValueControl, `lnclass-mismatch`, XSD uniqueness (`duplicate-name`; a duplicate DataSet is an error), `missing-type`, zero smpRate/nofASDU. New warnings: address formats and ranges (`validate.Addresses`), unresolved FCDA paths and FC mismatches. `Flatten` reports unresolved and cyclic types with a Status row.
+
+### Added
+
+- Log control blocks (FC LG) with the 8-1 Table 65 attributes and write rules, built from SCL LogControl; journal entries carry ReasonCode.
+- `OperateParams.CtlNumSet`, `CancelParams.CtlNumSet`, `CancelParams.Test`, `TQuality`; `DPCCtlVal`, `DbposValue`; `Client.WriteDataSet` (SetDataSetValues); association-scoped `@name` data sets; `Client.CancelEditSG`; `SettingGroupInfo.LActTm`; write-refusal sentinels `ErrWriteAccessDenied`, `ErrWriteTemporarilyUnavailable`, `ErrWriteTypeInconsistent`, `ErrWriteValueInvalid`, `ErrWriteHardwareFault`; `TimeAccuracyUnspecified`, `TimeQuality.IsValid`, `Ref.ValidateStrict`.
+- GOOSE fixed-length encoding (Annex A.3) for decode and for `FixedOffs=TRUE` GoCBs: `goose.EncodePDUFixedLength`, `EncodeFixedLength`; `PublisherConfig.TimeQuality/FixedOffs/MemberTypes`, `GOOSEOptions.TimeQuality`.
+- `sv.EventResync`, `sv.ResyncAfter`, `Stats.Resyncs`, `sv.ReservedSmpSynch`; `validate.Addresses`, `validate.Options.SkipAddresses`.
+
+### Deprecated
+
+- `Client.ReadLastApplError` (LastApplError is a transient VMD variable; use `ControlError.LastApplError`) and `DpCtlVal` (a DPC ctlVal is BOOLEAN; use `DPCCtlVal`).
+
+### Tests
+
+- `TestSpec_*` tests named after their clause for reporting, logging, control, setting groups, data sets, types, GOOSE, SV and SCL, with byte vectors for wire formats.
+- Chaos and race tests with goroutine-leak checks: URCB reservation races, disconnect during reporting, replay racing live reports, six clients racing a control, LCB chaos.
+- New fuzz targets `FuzzAssembleSegments`, `FuzzDecodeRCB`, `FuzzDecodeControlRequest`, `FuzzEncodeFixedLength`.
+- Assertions that contradicted the standard were rewritten, each citing the clause in its commit.
+
+### Notes
+
+- The SCL corpus manifest (recorded with sclparse v1.13.1) needs regenerating with this release: `multi_substation-S1IED1.icd` (GSEControl written `Name=`) and libiec61850's `demos-beagle_demo.icd`/`.iid` (LN FSCC with an FSCH LNodeType) now get one genuine error each.
+
+---
+
 ## v1.16.2
 
 **Date:** 2026-11-10
