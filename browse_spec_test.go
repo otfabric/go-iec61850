@@ -34,14 +34,14 @@ func TestSpec_7_2_GetLogicalNodeDirectory_DataOnly(t *testing.T) {
 	if !slices.Contains(names, "Mod") {
 		t.Errorf("LLN0 data objects %v lack Mod", names)
 	}
-	for _, cb := range []string{"brcb01", "urcb01", "gcbAll", "gcbBool"} {
+	for _, cb := range []string{"brcb0101", "urcb0101", "gcbAll", "gcbBool"} {
 		if slices.Contains(names, cb) {
 			t.Errorf("control block %s listed as a data object: %v", cb, names)
 		}
 	}
 	// The control block is still browsable below its name.
-	if kids, err := c.ListChildren(ctx, Ref{LD: ctlLD, LN: "LLN0", Path: []string{"brcb01"}}); err != nil || len(kids) == 0 {
-		t.Errorf("ListChildren(brcb01) = %v, %v", kids, err)
+	if kids, err := c.ListChildren(ctx, Ref{LD: ctlLD, LN: "LLN0", Path: []string{"brcb0101"}}); err != nil || len(kids) == 0 {
+		t.Errorf("ListChildren(brcb0101) = %v, %v", kids, err)
 	}
 
 	for item, want := range map[string]bool{
