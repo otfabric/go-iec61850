@@ -126,7 +126,12 @@ type ValueStore struct {
 	interceptorMu sync.RWMutex
 	interceptor   WriteInterceptor
 	editGuard     EditGuard
+	writeGuard    WriteGuard
 }
+
+// WriteGuard decides whether a client may write the data attribute under
+// storeKey; a non-nil error refuses the write before the store changes.
+type WriteGuard func(ctx context.Context, storeKey string) error
 
 // EditGuard decides whether a client may read (write=false) or write the
 // FC=SE (edit setting group) attribute under storeKey; a non-nil error
@@ -242,6 +247,25 @@ func (vs *ValueStore) SetEditGuard(fn EditGuard) {
 	vs.interceptorMu.Lock()
 	vs.editGuard = fn
 	vs.interceptorMu.Unlock()
+}
+
+// SetWriteGuard installs the [WriteGuard] consulted before every client
+// write of a leaf data attribute is stored.
+func (vs *ValueStore) SetWriteGuard(fn WriteGuard) {
+	vs.interceptorMu.Lock()
+	vs.writeGuard = fn
+	vs.interceptorMu.Unlock()
+}
+
+// checkWrite runs the write guard.
+func (vs *ValueStore) checkWrite(ctx context.Context, key string) error {
+	vs.interceptorMu.RLock()
+	fn := vs.writeGuard
+	vs.interceptorMu.RUnlock()
+	if fn == nil {
+		return nil
+	}
+	return fn(ctx, key)
 }
 
 // checkEdit runs the edit guard for an FC=SE access.
@@ -889,6 +913,9 @@ func registerDA(srv *mms.Server, vs *ValueStore, ldName, lnName string, path []s
 			if err := checkEnumValue(val, attr); err != nil {
 				return fmt.Errorf("write %s: %w", storeKey, err)
 			}
+			if err := vs.checkWrite(ctx, storeKey); err != nil {
+				return err
+			}
 			vs.Set(storeKey, val)
 			// Notify any installed interceptor (e.g. the ReportEngine) that
 			// a client has successfully written this data attribute. The
@@ -1364,7 +1391,7 @@ func parseInitialValue(btype, val string, enumNames map[string]int) (*mms.Value,
 	case "Dbpos":
 		// SCL gives a double point as its literal (IEC 61850-7-3 DPS
 		// stVal); on the wire it is BIT STRING(2), intermediate-state 00,
-		// off 01, on 10, bad-state 11 (IEC 61850-8-1), as DpCtlVal writes.
+		// off 01, on 10, bad-state 11 (IEC 61850-8-1), as DbposValue writes.
 		if b, ok := dbposLiterals[val]; ok {
 			return mms.NewBitStringWithLength([]byte{b}, 2), nil
 		}

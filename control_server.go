@@ -3,6 +3,7 @@
 package iec61850
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -17,6 +18,10 @@ import (
 	"github.com/otfabric/go-iec61850/internal/servermodel"
 )
 
+// errHandlerPanic marks the error of a ControlHandler callback that
+// panicked: an internal error, LastApplError Error 1 (Unknown).
+var errHandlerPanic = errors.New("panic in ControlHandler callback")
+
 // callControlHandler invokes fn, recovering from any panic and converting it
 // to an error so that a misbehaving application callback cannot crash the server.
 func callControlHandler(fn func(context.Context, ControlRequest) error, ctx context.Context, req ControlRequest) (err error) {
@@ -25,7 +30,7 @@ func callControlHandler(fn func(context.Context, ControlRequest) error, ctx cont
 			err = &ControlError{
 				Ref:       req.Ref,
 				Operation: req.Operation,
-				Wrapped:   fmt.Errorf("panic in ControlHandler callback: %v", r),
+				Wrapped:   fmt.Errorf("%w: %v", errHandlerPanic, r),
 			}
 		}
 	}()
@@ -37,32 +42,53 @@ func callControlHandler(fn func(context.Context, ControlRequest) error, ctx cont
 // unset (nil) handlers use default accept/reject behavior.
 //
 // All handler methods receive a context from the MMS layer and a
-// [ControlRequest] describing the command.
+// [ControlRequest] describing the command. A callback refuses with an
+// error, preferably a [*ControlError] with an [AddCause]; it is reported
+// in the LastApplError (IEC 61850-8-1 20.11; a ControlError whose
+// LastApplError has a non-zero Error sets that Error code) and the write
+// gets the DataAccessError the error carries ([ErrWriteAccessDenied] and
+// the other Err* write sentinels, or an [*mms.DataAccessError]), else the
+// one of IEC 61850-8-1 Table 87 for its AddCause: temporarily-unavailable
+// for object-already-selected, command-already-in-execution and
+// locked-by-other-client, object-access-denied otherwise (as
+// libiec61850 answers).
+//
+// Callbacks are not called with the control's lock held; a control is in
+// one state at a time (IEC 61850-7-2 Table 47), so OnOperate and
+// OnExecute of one control never overlap.
 type ControlHandler struct {
-	// SelectTimeout overrides [DefaultSelectTimeout] for this control
-	// object. The select reservation expires this long after a
-	// successful Select or SelectWithValue. A zero value means use
-	// [DefaultSelectTimeout].
+	// SelectTimeout overrides the select timeout for this control
+	// object: the selection is released this long after a successful
+	// Select or SelectWithValue. Zero uses the model's CF sboTimeout
+	// (milliseconds, IEC 61850-7-3) when it is set and not zero, and
+	// [DefaultSelectTimeout] otherwise.
 	SelectTimeout time.Duration
 
-	// OnSelect is called when a client issues a Select (SBO) or
-	// SelectWithValue (SBOw) request. Return nil to accept the
+	// OnSelect is called when a client issues a Select (SBO, a Read of
+	// SBO) or SelectWithValue (SBOw) request. Return nil to accept the
 	// select, or an error (preferably wrapping [ErrSelectFailed]
-	// with an [AddCause]) to deny it.
+	// with an [AddCause]) to deny it. A denied Select reads back an empty
+	// string (IEC 61850-8-1 20.5.5).
 	//
 	// If nil, selects are accepted unconditionally.
 	OnSelect func(ctx context.Context, req ControlRequest) error
 
-	// OnOperate is called when a client issues an Operate request.
-	// Return nil to accept the operate, or an error (preferably
-	// wrapping [ErrOperateFailed] with an [AddCause]) to deny it.
+	// OnOperate is called when a client issues an Operate request: at
+	// once, or for a time activated operate (non-zero OperTm in the
+	// future) when OperTm is reached. Return nil to accept the operate,
+	// or an error (preferably wrapping [ErrOperateFailed] with an
+	// [AddCause]) to deny it.
 	//
-	// If nil, operates are accepted unconditionally and the value
-	// is written to the ValueStore.
+	// If nil, operates are accepted and the server applies a default
+	// for simple status controls: ctlVal is written to $ST$..$stVal when
+	// it fits stVal's type (BOOLEAN to Dbpos for a DPC: on 10, off 01),
+	// with t, and origin and ctlNum when the DO has them.
 	OnOperate func(ctx context.Context, req ControlRequest) error
 
-	// OnCancel is called when a client issues a Cancel request.
-	// Return nil to accept the cancellation, or an error to deny.
+	// OnCancel is called when a client issues a Cancel request that
+	// is accepted (no other client holds the selection, the parameters
+	// match the selection). Return nil to accept the cancellation, or an
+	// error to deny.
 	//
 	// If nil, cancels are accepted unconditionally.
 	OnCancel func(ctx context.Context, req ControlRequest) error
@@ -72,8 +98,12 @@ type ControlHandler struct {
 	// positive termination, an error a negative one with a LastApplError
 	// whose AddCause is the error's [ControlError.AddCause] (unknown
 	// otherwise). It runs in the background with the request's values,
-	// ending when the server closes. Nil means the operate completes
-	// with OnOperate.
+	// ending when the server closes, and, when the model's CF
+	// operTimeout (milliseconds) is set, at that timeout: an error once
+	// the timeout passed gives AddCause time-limit-over. Nil means the
+	// operate completes with OnOperate. The control stays in execution
+	// until the termination is sent: another Oper, SBOw or Cancel gets
+	// command-already-in-execution (IEC 61850-7-2 20.3.3, Table 47).
 	OnExecute func(ctx context.Context, req ControlRequest) error
 }
 
@@ -86,7 +116,7 @@ type ControlRequest struct {
 	// Operation is "operate", "select", or "cancel".
 	Operation string
 
-	// CtlVal is the control value.
+	// CtlVal is the control value; nil for a Select (SBO).
 	CtlVal *mms.Value
 
 	// Origin is the command originator.
@@ -95,7 +125,9 @@ type ControlRequest struct {
 	// CtlNum is the control sequence number.
 	CtlNum uint8
 
-	// OperTm is the scheduled operation time (zero for immediate).
+	// OperTm is the activation time of a time activated operate; zero
+	// for an immediate command (operTm absent or all zero, IEC 61850-8-1
+	// 20.10.2.2).
 	OperTm time.Time
 
 	// Test indicates whether this is a test command.
@@ -105,44 +137,69 @@ type ControlRequest struct {
 	Check CheckConditions
 }
 
-// controlRegistration holds a registered control handler and its
-// associated SBO state for a single controllable data object.
-//
-// For SBO enhanced (SBOw), ownership is tracked by serialized
-// originator identity (OrCat:OrIdent) AND by connection pointer so
-// that two clients with the same origin identity can be distinguished.
-// For SBO normal, ownership is tracked solely by the MMS ServerConn
-// pointer, since the SBO select is a Read request that carries no
-// origin information.
+// controlState is the state of a control object (IEC 61850-7-2 Table 47).
+type controlState uint8
+
+const (
+	ctlUnselected     controlState = iota
+	ctlSelecting                   // a select is being checked by OnSelect
+	ctlReady                       // selected (SBO models)
+	ctlWaitActivation              // a time activated operate waits for operTm
+	ctlExecuting                   // an operate runs, until its termination
+)
+
+// controlSelection is the selection of an SBO control and the parameters
+// of the command in execution.
+type controlSelection struct {
+	conn      *mms.ServerConn // the client (association) holding it
+	withValue bool            // SBOw: the parameters below were given
+	origin    Origin
+	ctlNum    uint8
+	ctlVal    *mms.Value
+	test      bool
+	check     CheckConditions
+}
+
+// controlRegistration holds a registered control handler and the state
+// of a single controllable data object. Ownership is the client: the MMS
+// association that selected (IEC 61850-7-2 20.2, Table 47; libiec61850
+// compares the connection too).
 type controlRegistration struct {
 	handler       ControlHandler
 	ctlModel      CtlModel
-	selectTimeout time.Duration // effective per-control timeout
+	selectTimeout time.Duration // handler override; 0 = model or default
 
-	mu           sync.Mutex
-	selectOwner  string          // "orCat:orIdent" — originator for SBOw enhanced
-	selectConn   *mms.ServerConn // connection identity for SBO normal (and SBOw contention)
-	selectTime   time.Time
-	selectCtlNum uint8
-	selectCtlVal *mms.Value // SBOw: ctlVal from SelectWithValue, checked on Operate
+	ld, ln, doPath string // MMS names: domain, LN, DO path joined with $
+
+	mu      sync.Mutex
+	state   controlState
+	sel     controlSelection
+	selTime time.Time
+	gen     uint64      // selection generation, for the deselect timer
+	timer   *time.Timer // deselect timer (sboTimeout)
+	abort   chan struct{}
+
+	stMu sync.Mutex // serializes stSeld updates
 }
 
 // DefaultSelectTimeout is the default SBO select timeout applied when
-// no per-registration timeout is configured.
-//
-// Uses wall-clock time via [time.Since]. On systems where the wall
-// clock can jump (NTP corrections, suspend/resume), the effective
-// timeout may differ from the intended duration. For
-// safety-critical applications, consider shorter timeouts and
-// monitoring clock skew.
+// neither [ControlHandler.SelectTimeout] nor the model's sboTimeout is
+// set.
 const DefaultSelectTimeout = 30 * time.Second
 
 // RegisterControl registers a [ControlHandler] for the controllable
 // data object identified by ldName and doRef (e.g. "GGIO1.SPCSO1").
 // The ctlModel determines the expected control flow.
 //
-// The handler callbacks are invoked from within the MMS write path
-// when a client writes to the Oper, SBO, SBOw, or Cancel subattributes.
+// The registered ctlModel is the model the server enforces: when the
+// data object has a CF ctlModel whose value differs, it is set to
+// ctlModel (a warning is logged), so clients read the model in use (IEC
+// 61850-7-2 20.1), and client writes of that ctlModel are refused with
+// object-access-denied.
+//
+// The handler callbacks are invoked when a client reads SBO or writes
+// the Oper, SBOw or Cancel subattributes. A control write to a data
+// object without a registration is refused with object-access-denied.
 func (s *Server) RegisterControl(ldName, doRef string, ctlModel CtlModel, handler ControlHandler) error {
 	if ldName == "" || doRef == "" {
 		return fmt.Errorf("iec61850: register control: %w: empty ldName or doRef", ErrInvalidArgument)
@@ -159,15 +216,27 @@ func (s *Server) RegisterControl(ldName, doRef string, ctlModel CtlModel, handle
 		return fmt.Errorf("iec61850: register control: %w: already registered: %s", ErrInvalidArgument, key)
 	}
 
+	ln, do, _ := strings.Cut(doRef, ".")
 	reg := &controlRegistration{
 		handler:       handler,
 		ctlModel:      ctlModel,
 		selectTimeout: handler.SelectTimeout,
+		ld:            ldName,
+		ln:            ln,
+		doPath:        strings.ReplaceAll(do, ".", "$"),
 	}
-	if reg.selectTimeout <= 0 {
-		reg.selectTimeout = DefaultSelectTimeout
+	if s.controls == nil {
+		s.controls = make(map[string]*controlRegistration)
 	}
 	s.controls[key] = reg
+
+	if v := s.cfValue(reg, "ctlModel"); v != nil {
+		if m, ok := v.Int64(); ok && CtlModel(m) != ctlModel {
+			s.logger.Warn("iec61850: registered ctlModel differs from the model's CF ctlModel; serving the registered one",
+				"ld", ldName, "do", doRef, "model", CtlModel(m), "registered", ctlModel)
+			s.store.Set(s.cfKey(reg, "ctlModel"), mms.NewInteger(int64(ctlModel)))
+		}
+	}
 
 	// For SBO normal models, override the SBO[CO] variable's Read handler
 	// so that a client Read to SBO[CO] processes the select and returns
@@ -182,69 +251,172 @@ func (s *Server) RegisterControl(ldName, doRef string, ctlModel CtlModel, handle
 	return nil
 }
 
+// cfKey is the store key of the CF attribute name of a control.
+func (s *Server) cfKey(reg *controlRegistration, name string) string {
+	return servermodel.StoreKey(reg.ld, reg.ln+"$CF$"+reg.doPath+"$"+name)
+}
+
+// cfValue reads a CF attribute of a control from the store; nil when
+// absent.
+func (s *Server) cfValue(reg *controlRegistration, name string) *mms.Value {
+	if s.store == nil || reg.ln == "" {
+		return nil
+	}
+	return s.store.Get(s.cfKey(reg, name))
+}
+
+// cfMillis reads a CF INT32U attribute in milliseconds (sboTimeout,
+// operTimeout, IEC 61850-7-3); 0 when absent.
+func (s *Server) cfMillis(reg *controlRegistration, name string) time.Duration {
+	if v := s.cfValue(reg, name); v != nil {
+		if u, ok := v.Uint64(); ok && u <= math.MaxInt32 {
+			return time.Duration(u) * time.Millisecond
+		}
+	}
+	return 0
+}
+
+// effectiveSelectTimeout is the deselect timeout (IEC 61850-7-2 20.2.2
+// a): the handler's, else the model's sboTimeout, else the default.
+func (s *Server) effectiveSelectTimeout(reg *controlRegistration) time.Duration {
+	if reg.selectTimeout > 0 {
+		return reg.selectTimeout
+	}
+	if d := s.cfMillis(reg, "sboTimeout"); d > 0 {
+		return d
+	}
+	return DefaultSelectTimeout
+}
+
+// operateMany reports whether the model's sboClass is operate-many (1):
+// the selection survives the operation (IEC 61850-7-2 20.3.3 e).
+func (s *Server) operateMany(reg *controlRegistration) bool {
+	if v := s.cfValue(reg, "sboClass"); v != nil {
+		if i, ok := v.Int64(); ok {
+			return i == 1
+		}
+	}
+	return false
+}
+
+// guardControlWrite is the store's write guard: the CF ctlModel of a
+// registered control is not writable (the registration is the model the
+// server enforces).
+func (s *Server) guardControlWrite(_ context.Context, storeKey string) error {
+	if !strings.HasSuffix(storeKey, "$ctlModel") || !strings.Contains(storeKey, "$CF$") {
+		return nil
+	}
+	s.controlMu.RLock()
+	defer s.controlMu.RUnlock()
+	for _, reg := range s.controls {
+		if s.cfKey(reg, "ctlModel") == storeKey {
+			return asWriteError(fmt.Errorf("iec61850: %s: ctlModel of a registered control: %w", storeKey, ErrWriteAccessDenied), mms.DataAccessErrorObjectAccessDenied)
+		}
+	}
+	return nil
+}
+
+// newControlRefusal is the error of a refused control service.
+func newControlRefusal(req ControlRequest, op string, cause AddCause, wrapped error) *ControlError {
+	return &ControlError{Ref: req.Ref, Operation: op, AddCause: cause, Wrapped: wrapped}
+}
+
+// controlRefusalCode is the DataAccessError of a refused control write
+// (IEC 61850-8-1 Table 87): temporarily-unavailable when the control is
+// selected or being operated by someone (object-already-selected,
+// command-already-in-execution, locked-by-other-client), object-access-
+// denied otherwise, as libiec61850 answers. A code the error carries
+// wins.
+func controlRefusalCode(err error) mms.DataAccessErrorCode {
+	if code, ok := dataAccessCodeOf(err); ok {
+		return code
+	}
+	switch addCauseOf(err) {
+	case AddCauseObjectAlreadySelected, AddCauseCommandAlreadyExec, AddCauseLockedByOtherClient:
+		return mms.DataAccessErrorTemporarilyUnavailable
+	}
+	return mms.DataAccessErrorObjectAccessDenied
+}
+
 // handleControlWrite is the server-side dispatch for control writes.
 // It parses the MMS structure, looks up the handler, and executes
 // the appropriate control flow.
-func (s *Server) handleControlWrite(ctx context.Context, ldName, lnName string, path []string, subAttr string, val *mms.Value) error { //nolint:unparam // ldName varies at runtime; tests only exercise one LD
+func (s *Server) handleControlWrite(ctx context.Context, ldName, lnName string, path []string, subAttr string, val *mms.Value) error {
 	doPath := pathWithoutSuffix(path, subAttr)
 	doRef := lnName + "." + joinDotPath(doPath)
-	key := ldName + "/" + doRef
+	ref := ldName + "/" + doRef
 
 	s.controlMu.RLock()
-	reg, ok := s.controls[key]
+	reg, ok := s.controls[ref]
 	s.controlMu.RUnlock()
 
 	if !ok {
-		return nil
+		// A control write the application has not registered would be
+		// answered positively with no action, and an enhanced client
+		// would wait for a CommandTermination that never comes (CTL-10);
+		// libiec61850 answers object-access-denied.
+		return asWriteError(fmt.Errorf("iec61850: control %s: not registered", ref), mms.DataAccessErrorObjectAccessDenied)
+	}
+	if subAttr == "SBO" {
+		// Select is a Read of SBO (IEC 61850-8-1 20.5); SBO is not written.
+		return asWriteError(fmt.Errorf("iec61850: control %s: SBO is read-only", ref), mms.DataAccessErrorObjectAccessDenied)
 	}
 
-	ref := ldName + "/" + doRef
 	req, err := decodeControlRequest(ref, subAttr, val)
 	if err != nil {
-		return fmt.Errorf("iec61850: control %s: decode: %w", ref, err)
+		// IEC 61850-8-1 8.1.3.4.4.2: data not matching the type.
+		return asWriteError(fmt.Errorf("iec61850: control %s: decode: %w", ref, err), mms.DataAccessErrorTypeInconsistent)
 	}
 
 	item := lnName + "$CO$" + strings.Join(doPath, "$") + "$" + subAttr
 	switch subAttr {
 	case "Oper":
-		if err := s.executeOperate(ctx, reg, req); err != nil {
-			s.sendLastApplError(ctx, ldName, item, req, err)
-			return err
-		}
-		if reg.ctlModel.IsEnhanced() {
-			s.sendCommandTermination(ctx, ldName, item, val, reg.handler.OnExecute, req)
-		}
-		return nil
-	case "SBO":
-		return s.executeSelect(ctx, reg, req)
+		err = s.operate(ctx, reg, req, val, item)
 	case "SBOw":
-		err := s.executeSelectWithValue(ctx, reg, req)
-		if err != nil {
-			s.sendLastApplError(ctx, ldName, item, req, err)
-		}
-		return err
-	case "Cancel":
-		err := s.executeCancel(ctx, reg, req)
-		if err != nil {
-			s.sendLastApplError(ctx, ldName, item, req, err)
-		}
-		return err
-	default:
-		return nil
+		err = s.selectWithValue(ctx, reg, req)
+	default: // "Cancel"
+		err = s.cancel(ctx, reg, req)
 	}
+	if err != nil {
+		s.sendLastApplError(ctx, ldName, item, req, err, false)
+		return asWriteError(err, controlRefusalCode(err))
+	}
+	return nil
 }
 
-// lastApplErrorValue encodes a LastApplError (IEC 61850-8-1):
-// { CntrlObj, Error, Origin, ctlNum, AddCause }, the layout libiec61850
-// sends; Error is 0 (no error) as libiec61850 sends for refusals.
-func lastApplErrorValue(cntrlObj string, req ControlRequest, cause AddCause) *mms.Value {
+// lastApplErrorValue encodes a LastApplError (IEC 61850-8-1 20.11, Table
+// 96): { CntrlObj, Error, Origin, ctlNum, AddCause }, the layout
+// libiec61850 sends.
+func lastApplErrorValue(cntrlObj string, req ControlRequest, cause AddCause, code int) *mms.Value {
 	return mms.NewStructure([]*mms.Value{
 		mms.NewVisibleString(cntrlObj),
-		mms.NewInteger(0),
+		mms.NewInteger(int64(code)),
 		req.Origin.toMMS(),
 		mms.NewUnsigned(uint64(req.CtlNum)),
 		mms.NewInteger(int64(cause)),
 	})
+}
+
+// lastApplErrorCode is the Error of a LastApplError (IEC 61850-8-1
+// 20.11): the one a [*ControlError]'s LastApplError gives, else 1
+// (Unknown) for an internal error (a panicking callback), 2 (Timeout Test
+// Not OK) for a failed time activated operate with Test, 3 (Operator Test
+// Not OK) for another failed operate with Test, and 0 (No Error)
+// otherwise.
+func lastApplErrorCode(req ControlRequest, err error, timeActivated bool) int {
+	var ce *ControlError
+	if errors.As(err, &ce) && ce.LastApplError != nil && ce.LastApplError.Error != 0 {
+		return ce.LastApplError.Error
+	}
+	switch {
+	case errors.Is(err, errHandlerPanic):
+		return 1
+	case req.Test && req.Operation == "operate" && timeActivated:
+		return 2
+	case req.Test && req.Operation == "operate":
+		return 3
+	}
+	return 0
 }
 
 // addCauseOf returns the AddCause of a control error, unknown when it
@@ -259,16 +431,16 @@ func addCauseOf(err error) AddCause {
 
 // sendLastApplError reports why a control write is refused: an
 // InformationReport of the VMD-specific variable LastApplError, sent
-// before the write's negative response (IEC 61850-8-1, as libiec61850
-// does).
-func (s *Server) sendLastApplError(ctx context.Context, domain, item string, req ControlRequest, err error) {
+// before the write's negative response (IEC 61850-8-1 20.11, as
+// libiec61850 does).
+func (s *Server) sendLastApplError(ctx context.Context, domain, item string, req ControlRequest, err error, timeActivated bool) {
 	sc := mms.ServerConnFromContext(ctx)
 	if sc == nil {
 		return
 	}
 	report := &mms.InformationReportRequest{
 		Variables: []mms.ObjectName{{Scope: mms.ObjectScopeVMD, ItemID: "LastApplError"}},
-		Values:    []*mms.Value{lastApplErrorValue(domain+"/"+item, req, addCauseOf(err))},
+		Values:    []*mms.Value{lastApplErrorValue(domain+"/"+item, req, addCauseOf(err), lastApplErrorCode(req, err, timeActivated))},
 	}
 	sendCtx, cancel := context.WithTimeout(ctx, unsolicitedSendTimeout)
 	defer cancel()
@@ -332,318 +504,445 @@ func (b *backgroundTasks) stop() {
 	b.wg.Wait()
 }
 
-// sendCommandTermination sends the CommandTermination (IEC 61850-8-1
-// clause 20.6) to the connection that operated an enhanced-security
-// control: an InformationReport of the Oper attribute with the operated
-// value, preceded by a LastApplError when execute fails (negative).
+// --- state machine -------------------------------------------------------
+
+// expireLocked releases a selection whose select timeout passed or whose
+// client's association is gone (IEC 61850-7-2 20.2.2 a, Table 47). It
+// reports whether it released one. Must be called with reg.mu held.
+func (s *Server) expireLocked(reg *controlRegistration, now time.Time) bool {
+	if reg.state != ctlReady {
+		return false
+	}
+	if now.Sub(reg.selTime) > s.effectiveSelectTimeout(reg) || s.connLost(reg.sel.conn) {
+		s.unselectLocked(reg)
+		return true
+	}
+	return false
+}
+
+// connLost reports whether conn is an association that has ended.
+func (s *Server) connLost(conn *mms.ServerConn) bool {
+	return conn != nil && s.mms != nil && !s.isConnActive(conn)
+}
+
+// unselectLocked returns the control to Unselected. Must be called with
+// reg.mu held; the caller updates stSeld after unlocking.
+func (s *Server) unselectLocked(reg *controlRegistration) {
+	reg.state = ctlUnselected
+	reg.sel = controlSelection{}
+	reg.gen++
+	if reg.timer != nil {
+		reg.timer.Stop()
+		reg.timer = nil
+	}
+}
+
+// readyLocked enters Ready with the selection and arms the deselect
+// timer. Must be called with reg.mu held.
+func (s *Server) readyLocked(reg *controlRegistration, now time.Time) {
+	reg.state = ctlReady
+	reg.selTime = now
+	reg.gen++
+	if reg.timer != nil {
+		reg.timer.Stop()
+	}
+	gen := reg.gen
+	reg.timer = time.AfterFunc(s.effectiveSelectTimeout(reg), func() {
+		reg.mu.Lock()
+		if reg.gen != gen || reg.state != ctlReady {
+			reg.mu.Unlock()
+			return
+		}
+		s.unselectLocked(reg)
+		reg.mu.Unlock()
+		s.logger.Debug("iec61850: selection timed out", "ld", reg.ld, "do", reg.ln+"$"+reg.doPath)
+		s.syncStSeld(context.Background(), reg)
+	})
+}
+
+// syncStSeld writes the stSeld status of the control (IEC 61850-7-3:
+// TRUE while selected) when the data object has one.
+func (s *Server) syncStSeld(ctx context.Context, reg *controlRegistration) {
+	if s.store == nil || !s.hasAttr(reg, "ST", "stSeld") {
+		return
+	}
+	reg.stMu.Lock()
+	defer reg.stMu.Unlock()
+	reg.mu.Lock()
+	selected := reg.state == ctlReady || reg.state == ctlExecuting && reg.sel.conn != nil || reg.state == ctlWaitActivation && reg.sel.conn != nil
+	if !reg.ctlModel.IsSBO() {
+		selected = false
+	}
+	reg.mu.Unlock()
+	key := servermodel.StoreKey(reg.ld, reg.ln+"$ST$"+reg.doPath+"$stSeld")
+	if cur := s.store.Get(key); cur != nil {
+		if b, ok := cur.Bool(); ok && b == selected {
+			return
+		}
+	}
+	s.controlSetValue(ctx, key, mms.NewBoolean(selected))
+}
+
+// validOrigin checks an Origin against IEC 61850-7-3 (orCat 0..8);
+// orIdent's length is checked with the type.
+func validOrigin(o Origin) bool { return o.OrCat >= OrCatNotSupported && o.OrCat <= OrCatProcess }
+
+// sameOrigin compares two Origins.
+func sameOrigin(a, b Origin) bool { return a.OrCat == b.OrCat && bytes.Equal(a.OrIdent, b.OrIdent) }
+
+// selectWithValue is SelectWithValue (SBOw, IEC 61850-7-2 20.3.3,
+// Table 47).
+func (s *Server) selectWithValue(ctx context.Context, reg *controlRegistration, req ControlRequest) error {
+	if reg.ctlModel != CtlModelSBOEnhanced {
+		// IEC 61850-7-2 Table 47: SelectWithValue on a control that has no
+		// SBO with enhanced security; AddCause not-supported.
+		return newControlRefusal(req, "select", AddCauseNotSupported,
+			fmt.Errorf("%w: ctlModel %s does not support SBOw", ErrSelectFailed, reg.ctlModel))
+	}
+	if !validOrigin(req.Origin) {
+		return newControlRefusal(req, "select", AddCauseSelectFailed, fmt.Errorf("%w: invalid origin", ErrSelectFailed))
+	}
+	return s.doSelect(ctx, reg, req, true)
+}
+
+// doSelect runs a Select or SelectWithValue: refused while selected or
+// in execution, OnSelect without the lock held, then Ready.
+func (s *Server) doSelect(ctx context.Context, reg *controlRegistration, req ControlRequest, withValue bool) error {
+	sc := mms.ServerConnFromContext(ctx)
+	now := time.Now()
+	reg.mu.Lock()
+	released := s.expireLocked(reg, now)
+	switch reg.state {
+	case ctlWaitActivation, ctlExecuting:
+		reg.mu.Unlock()
+		s.afterRelease(ctx, reg, released)
+		return newControlRefusal(req, "select", AddCauseCommandAlreadyExec, ErrSelectFailed)
+	case ctlReady, ctlSelecting:
+		// IEC 61850-7-2 Table 47 (Ready, Sel/SelVal): object-already-
+		// selected, also for the client that holds the selection.
+		reg.mu.Unlock()
+		s.afterRelease(ctx, reg, released)
+		s.logger.Warn("iec61850: select denied: already selected", "ref", req.Ref)
+		return newControlRefusal(req, "select", AddCauseObjectAlreadySelected, ErrSelectFailed)
+	}
+	reg.state = ctlSelecting
+	reg.sel = controlSelection{conn: sc}
+	gen := reg.gen
+	reg.mu.Unlock()
+
+	if reg.handler.OnSelect != nil {
+		if err := callControlHandler(reg.handler.OnSelect, ctx, req); err != nil {
+			reg.mu.Lock()
+			if reg.state == ctlSelecting && reg.gen == gen {
+				s.unselectLocked(reg)
+			}
+			reg.mu.Unlock()
+			return err
+		}
+	}
+
+	reg.mu.Lock()
+	if reg.state != ctlSelecting || reg.gen != gen {
+		reg.mu.Unlock()
+		return newControlRefusal(req, "select", AddCauseObjectAlreadySelected, ErrSelectFailed)
+	}
+	reg.sel = controlSelection{conn: sc, withValue: withValue, origin: req.Origin, ctlNum: req.CtlNum,
+		ctlVal: req.CtlVal, test: req.Test, check: req.Check}
+	s.readyLocked(reg, now)
+	reg.mu.Unlock()
+	s.syncStSeld(ctx, reg)
+	return nil
+}
+
+// afterRelease updates stSeld when expireLocked released a selection.
+func (s *Server) afterRelease(ctx context.Context, reg *controlRegistration, released bool) {
+	if released {
+		s.syncStSeld(ctx, reg)
+	}
+}
+
+// selectNormal is the Select of SBO with normal security: a Read of SBO
+// (IEC 61850-8-1 20.5.4). It returns whether the select was granted.
+func (s *Server) selectNormal(ctx context.Context, reg *controlRegistration) bool {
+	req := ControlRequest{Ref: reg.ld + "/" + reg.ln + "." + strings.ReplaceAll(reg.doPath, "$", "."), Operation: "select"}
+	if err := s.doSelect(ctx, reg, req, false); err != nil {
+		s.logger.Debug("iec61850: SBO select denied", "ref", req.Ref, "error", err)
+		return false
+	}
+	s.logger.Debug("iec61850: SBO normal select granted", "ref", req.Ref)
+	return true
+}
+
+// paramsMatch reports whether an Operate carries the parameters of the
+// SelectWithValue: ctlVal, ctlNum, origin, Test and Check (IEC 61850-7-2
+// 20.5.2, Table 47 inconsistent-parameters; as libiec61850 compares).
+func (sel *controlSelection) paramsMatch(req ControlRequest, withCheck bool) bool {
+	if !sel.withValue {
+		return true
+	}
+	return mmsValuesEqual(sel.ctlVal, req.CtlVal) && sel.ctlNum == req.CtlNum && sameOrigin(sel.origin, req.Origin) &&
+		sel.test == req.Test && (!withCheck || sel.check == req.Check)
+}
+
+// operate is Operate and TimeActivatedOperate (IEC 61850-7-2 20.4,
+// 20.5; IEC 61850-8-1 20.7, 20.10).
+func (s *Server) operate(ctx context.Context, reg *controlRegistration, req ControlRequest, oper *mms.Value, item string) error {
+	sc := mms.ServerConnFromContext(ctx)
+	if !validOrigin(req.Origin) {
+		return newControlRefusal(req, "operate", AddCauseInconsistentParameters, fmt.Errorf("%w: invalid origin", ErrOperateFailed))
+	}
+	now := time.Now()
+	reg.mu.Lock()
+	released := s.expireLocked(reg, now)
+	switch {
+	case reg.state == ctlWaitActivation || reg.state == ctlExecuting:
+		reg.mu.Unlock()
+		return newControlRefusal(req, "operate", AddCauseCommandAlreadyExec, ErrOperateFailed)
+	case reg.ctlModel.IsSBO() && reg.state == ctlSelecting && reg.sel.conn != sc,
+		reg.ctlModel.IsSBO() && reg.state == ctlReady && reg.sel.conn != sc:
+		reg.mu.Unlock()
+		s.logger.Warn("iec61850: operate denied: selected by another client", "ref", req.Ref)
+		return newControlRefusal(req, "operate", AddCauseLockedByOtherClient, ErrOperateFailed)
+	case reg.ctlModel.IsSBO() && reg.state != ctlReady:
+		reg.mu.Unlock()
+		s.afterRelease(ctx, reg, released)
+		s.logger.Warn("iec61850: operate denied: not selected", "ref", req.Ref)
+		return newControlRefusal(req, "operate", AddCauseObjectNotSelected, ErrOperateFailed)
+	case reg.ctlModel.IsSBO() && !reg.sel.paramsMatch(req, true):
+		// libiec61850 releases the selection on inconsistent parameters.
+		s.unselectLocked(reg)
+		reg.mu.Unlock()
+		s.syncStSeld(ctx, reg)
+		s.logger.Warn("iec61850: operate denied: parameters differ from SelectWithValue", "ref", req.Ref)
+		return newControlRefusal(req, "operate", AddCauseInconsistentParameters, ErrOperateFailed)
+	}
+	if reg.timer != nil {
+		reg.timer.Stop()
+		reg.timer = nil
+	}
+	if !reg.ctlModel.IsSBO() {
+		reg.sel = controlSelection{conn: sc}
+	}
+	timeActivated := !req.OperTm.IsZero() && req.OperTm.After(now)
+	if timeActivated {
+		reg.state = ctlWaitActivation
+		reg.abort = make(chan struct{})
+	} else {
+		reg.state = ctlExecuting
+	}
+	abort := reg.abort
+	reg.mu.Unlock()
+
+	if timeActivated {
+		s.startTimeActivated(ctx, reg, req, oper, item, abort)
+		return nil
+	}
+
+	if err := s.runOperate(ctx, reg, req); err != nil {
+		s.finishOperation(ctx, reg, false)
+		return err
+	}
+	if reg.ctlModel.IsEnhanced() {
+		s.sendCommandTermination(ctx, reg, item, zeroOperTm(oper), req, false)
+		return nil
+	}
+	s.finishOperation(ctx, reg, true)
+	return nil
+}
+
+// runOperate calls OnOperate, or applies the default operate.
+func (s *Server) runOperate(ctx context.Context, reg *controlRegistration, req ControlRequest) error {
+	if reg.handler.OnOperate != nil {
+		return callControlHandler(reg.handler.OnOperate, ctx, req)
+	}
+	s.defaultOperate(ctx, reg, req)
+	return nil
+}
+
+// finishOperation ends an execution (IEC 61850-7-2 20.3.3 e): an SBO
+// control whose sboClass is operate-many returns to Ready after a
+// successful operation; otherwise the control is unselected.
+func (s *Server) finishOperation(ctx context.Context, reg *controlRegistration, ok bool) {
+	reg.mu.Lock()
+	if reg.state != ctlExecuting && reg.state != ctlWaitActivation {
+		reg.mu.Unlock()
+		return
+	}
+	reg.abort = nil
+	if ok && reg.ctlModel.IsSBO() && s.operateMany(reg) && !s.connLost(reg.sel.conn) {
+		s.readyLocked(reg, time.Now())
+	} else {
+		s.unselectLocked(reg)
+	}
+	reg.mu.Unlock()
+	s.syncStSeld(ctx, reg)
+}
+
+// startTimeActivated waits for operTm (IEC 61850-7-2 20.4: on expiration
+// of the timer the action is activated and a TimeActivatedOperate
+// termination sent), then operates and sends the termination, which
+// carries the original operTm (IEC 61850-8-1 20.10.3). A Cancel before
+// operTm aborts it.
+func (s *Server) startTimeActivated(ctx context.Context, reg *controlRegistration, req ControlRequest, oper *mms.Value, item string, abort chan struct{}) {
+	reqCtx := context.WithoutCancel(ctx)
+	operVal := oper.Clone()
+	started := s.bg.start(func(life context.Context) {
+		t := time.NewTimer(time.Until(req.OperTm))
+		defer t.Stop()
+		select {
+		case <-t.C:
+		case <-abort:
+			s.logger.Debug("iec61850: time activated operate cancelled", "ref", req.Ref)
+			return
+		case <-life.Done():
+			return
+		}
+		reg.mu.Lock()
+		if reg.state != ctlWaitActivation || reg.abort != abort {
+			reg.mu.Unlock()
+			return
+		}
+		reg.state = ctlExecuting
+		reg.mu.Unlock()
+		if err := s.runOperate(reqCtx, reg, req); err != nil {
+			s.sendTermination(reqCtx, life, reg, item, operVal, req, err, true)
+			s.finishOperation(reqCtx, reg, false)
+			return
+		}
+		s.runExecuteAndTerminate(reqCtx, life, reg, item, operVal, req, true)
+	})
+	if !started {
+		s.finishOperation(ctx, reg, false)
+	}
+}
+
+// zeroOperTm returns the Oper value for the CommandTermination of an
+// immediate command: operTm, when present, all zero (IEC 61850-8-1 Table
+// 82 note a, 20.10.2.2).
+func zeroOperTm(oper *mms.Value) *mms.Value {
+	if oper == nil {
+		return nil
+	}
+	v := oper.Clone()
+	members, ok := v.Structure()
+	if ok && len(members) == 7 {
+		if _, isTime := members[1].UTCTime(); isTime {
+			m := slices.Clone(members)
+			m[1] = mms.NewUTCTimeWithQuality(time.Unix(0, 0).UTC(), 0)
+			return mms.NewStructure(m)
+		}
+	}
+	return v
+}
+
+// sendCommandTermination runs OnExecute in the background and then sends
+// the CommandTermination (IEC 61850-8-1 20.9) to the connection that
+// operated an enhanced-security control: an InformationReport of the
+// Oper attribute with the operated value, preceded by a LastApplError
+// when execute fails (negative). The control stays in execution until
+// then.
 //
 // The send runs after the Write response, so it must not inherit the
 // request's cancellation; it keeps the request's values, ends when the
 // server is closed and is bounded by unsolicitedSendTimeout.
-func (s *Server) sendCommandTermination(ctx context.Context, domain, operItem string, oper *mms.Value, execute func(context.Context, ControlRequest) error, creq ControlRequest) {
-	sc := mms.ServerConnFromContext(ctx)
-	if sc == nil || oper == nil {
-		return
-	}
-	operName := mms.ObjectName{Scope: mms.ObjectScopeDomain, Domain: mms.DomainID(domain), ItemID: mms.ItemID(operItem)}
-	operVal := oper.Clone()
+func (s *Server) sendCommandTermination(ctx context.Context, reg *controlRegistration, operItem string, oper *mms.Value, creq ControlRequest, timeActivated bool) {
 	reqCtx := context.WithoutCancel(ctx)
-	s.bg.start(func(life context.Context) {
-		sendCtx, cancel := context.WithTimeout(reqCtx, commandTerminationDelay+unsolicitedSendTimeout)
-		defer cancel()
-		defer context.AfterFunc(life, cancel)()
+	started := s.bg.start(func(life context.Context) {
 		delay := time.NewTimer(commandTerminationDelay)
 		defer delay.Stop()
 		select {
 		case <-delay.C:
-		case <-sendCtx.Done():
-			s.logger.Debug("iec61850: CommandTermination abandoned", "oper", domain+"/"+operItem, "error", sendCtx.Err())
+		case <-life.Done():
+			s.logger.Debug("iec61850: CommandTermination abandoned", "oper", reg.ld+"/"+operItem, "error", life.Err())
+			s.finishOperation(reqCtx, reg, false)
 			return
 		}
-		req := &mms.InformationReportRequest{Variables: []mms.ObjectName{operName}, Values: []*mms.Value{operVal}}
-		if execute != nil {
-			execCtx, stop := context.WithCancel(reqCtx)
-			stopAfter := context.AfterFunc(life, stop)
-			err := callControlHandler(execute, execCtx, creq)
-			stopAfter()
-			stop()
-			if err != nil {
-				req = &mms.InformationReportRequest{
-					Variables: []mms.ObjectName{{Scope: mms.ObjectScopeVMD, ItemID: "LastApplError"}, operName},
-					Values:    []*mms.Value{lastApplErrorValue(domain+"/"+operItem, creq, addCauseOf(err)), operVal},
-				}
-				s.logger.Debug("iec61850: execute failed", "oper", domain+"/"+operItem, "error", err)
-			}
-		}
-		if err := sc.SendInformationReport(sendCtx, req); err != nil {
-			s.logger.Debug("iec61850: CommandTermination send failed", "oper", domain+"/"+operItem, "error", err)
-			return
-		}
-		s.logger.Debug("iec61850: CommandTermination sent", "oper", domain+"/"+operItem)
+		s.runExecuteAndTerminate(reqCtx, life, reg, operItem, oper, creq, timeActivated)
 	})
+	if !started {
+		s.finishOperation(ctx, reg, false)
+	}
 }
 
-func (s *Server) executeOperate(ctx context.Context, reg *controlRegistration, req ControlRequest) error {
-	if reg.ctlModel.IsSBO() {
-		reg.mu.Lock()
-
-		if reg.ctlModel == CtlModelSBONormal {
-			// SBO normal: check for active select granted via either the
-			// Read handler (selectConn) or the Write-to-SBO path (selectOwner).
-			sc := mms.ServerConnFromContext(ctx)
-			conn := reg.selectConn
-			owner := reg.selectOwner
-			selectTime := reg.selectTime
-
-			if conn == nil && owner == "" {
-				// No select active.
-				reg.mu.Unlock()
-				s.logger.Warn("iec61850: operate denied: no active SBO select", "ref", req.Ref)
-				return &ControlError{
-					Ref:       req.Ref,
-					Operation: "operate",
-					AddCause:  AddCauseObjectNotSelected,
-					Wrapped:   ErrOperateFailed,
-				}
-			}
-			if time.Since(selectTime) > reg.selectTimeout {
-				reg.selectConn = nil
-				reg.selectOwner = ""
-				reg.mu.Unlock()
-				s.logger.Warn("iec61850: operate denied: SBO select timed out", "ref", req.Ref)
-				return &ControlError{
-					Ref:       req.Ref,
-					Operation: "operate",
-					AddCause:  AddCauseObjectNotSelected,
-					Wrapped:   ErrOperateFailed,
-				}
-			}
-			// Ownership check: if select was via Read, enforce connection identity;
-			// if via Write, enforce origin identity.
-			if conn != nil && sc != nil && conn != sc {
-				reg.mu.Unlock()
-				s.logger.Warn("iec61850: operate denied: SBO connection mismatch", "ref", req.Ref)
-				return &ControlError{
-					Ref:       req.Ref,
-					Operation: "operate",
-					AddCause:  AddCauseLockedByOtherClient,
-					Wrapped:   ErrOperateFailed,
-				}
-			}
-			if conn == nil && owner != "" {
-				// Write-path select: enforce origin identity.
-				ownerKey := fmt.Sprintf("%d:%x", req.Origin.OrCat, req.Origin.OrIdent)
-				if owner != ownerKey {
-					reg.mu.Unlock()
-					s.logger.Warn("iec61850: operate denied: SBO origin mismatch",
-						"ref", req.Ref, "selectOwner", owner, "operateOwner", ownerKey)
-					return &ControlError{
-						Ref:       req.Ref,
-						Operation: "operate",
-						AddCause:  AddCauseLockedByOtherClient,
-						Wrapped:   ErrOperateFailed,
-					}
-				}
-			}
-			reg.selectConn = nil
-			reg.selectOwner = ""
-			reg.mu.Unlock()
-		} else {
-			// SBO enhanced: ownership is by origin identity AND connection.
-			sc := mms.ServerConnFromContext(ctx)
-			ownerKey := fmt.Sprintf("%d:%x", req.Origin.OrCat, req.Origin.OrIdent)
-			currentOwner := reg.selectOwner
-			currentConn := reg.selectConn
-			selectTime := reg.selectTime
-			selectCtlNum := reg.selectCtlNum
-			selectCtlVal := reg.selectCtlVal
-
-			if currentOwner == "" || time.Since(selectTime) > reg.selectTimeout {
-				reg.mu.Unlock()
-				s.logger.Warn("iec61850: operate denied: no active select", "ref", req.Ref)
-				return &ControlError{
-					Ref:       req.Ref,
-					Operation: "operate",
-					AddCause:  AddCauseObjectNotSelected,
-					Wrapped:   ErrOperateFailed,
-				}
-			}
-			if currentOwner != ownerKey {
-				reg.mu.Unlock()
-				s.logger.Warn("iec61850: operate denied: owner mismatch",
-					"ref", req.Ref, "selectOwner", currentOwner, "operateOwner", ownerKey)
-				return &ControlError{
-					Ref:       req.Ref,
-					Operation: "operate",
-					AddCause:  AddCauseLockedByOtherClient,
-					Wrapped:   ErrOperateFailed,
-				}
-			}
-			// Enforce connection identity when both owners share the same origin.
-			if currentConn != nil && sc != nil && currentConn != sc {
-				reg.mu.Unlock()
-				s.logger.Warn("iec61850: operate denied: SBOw connection mismatch", "ref", req.Ref)
-				return &ControlError{
-					Ref:       req.Ref,
-					Operation: "operate",
-					AddCause:  AddCauseLockedByOtherClient,
-					Wrapped:   ErrOperateFailed,
-				}
-			}
-			if reg.ctlModel.IsEnhanced() && selectCtlNum != req.CtlNum {
-				reg.mu.Unlock()
-				s.logger.Warn("iec61850: operate denied: ctlNum mismatch",
-					"ref", req.Ref, "selectCtlNum", selectCtlNum, "operateCtlNum", req.CtlNum)
-				return &ControlError{
-					Ref:       req.Ref,
-					Operation: "operate",
-					AddCause:  AddCauseInconsistentParameters,
-					Wrapped:   ErrOperateFailed,
-				}
-			}
-			// Enforce ctlVal match between SelectWithValue and Operate.
-			if reg.ctlModel.IsEnhanced() && selectCtlVal != nil && !mmsValuesEqual(selectCtlVal, req.CtlVal) {
-				reg.mu.Unlock()
-				s.logger.Warn("iec61850: operate denied: ctlVal mismatch",
-					"ref", req.Ref)
-				return &ControlError{
-					Ref:       req.Ref,
-					Operation: "operate",
-					AddCause:  AddCauseInconsistentParameters,
-					Wrapped:   ErrOperateFailed,
-				}
-			}
-			reg.selectOwner = ""
-			reg.selectConn = nil
-			reg.selectCtlVal = nil
-			reg.mu.Unlock()
+// runExecuteAndTerminate runs OnExecute (bounded by operTimeout) and sends
+// the termination, then ends the execution.
+func (s *Server) runExecuteAndTerminate(reqCtx, life context.Context, reg *controlRegistration, operItem string, oper *mms.Value, creq ControlRequest, timeActivated bool) {
+	var err error
+	if execute := reg.handler.OnExecute; execute != nil {
+		execCtx, stop := context.WithCancel(reqCtx)
+		if d := s.cfMillis(reg, "operTimeout"); d > 0 {
+			execCtx, stop = context.WithTimeout(reqCtx, d)
 		}
-	}
-
-	if reg.handler.OnOperate != nil {
-		if err := callControlHandler(reg.handler.OnOperate, ctx, req); err != nil {
-			return err
+		stopAfter := context.AfterFunc(life, stop)
+		err = callControlHandler(execute, execCtx, creq)
+		if err != nil && errors.Is(execCtx.Err(), context.DeadlineExceeded) && addCauseOf(err) == AddCauseUnknown {
+			// IEC 61850-7-2 20.3.3: operTimeout passed, CmdTerm- with
+			// AddCause time-limit-over.
+			err = &ControlError{Ref: creq.Ref, Operation: "operate", AddCause: AddCauseTimeLimit, Wrapped: err}
 		}
-		return nil
+		stopAfter()
+		stop()
 	}
-
-	// Default fallback (demo-grade): when no OnOperate handler is
-	// registered, write CtlVal directly to the ValueStore's stVal.
-	// This is a convenience for simple SPC/DPC demos and tests.
-	// Real applications should provide an explicit OnOperate handler
-	// that implements proper CDC-aware command processing,
-	// interlocking, and application-specific validation.
-	if req.CtlVal != nil && s.store != nil {
-		storeKey := s.controlStoreKey(req.Ref)
-		if storeKey != "" {
-			s.SetValue(ctx, storeKey, req.CtlVal)
-		}
+	if reg.ctlModel.IsEnhanced() || timeActivated {
+		s.sendTermination(reqCtx, life, reg, operItem, oper, creq, err, timeActivated)
 	}
-	return nil
+	s.finishOperation(reqCtx, reg, err == nil)
 }
 
-func (s *Server) executeSelect(ctx context.Context, reg *controlRegistration, req ControlRequest) error {
-	if !reg.ctlModel.IsSBO() {
-		return &ControlError{
-			Ref:       req.Ref,
-			Operation: "select",
-			Wrapped:   fmt.Errorf("ctlModel %s does not support SBO", reg.ctlModel),
-		}
+// sendTermination sends a CommandTermination: positive (the Oper alone)
+// when err is nil, else negative with the LastApplError first (IEC
+// 61850-8-1 20.9.2.2, 20.9.2.3).
+func (s *Server) sendTermination(reqCtx, life context.Context, reg *controlRegistration, operItem string, oper *mms.Value, creq ControlRequest, err error, timeActivated bool) {
+	sc := mms.ServerConnFromContext(reqCtx)
+	if sc == nil || oper == nil {
+		return
 	}
-
-	if reg.handler.OnSelect != nil {
-		if err := callControlHandler(reg.handler.OnSelect, ctx, req); err != nil {
-			return err
+	domain := reg.ld
+	operName := mms.ObjectName{Scope: mms.ObjectScopeDomain, Domain: mms.DomainID(domain), ItemID: mms.ItemID(operItem)}
+	req := &mms.InformationReportRequest{Variables: []mms.ObjectName{operName}, Values: []*mms.Value{oper}}
+	if err != nil {
+		req = &mms.InformationReportRequest{
+			Variables: []mms.ObjectName{{Scope: mms.ObjectScopeVMD, ItemID: "LastApplError"}, operName},
+			Values:    []*mms.Value{lastApplErrorValue(domain+"/"+operItem, creq, addCauseOf(err), lastApplErrorCode(creq, err, timeActivated)), oper},
 		}
+		s.logger.Debug("iec61850: execute failed", "oper", domain+"/"+operItem, "error", err)
 	}
+	sendCtx, cancel := context.WithTimeout(reqCtx, unsolicitedSendTimeout)
+	defer cancel()
+	defer context.AfterFunc(life, cancel)()
+	if err := sc.SendInformationReport(sendCtx, req); err != nil {
+		s.logger.Debug("iec61850: CommandTermination send failed", "oper", domain+"/"+operItem, "error", err)
+		return
+	}
+	s.logger.Debug("iec61850: CommandTermination sent", "oper", domain+"/"+operItem)
+}
 
+// cancel is Cancel (IEC 61850-7-2 20.6, Table 47).
+func (s *Server) cancel(ctx context.Context, reg *controlRegistration, req ControlRequest) error {
 	sc := mms.ServerConnFromContext(ctx)
-	ownerKey := fmt.Sprintf("%d:%x", req.Origin.OrCat, req.Origin.OrIdent)
-
+	now := time.Now()
 	reg.mu.Lock()
-	// Check for existing active select by a different connection.
-	// For SBOw, two clients sharing the same origin key are distinguished
-	// by connection pointer. If the existing owner is still connected and it's
-	// not the same connection, deny the select.
-	if reg.selectConn != nil && reg.selectConn != sc {
-		if s.isConnActive(reg.selectConn) && time.Since(reg.selectTime) <= reg.selectTimeout {
+	released := s.expireLocked(reg, now)
+	switch reg.state {
+	case ctlExecuting:
+		// IEC 61850-7-2 Table 47 (WaitForChange, Cancel).
+		reg.mu.Unlock()
+		return newControlRefusal(req, "cancel", AddCauseCommandAlreadyExec, ErrCancelFailed)
+	case ctlWaitActivation, ctlReady, ctlSelecting:
+		if reg.sel.conn != sc {
 			reg.mu.Unlock()
-			s.logger.Warn("iec61850: select denied: existing active selection by another connection",
-				"ref", req.Ref)
-			return &ControlError{
-				Ref:       req.Ref,
-				Operation: "select",
-				AddCause:  AddCauseObjectAlreadySelected,
-				Wrapped:   ErrSelectFailed,
-			}
+			s.logger.Warn("iec61850: cancel denied: held by another client", "ref", req.Ref)
+			return newControlRefusal(req, "cancel", AddCauseLockedByOtherClient, ErrCancelFailed)
 		}
-		// Previous owner disconnected or timed out — allow the new select.
+		if reg.state == ctlReady && !reg.sel.paramsMatch(req, false) {
+			reg.mu.Unlock()
+			s.logger.Warn("iec61850: cancel denied: parameters differ from SelectWithValue", "ref", req.Ref)
+			return newControlRefusal(req, "cancel", AddCauseInconsistentParameters, ErrCancelFailed)
+		}
 	}
-	reg.selectOwner = ownerKey
-	reg.selectConn = sc
-	reg.selectTime = time.Now()
-	reg.selectCtlNum = req.CtlNum
-	reg.selectCtlVal = req.CtlVal
+	state, gen := reg.state, reg.gen
 	reg.mu.Unlock()
-
-	return nil
-}
-
-func (s *Server) executeSelectWithValue(ctx context.Context, reg *controlRegistration, req ControlRequest) error {
-	if !reg.ctlModel.IsEnhanced() {
-		return &ControlError{
-			Ref:       req.Ref,
-			Operation: "select",
-			Wrapped:   fmt.Errorf("ctlModel %s does not support SBOw (use SBO)", reg.ctlModel),
-		}
-	}
-	return s.executeSelect(ctx, reg, req)
-}
-
-func (s *Server) executeCancel(ctx context.Context, reg *controlRegistration, req ControlRequest) error {
-	sc := mms.ServerConnFromContext(ctx)
-	ownerKey := fmt.Sprintf("%d:%x", req.Origin.OrCat, req.Origin.OrIdent)
-
-	reg.mu.Lock()
-	// Enforce ownership: only the connection that holds the selection may cancel it.
-	// For SBO normal: conn identity; for SBOw: origin + connection identity.
-	if reg.ctlModel == CtlModelSBONormal {
-		if reg.selectConn != nil && reg.selectConn != sc {
-			reg.mu.Unlock()
-			s.logger.Warn("iec61850: cancel denied: not the selection owner (SBO normal)",
-				"ref", req.Ref)
-			return &ControlError{
-				Ref:       req.Ref,
-				Operation: "cancel",
-				AddCause:  AddCauseSelectFailed,
-				Wrapped:   ErrSelectFailed,
-			}
-		}
-	} else if reg.ctlModel.IsEnhanced() {
-		if reg.selectOwner != "" && reg.selectOwner != ownerKey {
-			reg.mu.Unlock()
-			s.logger.Warn("iec61850: cancel denied: origin mismatch (SBOw)",
-				"ref", req.Ref, "owner", reg.selectOwner, "cancel", ownerKey)
-			return &ControlError{
-				Ref:       req.Ref,
-				Operation: "cancel",
-				AddCause:  AddCauseSelectFailed,
-				Wrapped:   ErrSelectFailed,
-			}
-		}
-		if reg.selectConn != nil && sc != nil && reg.selectConn != sc {
-			reg.mu.Unlock()
-			s.logger.Warn("iec61850: cancel denied: connection mismatch (SBOw)",
-				"ref", req.Ref)
-			return &ControlError{
-				Ref:       req.Ref,
-				Operation: "cancel",
-				AddCause:  AddCauseSelectFailed,
-				Wrapped:   ErrSelectFailed,
-			}
-		}
-	}
-	reg.mu.Unlock()
+	s.afterRelease(ctx, reg, released)
 
 	if reg.handler.OnCancel != nil {
 		if err := callControlHandler(reg.handler.OnCancel, ctx, req); err != nil {
@@ -652,156 +951,236 @@ func (s *Server) executeCancel(ctx context.Context, reg *controlRegistration, re
 	}
 
 	reg.mu.Lock()
-	reg.selectOwner = ""
-	reg.selectConn = nil
-	reg.selectCtlVal = nil
+	if state != ctlUnselected && reg.state == state && reg.gen == gen {
+		if reg.abort != nil {
+			close(reg.abort)
+			reg.abort = nil
+		}
+		s.unselectLocked(reg)
+	}
 	reg.mu.Unlock()
-
+	s.syncStSeld(ctx, reg)
 	return nil
 }
 
-// decodeCtlNum decodes the ctlNum member of an Oper/SBOw/Cancel
-// structure. IEC 61850-7-2 clause 20 (control model) types ctlNum as
-// INT8U; a larger value is malformed and is rejected instead of being
-// truncated, which could otherwise correlate with an unrelated Select. A member that is not
-// an unsigned integer leaves ctlNum at zero, as before.
-func decodeCtlNum(v *mms.Value) (uint8, error) {
-	n, ok := v.Uint32()
-	if !ok {
-		return 0, nil
+// --- defaults ------------------------------------------------------------
+
+// findDO returns the data object of a control in the model.
+func (s *Server) findDO(reg *controlRegistration) *servermodel.DataObject {
+	if s.model == nil {
+		return nil
 	}
+	for i := range s.model.LogicalDevices {
+		ld := &s.model.LogicalDevices[i]
+		if ld.Name != reg.ld {
+			continue
+		}
+		for j := range ld.LogicalNodes {
+			ln := &ld.LogicalNodes[j]
+			if ln.Name != reg.ln {
+				continue
+			}
+			dos := ln.DataObjects
+			var found *servermodel.DataObject
+			for _, name := range strings.Split(reg.doPath, "$") {
+				found = nil
+				for k := range dos {
+					if dos[k].Name == name {
+						found = &dos[k]
+						break
+					}
+				}
+				if found == nil {
+					return nil
+				}
+				dos = found.Children
+			}
+			return found
+		}
+	}
+	return nil
+}
+
+// findAttr returns the attribute name with FC fc of a control's DO.
+func (s *Server) findAttr(reg *controlRegistration, fc, name string) *servermodel.DataAttribute {
+	do := s.findDO(reg)
+	if do == nil {
+		return nil
+	}
+	for i := range do.Attributes {
+		if do.Attributes[i].FC == fc && do.Attributes[i].Name == name {
+			return &do.Attributes[i]
+		}
+	}
+	return nil
+}
+
+func (s *Server) hasAttr(reg *controlRegistration, fc, name string) bool {
+	return s.findAttr(reg, fc, name) != nil
+}
+
+// defaultOperate is the operate without OnOperate (demo grade): ctlVal
+// into $ST$..$stVal when it fits stVal's type (IEC 61850-7-3: for a DPC,
+// ctlVal BOOLEAN maps to stVal Dbpos on 10 / off 01), with t, and origin
+// and ctlNum when the DO has them (7-3 status mirrors of the control).
+// A ctlVal of another type (APC, BSC, INC with a different stVal) is not
+// written; such controls need an OnOperate.
+func (s *Server) defaultOperate(ctx context.Context, reg *controlRegistration, req ControlRequest) {
+	if req.CtlVal == nil || s.store == nil {
+		return
+	}
+	stKey := func(name string) string { return servermodel.StoreKey(reg.ld, reg.ln+"$ST$"+reg.doPath+"$"+name) }
+	val := req.CtlVal
+	st := s.findAttr(reg, "ST", "stVal")
+	if st != nil {
+		ts, ok := servermodel.BTypeSpec(st.BType)
+		if b, isBool := val.Bool(); isBool && st.BType == "Dbpos" {
+			bits := byte(0x40)
+			if b {
+				bits = 0x80
+			}
+			val = mms.NewBitStringWithLength([]byte{bits}, 2)
+		} else if !ok || servermodel.CheckWriteValue(val, ts) != nil {
+			s.logger.Debug("iec61850: default operate: ctlVal does not fit stVal; use OnOperate", "ref", req.Ref)
+			return
+		}
+	} else if s.model != nil && s.findDO(reg) != nil {
+		// The DO has no stVal (APC, BAC): nothing to mirror.
+		return
+	}
+	s.controlSetValue(ctx, stKey("stVal"), val)
+	if s.hasAttr(reg, "ST", "t") {
+		s.controlSetValue(ctx, stKey("t"), mms.NewUTCTime(time.Now()))
+	}
+	if s.hasAttr(reg, "ST", "ctlNum") {
+		s.controlSetValue(ctx, stKey("ctlNum"), mms.NewUnsigned(uint64(req.CtlNum)))
+	}
+	if s.hasAttr(reg, "ST", "origin") {
+		s.controlSetValue(ctx, stKey("origin$orCat"), mms.NewInteger(int64(req.Origin.OrCat)))
+		s.controlSetValue(ctx, stKey("origin$orIdent"), mms.NewOctetString(req.Origin.OrIdent))
+	}
+}
+
+// --- decoding --------------------------------------------------------------
+
+// decodeCtlNum decodes the ctlNum member of an Oper/SBOw/Cancel
+// structure: INT8U (IEC 61850-7-2 clause 20, IEC 61850-8-1 Table 85). A
+// value of another type or above 255 is malformed and refused, instead
+// of being truncated, which could otherwise correlate with an unrelated
+// Select.
+func decodeCtlNum(v *mms.Value) (uint8, error) {
+	if v.Type() != mms.ValueTypeUnsigned {
+		return 0, fmt.Errorf("ctlNum: expected unsigned, got %s", v.Type())
+	}
+	n, _ := v.Uint64()
 	if n > math.MaxUint8 {
 		return 0, fmt.Errorf("ctlNum %d exceeds INT8U", n)
 	}
 	return uint8(n), nil
 }
 
-// decodeControlRequest decodes an MMS structure into a ControlRequest.
+// decodeOrigin decodes Origin { orCat ENUMERATED, orIdent OCTET STRING
+// (SIZE(0..64)) } (IEC 61850-7-3, IEC 61850-8-1).
+func decodeOrigin(v *mms.Value) (Origin, error) {
+	m, ok := v.Structure()
+	if !ok || len(m) != 2 {
+		return Origin{}, fmt.Errorf("origin: expected structure {orCat, orIdent}, got %s", v.Type())
+	}
+	cat, ok := m[0].Int64()
+	if !ok || m[0].Type() != mms.ValueTypeInteger || cat < math.MinInt32 || cat > math.MaxInt32 {
+		return Origin{}, fmt.Errorf("origin: orCat: expected integer, got %s", m[0].Type())
+	}
+	ident, ok := m[1].OctetString()
+	if !ok || len(ident) > 64 {
+		return Origin{}, fmt.Errorf("origin: orIdent: expected octet string of at most 64 octets")
+	}
+	return Origin{OrCat: OrCat(cat), OrIdent: ident}, nil
+}
+
+// decodeControlRequest decodes an Oper/SBOw (IEC 61850-8-1 Tables 85, 90:
+// ctlVal, [operTm], origin, ctlNum, T, Test, Check) or Cancel (Table 88:
+// ctlVal, [operTm], origin, ctlNum, T, Test) structure. The layout is
+// checked strictly (SRV-02): a member count other than these, or a member
+// of another type, is an error (type-inconsistent).
 func decodeControlRequest(ref, operation string, val *mms.Value) (ControlRequest, error) {
-	req := ControlRequest{
-		Ref:       ref,
-		Operation: operation,
-	}
-
-	// SBO normal: the client writes a VisibleString (the select reference)
-	// to the SBO attribute. There is no structure to decode; the CtlVal
-	// carries the raw value for context if needed.
-	if operation == "SBO" {
-		req.CtlVal = val
-		return req, nil
-	}
-
+	req := ControlRequest{Ref: ref, Operation: operation}
 	members, ok := val.Structure()
 	if !ok {
 		return ControlRequest{}, fmt.Errorf("expected structure, got %s", val.Type())
 	}
 
+	base := 6 // Oper, SBOw
 	switch operation {
-	case "Oper", "SBOw":
+	case "Oper":
 		req.Operation = "operate"
-		if operation == "SBOw" {
-			req.Operation = "select"
-		}
-		if len(members) < 5 {
-			return req, fmt.Errorf("oper structure: need >=5 members, got %d", len(members))
-		}
-		req.CtlVal = members[0]
-
-		// Determine whether operTm (BinaryTime or UTCTime) is present at index 1.
-		// If members[1] is a structure → it is origin (no operTm); origin is at index 1.
-		// If members[1] is a time value → it is operTm; origin is at index 2.
-		originIdx := 1
-		if _, isStruct := members[1].Structure(); !isStruct {
-			// members[1] is operTm — skip it
-			originIdx = 2
-		}
-		if originIdx < len(members) {
-			if originMembers, ok := members[originIdx].Structure(); ok && len(originMembers) >= 2 {
-				if cat, ok := originMembers[0].Int32(); ok {
-					req.Origin.OrCat = OrCat(cat)
-				}
-				if ident, ok := originMembers[1].OctetString(); ok {
-					req.Origin.OrIdent = ident
-				}
-			}
-		}
-		// ctlNum is at originIdx+1 (when present in model)
-		ctlNumIdx := originIdx + 1
-		if ctlNumIdx < len(members) {
-			n, err := decodeCtlNum(members[ctlNumIdx])
-			if err != nil {
-				return req, err
-			}
-			req.CtlNum = n
-		}
-		// T (timestamp) is at ctlNumIdx+1 — skip it.
-		// Test is at ctlNumIdx+2, Check at ctlNumIdx+3.
-		testIdx := ctlNumIdx + 2
-		checkIdx := testIdx + 1
-		if testIdx < len(members) {
-			if b, ok := members[testIdx].Bool(); ok {
-				req.Test = b
-			}
-		}
-		if checkIdx < len(members) {
-			if bits, ok := members[checkIdx].BitString(); ok && len(bits) > 0 {
-				req.Check = checkFromMMS(bits[0])
-			}
-		}
-
+	case "SBOw":
+		req.Operation = "select"
 	case "Cancel":
-		if len(members) < 5 {
-			return req, fmt.Errorf("Cancel structure: need >=5 members, got %d", len(members))
-		}
-		req.CtlVal = members[0]
-		// Same operTm-optional logic as Oper: if members[1] is a structure it is
-		// origin (no operTm); if it is a time value, operTm is present.
-		originIdx := 1
-		if _, isStruct := members[1].Structure(); !isStruct {
-			originIdx = 2
-		}
-		if originIdx < len(members) {
-			if originMembers, ok := members[originIdx].Structure(); ok && len(originMembers) >= 2 {
-				if cat, ok := originMembers[0].Int32(); ok {
-					req.Origin.OrCat = OrCat(cat)
-				}
-				if ident, ok := originMembers[1].OctetString(); ok {
-					req.Origin.OrIdent = ident
-				}
-			}
-		}
-		ctlNumIdx := originIdx + 1
-		if ctlNumIdx < len(members) {
-			n, err := decodeCtlNum(members[ctlNumIdx])
-			if err != nil {
-				return req, err
-			}
-			req.CtlNum = n
-		}
-
-	case "SBO":
-		// Unreachable: SBO is handled before the Structure check above.
+		req.Operation = "cancel"
+		base = 5
+	default:
+		return ControlRequest{}, fmt.Errorf("unknown control service %q", operation)
 	}
-
+	if len(members) != base && len(members) != base+1 {
+		return req, fmt.Errorf("%s structure: need %d or %d members, got %d", operation, base, base+1, len(members))
+	}
+	req.CtlVal = members[0]
+	i := 1
+	if len(members) == base+1 {
+		t, ok := members[1].UTCTime()
+		if !ok {
+			return req, fmt.Errorf("%s: operTm: expected UtcTime, got %s", operation, members[1].Type())
+		}
+		// operTm all zero is an immediate command (IEC 61850-8-1
+		// 20.10.2.2).
+		if t.Unix() != 0 || t.Nanosecond() != 0 {
+			req.OperTm = t
+		}
+		i = 2
+	}
+	origin, err := decodeOrigin(members[i])
+	if err != nil {
+		return req, err
+	}
+	req.Origin = origin
+	if req.CtlNum, err = decodeCtlNum(members[i+1]); err != nil {
+		return req, err
+	}
+	if _, ok := members[i+2].UTCTime(); !ok {
+		return req, fmt.Errorf("%s: T: expected UtcTime, got %s", operation, members[i+2].Type())
+	}
+	test, ok := members[i+3].Bool()
+	if !ok {
+		return req, fmt.Errorf("%s: Test: expected boolean, got %s", operation, members[i+3].Type())
+	}
+	req.Test = test
+	if operation != "Cancel" {
+		bits, ok := members[i+4].BitString()
+		if !ok {
+			return req, fmt.Errorf("%s: Check: expected bit-string, got %s", operation, members[i+4].Type())
+		}
+		if len(bits) > 0 {
+			req.Check = checkFromMMS(bits[0])
+		}
+	}
 	return req, nil
 }
 
 // installSBONormalReadHandler overrides the Read function of the SBO[CO]
 // variable for a SBO-normal controllable data object. When a client reads
-// SBO[CO], this handler processes the select request: it grants the select
-// to the requesting MMS connection if the control is not already held, and
-// returns the control reference string. An empty string is returned when the
-// select is denied (already selected by another connection).
+// SBO[CO], this handler processes the select (IEC 61850-8-1 20.5.4): the
+// selection is granted when the control is unselected and OnSelect
+// accepts, and the read returns the control object reference; otherwise
+// an empty string (20.5.5).
 //
-// IEC 61850-7-2 §20.3: for ctlModel=2 (sbo-with-normal-security), the
-// client selects by reading the SBO attribute; the server responds with the
-// control object reference on success or an empty string on denial.
+// The returned reference is <LD>/<LN>$CO$<DO>, as libiec61850 servers
+// return it (IEC 61850-8-1 Table 84 writes <CO_CtrlObjectRef>$SBO; the
+// peers, which clients compare with, win). Before v1.17.0 it was the
+// ACSI form LD/LN.DO.
 func (s *Server) installSBONormalReadHandler(ldName, doRef string, reg *controlRegistration) {
 	if s.mms == nil {
 		return // unit-test stub servers have no underlying MMS server
 	}
-	// Build the MMS itemID for the SBO leaf: LNName$CO$DOName$SBO
-	// doRef is "GGIO1.SPCSO1" → lnName="GGIO1", doPath=["SPCSO1"]
 	before, after, ok := strings.Cut(doRef, ".")
 	if !ok {
 		s.logger.Warn("iec61850: installSBOReadHandler: invalid doRef", "doRef", doRef)
@@ -810,33 +1189,70 @@ func (s *Server) installSBONormalReadHandler(ldName, doRef string, reg *controlR
 	lnName := before
 	doPath := strings.ReplaceAll(after, ".", "$")
 	sboItemID := lnName + "$CO$" + doPath + "$SBO"
-	ctlRef := ldName + "/" + doRef
+	ctlRef := ldName + "/" + lnName + "$CO$" + doPath
 
 	readFn := func(ctx context.Context) (*mms.Value, error) {
-		sc := mms.ServerConnFromContext(ctx)
-		reg.mu.Lock()
-		defer reg.mu.Unlock()
-
-		now := time.Now()
-		// Deny if already selected by a different active connection.
-		if reg.selectConn != nil && reg.selectConn != sc {
-			if s.isConnActive(reg.selectConn) && now.Sub(reg.selectTime) <= reg.selectTimeout {
-				return mms.NewVisibleString(""), nil
-			}
-			// Previous owner disconnected or timed out — release the selection.
-			reg.selectConn = nil
-			reg.selectOwner = ""
+		if s.selectNormal(ctx, reg) {
+			return mms.NewVisibleString(ctlRef), nil
 		}
-		// Grant select to this connection.
-		reg.selectConn = sc
-		reg.selectTime = now
-		s.logger.Debug("iec61850: SBO normal select granted", "ref", ctlRef)
-		return mms.NewVisibleString(ctlRef), nil
+		return mms.NewVisibleString(""), nil
 	}
 
 	if err := s.mms.SetVariableRead(ldName, sboItemID, readFn); err != nil {
 		s.logger.Warn("iec61850: installSBOReadHandler: variable not found",
 			"domain", ldName, "itemID", sboItemID, "err", err)
+	}
+}
+
+// controlSetValue is SetValue for the control model's own writes; it
+// does nothing once Close stopped the controls, so no write of a timer or
+// a returning Serve races with Close.
+func (s *Server) controlSetValue(ctx context.Context, key string, val *mms.Value) {
+	s.controlLife.RLock()
+	defer s.controlLife.RUnlock()
+	if !s.controlClosed {
+		s.SetValue(ctx, key, val)
+	}
+}
+
+// stopControls stops the deselect timers (Server.Close).
+func (s *Server) stopControls() {
+	s.controlLife.Lock()
+	s.controlClosed = true
+	s.controlLife.Unlock()
+	s.controlMu.RLock()
+	defer s.controlMu.RUnlock()
+	for _, reg := range s.controls {
+		reg.mu.Lock()
+		reg.gen++
+		if reg.timer != nil {
+			reg.timer.Stop()
+			reg.timer = nil
+		}
+		reg.mu.Unlock()
+	}
+}
+
+// releaseLostSelections releases the selections of associations that
+// ended (IEC 61850-7-2 Table 47: association loss returns a selected
+// control to Unselected).
+func (s *Server) releaseLostSelections() {
+	s.controlMu.RLock()
+	regs := make([]*controlRegistration, 0, len(s.controls))
+	for _, reg := range s.controls {
+		regs = append(regs, reg)
+	}
+	s.controlMu.RUnlock()
+	for _, reg := range regs {
+		reg.mu.Lock()
+		lost := reg.state == ctlReady && s.connLost(reg.sel.conn)
+		if lost {
+			s.unselectLocked(reg)
+		}
+		reg.mu.Unlock()
+		if lost {
+			s.syncStSeld(context.Background(), reg)
+		}
 	}
 }
 
@@ -854,41 +1270,23 @@ func pathWithoutSuffix(path []string, suffix string) []string {
 
 // joinDotPath joins path components with ".".
 func joinDotPath(parts []string) string {
-	var result strings.Builder
-	for i, p := range parts {
-		if i > 0 {
-			result.WriteString(".")
-		}
-		result.WriteString(p)
-	}
-	return result.String()
+	return strings.Join(parts, ".")
 }
 
 // controlStoreKey derives a ValueStore key for a controllable DO's
 // stVal from its control reference (e.g. "LD1/LLN0.SPCSO1" →
 // "LD1/LLN0$ST$SPCSO1$stVal"). Returns empty if the format is
 // unrecognized.
-//
-// This is a convenience fallback for simple SPC/DPC-style CDCs where
-// the status value is always at ....$ST$...$stVal. For CDCs with
-// different status attribute paths, applications should implement
-// the stVal update in their [ControlHandler.OnOperate] callback
-// instead of relying on this default write.
 func (s *Server) controlStoreKey(ref string) string {
-	parts := strings.SplitN(ref, "/", 2)
-	if len(parts) != 2 {
+	ldName, doRef, ok := strings.Cut(ref, "/")
+	if !ok {
 		return ""
 	}
-	ldName := parts[0]
-	doRef := parts[1] // e.g. "LLN0.SPCSO1"
-	dotParts := strings.SplitN(doRef, ".", 2)
-	if len(dotParts) != 2 {
+	lnName, do, ok := strings.Cut(doRef, ".")
+	if !ok {
 		return ""
 	}
-	lnName := dotParts[0]
-	doPath := strings.ReplaceAll(dotParts[1], ".", "$")
-	itemID := lnName + "$ST$" + doPath + "$stVal"
-	return servermodel.StoreKey(ldName, itemID)
+	return servermodel.StoreKey(ldName, lnName+"$ST$"+strings.ReplaceAll(do, ".", "$")+"$stVal")
 }
 
 // isConnActive reports whether conn is still in the set of active MMS connections.

@@ -98,3 +98,10 @@ func checkEnumValue(val *mms.Value, attr *DataAttribute) error {
 	}
 	return nil
 }
+
+// BTypeSpec returns the MMS type of an IEC 61850 basic type (IEC
+// 61850-8-1 Table 11 / 8.1.2).
+func BTypeSpec(btype string) (mms.TypeSpec, bool) {
+	ts, ok := btypeToMMS[btype]
+	return ts, ok
+}

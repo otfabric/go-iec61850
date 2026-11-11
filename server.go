@@ -64,7 +64,11 @@ type Server struct {
 	mms    *mms.Server
 
 	controlMu sync.RWMutex
-	controls  map[string]*controlRegistration
+	// controlLife orders control-model value writes (stSeld, the default
+	// operate) before Close; controlClosed is set by Close.
+	controlLife   sync.RWMutex
+	controlClosed bool
+	controls      map[string]*controlRegistration
 
 	reportEngine       *ReportEngine
 	sgEngine           *SettingGroupEngine
@@ -219,6 +223,7 @@ func NewServer(model *servermodel.Model, opts ServerOptions) (*Server, error) {
 	}
 	s.HandleStatus()
 	s.installWriteInterceptor()
+	vs.SetWriteGuard(s.guardControlWrite)
 
 	logger.Info("iec61850: server created",
 		"logical_devices", len(model.LogicalDevices))
@@ -437,6 +442,7 @@ func parseSGCBStoreKey(itemID string) (subfield string, ok bool) {
 // clearing for garbage collection.
 func (s *Server) Close() {
 	s.bg.stop()
+	s.stopControls()
 	if s.reportEngine != nil {
 		s.reportEngine.Stop()
 	}
@@ -492,6 +498,9 @@ func (s *Server) Serve(ctx context.Context, conn mms.Transport) error {
 		s.onConnect(ConnectionEvent{})
 	}
 	err := s.mms.Serve(ctx, conn)
+	// IEC 61850-7-2 Table 47: the association is gone, so are its
+	// selections (other paths release them on the next control service).
+	s.releaseLostSelections()
 	if s.onDisconnect != nil {
 		s.onDisconnect(ConnectionEvent{})
 	}
