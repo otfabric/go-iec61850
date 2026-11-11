@@ -1,5 +1,18 @@
 # go-iec61850 Releases
 
+## v1.19.0
+
+**Date:** 2026-11-11
+**Previous release:** v1.18.0
+
+Built on go-mms v1.9.0 (was v1.8.0). The go-iec61850 code is the same as v1.18.0.
+
+### Changed
+
+- **Built on go-mms v1.9.0**: the client enforces the negotiated number of outstanding requests and the data structure nesting level (ISO 9506-2 clause 8.2). See the go-mms v1.9.0 notes.
+
+---
+
 ## v1.18.0
 
 **Date:** 2026-11-11
@@ -50,7 +63,6 @@ Six features in one release: R-GOOSE and R-SV over UDP/IP with authenticated SPD
 
 ### Changed
 
-- **Built on go-mms v1.9.0** (was v1.8.0): the client enforces the negotiated number of outstanding requests and the data structure nesting level (ISO 9506-2 clause 8.2). See the go-mms v1.9.0 notes.
 - **Default TimeQuality is "not synchronised".** With no `Clock` set, `SystemClock` sends the TimeQuality octet 0x2a (ClockNotSynchronized, 10 bits of accuracy), as GOOSE already did: the client's control T (was 0x0a, synchronised), the default operate's `t` and LActTm (were 0x0a), the `t` at the end of a `ProcessResponse` travel, and SV refrTm (was 0x00). The times are the same host time as before. Set a `Clock` that reports synchronised when the host is.
 - A non-zero `GOOSEOptions.TimeQuality` now overrides the quality of `ServerOptions.Clock`; zero takes the clock's quality (the default `SystemClock` gives the same 0x2a as before).
 - **Reports leave without a fixed delay.** The server no longer waits about 100 ms before the first report after a quiet period. A report to an association that has a request in progress waits until that request's response is sent (at most 5 s), so the response to RptEna=TRUE or GI=TRUE still comes first. This holds for connections served by `Server.Serve` and `Server.ListenAndServe`. The standard does not require this order; libiec61850 and the other peers drop a report that arrives before the response.
