@@ -122,18 +122,3 @@ func Settings(ld *LogicalDevice) ([]Setting, error) {
 // DefaultValue returns the zero value of the MMS type ts, as served for
 // an attribute without a value.
 func DefaultValue(ts mms.TypeSpec) *mms.Value { return defaultMMSValue(ts) }
-
-// setLeaves stores the leaves of a constructed value val of type ts
-// under key (key$member...). val has been checked against ts.
-func setLeaves(vs *ValueStore, key string, ts mms.TypeSpec, val *mms.Value) {
-	if ts.Type != mms.ValueTypeStructure {
-		vs.Set(key, val)
-		return
-	}
-	members, _ := val.Structure()
-	for i, e := range ts.Elements {
-		if i < len(members) {
-			setLeaves(vs, key+"$"+e.Name, e.Type, members[i])
-		}
-	}
-}

@@ -78,6 +78,12 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   - Without attribute trigger options in the model (SCL DA
     dchg/qchg/dupd), the reason for inclusion is derived by comparing the
     member value.
+  - A client write of a constructed attribute (for example
+    `LN$CF$DO$cmp`) stores and notifies its leaves one by one, as
+    `SetValue` would: each changed leaf of a data set member is a GOOSE
+    state change and a report of its own, also with BufTm above 0 (a
+    second change of a member sends the pending report), and a
+    concurrent reader can see the structure partly written.
 - **Controls: process response is a model, not supervision** — control
   handlers (`RegisterControl`) follow the states of IEC 61850-7-2 Table 47
   (select, tests, time-activated wait, execution until the

@@ -3,7 +3,7 @@
 ## v1.22.0
 
 **Date:** 2026-11-11
-**Previous release:** v1.21.0
+**Previous release:** v1.21.1
 
 Protocol timestamps come from an injectable clock that carries an honest IEC 61850-7-2 TimeQuality. The API is additive.
 
@@ -19,6 +19,20 @@ Protocol timestamps come from an injectable clock that carries an honest IEC 618
 
 - **Default TimeQuality is "not synchronised".** With no `Clock` set, `SystemClock` sends the TimeQuality octet 0x2a (ClockNotSynchronized, 10 bits of accuracy), as GOOSE already did: the client's control T (was 0x0a, synchronised), the default operate's `t` and LActTm (were 0x0a), the `t` at the end of a `ProcessResponse` travel, and SV refrTm (was 0x00). The times are the same host time as before. Set a `Clock` that reports synchronised when the host is.
 - A non-zero `GOOSEOptions.TimeQuality` now overrides the quality of `ServerOptions.Clock`; zero takes the clock's quality (the default `SystemClock` gives the same 0x2a as before).
+
+---
+
+## v1.21.1
+
+**Date:** 2026-11-11
+**Previous release:** v1.21.0
+
+### Fixed
+
+- A client write of a constructed data attribute of a writable FC (CF, DC, SP, SV, BL and the others clients may write; for example `LN$CF$DO$cmp`) sets its leaves. Before, only FC=SE did (since v1.19.0): the other FCs stored the structure under its own key, while reads of the structure and of its leaves come from the leaves, so the write was lost. CO control services (Oper, SBOw, Cancel) are unchanged.
+- Such a write is checked leaf by leaf before anything is stored, as a leaf write is: an enumeration value outside its EnumType answers object-value-invalid, and the write guard (for example the `ctlModel` of a registered control) applies to every leaf. A refused leaf refuses the whole write.
+- Each leaf is stored and then notified under its own key, so data change reports, GOOSE, SV and logs follow a constructed write. Before, the notification carried the compound key, which no data set member matches. A write that changes several leaves of one data set member gives one report per changed leaf, also within BufTm (see KNOWN_LIMITATIONS.md).
+- FC=SE constructed writes now also run the enumeration check, the write guard and the post-write notification, like FC=SE leaf writes.
 
 ---
 
