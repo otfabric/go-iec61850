@@ -273,6 +273,12 @@ func registerLN(srv *mms.Server, vs *ValueStore, ldName string, ln *LogicalNode)
 		}
 	}
 
+	for i := range ln.Logs {
+		if err := registerLCB(srv, vs, ldName, ln.Name, &ln.Logs[i]); err != nil {
+			return err
+		}
+	}
+
 	if ln.SettingGroup != nil {
 		if err := registerSGCB(srv, vs, ldName, ln.Name, ln.SettingGroup); err != nil {
 			return err
@@ -476,6 +482,15 @@ func registerLNHierarchy(srv *mms.Server, vs *ValueStore, ldName string, ln *Log
 		}); err != nil {
 			return fmt.Errorf("register RCB FC group %s: %w", fcItemID, err)
 		}
+	}
+
+	// ---- Phase 2b': LG FC group (log control blocks, IEC 61850-8-1
+	// §17.3.3.2) ----
+	if elem, read, ok, err := registerLGGroup(srv, vs, ldName, ln); err != nil {
+		return err
+	} else if ok {
+		lnElems = append(lnElems, elem)
+		lnReads = append(lnReads, read)
 	}
 
 	// ---- Phase 2c: GO FC group (GOOSE control blocks) ----

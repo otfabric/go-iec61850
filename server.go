@@ -307,6 +307,12 @@ func (s *Server) installWriteInterceptor() {
 			}
 		}
 
+		if s.journalEngine != nil {
+			if lcbItem, attr, ok := servermodel.ParseLCBItem(itemID); ok {
+				return true, s.journalEngine.HandleLCBWrite(ctx, ldName, lcbItem, attr, val)
+			}
+		}
+
 		if s.sgEngine != nil {
 			if subfield, ok := parseSGCBStoreKey(itemID); ok {
 				err := s.sgEngine.HandleSGCBWrite(ctx, ldName, subfield, val)
@@ -344,6 +350,11 @@ func (s *Server) installWriteInterceptor() {
 		}
 		if s.svEngine != nil {
 			s.svEngine.notify(storeKey)
+		}
+		// A client write is logged like a local one (IEC 61850-7-2
+		// §17.3.4: the log is triggered as reporting is).
+		if s.journalEngine != nil {
+			s.journalEngine.LogValueWrite(ctx, storeKey, time.Now())
 		}
 		if s.reportEngine != nil {
 			s.reportEngine.NotifyValueChanged(ctx, storeKey)
@@ -447,6 +458,9 @@ func (s *Server) Close() {
 	}
 	if s.svEngine != nil {
 		s.svEngine.Stop()
+	}
+	if s.journalEngine != nil {
+		s.journalEngine.stop()
 	}
 	s.journalEngine = nil
 	s.sgEngine = nil

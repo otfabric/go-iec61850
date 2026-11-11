@@ -4,7 +4,9 @@ package iec61850
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"sync"
 	"testing"
 	"time"
@@ -462,16 +464,15 @@ func TestJournalProvider_EmptyJournal(t *testing.T) {
 	}
 }
 
+// A QueryLogByTime of a journal that does not exist is answered with
+// Response– (IEC 61850-7-2 §17.3.5.2.4) (LOG-05).
 func TestJournalProvider_NonexistentJournal(t *testing.T) {
 	p := NewMemoryJournalProvider()
 
 	ctx := context.Background()
-	result, err := p.ReadTimeRange(ctx, "LD1", "nonexistent", time.Now().Add(-time.Hour), time.Now(), 10)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(result.Entries) != 0 {
-		t.Errorf("expected 0 entries, got %d", len(result.Entries))
+	_, err := p.ReadTimeRange(ctx, "LD1", "nonexistent", time.Now().Add(-time.Hour), time.Now(), 10)
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v, want fs.ErrNotExist", err)
 	}
 }
 
@@ -797,7 +798,7 @@ func TestServer_Close_ClearsEngines(t *testing.T) {
 func testReportSCLWithLog() *servermodel.Model {
 	m := testReportSCL()
 	m.LogicalDevices[0].LogicalNodes[0].Logs = []servermodel.LogDef{
-		{Name: "log1"},
+		{Name: "log1", DatSet: "dsTest", TrgOps: servermodel.TrgOpsDef{Dchg: true}, LogEna: true},
 	}
 	return m
 }

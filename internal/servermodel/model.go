@@ -401,9 +401,20 @@ func validateLD(ld *LogicalDevice, opts ValidateOptions) []error {
 			errs = append(errs, fmt.Errorf("model: LD %q LN %q: SGCB NumOfSGs must be >= 1", ld.Name, ln.Name))
 		}
 
+		logNames := make(map[string]bool)
 		for _, logDef := range ln.Logs {
 			if logDef.Name == "" {
 				errs = append(errs, fmt.Errorf("model: LD %q LN %q: log with empty name", ld.Name, ln.Name))
+			}
+			// "The name of the log control block shall be unique within
+			// the LN" and its datSet must reference a data set of the LN
+			// (IEC 61850-6 §9.3.9).
+			if logNames[logDef.Name] {
+				errs = append(errs, fmt.Errorf("model: LD %q LN %q: duplicate log control block %q", ld.Name, ln.Name, logDef.Name))
+			}
+			logNames[logDef.Name] = true
+			if logDef.DatSet != "" && !strings.Contains(logDef.DatSet, "/") && !dsNames[logDef.DatSet] {
+				errs = append(errs, fmt.Errorf("model: LD %q LN %q: log control block %q references non-existent dataset %q", ld.Name, ln.Name, logDef.Name, logDef.DatSet))
 			}
 		}
 

@@ -3,6 +3,7 @@
 package servermodel
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -148,5 +149,33 @@ func TestSetTrgOpsInherited(t *testing.T) {
 	setTrgOps(&a, true, false, true)
 	if f := a.Children[0].Children[0]; !f.Dchg || f.Qchg || !f.Dupd {
 		t.Errorf("leaf = %+v", f)
+	}
+}
+
+// TestValidate_LogControlBlocks: LCB names are unique in the LN and the
+// data set must exist (IEC 61850-6 §9.3.9).
+func TestValidate_LogControlBlocks(t *testing.T) {
+	m := &Model{LogicalDevices: []LogicalDevice{{Name: "LD1", LogicalNodes: []LogicalNode{{
+		Name: "LLN0", LNClass: "LLN0",
+		Logs: []LogDef{{Name: "lcb"}, {Name: "lcb"}, {Name: "x", DatSet: "nope"}},
+	}}}}}
+	err := errors.Join(m.Validate()...)
+	if err == nil || !strings.Contains(err.Error(), "duplicate log control block") || !strings.Contains(err.Error(), "non-existent dataset") {
+		t.Errorf("Validate = %v", err)
+	}
+}
+
+func TestParseLCBItem(t *testing.T) {
+	for in, want := range map[string][2]string{
+		"LLN0$LG$lcb1$LogEna": {"LLN0$LG$lcb1", "LogEna"},
+		"LLN0$LG$lcb1":        {"", ""},
+		"LLN0$LG$lcb1$a$b":    {"", ""},
+		"LLN0$ST$Mod$stVal":   {"", ""},
+		"$LG$x$y":             {"", ""},
+	} {
+		item, attr, ok := ParseLCBItem(in)
+		if item != want[0] || attr != want[1] || ok != (want[0] != "") {
+			t.Errorf("ParseLCBItem(%q) = %q %q %v", in, item, attr, ok)
+		}
 	}
 }
