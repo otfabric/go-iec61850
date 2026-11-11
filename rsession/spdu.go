@@ -189,13 +189,13 @@ func AppendSPDU(dst []byte, s *SPDU, key *Key) ([]byte, error) {
 		keyID, tock, ttnk, mac = key.ID, key.TimeOfCurrentKey, key.TimeToNextKey, key.MAC
 	}
 	dst = binary.BigEndian.AppendUint32(dst, tock)
-	dst = binary.BigEndian.AppendUint16(dst, uint16(ttnk))
+	dst = binary.BigEndian.AppendUint16(dst, int16ToWire(ttnk))
 	if version == 1 {
 		dst = append(dst, byte(EncryptionNone), byte(mac))
 		dst = binary.BigEndian.AppendUint32(dst, keyID)
 	} else {
 		dst = binary.BigEndian.AppendUint32(dst, keyID)
-		dst = append(dst, byte(len(s.IV)))
+		dst = append(dst, u8(len(s.IV)))
 		dst = append(dst, s.IV...)
 	}
 	dst = binary.BigEndian.AppendUint32(dst, uint32(user))
@@ -206,12 +206,12 @@ func AppendSPDU(dst []byte, s *SPDU, key *Key) ([]byte, error) {
 		}
 		dst = append(dst, byte(p.Type), sim)
 		dst = binary.BigEndian.AppendUint16(dst, p.AppID)
-		dst = binary.BigEndian.AppendUint16(dst, uint16(len(p.APDU)))
+		dst = binary.BigEndian.AppendUint16(dst, u16(len(p.APDU)))
 		dst = append(dst, p.APDU...)
 	}
 	if key != nil {
 		sum := key.mac(dst[start:])
-		dst = append(dst, tagSignature, byte(len(sum)))
+		dst = append(dst, tagSignature, u8(len(sum)))
 		dst = append(dst, sum...)
 	}
 	return dst, nil
@@ -297,7 +297,7 @@ func Decode(b []byte) (*SPDU, error) {
 			return nil, err
 		}
 		s.TimeOfCurrentKey = r.u32()
-		s.TimeToNextKey = int16(r.u16())
+		s.TimeToNextKey = int16FromWire(r.u16())
 		s.Encryption = EncryptionAlgorithm(r.u8())
 		s.MAC = MACAlgorithm(r.u8())
 		s.KeyID = r.u32()
@@ -306,7 +306,7 @@ func Decode(b []byte) (*SPDU, error) {
 			return nil, err
 		}
 		s.TimeOfCurrentKey = r.u32()
-		s.TimeToNextKey = int16(r.u16())
+		s.TimeToNextKey = int16FromWire(r.u16())
 		s.KeyID = r.u32()
 		n := int(r.u8())
 		if err := r.need(n, "initialisation vector"); err != nil {
@@ -323,7 +323,7 @@ func Decode(b []byte) (*SPDU, error) {
 	}
 	payloadOff := r.pos
 	pl := r.u32()
-	if uint64(pl) > uint64(len(b)-r.pos) {
+	if int64(pl) > int64(len(b)-r.pos) {
 		return nil, malformed("payload length", payloadOff, "%d octets, %d left", pl, len(b)-r.pos)
 	}
 	end := r.pos + int(pl)
