@@ -47,9 +47,21 @@ type TimeQuality struct {
 	ClockNotSynchronized bool
 
 	// TimeAccuracy is the number of significant bits in the
-	// fraction-of-second field (bits 0–4, range 0–31). Higher
-	// values indicate better precision. Zero means unspecified.
+	// fraction-of-second field (bits 0–4): 0 to 24 bits, 25 to 30 are
+	// invalid and 31 ([TimeAccuracyUnspecified]) is unspecified (IEC
+	// 61850-8-1 Table 32). Zero means 0 bits of accuracy, not
+	// unspecified (the documentation before v1.17.0 said otherwise).
 	TimeAccuracy int
+}
+
+// TimeAccuracyUnspecified is the TimeAccuracy value 11111: accuracy not
+// specified (IEC 61850-8-1 Table 32).
+const TimeAccuracyUnspecified = 31
+
+// IsValid reports whether TimeAccuracy is a value of IEC 61850-8-1 Table
+// 32: 0 to 24 bits or [TimeAccuracyUnspecified]; 25 to 30 are invalid.
+func (tq TimeQuality) IsValid() bool {
+	return tq.TimeAccuracy >= 0 && tq.TimeAccuracy <= 24 || tq.TimeAccuracy == TimeAccuracyUnspecified
 }
 
 // IsZero returns true if the timestamp has a zero time value.

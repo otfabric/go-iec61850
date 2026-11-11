@@ -146,11 +146,20 @@ func TestDecodeQuality_NotBitString(t *testing.T) {
 	}
 }
 
-func TestDecodeQuality_TooShort(t *testing.T) {
-	v := mms.NewBitStringWithLength([]byte{0xff}, 8)
-	_, err := DecodeQuality(v)
-	if err == nil {
-		t.Fatal("expected error for 8-bit bit string")
+// TYP-04, IEC 61850-8-1 8.2: bits not conveyed take the default 0; a
+// short quality bit string decodes (it was refused before, contrary to
+// 8.2).
+func TestSpec_8_1_8_2_ShortQuality(t *testing.T) {
+	q, err := DecodeQuality(mms.NewBitStringWithLength([]byte{0xff}, 8))
+	if err != nil || q != 0xff {
+		t.Fatalf("8 bits = %#x, %v; want 0xff", q, err)
+	}
+	q, err = DecodeQuality(mms.NewBitStringWithLength([]byte{0x7f}, 2))
+	if err != nil || q.Validity() != ValidityInvalid || q != Quality(ValidityInvalid) {
+		t.Fatalf("2 bits 01 = %#x, %v; want invalid, padding ignored", q, err)
+	}
+	if q, err := DecodeQuality(mms.NewBitStringWithLength(nil, 0)); err != nil || q != 0 {
+		t.Fatalf("0 bits = %#x, %v", q, err)
 	}
 }
 

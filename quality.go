@@ -134,8 +134,12 @@ func (q Quality) String() string {
 }
 
 // DecodeQuality decodes an IEC 61850 quality from an MMS bit string
-// value. Returns a [DecodeError] if the value is not a bit string
-// or has fewer than 13 bits.
+// value. Returns a [DecodeError] if the value is not a bit string.
+//
+// Quality is a variable-length bit string; bits that are not conveyed
+// take their default value, 0 (IEC 61850-8-1 8.2), so a bit string of
+// fewer than 13 bits decodes with the missing bits clear. Before v1.17.0
+// a bit string shorter than 13 bits was refused.
 func DecodeQuality(v *mms.Value) (Quality, error) {
 	if v == nil {
 		return 0, &DecodeError{
@@ -151,14 +155,13 @@ func DecodeQuality(v *mms.Value) (Quality, error) {
 		}
 	}
 	bitLen, _ := v.BitStringLength()
+	q := decodeQualityBits(data)
 	if bitLen < qualityBitLength {
-		return 0, &DecodeError{
-			Type:    "Quality",
-			Message: fmt.Sprintf("quality requires %d bits, got %d", qualityBitLength, bitLen),
-		}
+		// Bits not conveyed default to 0 (IEC 61850-8-1 8.2); padding bits
+		// of the last octet are not quality bits.
+		q &= Quality(1)<<max(bitLen, 0) - 1
 	}
-
-	return decodeQualityBits(data), nil
+	return q, nil
 }
 
 // EncodeQuality encodes an IEC 61850 quality as an MMS bit string value.
