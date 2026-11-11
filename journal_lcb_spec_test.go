@@ -22,8 +22,6 @@ const (
 	specJournal = "LLN0$EventLog"
 )
 
-var specSetKey = servermodel.StoreKey("LD1", "LLN0$CF$Set$val")
-
 func lcbModel() *servermodel.Model {
 	return &servermodel.Model{LogicalDevices: []servermodel.LogicalDevice{{
 		Name: "LD1",

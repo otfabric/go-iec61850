@@ -602,6 +602,8 @@ func decodeRCB(ld, rcbItemID string, rcbType RCBType, v *mms.Value) (*ReportCont
 			if bs, ok := val.OctetString(); ok {
 				rcb.Owner = append([]byte(nil), bs...)
 			}
+		default:
+			// Not a ResvTms or Owner component: ignored.
 		}
 	}
 

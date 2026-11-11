@@ -398,7 +398,7 @@ func (re *ReportEngine) nextReport(rt *rcbRuntime, stop chan struct{}) ([][]*mms
 			return nil, false
 		}
 		i := slices.IndexFunc(rt.bufQueue, func(e *bufferedEntry) bool {
-			return e.id > rt.lastSentID && !(e.gi && e.sent)
+			return e.id > rt.lastSentID && (!e.gi || !e.sent)
 		})
 		if i < 0 {
 			return nil, false

@@ -70,9 +70,9 @@ func specModel() *servermodel.Model {
 	}
 }
 
-func newSpecServer(t *testing.T, opts ServerOptions) (*Server, *ReportEngine) {
+func newSpecServer(t *testing.T) (*Server, *ReportEngine) {
 	t.Helper()
-	srv, err := NewServer(specModel(), opts)
+	srv, err := NewServer(specModel(), ServerOptions{})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -140,7 +140,7 @@ func rcbOwner(engine *ReportEngine, rcb string) *mms.ServerConn {
 // exclusively shall 'own' that instance and shall receive reports from
 // that instance" (RPT-01).
 func TestSpec_7_2_17_2_1_BRCBReportsOnlyToEnablingAssociation(t *testing.T) {
-	srv, _ := newSpecServer(t, ServerOptions{})
+	srv, _ := newSpecServer(t)
 	ctx := context.Background()
 	a := dialLoopback(t, ctx, srv)
 	b := dialLoopback(t, ctx, srv)
@@ -159,7 +159,7 @@ func TestSpec_7_2_17_2_1_BRCBReportsOnlyToEnablingAssociation(t *testing.T) {
 // any attribute of that URCB"; reserved by another client maps to
 // temporarily-unavailable (8-1 §8.1.3.4.4.2) (RPT-03, RPT-18).
 func TestSpec_7_2_17_2_4_5_URCBImplicitReservation(t *testing.T) {
-	srv, _ := newSpecServer(t, ServerOptions{})
+	srv, _ := newSpecServer(t)
 	ctx := context.Background()
 	a := dialLoopback(t, ctx, srv)
 	b := dialLoopback(t, ctx, srv)
@@ -194,7 +194,7 @@ func TestSpec_7_2_17_2_4_5_URCBImplicitReservation(t *testing.T) {
 // reservation of the control block shall occur ... by the client that
 // performs the first SetBRCBValues with RptEna=TRUE" (Table 37 c3).
 func TestSpec_7_2_TableC3_BRCBFirstEnablerOwns(t *testing.T) {
-	srv, _ := newSpecServer(t, ServerOptions{})
+	srv, _ := newSpecServer(t)
 	ctx := context.Background()
 	a := dialLoopback(t, ctx, srv)
 	b := dialLoopback(t, ctx, srv)
@@ -214,7 +214,7 @@ func TestSpec_7_2_TableC3_BRCBFirstEnablerOwns(t *testing.T) {
 // been enabled is lost, the server shall set the attribute RptEna to
 // FALSE" (RPT-02).
 func TestSpec_7_2_17_2_4_4_URCBAssociationLossDisablesAndReleases(t *testing.T) {
-	srv, engine := newSpecServer(t, ServerOptions{})
+	srv, engine := newSpecServer(t)
 	ctx := context.Background()
 	a := dialLoopback(t, ctx, srv)
 	if err := a.SetReportControlBlock(ctx, "LD1", specURCB, RCBUpdate{
@@ -246,7 +246,7 @@ func TestSpec_7_2_17_2_4_4_URCBAssociationLossDisablesAndReleases(t *testing.T) 
 // (Figure 24) and the BRCB keeps buffering (§17.2.3.2.3.6) (RPT-02,
 // RPT-08).
 func TestSpec_7_2_17_2_2_5_BRCBAssociationLossThenReplay(t *testing.T) {
-	srv, engine := newSpecServer(t, ServerOptions{})
+	srv, engine := newSpecServer(t)
 	ctx := context.Background()
 	a := dialLoopback(t, ctx, srv)
 	if err := a.SetReportControlBlock(ctx, "LD1", specBRCB, RCBUpdate{Fields: RCBFieldRptEna, RptEna: true}); err != nil {
@@ -293,7 +293,7 @@ func TestSpec_8_1_Table61_63_WriteWhileEnabledRejected(t *testing.T) {
 		{specURCB, map[string]*mms.Value{"Resv": mms.NewBoolean(false)}},
 	} {
 		t.Run(tc.rcb, func(t *testing.T) {
-			srv, _ := newSpecServer(t, ServerOptions{})
+			srv, _ := newSpecServer(t)
 			ctx := context.Background()
 			c := dialLoopback(t, ctx, srv)
 			if err := c.SetReportControlBlock(ctx, "LD1", tc.rcb, RCBUpdate{Fields: RCBFieldRptEna, RptEna: true}); err != nil {
@@ -325,7 +325,7 @@ func TestSpec_8_1_Table61_63_WriteWhileEnabledRejected(t *testing.T) {
 // TimeOfEntry "May not be written": object-access-denied (8-1
 // §8.1.3.4.4.2) (RPT-05).
 func TestSpec_8_1_Table61_ReadOnlyAttributesDenied(t *testing.T) {
-	srv, _ := newSpecServer(t, ServerOptions{})
+	srv, _ := newSpecServer(t)
 	ctx := context.Background()
 	c := dialLoopback(t, ctx, srv)
 	for attr, v := range map[string]*mms.Value{
@@ -350,7 +350,7 @@ func TestSpec_8_1_Table61_ReadOnlyAttributesDenied(t *testing.T) {
 // TestSpec_8_1_8_1_3_4_4_2_StructureWriteDenied: the whole RCB has
 // read-only components, so a write of the structure is denied (RPT-19).
 func TestSpec_8_1_8_1_3_4_4_2_StructureWriteDenied(t *testing.T) {
-	srv, engine := newSpecServer(t, ServerOptions{})
+	srv, engine := newSpecServer(t)
 	ctx := context.Background()
 	c := dialLoopback(t, ctx, srv)
 	v := rawRead(t, c, specBRCB)
@@ -369,7 +369,7 @@ func TestSpec_8_1_8_1_3_4_4_2_StructureWriteDenied(t *testing.T) {
 // RptEna with a NULL DatSet → object-value-invalid (8-1 §17.1.2, Table 23)
 // (RPT-18).
 func TestSpec_8_1_8_1_3_4_4_2_RCBErrorCodes(t *testing.T) {
-	srv, _ := newSpecServer(t, ServerOptions{})
+	srv, _ := newSpecServer(t)
 	ctx := context.Background()
 	c := dialLoopback(t, ctx, srv)
 	if code := dataAccessCode(rawWrite(c, specURCB+"$RptEna", mms.NewInteger(1))); code != mms.DataAccessErrorTypeInconsistent {
@@ -391,7 +391,7 @@ func TestSpec_8_1_8_1_3_4_4_2_RCBErrorCodes(t *testing.T) {
 // maximum value of SqNum is obtained, the next value shall be a value of
 // zero (0)"; INT8U for a URCB (§17.2.5.2), INT16U for a BRCB (RPT-06).
 func TestSpec_7_2_17_2_2_10_SqNumStartsAtZeroAndWraps(t *testing.T) {
-	srv, engine := newSpecServer(t, ServerOptions{})
+	srv, engine := newSpecServer(t)
 	ctx := context.Background()
 
 	step := func(rcb string, n int, start uint32) []uint32 {
@@ -446,7 +446,7 @@ func TestSpec_7_2_17_2_2_10_SqNumStartsAtZeroAndWraps(t *testing.T) {
 // TestSpec_8_1_Table61_SqNumTypes: SqNum is INT16U on a BRCB and INT8U on
 // a URCB (7-2 Table 37, §17.2.4.1).
 func TestSpec_8_1_Table61_SqNumTypes(t *testing.T) {
-	srv, _ := newSpecServer(t, ServerOptions{})
+	srv, _ := newSpecServer(t)
 	ctx := context.Background()
 	c := dialLoopback(t, ctx, srv)
 	for rcb, bits := range map[string]int{specBRCB: 16, specURCB: 8} {
@@ -464,7 +464,7 @@ func TestSpec_8_1_Table61_SqNumTypes(t *testing.T) {
 // an entry already transmitted "shall not" set BufOvfl (Figure 30)
 // (RPT-07).
 func TestSpec_7_2_17_2_3_2_2_8_BufOvflNotSetForTransmittedDiscard(t *testing.T) {
-	srv, engine := newSpecServer(t, ServerOptions{})
+	srv, engine := newSpecServer(t)
 	engine.SetRCBBufMax("LD1", specBRCB, 2)
 	ctx := context.Background()
 	c := dialLoopback(t, ctx, srv)
@@ -482,7 +482,7 @@ func TestSpec_7_2_17_2_3_2_2_8_BufOvflNotSetForTransmittedDiscard(t *testing.T) 
 // sent after the transition from disabled to enabled. Subsequent reports
 // shall have BufOvfl = FALSE" (RPT-07, RPT-08).
 func TestSpec_7_2_17_2_3_2_2_8_BufOvflOnceAfterLoss(t *testing.T) {
-	srv, engine := newSpecServer(t, ServerOptions{})
+	srv, engine := newSpecServer(t)
 	engine.SetRCBBufMax("LD1", specBRCB, 2)
 	ctx := context.Background()
 	for i := 1; i <= 5; i++ {
@@ -506,7 +506,7 @@ func TestSpec_7_2_17_2_3_2_2_8_BufOvflOnceAfterLoss(t *testing.T) {
 // entries ... during all states" and buffering starts at power-up
 // (Figure 24) (RPT-08).
 func TestSpec_7_2_17_2_3_2_3_6_BuffersWhileDisabled(t *testing.T) {
-	srv, _ := newSpecServer(t, ServerOptions{})
+	srv, _ := newSpecServer(t)
 	ctx := context.Background()
 	for i := 1; i <= 3; i++ {
 		srv.SetValue(ctx, specModKey, mms.NewInteger(int64(i)))
@@ -527,7 +527,7 @@ func TestSpec_7_2_17_2_3_2_3_6_BuffersWhileDisabled(t *testing.T) {
 // TestSpec_7_2_17_2_2_16_ReplayPreservesTimeOfEntry: "TimeOfEntry shall
 // specify the time when the EntryID was created" (§17.2.3.2.2.9) (RPT-09).
 func TestSpec_7_2_17_2_2_16_ReplayPreservesTimeOfEntry(t *testing.T) {
-	srv, _ := newSpecServer(t, ServerOptions{})
+	srv, _ := newSpecServer(t)
 	ctx := context.Background()
 	before := time.Now().Truncate(time.Millisecond)
 	srv.SetValue(ctx, specModKey, mms.NewInteger(1))
@@ -545,7 +545,7 @@ func TestSpec_7_2_17_2_2_16_ReplayPreservesTimeOfEntry(t *testing.T) {
 // entries go first and "the BRCB shall use the sequence ... numbers so
 // that no gaps occur" (RPT-09, RPT-10).
 func TestSpec_7_2_17_2_3_2_3_6_ReplayThenLiveSqNumContiguous(t *testing.T) {
-	srv, _ := newSpecServer(t, ServerOptions{})
+	srv, _ := newSpecServer(t)
 	ctx := context.Background()
 	for i := 1; i <= 3; i++ {
 		srv.SetValue(ctx, specModKey, mms.NewInteger(int64(i)))
@@ -565,7 +565,7 @@ func TestSpec_7_2_17_2_3_2_3_6_ReplayThenLiveSqNumContiguous(t *testing.T) {
 // the time sequence order in which the related entries have been
 // created" (RPT-10).
 func TestSpec_7_2_17_2_3_2_3_5_URCBBurstOrder(t *testing.T) {
-	srv, _ := newSpecServer(t, ServerOptions{})
+	srv, _ := newSpecServer(t)
 	ctx := context.Background()
 	c := dialLoopback(t, ctx, srv)
 	sub := subscribeRCB(t, c, "rpt_urcb01", specURCB, true)
@@ -589,7 +589,7 @@ func TestSpec_7_2_17_2_3_2_3_5_URCBBurstOrder(t *testing.T) {
 // "The value returned for OptFlds.buffer-overflow and OptFlds.entryID
 // shall always be false" (8-1 Table 63) (RPT-11).
 func TestSpec_7_2_17_2_5_2_URCBNoEntryIDOrBufOvfl(t *testing.T) {
-	srv, _ := newSpecServer(t, ServerOptions{})
+	srv, _ := newSpecServer(t)
 	ctx := context.Background()
 	c := dialLoopback(t, ctx, srv)
 	all := OptFldSeqNum | OptFldTimeStamp | OptFldReasonCode | OptFldDataSet | OptFldDataRef |
@@ -621,7 +621,7 @@ func TestSpec_7_2_17_2_5_2_URCBNoEntryIDOrBufOvfl(t *testing.T) {
 // reads the newest entry (§17.2.2.15), and a known EntryID resynchronises
 // after it (RPT-12).
 func TestSpec_7_2_17_2_2_5_EntryIDResync(t *testing.T) {
-	srv, _ := newSpecServer(t, ServerOptions{})
+	srv, _ := newSpecServer(t)
 	ctx := context.Background()
 	for i := 1; i <= 3; i++ {
 		srv.SetValue(ctx, specModKey, mms.NewInteger(int64(i)))
@@ -652,7 +652,7 @@ func TestSpec_7_2_17_2_2_5_EntryIDResync(t *testing.T) {
 // buffer (8-1 §17.1.2); PurgeBuf reads FALSE after a purge (§17.2.2.14)
 // (RPT-13).
 func TestSpec_7_2_17_2_2_6_DatSet(t *testing.T) {
-	srv, _ := newSpecServer(t, ServerOptions{})
+	srv, _ := newSpecServer(t)
 	ctx := context.Background()
 	for i := 1; i <= 3; i++ {
 		srv.SetValue(ctx, specModKey, mms.NewInteger(int64(i)))
@@ -692,7 +692,7 @@ func TestSpec_7_2_17_2_2_6_DatSet(t *testing.T) {
 // report, GI reads FALSE; a GI is not replayed after re-enable (it is not
 // one of the buffered trigger options, §17.2.3.2.3.6) (RPT-15).
 func TestSpec_7_2_17_2_2_13_GI(t *testing.T) {
-	srv, _ := newSpecServer(t, ServerOptions{})
+	srv, _ := newSpecServer(t)
 	ctx := context.Background()
 	c := dialLoopback(t, ctx, srv)
 
@@ -741,7 +741,7 @@ func TestSpec_7_2_17_2_2_13_GI(t *testing.T) {
 // combined into one report; a second notification of the same member
 // sends the pending report first (RPT-14).
 func TestSpec_7_2_17_2_2_9_BufTmAggregates(t *testing.T) {
-	srv, _ := newSpecServer(t, ServerOptions{})
+	srv, _ := newSpecServer(t)
 	ctx := context.Background()
 	c := dialLoopback(t, ctx, srv)
 	if err := c.SetReportControlBlock(ctx, "LD1", specURCB, RCBUpdate{
