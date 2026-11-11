@@ -69,15 +69,28 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   - Without attribute trigger options in the model (SCL DA
     dchg/qchg/dupd), the reason for inclusion is derived by comparing the
     member value.
-- **Controls: no interlocking, demo-grade default operate** — control
+- **Controls: process response is a model, not supervision** — control
   handlers (`RegisterControl`) follow the states of IEC 61850-7-2 Table 47
-  (select, time-activated wait, execution until the CommandTermination),
-  with CF sboTimeout, sboClass and operTimeout; interlocking and
-  synchrocheck are application-responsibility via callbacks. A refused
-  control write is preceded by a LastApplError. Without `OnOperate` the
-  server only mirrors ctlVal into `stVal` (BOOLEAN to Dbpos for a DPC)
-  when it fits stVal's type, with `t`, `ctlNum` and `origin`; APC, BSC
-  and other CDCs need an `OnOperate`. A selection held by an association
+  (select, tests, time-activated wait, execution until the
+  CommandTermination), with CF sboTimeout, sboClass and operTimeout. The
+  Check conditions run when the request asks for them and the
+  registration supplies them (`CheckInterlock`, a CILO via
+  `Interlocking`, `CheckSynchro`, an RSYN via `Synchrocheck`): the
+  interlocking algorithm itself (which positions a CILO depends on) is
+  the application's, and the CILO and RSYN values are read from the
+  value store, which the application or a GOOSE subscription keeps
+  current; a waiting synchrocheck reads the RSYN release every 10 ms.
+  The Select of SBO with normal security (a Read of SBO) carries no
+  Check, so no check runs at it. Other operative tests of 7-2 20.2.1
+  (Beh, blocking, local/remote) are not evaluated; use `OnSelect` and
+  `OnOperate`. Without `OnOperate` the server mirrors ctlVal into
+  `stVal` (BOOLEAN to Dbpos for a DPC) when it fits stVal's type, with
+  `t`, `ctlNum` and `origin`; the opt-in `ProcessResponse` adds a DPC's
+  travel through intermediate-state, an operation counter and
+  position-reached, nothing else (no Beh mirror, pulse output or
+  OpOpn/OpCls). APC, BSC and other CDCs need an `OnOperate`. A Cancel of
+  a time activated operate before operTm sends no
+  TimeActivatedOperate termination. A selection held by an association
   that ended is released when its `Server.Serve` returns; with
   `ListenAndServe` without connection hooks (go-mms serves the
   connection), it is released at the next control service on that object,

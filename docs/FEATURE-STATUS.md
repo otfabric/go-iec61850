@@ -40,6 +40,8 @@ independent evidence: the feature must not be described as interoperable.
 | SBOw (enhanced security) | ✅ | ✅ | in-memory | libiec61850, dscsystems, iec61850-rust, cbsigma; not iec61850bean |
 | CommandTermination | ✅ `OperateWait` | ✅ positive; negative via `OnExecute` | in-memory | positive: libiec61850, dscsystems, iec61850-rust, cbsigma (client); dscsystems's controller waits for ours; negative: none |
 | LastApplError on refused controls | ✅ in `ControlError` | ✅ | in-memory | libiec61850, dscsystems, cbsigma (client); iec61850-rust sends none |
+| Check conditions: interlocking (hook, CILO EnaOpn/EnaCls) and synchrocheck (hook, RSYN Rel) | ✅ sends Check | ✅ | in-memory, chaos | none: no pinned adapter sends Check bits |
+| Process response of the default operate (DPC travel, OpCnt, position-reached) | n/a | ◐ opt-in model | in-memory | none |
 | Quality and timestamps | ✅ | ✅ | in-memory, go-to-go in `interop/` | none as a dedicated scenario |
 | Several clients at once | ✅ | ✅ | TCP, go-to-go in `interop/` | none |
 | Setting groups | ✅ | ◐ no value banks | in-memory, TCP | none |

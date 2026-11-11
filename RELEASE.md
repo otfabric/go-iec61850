@@ -1,5 +1,33 @@
 # go-iec61850 Releases
 
+## v1.18.0
+
+**Date:** 2026-11-11
+**Previous release:** v1.17.1
+
+Server control: the check conditions of IEC 61850-7-2 §20 (interlocking and synchrocheck), CILO and RSYN bindings (IEC 61850-7-4), and an opt-in process response for the default operate. The API is additive.
+
+### Added
+
+- **Interlocking check** (IEC 61850-7-2 §20.2.1, §20.5.2.7): `ControlHandler.CheckInterlock` and the CILO binding `ControlHandler.Interlocking` ("CILO1" or "LD/CILO1"). It is an operative test: it runs at SelectWithValue and at Operate when the request's Check has interlock-check. With a CILO, a close (ctlVal TRUE) needs `EnaCls.stVal` TRUE and an open `EnaOpn.stVal` TRUE (7-4 CILO). A refusal carries AddCause blocked-by-interlocking (10) in the LastApplError and gets object-access-denied.
+- **Synchrocheck** (§20.2.1 dynamic test, Table 54): `ControlHandler.CheckSynchro`, the RSYN binding `ControlHandler.Synchrocheck` and `ControlHandler.SynchroTimeout`. It runs at Operate only, after the operative tests, when Check has synchrocheck. The RSYN binding waits up to SynchroTimeout for `Rel.stVal` TRUE (7-4 RSYN); otherwise the Operate is refused with AddCause blocked-by-synchrocheck (11).
+- A check refusal keeps another AddCause the callback gives in a `*ControlError`. A time activated operate runs its checks at operTm; a failed check ends it with a negative termination (LastApplError, then the Oper). The owner's Cancel while its synchrocheck waits is accepted, and the operate ends with abortion-by-cancel (15). During the tests, Oper and SBOw get command-already-in-execution and another client's Cancel locked-by-other-client (Table 47). A check whose Check bit is clear, or that the registration does not supply, is not run (§20.5.2.7).
+- **`ProcessResponse`** (`ControlHandler.Process`, opt-in, default operate only):
+  - `TravelTime`: a DPC's stVal shows intermediate-state (00) until the end position. With enhanced security the CommandTermination is positive when the end position is reached and negative (time-limit-over) when CF operTimeout comes first (§20.3.3 d); with normal security the Operate response does not wait.
+  - `OpCnt`: an INS operation counter.
+  - `PositionReached`: refuses an operate to the current position with AddCause position-reached (Table 54).
+- `RegisterControl` refuses a CILO, RSYN or operation counter the model does not have, with `ErrInvalidArgument`.
+
+### Changed
+
+- A control leaves execution before its CommandTermination is sent, so a client that acts on the termination finds the control free. Before, a select sent straight after `OperateWait` could get command-already-in-execution.
+
+### Known limitations
+
+- No pinned iec61850-interop adapter sends Check bits, so the checks are verified in-process only (`TestSpec_*` in `control_checks_test.go`, `TestChaos_ControlChecks`).
+
+---
+
 ## v1.17.1
 
 **Date:** 2026-11-11
