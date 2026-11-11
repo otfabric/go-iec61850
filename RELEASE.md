@@ -1,5 +1,19 @@
 # go-iec61850 Releases
 
+## v1.19.1
+
+**Date:** 2026-11-11
+**Previous release:** v1.19.0
+
+### Fixed
+
+- A client write of a constructed data attribute of a writable FC (CF, DC, SP, SV, BL and the others clients may write; for example `LN$CF$DO$cmp`) sets its leaves. Before, only FC=SE did (v1.19.0): the other FCs stored the structure under its own key, while reads of the structure and of its leaves come from the leaves, so the write was lost. CO control services (Oper, SBOw, Cancel) are unchanged.
+- Such a write is checked leaf by leaf before anything is stored, as a leaf write is: an enumeration value outside its EnumType answers object-value-invalid, and the write guard (for example the `ctlModel` of a registered control) applies to every leaf. A refused leaf refuses the whole write.
+- Each leaf is stored and then notified under its own key, so data change reports, GOOSE, SV and logs follow a constructed write. Before, the notification carried the compound key, which no data set member matches. With BufTm 0 a write that changes several leaves of a member gives one report per changed leaf (see KNOWN_LIMITATIONS.md).
+- FC=SE constructed writes now also run the enumeration check, the write guard and the post-write notification, like FC=SE leaf writes.
+
+---
+
 ## v1.19.0
 
 **Date:** 2026-11-11
