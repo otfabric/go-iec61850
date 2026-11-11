@@ -91,8 +91,31 @@ Run with `make test`:
   types (oversized strings, out-of-range ctlNum, read-only FCs) to an
   SCL-built server while the application updates status; the model must stay
   intact and serve every LN$FC afterwards.
+- BRCB buffer: `TestChaos_BRCBOverflowAcrossReconnect`
+  (`report_v118_chaos_test.go`) drops the association at random, overflows an
+  eight-entry buffer while the client is away, and resynchronises; EntryIDs
+  arrive once and in order, and every gap or refused resync is reported with
+  BufOvfl. `TestChaos_BufTmUnderLoad` has four writers change a BRCB member
+  with BufTm 20 ms; every value arrives once, in store order.
+- Control checks: `TestChaos_ControlChecks` races SelectWithValue and Operate
+  against changing CILO, RSYN and hooks; `TestChaos_ControlChecksHostileOper`
+  (`control_checks_hostile_test.go`) writes malformed Oper structures (Check of
+  every length and type, members missing, extra or of the wrong type): no
+  operation runs with a check bit set while every check refuses.
+- R-GOOSE/R-SV: `TestChaos_ForgedReplayedSPDUsKeyRotation`
+  (`rsession/chaos_test.go`) mixes authentic SPDUs with replays, bit flips,
+  truncations, unsecured, unknown-key and random datagrams while the key ring
+  rotates and retires a key; only authentic SPDUs reach `Recv`, each once, and
+  every datagram is counted in `Stats`.
+- Setting groups: `TestChaos_SettingGroupEditSelectRace`.
+- Lifecycle: `TestServerClose_ConcurrentWithRequests` (Close while
+  associations write settings and the application calls SetValue, under
+  `-race`), `rsession` `TestTransport_CloseContract` (Close twice and
+  concurrently with Send and Recv; both return `ErrClosed` afterwards; no
+  goroutine left).
 - Goroutine leaks: `TestClient_NoGoroutineLeakOnConnectDisconnect`,
-  `TestConcurrent_TimeoutDoesNotLeakGoroutines`.
+  `TestConcurrent_TimeoutDoesNotLeakGoroutines`, and the chaos tests above
+  through `checkGoroutines`.
 - `readme_test.go` checks the README's code snippets.
 
 ## Coverage policy
