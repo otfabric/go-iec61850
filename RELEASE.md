@@ -15,6 +15,7 @@ Fixes, tests, CI and documentation; no API change.
 
 ### Tests
 
+- `TestRawTransportCloseAndCancel` skips frames other tests send on the same interface before its receive deadline; it failed when the goose and sv packages ran at the same time as root on `lo`.
 - Fuzz targets: `FuzzDecodeSGCB`, `FuzzTimestampRoundTrip`, `FuzzDecodeLastApplError`, `FuzzDecodeMSVCB`, `FuzzServerItemIDs` (the parsers that route a client write), `FuzzSettingGroupWrites` (SGCB writes, bank seeds and activation against a server: ActSG, EditSG and FC=SG stay consistent) and `FuzzMemoryReportBuffer` (the BRCB buffer against a model FIFO).
 - Chaos: `TestChaos_BRCBOverflowAcrossReconnect`, `TestChaos_BufTmUnderLoad`, `TestChaos_ControlChecksHostileOper`, `rsession` `TestChaos_ForgedReplayedSPDUsKeyRotation`; lifecycle: `TestServerClose_ConcurrentWithRequests`, `rsession` `TestTransport_CloseContract`. See TESTING.md.
 

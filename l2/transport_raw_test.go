@@ -107,8 +107,17 @@ func TestRawTransportCloseAndCancel(t *testing.T) {
 	tr := openOrSkip(t, iface, TransportOptions{})
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 	defer cancel()
-	if _, err := tr.Recv(ctx); !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("recv: %v", err)
+	// Other tests can send on the same interface meanwhile (packages run in
+	// parallel), so skip their frames until the deadline.
+	for {
+		_, err := tr.Recv(ctx)
+		if err == nil {
+			continue
+		}
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("recv: %v", err)
+		}
+		break
 	}
 	if tr.HardwareAddr() == (MAC{0xff}) {
 		t.Error("unexpected address")
