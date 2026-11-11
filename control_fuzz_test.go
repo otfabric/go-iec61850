@@ -54,17 +54,31 @@ func FuzzDecodeControlRequest(f *testing.F) {
 		if err != nil {
 			return
 		}
+		// operTm is present when the second member is a UtcTime; a Cancel
+		// may carry a trailing Check (a model that reuses the Oper type).
 		base := 6
 		if operation == "Cancel" {
 			base = 5
 		}
-		if len(members) != base && len(members) != base+1 {
+		withOperTm := false
+		if len(members) > 1 {
+			_, withOperTm = members[1].UTCTime()
+		}
+		want := base
+		if withOperTm {
+			want++
+		}
+		trailingCheck := false
+		if operation == "Cancel" && len(members) == want+1 {
+			_, trailingCheck = members[want].BitString()
+		}
+		if len(members) != want && !trailingCheck {
 			t.Fatalf("%s with %d members accepted", operation, len(members))
 		}
 		if req.CtlVal != members[0] || len(req.Origin.OrIdent) > 64 {
 			t.Fatalf("decoded %+v", req)
 		}
-		if len(members) == base && !req.OperTm.IsZero() {
+		if !withOperTm && !req.OperTm.IsZero() {
 			t.Fatal("OperTm without an operTm member")
 		}
 	})
