@@ -97,23 +97,16 @@ func (c *Client) GetDataSet(ctx context.Context, ld, dsName string) (*DataSet, e
 	if err := c.checkOpen(); err != nil {
 		return nil, err
 	}
-	if ld == "" {
-		return nil, fmt.Errorf("iec61850: get data set: %w: empty logical device name", ErrInvalidArgument)
+	listName, err := c.dataSetListName("get data set", ld, dsName)
+	if err != nil {
+		return nil, err
 	}
-	if dsName == "" {
-		return nil, fmt.Errorf("iec61850: get data set: %w: empty data set name", ErrInvalidArgument)
-	}
+	cacheable := c.cache != nil && !isAssociationDataSet(dsName)
 
-	if c.cache != nil {
+	if cacheable {
 		if ds, ok := c.cache.getDS(ld, dsName); ok {
 			return ds, nil
 		}
-	}
-
-	listName := mms.ObjectName{
-		Scope:  mms.ObjectScopeDomain,
-		Domain: c.ldDomain(ld),
-		ItemID: mms.ItemID(dsName),
 	}
 
 	attrs, err := c.mmsClient.GetNamedVariableListAttributes(ctx, listName)
@@ -130,6 +123,9 @@ func (c *Client) GetDataSet(ctx context.Context, ld, dsName string) (*DataSet, e
 	}
 
 	dsRef := ld + "/" + mmsItemIDToIECDSName(dsName)
+	if isAssociationDataSet(dsName) {
+		dsRef = dsName
+	}
 
 	ds := &DataSet{
 		Reference: dsRef,
@@ -137,7 +133,7 @@ func (c *Client) GetDataSet(ctx context.Context, ld, dsName string) (*DataSet, e
 		Members:   members,
 	}
 
-	if c.cache != nil && c.cache.strategy == CacheLazy {
+	if cacheable && c.cache.strategy == CacheLazy {
 		c.cache.setDS(ld, dsName, ds)
 	}
 
@@ -157,23 +153,16 @@ func (c *Client) ReadDataSet(ctx context.Context, ld, dsName string) ([]DataSetV
 	if err := c.checkOpen(); err != nil {
 		return nil, err
 	}
-	if ld == "" {
-		return nil, fmt.Errorf("iec61850: read data set: %w: empty logical device name", ErrInvalidArgument)
+	listName, err := c.dataSetListName("read data set", ld, dsName)
+	if err != nil {
+		return nil, err
 	}
-	if dsName == "" {
-		return nil, fmt.Errorf("iec61850: read data set: %w: empty data set name", ErrInvalidArgument)
-	}
-
-	listName := mms.ObjectName{
-		Scope:  mms.ObjectScopeDomain,
-		Domain: c.ldDomain(ld),
-		ItemID: mms.ItemID(dsName),
-	}
+	cacheable := c.cache != nil && !isAssociationDataSet(dsName)
 
 	// Try to reuse cached dataset definition to avoid an extra
 	// GetNamedVariableListAttributes round-trip.
 	var members []DataSetMember
-	if c.cache != nil {
+	if cacheable {
 		if ds, ok := c.cache.getDS(ld, dsName); ok {
 			members = ds.Members
 		}
@@ -191,7 +180,7 @@ func (c *Client) ReadDataSet(ctx context.Context, ld, dsName string) ([]DataSetV
 			members[i] = variableSpecToMember(v)
 			memberVarNames[i] = v.Name
 		}
-		if c.cache != nil && c.cache.strategy == CacheLazy {
+		if cacheable && c.cache.strategy == CacheLazy {
 			dsRef := ld + "/" + mmsItemIDToIECDSName(dsName)
 			c.cache.setDS(ld, dsName, &DataSet{
 				Reference: dsRef,
@@ -239,6 +228,43 @@ func (c *Client) ReadDataSet(ctx context.Context, ld, dsName string) ([]DataSetV
 
 	c.logger.Debug("iec61850: read data set", "ld", ld, "name", dsName, "values", len(results))
 	return results, nil
+}
+
+// WriteDataSet is SetDataSetValues (IEC 61850-7-2 13.3.3): it writes
+// values to the members of the data set dsName of ld in one MMS Write of
+// the named variable list (IEC 61850-8-1 8.1.3.4.3.3), values[i] to
+// member i. A dsName beginning with "@" addresses a non-persistent data
+// set of the association (see [Client.CreateDataSet]).
+//
+// The returned slice has one entry per member: nil when the member was
+// written, a [*DataAccessError] with the server's code otherwise. The
+// error is non-nil when the request itself failed.
+func (c *Client) WriteDataSet(ctx context.Context, ld, dsName string, values []*mms.Value) ([]error, error) {
+	if err := c.checkOpen(); err != nil {
+		return nil, err
+	}
+	listName, err := c.dataSetListName("write data set", ld, dsName)
+	if err != nil {
+		return nil, err
+	}
+	if len(values) == 0 {
+		return nil, fmt.Errorf("iec61850: write data set: %w: no values", ErrInvalidArgument)
+	}
+	results, err := c.mmsClient.WriteNamedVariableList(ctx, listName, values)
+	if err != nil {
+		return nil, fmt.Errorf("iec61850: write data set %s/%s: %w", ld, dsName, err)
+	}
+	if len(results) != len(values) {
+		return nil, fmt.Errorf("iec61850: write data set %s/%s: %w: %d results for %d values", ld, dsName, ErrProtocol, len(results), len(values))
+	}
+	errs := make([]error, len(values))
+	for i, r := range results {
+		if !r.Success {
+			errs[i] = &DataAccessError{Ref: fmt.Sprintf("%s/%s[%d]", ld, dsName, i), ErrorCode: int(r.ErrorCode), Operation: "write-dataset"}
+		}
+	}
+	c.logger.Debug("iec61850: write data set", "ld", ld, "name", dsName, "values", len(values))
+	return errs, nil
 }
 
 // memberIdentity returns a human-readable identity for a data set
@@ -293,15 +319,33 @@ func variableSpecToMember(v mms.VariableSpec) DataSetMember {
 // empty.
 //
 // Dynamic data sets can be deleted with [Client.DeleteDataSet].
+//
+// A dsName beginning with "@" ("@dsNew") creates a non-persistent data
+// set of this association (IEC 61850-7-2 13.2.2.2, 13.3.4): visible to
+// this client only and deleted by the server when the association ends;
+// ld then only defaults the members' LD. The same "@name" addresses it
+// in [Client.GetDataSet], [Client.ReadDataSet], [Client.WriteDataSet]
+// and [Client.DeleteDataSet].
+//
+// The name is checked before any request (IEC 61850-7-2 22.2): the part
+// after "LN$" (or "@") has 1 to 32 characters, begins with a letter and
+// uses A-Z, a-z, 0-9 and _, the MMS item has at most 64 characters (IEC
+// 61850-8-1 8.1.3.2.2); a member's FC must be a valid functional
+// constraint other than XX (IEC 61850-8-1 7.3.1 NOTE 2). A violation
+// returns [ErrInvalidArgument].
 func (c *Client) CreateDataSet(ctx context.Context, ld, dsName string, members []DataSetMember) error {
 	if err := c.checkOpen(); err != nil {
 		return err
 	}
-	if ld == "" {
+	if ld == "" && !isAssociationDataSet(dsName) {
 		return fmt.Errorf("iec61850: create data set: %w: empty logical device name", ErrInvalidArgument)
 	}
-	if dsName == "" {
-		return fmt.Errorf("iec61850: create data set: %w: empty data set name", ErrInvalidArgument)
+	listName, err := c.dataSetListName("create data set", ld, dsName)
+	if err != nil {
+		return err
+	}
+	if err := validateDataSetName(string(listName.ItemID)); err != nil {
+		return fmt.Errorf("iec61850: create data set: %w: %w", ErrInvalidArgument, err)
 	}
 	if len(members) == 0 {
 		return fmt.Errorf("iec61850: create data set: %w: no members", ErrInvalidArgument)
@@ -318,6 +362,11 @@ func (c *Client) CreateDataSet(ctx context.Context, ld, dsName string, members [
 			}
 			if m.Ref.FC == "" {
 				return fmt.Errorf("iec61850: create data set: member[%d]: FC is required", i)
+			}
+			// XX (any FC) is not a FunctionalConstraint, IEC 61850-8-1 7.3.1
+			// NOTE 2.
+			if !m.Ref.FC.IsValid() {
+				return fmt.Errorf("iec61850: create data set: member[%d]: %w: FC %q is not a data set member FC", i, ErrInvalidArgument, m.Ref.FC)
 			}
 			if !m.Ref.HasPath() {
 				return fmt.Errorf("iec61850: create data set: member[%d]: data path is required (LN-only refs not allowed)", i)
@@ -337,6 +386,9 @@ func (c *Client) CreateDataSet(ctx context.Context, ld, dsName string, members [
 			domainID = string(d)
 			itemID = string(id)
 		}
+		if len(itemID) > maxMMSIdentifier {
+			return fmt.Errorf("iec61850: create data set: member[%d]: %w: item %q longer than %d characters", i, ErrInvalidArgument, itemID, maxMMSIdentifier)
+		}
 
 		vars[i] = mms.VariableSpec{
 			Name: mms.ObjectName{
@@ -347,19 +399,15 @@ func (c *Client) CreateDataSet(ctx context.Context, ld, dsName string, members [
 		}
 	}
 
-	err := c.mmsClient.DefineNamedVariableList(ctx, mms.DefineNamedVariableListRequest{
-		ListName: mms.ObjectName{
-			Scope:  mms.ObjectScopeDomain,
-			Domain: c.ldDomain(ld),
-			ItemID: mms.ItemID(dsName),
-		},
+	err = c.mmsClient.DefineNamedVariableList(ctx, mms.DefineNamedVariableListRequest{
+		ListName:  listName,
 		Variables: vars,
 	})
 	if err != nil {
 		return fmt.Errorf("iec61850: create data set %s/%s: %w", ld, dsName, err)
 	}
 
-	if c.cache != nil {
+	if c.cache != nil && !isAssociationDataSet(dsName) {
 		c.cache.invalidateDS(ld)
 	}
 
@@ -376,22 +424,12 @@ func (c *Client) DeleteDataSet(ctx context.Context, ld, dsName string) error {
 	if err := c.checkOpen(); err != nil {
 		return err
 	}
-	if ld == "" {
-		return fmt.Errorf("iec61850: delete data set: %w: empty logical device name", ErrInvalidArgument)
-	}
-	if dsName == "" {
-		return fmt.Errorf("iec61850: delete data set: %w: empty data set name", ErrInvalidArgument)
+	listName, err := c.dataSetListName("delete data set", ld, dsName)
+	if err != nil {
+		return err
 	}
 
-	listNames := []mms.ObjectName{
-		{
-			Scope:  mms.ObjectScopeDomain,
-			Domain: c.ldDomain(ld),
-			ItemID: mms.ItemID(dsName),
-		},
-	}
-
-	result, err := c.mmsClient.DeleteNamedVariableList(ctx, listNames)
+	result, err := c.mmsClient.DeleteNamedVariableList(ctx, []mms.ObjectName{listName})
 	if err != nil {
 		return fmt.Errorf("iec61850: delete data set %s/%s: %w", ld, dsName, err)
 	}
@@ -401,11 +439,69 @@ func (c *Client) DeleteDataSet(ctx context.Context, ld, dsName string) error {
 			ld, dsName, result.NumberMatched, result.NumberDeleted)
 	}
 
-	if c.cache != nil {
+	if c.cache != nil && !isAssociationDataSet(dsName) {
 		c.cache.invalidateDS(ld)
 	}
 
 	c.logger.Debug("iec61850: deleted data set", "ld", ld, "name", dsName)
+	return nil
+}
+
+// dataSetListName returns the MMS name of the data set dsName of ld. A
+// dsName starting with "@" is a non-persistent data set of the
+// association (IEC 61850-7-2 13.2.2.2: "@DataSetName"; IEC 61850-8-1
+// 8.1.3.2.2: an aa-specific named variable list, deleted when the
+// association ends); ld is then not used. Otherwise ld is required and
+// the name is domain-specific.
+func (c *Client) dataSetListName(op, ld, dsName string) (mms.ObjectName, error) {
+	if dsName == "" {
+		return mms.ObjectName{}, fmt.Errorf("iec61850: %s: %w: empty data set name", op, ErrInvalidArgument)
+	}
+	if name, ok := strings.CutPrefix(dsName, "@"); ok {
+		if name == "" {
+			return mms.ObjectName{}, fmt.Errorf("iec61850: %s: %w: empty data set name after @", op, ErrInvalidArgument)
+		}
+		return mms.ObjectName{Scope: mms.ObjectScopeAssociation, ItemID: mms.ItemID(name)}, nil
+	}
+	if ld == "" {
+		return mms.ObjectName{}, fmt.Errorf("iec61850: %s: %w: empty logical device name", op, ErrInvalidArgument)
+	}
+	return mms.ObjectName{Scope: mms.ObjectScopeDomain, Domain: c.ldDomain(ld), ItemID: mms.ItemID(dsName)}, nil
+}
+
+// isAssociationDataSet reports whether dsName names a non-persistent
+// data set of the association ("@name"); those are not cached.
+func isAssociationDataSet(dsName string) bool { return strings.HasPrefix(dsName, "@") }
+
+// maxMMSIdentifier is the length limit of an MMS identifier (IEC
+// 61850-8-1 8.1.3.2.2: 64 characters).
+const maxMMSIdentifier = 64
+
+// validateDataSetName checks the name part of a data set to create
+// (after "LN$" or "@"): IEC 61850-7-2 22.2, at most 32 characters,
+// beginning with a letter, of A-Z, a-z, 0-9 and _; and the MMS item of
+// at most 64 characters (IEC 61850-8-1 8.1.3.2.2).
+func validateDataSetName(itemID string) error {
+	if len(itemID) > maxMMSIdentifier {
+		return fmt.Errorf("data set item %q longer than %d characters", itemID, maxMMSIdentifier)
+	}
+	name := itemID
+	if i := strings.IndexByte(itemID, '$'); i >= 0 {
+		name = itemID[i+1:]
+	}
+	if name == "" || len(name) > 32 {
+		return fmt.Errorf("data set name %q: 1 to 32 characters", name)
+	}
+	for i := 0; i < len(name); i++ {
+		ch := name[i]
+		alpha := ch >= 'A' && ch <= 'Z' || ch >= 'a' && ch <= 'z'
+		if i == 0 && !alpha {
+			return fmt.Errorf("data set name %q: must begin with a letter", name)
+		}
+		if !alpha && !(ch >= '0' && ch <= '9') && ch != '_' {
+			return fmt.Errorf("data set name %q: character %q not in A-Za-z0-9_", name, ch)
+		}
+	}
 	return nil
 }
 
