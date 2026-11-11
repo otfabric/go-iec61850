@@ -643,6 +643,9 @@ func (s *Server) EnableSettingGroups(handler SettingGroupHandler) {
 // SettingGroupEngine returns the setting group engine, or nil if
 // setting groups have not been enabled via [Server.EnableSettingGroups].
 func (s *Server) SettingGroupEngine() *SettingGroupEngine {
+	if s.enginesClosed.Load() {
+		return nil
+	}
 	return s.sgEngine
 }
 
@@ -651,10 +654,11 @@ func (s *Server) SettingGroupEngine() *SettingGroupEngine {
 // (e.g., operator override). The handler's OnActiveSGChanged
 // callback is invoked.
 func (s *Server) ChangeActiveSettingGroup(ctx context.Context, ld string, sg uint8) error {
-	if s.sgEngine == nil {
+	e := s.SettingGroupEngine()
+	if e == nil {
 		return fmt.Errorf("iec61850: setting groups not enabled")
 	}
-	return s.sgEngine.HandleSGCBWrite(ctx, ld, "ActSG", mms.NewUnsigned(uint64(sg)))
+	return e.HandleSGCBWrite(ctx, ld, "ActSG", mms.NewUnsigned(uint64(sg)))
 }
 
 // withoutGroupValues returns a copy of ld without per-group values.

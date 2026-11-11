@@ -357,6 +357,9 @@ func (t *Transport) Send(frame []byte) error {
 		return err
 	}
 	if _, err := t.conn.WriteToUDPAddrPort(b, t.remote); err != nil {
+		if errors.Is(err, net.ErrClosed) {
+			return ErrClosed // Close ran during the send
+		}
 		t.sendErrors.Add(1)
 		return fmt.Errorf("rsession: send to %v: %w", t.remote, err)
 	}

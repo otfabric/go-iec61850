@@ -191,6 +191,9 @@ func (s *Server) EnableJournals(opts ...JournalEngineOption) *JournalEngine {
 // JournalEngine returns the journal engine, or nil if journals have
 // not been enabled via [Server.EnableJournals].
 func (s *Server) JournalEngine() *JournalEngine {
+	if s.enginesClosed.Load() {
+		return nil
+	}
 	return s.journalEngine
 }
 

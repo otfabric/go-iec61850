@@ -10,6 +10,13 @@ Fixes, tests, CI and documentation; no API change.
 ### Fixed
 
 - **Checked integer conversions** in the R-GOOSE/R-SV session codec (`rsession`), the GOOSE fixed-length encoder and the SV publisher: each length and two's-complement field is range-checked where it is converted, so a value that does not fit panics as a bug instead of going out truncated. The wire output is unchanged (exhaustive 16-bit and 32-bit serial-number edge test). A multicast interface index or TTL outside its socket option's range is an error.
+- **Server.Close raced requests of open associations**: Close cleared the journal and setting group engine fields that client writes (Close does not end associations) and `SetValue` read, a data race. Close now stops the engines and `JournalEngine` and `SettingGroupEngine` return nil afterwards, as before; `ChangeActiveSettingGroup` after Close still fails.
+- **rsession: a Send racing Close** returned the socket's "use of closed network connection" error and counted it in `SendErrors`; it returns `ErrClosed`, as a Send after Close does.
+
+### Tests
+
+- Fuzz targets: `FuzzDecodeSGCB`, `FuzzTimestampRoundTrip`, `FuzzDecodeLastApplError`, `FuzzDecodeMSVCB`, `FuzzServerItemIDs` (the parsers that route a client write), `FuzzSettingGroupWrites` (SGCB writes, bank seeds and activation against a server: ActSG, EditSG and FC=SG stay consistent) and `FuzzMemoryReportBuffer` (the BRCB buffer against a model FIFO).
+- Chaos: `TestChaos_BRCBOverflowAcrossReconnect`, `TestChaos_BufTmUnderLoad`, `TestChaos_ControlChecksHostileOper`, `rsession` `TestChaos_ForgedReplayedSPDUsKeyRotation`; lifecycle: `TestServerClose_ConcurrentWithRequests`, `rsession` `TestTransport_CloseContract`. See TESTING.md.
 
 ### Changed
 
