@@ -14,6 +14,7 @@ Fixes, tests, CI and documentation; no API change.
 ### Changed
 
 - **CI**: the shared go-ci and docs-check workflows at otfabric/.github v3.6.0 (were v3.3.1 and v3.5.0), the tag the Release workflow already uses; their inputs are unchanged. `make fuzz` discovers every fuzz target, as the fuzz workflow does; it used to miss the `sv` targets.
+- **Interop CI** pins the iec61850-interop v1.5.0 adapter images (were v1.4.0): adapter contract 1.4, with R-GOOSE and R-SV (`--transport udp`) in the dscsystems image.
 - **sclparse and sclgen** build on go-iec61850 v1.19.0 and go-mms v1.9.0 (were v1.17.0 and v1.8.0).
 
 ---

@@ -65,17 +65,17 @@ IEC61850BEAN_IMAGE=iec61850-interop-iec61850bean:local \
 make interop
 
 # Run against published images (version tags)
-LIBIEC61850_IMAGE=ghcr.io/otfabric/iec61850-interop-libiec61850:v1.4.0 \
-IEC61850BEAN_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850bean:v1.4.0 \
+LIBIEC61850_IMAGE=ghcr.io/otfabric/iec61850-interop-libiec61850:v1.5.0 \
+IEC61850BEAN_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850bean:v1.5.0 \
 make interop
 
 # The same suites against another stack
 IEC61850_PEER_STACK=dscsystems \
-DSCSYSTEMS_IMAGE=ghcr.io/otfabric/iec61850-interop-dscsystems:v1.4.0 make interop
+DSCSYSTEMS_IMAGE=ghcr.io/otfabric/iec61850-interop-dscsystems:v1.5.0 make interop
 IEC61850_PEER_STACK=iec61850-rust \
-IEC61850RUST_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850-rust:v1.4.0 make interop
+IEC61850RUST_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850-rust:v1.5.0 make interop
 IEC61850_PEER_STACK=cbsigma \
-CBSIGMA_IMAGE=ghcr.io/otfabric/iec61850-interop-cbsigma:v1.4.0 make interop
+CBSIGMA_IMAGE=ghcr.io/otfabric/iec61850-interop-cbsigma:v1.5.0 make interop
 ```
 
 ### Against go-iec61850 itself (Self-interop)
@@ -540,7 +540,7 @@ Report delivery (InformationReports) and confirmed services (Read, Write, SetRCB
 ## Fixtures
 
 `interop/testdata/` holds synchronized copies of the canonical iec61850-interop
-fixtures, matching the pinned adapter images (iec61850-interop v1.4.0):
+fixtures, matching the pinned adapter images (iec61850-interop v1.5.0):
 
 | Path | Fixture revision | Content |
 |---|---|---|

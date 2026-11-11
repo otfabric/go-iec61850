@@ -20,12 +20,13 @@ jobs:
     timeout-minutes: 60
     env:
       GOWORK: "off"
-      LIBIEC61850_IMAGE: ghcr.io/otfabric/iec61850-interop-libiec61850@sha256:5f865e1917f246763e992701c688a58d157d641ca91674e51bbc342ef945adad
-      IEC61850BEAN_IMAGE: ghcr.io/otfabric/iec61850-interop-iec61850bean@sha256:df9b48b5f903ec55f7bcb7baabe651ae204c685702d77979e89165fad00c6416
-      DSCSYSTEMS_IMAGE: ghcr.io/otfabric/iec61850-interop-dscsystems@sha256:bba8bc1653b4c5bb51c4b8766f0bd99d77dd3523574ed2630b09695212618f2e
-      IEC61850RUST_IMAGE: ghcr.io/otfabric/iec61850-interop-iec61850-rust@sha256:c961c039384b0ea968e786a259e1f7a3a4781f2b544ff50d794bd965e991314c
-      CBSIGMA_IMAGE: ghcr.io/otfabric/iec61850-interop-cbsigma@sha256:bf0597703e7d1495ab3aa144d481bc92a0a4aef87a2bfafcbd75f7c1fbb4aa16
-      # The pinned images (iec61850-interop v1.4.0) implement the SV fixture.
+      LIBIEC61850_IMAGE: ghcr.io/otfabric/iec61850-interop-libiec61850@sha256:601374067bd387a654d2e483f4dcba7511e20393d3a82b4e53670520e2cfca42
+      IEC61850BEAN_IMAGE: ghcr.io/otfabric/iec61850-interop-iec61850bean@sha256:4008c73b3edf68ac025607c8041d02317887d4c4e5260445f3ee23f24b6c5279
+      DSCSYSTEMS_IMAGE: ghcr.io/otfabric/iec61850-interop-dscsystems@sha256:eea55bc78ab59490f555f63786a2cb44f93d2d337d7b3537843ba6d74fa6e811
+      IEC61850RUST_IMAGE: ghcr.io/otfabric/iec61850-interop-iec61850-rust@sha256:6a276e126b96f9782d5073c6d44c43cb1e2713c80468eeb1ad6054802fb15c1a
+      CBSIGMA_IMAGE: ghcr.io/otfabric/iec61850-interop-cbsigma@sha256:7baf32ba5fed96840f925f3d75cfbda2380133c01a803502fa5bfddccd8a5201
+      # The pinned images (iec61850-interop v1.5.0) implement the SV fixture;
+      # dscsystems also R-GOOSE/R-SV (contract 1.4, --transport udp).
       IEC61850_SV_FIXTURE: sv-v1
 
     steps:
