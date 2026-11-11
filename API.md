@@ -1226,7 +1226,7 @@ command-already-in-execution. CF `sboTimeout`, `sboClass` (operate-many)
 and `operTimeout` (CmdTerm- time-limit-over) apply, the registered
 ctlModel replaces CF `ctlModel` (clients cannot write it), and `stSeld`
 follows the selection. A callback refuses with an error: its
-`AddCause` goes into the LastApplError, a wrapped `ErrWrite*` sentinel (or
+`AddCause` goes into the LastApplError, a wrapped write sentinel such as `ErrWriteAccessDenied` (or
 `*mms.DataAccessError`) chooses the DataAccessError, else AddCause 12, 19
 and 27 give temporarily-unavailable and the others object-access-denied.
 Control writes to objects without a registration get object-access-denied.
