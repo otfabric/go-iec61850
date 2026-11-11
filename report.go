@@ -1204,9 +1204,11 @@ func (c *Client) ReleaseURCB(ctx context.Context, ld, rcbItemID string) error {
 // concern from the server-side BRCB buffer overflow:
 //
 //   - Server-side BRCB buffer overflow occurs when the in-memory buffer
-//     (default: 1000 entries) fills up before any client enables the BRCB.
-//     The server drops the oldest entry and sets BufOvfl=true in the next
-//     delivered report so the client knows a gap exists.
+//     (default: 1000 entries) is full, typically while no client has the
+//     BRCB enabled (it buffers in every state, IEC 61850-7-2
+//     §17.2.3.2.3.6). The server drops the oldest entry; when that entry
+//     was not yet sent, the next delivered report has BufOvfl=true so the
+//     client knows a gap exists (§17.2.3.2.2.8).
 //
 //   - Client-side application queue overflow (this type) occurs when the
 //     client's in-process channel (QueueSize) fills up while reports are
