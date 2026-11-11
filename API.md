@@ -297,7 +297,17 @@ func (c *Client) GetDataSet(ctx context.Context, ld, dsName string) (*DataSet, e
 func (c *Client) ReadDataSet(ctx context.Context, ld, dsName string) ([]DataSetValue, error)
 func (c *Client) CreateDataSet(ctx context.Context, ld, dsName string, members []DataSetMember) error
 func (c *Client) DeleteDataSet(ctx context.Context, ld, dsName string) error
+func (c *Client) WriteDataSet(ctx context.Context, ld, dsName string, values []*mms.Value) ([]error, error)
 ```
+
+A `dsName` beginning with `@` (`"@ds1"`) is a non-persistent data set of
+the association (IEC 61850-7-2 13.2.2.2): `ld` is not needed, it is visible
+to this client only and the server deletes it when the association ends.
+`CreateDataSet` checks the name (1-32 characters after `LN$` or `@`, a
+letter first, `A-Za-z0-9_`), the 64-character MMS item limit and the member
+FCs before any request (`ErrInvalidArgument`). `WriteDataSet` is
+SetDataSetValues: one Write of the list, one error per member (nil or a
+`*DataAccessError`).
 
 `GetDataSet` wraps `ErrNotFound` when the server answers that the data set
 does not exist (MMS access/object-non-existent or definition/object-undefined);
@@ -567,9 +577,20 @@ func (c *Client) Select(ctx context.Context, ref Ref) (string, error)
 func (c *Client) SelectWithValue(ctx context.Context, ref Ref, params OperateParams) error
 func (c *Client) Cancel(ctx context.Context, ref Ref, params CancelParams) error
 func (c *Client) ReadCtlModel(ctx context.Context, ref Ref) (CtlModel, error)
-func (c *Client) ReadLastApplError(ctx context.Context, ref Ref) (*LastApplError, error)
+func (c *Client) ReadLastApplError(ctx context.Context, ref Ref) (*LastApplError, error) // Deprecated
 func (c *Client) OperateWait(ctx context.Context, ref Ref, params OperateParams) (*CommandTermination, error)
 ```
+
+One control sequence carries one ctlNum (IEC 61850-7-2 20.5.2.4): an
+`Operate` or `Cancel` whose `CtlNum` is 0 and `CtlNumSet` false uses the
+ctlNum of the last `SelectWithValue` of that control on the client, else
+the next value of a counter; `CtlNumSet: true` sends `CtlNum` as given,
+0 included. The client reads the control's Oper/SBOw/Cancel type once and
+sends operTm when the type has it, all zero for an immediate command; a
+non-zero `OperTm` is a TimeActivatedOperate. `ReadLastApplError` is
+deprecated (LastApplError is a transient VMD variable): use
+`ControlError.LastApplError`; it returns the last LastApplError the client
+received for the control.
 
 A refused `Operate`, `SelectWithValue` or `Cancel` returns a `*ControlError`
 carrying the `LastApplError` the server reported before the negative write
@@ -614,10 +635,12 @@ func (m CtlModel) IsEnhanced() bool
 type OperateParams struct {
     CtlVal *mms.Value
     Origin *Origin
-    CtlNum uint8
-    OperTm time.Time
-    Test   bool
-    Check  CheckConditions
+    CtlNum    uint8
+    CtlNumSet bool // send CtlNum as given, 0 included
+    OperTm    time.Time
+    Test      bool
+    Check     CheckConditions
+    TQuality  *TimeQuality // T time quality; nil: go-mms default 0x0a
 }
 ```
 
@@ -627,8 +650,11 @@ type OperateParams struct {
 type CancelParams struct {
     CtlVal *mms.Value
     Origin *Origin
-    CtlNum uint8
-    OperTm time.Time
+    CtlNum    uint8
+    CtlNumSet bool
+    OperTm    time.Time
+    Test      bool // test status of the sequence being cancelled
+    TQuality  *TimeQuality
 }
 ```
 
@@ -703,7 +729,9 @@ func FloatCtlVal(v float32) *mms.Value
 func EnumCtlVal(v int32) *mms.Value
 func StringCtlVal(v string) *mms.Value
 func BspCtlVal(bits []byte, bitLen int) *mms.Value
-func DpCtlVal(on bool) *mms.Value
+func DPCCtlVal(on bool) *mms.Value  // DPC ctlVal: BOOLEAN
+func DbposValue(on bool) *mms.Value // Dbpos (DPC stVal): 10 on, 01 off
+func DpCtlVal(on bool) *mms.Value   // Deprecated: a Dbpos, not a DPC ctlVal; use DPCCtlVal
 ```
 
 ---
@@ -716,6 +744,7 @@ func DpCtlVal(on bool) *mms.Value
 func (c *Client) GetSettingGroupInfo(ctx context.Context, ld string) (*SettingGroupInfo, error)
 func (c *Client) SelectActiveSG(ctx context.Context, ld string, sg uint8) error
 func (c *Client) SelectEditSG(ctx context.Context, ld string, sg uint8) error
+func (c *Client) CancelEditSG(ctx context.Context, ld string) error // SelectEditSG 0: release the edit reservation
 func (c *Client) ConfirmEditSG(ctx context.Context, ld string) error
 func (c *Client) GetEditSGValue(ctx context.Context, ref Ref) (*Value, error)
 func (c *Client) SetEditSGValue(ctx context.Context, ref Ref, value *mms.Value) error
@@ -730,6 +759,7 @@ type SettingGroupInfo struct {
     ActSG    uint8
     EditSG   uint8
     CnfEdit  bool
+    LActTm   Timestamp
     ResvTms  uint16
 }
 ```
@@ -909,8 +939,12 @@ type TimeQuality struct {
     LeapSecondKnown      bool
     ClockFailure         bool
     ClockNotSynchronized bool
-    TimeAccuracy         int
+    TimeAccuracy         int // 0-24 bits, 25-30 invalid, 31 unspecified (8-1 Table 32)
 }
+
+const TimeAccuracyUnspecified = 31
+
+func (tq TimeQuality) IsValid() bool
 
 func DecodeTimestamp(v *mms.Value) (Timestamp, error)
 func EncodeTimestamp(ts Timestamp) *mms.Value
@@ -934,10 +968,11 @@ type Ref struct {
 }
 
 func ParseRef(s string) (Ref, error)
-func ParseRefStrict(s string) (Ref, error)
+func ParseRefStrict(s string) (Ref, error) // + ValidateStrict
 func RefFromMMS(domain mms.DomainID, itemID mms.ItemID) (Ref, error)
 
 func (r Ref) Validate() error
+func (r Ref) ValidateStrict() error // A-Za-z0-9_, 64 characters per part and MMS item
 func (r Ref) String() string
 func (r Ref) ObjectReference() string
 func (r Ref) WithFC(fc FunctionalConstraint) Ref
@@ -1159,7 +1194,7 @@ const DefaultSelectTimeout = 30 * time.Second
 func (s *Server) RegisterControl(ldName, doRef string, ctlModel CtlModel, handler ControlHandler) error
 
 type ControlHandler struct {
-    SelectTimeout time.Duration // zero: DefaultSelectTimeout
+    SelectTimeout time.Duration // zero: CF sboTimeout, else DefaultSelectTimeout
     OnSelect  func(ctx context.Context, req ControlRequest) error
     OnOperate func(ctx context.Context, req ControlRequest) error
     OnCancel  func(ctx context.Context, req ControlRequest) error
@@ -1182,6 +1217,20 @@ After a successful operate of an enhanced-security control
 (`CtlModelDirectEnhanced`, `CtlModelSBOEnhanced`) the server sends a
 positive CommandTermination: an InformationReport of `LN$CO$DO$Oper`
 with the operated value, to the operating connection.
+
+The control follows IEC 61850-7-2 Table 47: one selection per object,
+owned by the association; a future `OperTm` waits for activation (a
+Cancel by the owner aborts it) and its termination carries the original
+operTm; Oper, SBOw and Cancel during execution get
+command-already-in-execution. CF `sboTimeout`, `sboClass` (operate-many)
+and `operTimeout` (CmdTerm- time-limit-over) apply, the registered
+ctlModel replaces CF `ctlModel` (clients cannot write it), and `stSeld`
+follows the selection. A callback refuses with an error: its
+`AddCause` goes into the LastApplError, a wrapped `ErrWrite*` sentinel (or
+`*mms.DataAccessError`) chooses the DataAccessError, else AddCause 12, 19
+and 27 give temporarily-unavailable and the others object-access-denied.
+Control writes to objects without a registration get object-access-denied.
+`ControlRequest.Operation` is `"select"`, `"operate"` or `"cancel"`.
 
 ### GOOSE engine
 
@@ -1240,6 +1289,10 @@ type SettingGroupHandler struct {
 }
 
 type SettingGroupEngine struct { /* unexported */ }
+
+// Write refusals (IEC 61850-8-1 Table 23) a server callback can return or wrap:
+var ErrWriteAccessDenied, ErrWriteTemporarilyUnavailable, ErrWriteTypeInconsistent,
+    ErrWriteValueInvalid, ErrWriteHardwareFault error
 
 func (e *SettingGroupEngine) HandleSGCBWrite(ctx context.Context, ldName, subfield string, val *mms.Value) error
 func (e *SettingGroupEngine) GetActiveSettingGroup(ldName string) uint8
