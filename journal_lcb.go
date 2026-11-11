@@ -290,7 +290,10 @@ func (e *JournalEngine) startIntegrityLocked(rt *lcbRuntime) {
 				return
 			case <-e.stopCh:
 				return
-			case now := <-t.C:
+			case <-t.C:
+				// The ticker paces IntgPd on the monotonic clock; the
+				// entry is stamped by the server's Clock.
+				now := clockOrSystem(e.clock).Now()
 				e.mu.RLock()
 				rt.mu.Lock()
 				if rt.intgStop == stop {

@@ -169,6 +169,12 @@ go pub.Run(ctx)
   `SetSmpSynch`.
 - `RefrTm`, `SendSmpRate`, `SendSmpMod`, `GmIdentity` and a non-empty
   `DatSet` add the optional ASDU fields.
+- `refrTm` is the sample's scheduled time with `TimeQuality` (zero:
+  `DefaultTimeQuality` 0x2a, not synchronised; before v1.18.0 the octet
+  was 0x00). With `Clock` set it is the clock's time of the frame's last
+  sample (earlier samples one period before) and the clock's quality;
+  the server's SV engine sets `Clock` from `ServerOptions.Clock`. `Now`
+  still paces the samples.
 - `Run` returns when `ctx` is cancelled or the publisher is closed;
   `ErrClosed` from the transport stops it.
 

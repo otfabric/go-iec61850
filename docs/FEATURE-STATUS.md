@@ -45,6 +45,7 @@ independent evidence: the feature must not be described as interoperable.
 | Check conditions: interlocking (hook, CILO EnaOpn/EnaCls) and synchrocheck (hook, RSYN Rel) | ✅ sends Check | ✅ | in-memory, chaos | none: no pinned adapter sends Check bits |
 | Process response of the default operate (DPC travel, OpCnt, position-reached) | n/a | ◐ opt-in model | in-memory | none |
 | Quality and timestamps | ✅ | ✅ | in-memory, go-to-go in `interop/` | none as a dedicated scenario |
+| Injectable `Clock` with TimeQuality for stamped values (control T and `t`, report TimeStamp/TimeOfEntry, journal, LActTm, GOOSE T, SV refrTm) | ✅ | ✅ | in-memory, fake clock | n/a |
 | Several clients at once | ✅ | ✅ | TCP, go-to-go in `interop/` | none |
 | Setting groups (value bank per group, SCL `sGroup`) | ✅ | ✅ in memory | in-memory, TCP, chaos | none: no adapter in the pinned images covers SGCB |
 | Journals | ✅ | ◐ in-memory | in-memory | none here; go-mms's interop covers the MMS journal services |

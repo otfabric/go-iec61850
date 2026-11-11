@@ -313,6 +313,7 @@ func (rt *svcbRuntime) setEnabled(on bool) error {
 		Layout:           rt.layout,
 		Logger:           rt.e.log,
 		Metrics:          rt.e.opts.Metrics,
+		Clock:            stampFunc(rt.e.s.clock),
 	}
 	if opts.DataSet {
 		cfg.DatSet = rt.str("DatSet")

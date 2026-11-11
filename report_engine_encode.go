@@ -29,8 +29,10 @@ type reportParams struct {
 	bufOvfl bool
 	entryID []byte // nil for URCB
 	// timeOfEntry is the creation time of the entry (IEC 61850-7-2
-	// §17.2.3.2.2.9); zero means now.
+	// §17.2.3.2.2.9); zero means clock's now.
 	timeOfEntry time.Time
+	// clock stamps a zero timeOfEntry; nil is SystemClock.
+	clock Clock
 	// subSeqNum and moreSegments are encoded when optFlds has the
 	// segmentation bit (IEC 61850-8-1 §17.2.1 Table 64).
 	subSeqNum    uint32
@@ -101,7 +103,7 @@ func encodeReportValuesEx(p reportParams) []*mms.Value {
 	if p.optFlds.Has(OptFldTimeStamp) {
 		t := p.timeOfEntry
 		if t.IsZero() {
-			t = time.Now()
+			t = clockOrSystem(p.clock).Now()
 		}
 		result = append(result, mms.NewBinaryTime(t.UTC().UnixMilli()))
 	}

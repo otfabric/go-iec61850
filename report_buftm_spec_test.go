@@ -21,8 +21,9 @@ import (
 // §17.2.3.2.3.4). The BufTm timer runs on a fake clock, so every
 // assertion is about the instant an entry is created, not a sleep.
 
-// fakeClock is a manual reportClock: timers fire in Advance, in the
-// caller's goroutine, in deadline order.
+// fakeClock is a manual reportClock and Clock: timers fire in Advance,
+// in the caller's goroutine, in deadline order, and TimeOfEntry stamps
+// read the same manual time.
 type fakeClock struct {
 	mu     sync.Mutex
 	now    time.Time
@@ -46,6 +47,9 @@ func (c *fakeClock) Now() time.Time {
 	defer c.mu.Unlock()
 	return c.now
 }
+
+// Quality is the TimeQuality of SystemClock.
+func (c *fakeClock) Quality() TimeQuality { return systemClockQuality }
 
 func (c *fakeClock) AfterFunc(d time.Duration, f func()) reportTimer {
 	c.mu.Lock()
@@ -113,6 +117,7 @@ func newBufTmFixture(t *testing.T, bufTm uint32) *bufTmFixture {
 	srv, engine := newSpecServer(t)
 	clk := newFakeClock()
 	engine.clk = clk
+	engine.clock = clk
 	ctx := context.Background()
 	for _, w := range []struct {
 		attr string
@@ -394,6 +399,7 @@ func TestSpec_7_2_17_2_3_2_2_5_BufTmReportSegmented(t *testing.T) {
 	engine := srv.EnableReports()
 	clk := newFakeClock()
 	engine.clk = clk
+	engine.clock = clk
 	defer srv.Close()
 	ctx := context.Background()
 	c := dialLoopback(t, ctx, srv)

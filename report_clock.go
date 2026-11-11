@@ -4,11 +4,10 @@ package iec61850
 
 import "time"
 
-// reportClock is the time source of the report engine: TimeOfEntry
-// stamps and the BufTm timer. Tests replace it to run BufTm
-// deterministically.
+// reportClock runs the BufTm timer of the report engine. Tests replace
+// it to run BufTm deterministically. TimeOfEntry is a stamp and comes
+// from the server's [Clock] instead.
 type reportClock interface {
-	Now() time.Time
 	// AfterFunc calls f in its own goroutine after d.
 	AfterFunc(d time.Duration, f func()) reportTimer
 }
@@ -19,10 +18,8 @@ type reportTimer interface {
 	Stop() bool
 }
 
-// systemClock is the wall clock.
+// systemClock runs timers on the Go runtime's monotonic clock.
 type systemClock struct{}
-
-func (systemClock) Now() time.Time { return time.Now() }
 
 func (systemClock) AfterFunc(d time.Duration, f func()) reportTimer {
 	return time.AfterFunc(d, f)

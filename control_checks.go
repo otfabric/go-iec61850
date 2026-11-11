@@ -335,7 +335,7 @@ func (s *Server) completeTravel(ctx context.Context, reg *controlRegistration, r
 	wctx := context.WithoutCancel(ctx)
 	s.controlSetValue(wctx, servermodel.StoreKey(reg.ld, reg.ln+"$ST$"+reg.doPath+"$stVal"), DbposValue(on))
 	if s.hasST(reg, "t") {
-		s.controlSetValue(wctx, servermodel.StoreKey(reg.ld, reg.ln+"$ST$"+reg.doPath+"$t"), mms.NewUTCTime(time.Now()))
+		s.controlSetValue(wctx, servermodel.StoreKey(reg.ld, reg.ln+"$ST$"+reg.doPath+"$t"), stampUTC(s.clock))
 	}
 	s.countOperation(wctx, reg)
 	return nil

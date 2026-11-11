@@ -814,8 +814,9 @@ func TestSpec_8_1_Table85_ClientEncoding(t *testing.T) {
 	if DpCtlVal(true).Type() != mms.ValueTypeBitString {
 		t.Error("DpCtlVal changed type (kept for compatibility)")
 	}
-	if m, _ := encodeOper(OperateParams{CtlVal: BoolCtlVal(true)}, false).Structure(); len(m) != 6 || m[3].UTCTimeQuality() != 0x0a {
-		t.Errorf("Oper without operTm: %d members", len(m))
+	if m, _ := encodeOper(OperateParams{CtlVal: BoolCtlVal(true)}, false).Structure(); len(m) != 6 || m[3].UTCTimeQuality() != 0x2a {
+		// SystemClock: not synchronised, 10 bits (v1.18.0; 0x0a before).
+		t.Errorf("Oper without operTm: %d members, T quality %#x", len(m), m[3].UTCTimeQuality())
 	}
 
 	cancel := encodeCancel(CancelParams{CtlVal: BoolCtlVal(true), Test: true}, true)

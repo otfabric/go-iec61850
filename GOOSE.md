@@ -131,7 +131,10 @@ err = pub.Publish(values)   // state change: stNum+1, sqNum 0, schedule restarts
 - **TimeQuality** of `T` is `PublisherConfig.TimeQuality`; zero uses
   `DefaultTimeQuality` 0x2a (ClockNotSynchronized, 10 bits accuracy),
   since the publisher cannot know that the host clock is synchronised.
-  Set e.g. 0x0a when it is.
+  Set e.g. 0x0a when it is. `PublisherConfig.Clock`, when set, stamps
+  each new state with its time and TimeQuality instead; `Now` still
+  paces the retransmissions, so a step of the stamping clock does not
+  move them.
 - **Retransmission.** After a change the frame is repeated after
   `MinTime`, then at doubling intervals up to `MaxTime`, which then
   repeats as the heartbeat (defaults 10 ms and 1 s).
@@ -337,7 +340,9 @@ srv.SetValue(ctx, "LD0/GGIO1$ST$Ind1$stVal", mms.NewBoolean(true)) // -> new GOO
   configured per 8-1 Annex B, or not multicast), with ConfRev 0 (7-2
   18.2.1.3) or with a dataset that cannot be resolved.
 - `FixedOffs` true in SCL selects the fixed-length encoding (see
-  [Frames](#frames)); `GOOSEOptions.TimeQuality` sets the TimeQuality.
+  [Frames](#frames)); `T` and its TimeQuality come from
+  `ServerOptions.Clock` (see [API.md](API.md#clock)); a non-zero
+  `GOOSEOptions.TimeQuality` overrides the clock's quality.
 - The GoCB is an MMS variable `LLN0$GO$<name>` with GoEna, GoID, DatSet,
   ConfRev, NdsCom, DstAddress {Addr, PRIORITY, VID, APPID}, MinTime,
   MaxTime and FixedOffs (IEC 61850-8-1 GoCB). GoEna, GoID and DatSet are

@@ -1,5 +1,27 @@
 # go-iec61850 Releases
 
+## v1.22.0
+
+**Date:** 2026-11-11
+**Previous release:** v1.21.1
+
+Protocol timestamps come from an injectable clock that carries an honest IEC 61850-7-2 TimeQuality. The API is additive.
+
+### Added
+
+- `Clock` interface (`Now`, `Quality`), the default `SystemClock` and `ClockWithQuality(func() TimeQuality)`, the hook for a synchronisation-status source (chrony, ptp4l, the kernel NTP state); the library has no OS integration. See API.md "Clock".
+- `ServerOptions.Clock` stamps the `t` the default operate writes (also at the end of a `ProcessResponse` travel), report TimeStamp and BRCB TimeOfEntry, journal entry times (value writes and integrity), SGCB LActTm, GOOSE T and SV refrTm.
+- `ClientOptions.Clock` and `DialOptions.Clock` stamp the T of Operate, SelectWithValue and Cancel; `OperateParams.TQuality` / `CancelParams.TQuality` still override the quality per call.
+- `goose.PublisherConfig.Clock` and `sv.PublisherConfig.Clock` stamp T / refrTm; `Now` keeps pacing the frames. `sv.PublisherConfig.TimeQuality` and `sv.DefaultTimeQuality` (0x2a).
+- Timers (sboTimeout, operTm wait, operTimeout, IntgPd, BufTm, ResvTms, reservation release) stay on the monotonic clock and never call the `Clock`, so a wall-clock step does not fire or stretch them; `TestSpec_7_2_ClockStepKeepsTimers` checks it.
+
+### Changed
+
+- **Default TimeQuality is "not synchronised".** With no `Clock` set, `SystemClock` sends the TimeQuality octet 0x2a (ClockNotSynchronized, 10 bits of accuracy), as GOOSE already did: the client's control T (was 0x0a, synchronised), the default operate's `t` and LActTm (were 0x0a), the `t` at the end of a `ProcessResponse` travel, and SV refrTm (was 0x00). The times are the same host time as before. Set a `Clock` that reports synchronised when the host is.
+- A non-zero `GOOSEOptions.TimeQuality` now overrides the quality of `ServerOptions.Clock`; zero takes the clock's quality (the default `SystemClock` gives the same 0x2a as before).
+
+---
+
 ## v1.21.1
 
 **Date:** 2026-11-11

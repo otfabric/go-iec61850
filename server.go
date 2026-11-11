@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/otfabric/go-mms"
 
@@ -92,6 +91,10 @@ type Server struct {
 
 	// bg tracks background sends (CommandTermination) stopped by Close.
 	bg backgroundTasks
+
+	// clock stamps protocol values (ServerOptions.Clock); nil is
+	// SystemClock. Timers never use it.
+	clock Clock
 }
 
 // ServerOptions configures the IEC 61850 server.
@@ -163,6 +166,16 @@ type ServerOptions struct {
 	// take precedence over convenience fields above (FileProvider,
 	// Authenticate) when both are set.
 	MMS mms.ServerOptions
+
+	// Clock stamps the protocol times the server sets: the `t` the
+	// default operate writes (also at the end of a ProcessResponse
+	// travel), report TimeStamp and BRCB TimeOfEntry,
+	// journal entry times, SGCB LActTm, and GOOSE T and SV RefrTm
+	// (with their TimeQuality). Nil is [SystemClock]: the host time,
+	// "clock not synchronised". Timers (sboTimeout, operTm, IntgPd,
+	// BufTm, ResvTms) run on the monotonic clock and ignore it; see
+	// [Clock].
+	Clock Clock
 }
 
 // NewServer creates an IEC 61850 server from the given data model.
@@ -227,6 +240,7 @@ func NewServer(model *servermodel.Model, opts ServerOptions) (*Server, error) {
 		onConnect:          opts.OnConnect,
 		onDisconnect:       opts.OnDisconnect,
 		reportMaxPDU:       mmsOpts.MMS.MaxPDUSize,
+		clock:              clockOrSystem(opts.Clock),
 		newReportBuffer:    opts.NewReportBuffer,
 	}
 
@@ -273,7 +287,7 @@ func (s *Server) SetValue(ctx context.Context, storeKey string, val *mms.Value) 
 		s.reportEngine.NotifyValueChanged(ctx, storeKey)
 	}
 	if s.journalEngine != nil {
-		s.journalEngine.LogValueWrite(ctx, storeKey, time.Now())
+		s.journalEngine.LogValueWrite(ctx, storeKey, clockOrSystem(s.clock).Now())
 	}
 	if s.gooseEngine != nil {
 		s.gooseEngine.notify(storeKey)
@@ -369,7 +383,7 @@ func (s *Server) installWriteInterceptor() {
 		// A client write is logged like a local one (IEC 61850-7-2
 		// §17.3.4: the log is triggered as reporting is).
 		if s.journalEngine != nil {
-			s.journalEngine.LogValueWrite(ctx, storeKey, time.Now())
+			s.journalEngine.LogValueWrite(ctx, storeKey, clockOrSystem(s.clock).Now())
 		}
 		if s.reportEngine != nil {
 			s.reportEngine.NotifyValueChanged(ctx, storeKey)

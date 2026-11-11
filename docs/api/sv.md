@@ -114,6 +114,12 @@ const DefaultNominalFrequency = 50.0
 DefaultNominalFrequency is the nominal power system frequency used to convert a SmpPerPeriod sample rate into samples per second.
 
 ```go
+const DefaultTimeQuality uint8 = 0x2a
+```
+
+DefaultTimeQuality is the TimeQuality octet of refrTm when PublisherConfig.TimeQuality is zero: ClockNotSynchronized (0x20) with 10 bits of sub-second accuracy (IEC 61850-8-1 Table 32), as GOOSE's default. The publisher cannot know whether the host clock is synchronised, so it does not claim it. Before v1.18.0 refrTm was sent with the octet 0x00.
+
+```go
 const DefaultTimeout = 100 * time.Millisecond
 ```
 
@@ -1167,8 +1173,21 @@ type PublisherConfig struct {
 	// [DefaultMaxBurst] frames); samples beyond it are skipped.
 	MaxBurst int
 
-	// Now is the clock (default time.Now). Tests may substitute it.
+	// Now is the clock (default time.Now) that paces the samples and,
+	// without Clock, stamps refrTm. Tests may substitute it.
 	Now func() time.Time
+
+	// TimeQuality is the TimeQuality octet of refrTm without Clock.
+	// Zero uses [DefaultTimeQuality] (clock not synchronised).
+	TimeQuality uint8
+
+	// Clock, when non-nil, stamps refrTm: it is called once per frame
+	// and returns the time of the frame's last sample and its
+	// TimeQuality octet; earlier samples of the frame are stamped one
+	// sample period apart before it. The sample schedule keeps using
+	// Now, so a step of Clock does not change the sample rate. The
+	// server's SV engine sets it from ServerOptions.Clock.
+	Clock func() (t time.Time, quality uint8)
 
 	// Logger receives diagnostics; nil disables logging.
 	Logger *slog.Logger

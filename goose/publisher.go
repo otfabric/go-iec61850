@@ -123,9 +123,16 @@ type PublisherConfig struct {
 	// Metrics receives counters. Nil disables metrics.
 	Metrics Metrics
 
-	// Now returns the current time; nil uses [time.Now]. Intended for
-	// tests.
+	// Now returns the current time; nil uses [time.Now]. It paces the
+	// retransmissions and, without Clock, stamps T. Intended for tests.
 	Now func() time.Time
+
+	// Clock, when non-nil, stamps every new state: it returns T and
+	// its TimeQuality octet, which then replaces TimeQuality.
+	// Retransmission timing keeps using Now, so a step of Clock does
+	// not change the retransmission curve. The server's GOOSE engine
+	// sets it from ServerOptions.Clock.
+	Clock func() (t time.Time, quality uint8)
 }
 
 func (c *PublisherConfig) normalize() error {
@@ -223,6 +230,7 @@ type Publisher struct {
 	stNum    uint32
 	sqNum    uint32
 	tChange  time.Time
+	tq       uint8 // TimeQuality of tChange
 	interval time.Duration
 	nextAt   time.Time
 	enabled  bool
@@ -365,10 +373,14 @@ func (p *Publisher) newStateLocked() error {
 		p.stNum = 1
 	}
 	p.sqNum = 0
-	p.tChange = p.cfg.Now()
+	now := p.cfg.Now()
+	p.tChange, p.tq = now, p.cfg.TimeQuality
+	if p.cfg.Clock != nil {
+		p.tChange, p.tq = p.cfg.Clock()
+	}
 	p.started = true
 	p.interval = p.cfg.MinTime
-	p.nextAt = p.tChange.Add(p.interval)
+	p.nextAt = now.Add(p.interval)
 	p.signal()
 	if !p.enabled {
 		return nil
@@ -393,7 +405,7 @@ func (p *Publisher) sendLocked(retrans bool) error {
 			DatSet:            c.DatSet,
 			GoID:              c.GoID,
 			T:                 p.tChange,
-			TimeQuality:       c.TimeQuality,
+			TimeQuality:       p.tq,
 			StNum:             p.stNum,
 			SqNum:             p.sqNum,
 			Test:              c.Test,

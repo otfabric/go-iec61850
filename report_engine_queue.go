@@ -20,7 +20,9 @@ func (re *ReportEngine) NotifyValueChanged(_ context.Context, storeKey string) {
 	if re.stopped() {
 		return
 	}
-	now := re.clk.Now()
+	// TimeOfEntry is a stamp (the report TimeStamp, IEC 61850-7-2
+	// §17.2.3.2.2.9), not a timer: it comes from the server's Clock.
+	now := clockOrSystem(re.clock).Now()
 
 	re.mu.RLock()
 	defer re.mu.RUnlock()
@@ -225,7 +227,7 @@ func (re *ReportEngine) snapshotEntryLocked(rt *rcbRuntime, reason ReasonCode, g
 		reasons[i] = reason
 	}
 	return ReportEntry{
-		TimeOfEntry: re.clk.Now(),
+		TimeOfEntry: clockOrSystem(re.clock).Now(),
 		Values:      re.readMemberValues(rt),
 		Reasons:     reasons,
 		Inclusion:   inclusion,
@@ -458,6 +460,7 @@ func (re *ReportEngine) nextReport(rt *rcbRuntime, stop chan struct{}) ([][]*mms
 		}
 
 		p := reportParams{
+			clock:       re.clock,
 			rptID:       rt.rptID,
 			optFlds:     maskRCBOptFlds(rt.optFlds, rt.buffered),
 			seqNum:      rt.seqNum,

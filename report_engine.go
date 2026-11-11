@@ -51,6 +51,10 @@ type ReportEngine struct {
 	// reports are segmented (IEC 61850-7-2 §17.2.3.2.2.5).
 	maxPDU int
 
+	// clock stamps TimeOfEntry (the server's Clock); nil is
+	// SystemClock. BufTm and IntgPd timers never use it.
+	clock Clock
+
 	mu   sync.RWMutex
 	rcbs map[string]*rcbRuntime // keyed by "ldName/rcbItemID"
 
@@ -63,7 +67,7 @@ type ReportEngine struct {
 	life     context.Context
 	stopLife context.CancelFunc
 
-	// clk stamps TimeOfEntry and runs the BufTm timers.
+	// clk runs the BufTm timers; TimeOfEntry comes from clock.
 	clk reportClock
 
 	// newBuffer returns the buffer of an RCB (ServerOptions.NewReportBuffer);
@@ -167,6 +171,7 @@ func (s *Server) EnableReports() *ReportEngine {
 		mmsSrv: s.mms,
 		model:  s.model,
 		maxPDU: s.reportMaxPDU,
+		clock:  s.clock,
 		rcbs:   make(map[string]*rcbRuntime),
 		stopCh: make(chan struct{}),
 		clk:    systemClock{},

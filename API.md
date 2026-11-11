@@ -71,6 +71,7 @@ type DialOptions struct {
     Metrics    mms.Metrics     // used when MMS.Metrics is nil
     MaxTPDULength int          // COTP TPDU size proposed; 0 → 1024, 65531 → omitted
     Dialer func(ctx context.Context, network, addr string) (net.Conn, error) // passed to iso.WithDialer; nil: net.Dialer
+    Clock  Clock // stamps control T; nil: SystemClock (see Clock)
 }
 ```
 
@@ -119,6 +120,7 @@ type ClientOptions struct {
     Strictness StrictnessOptions
     Cache      CacheStrategy
     IEDName    string
+    Clock      Clock // stamps control T; nil: SystemClock
 }
 ```
 
@@ -649,7 +651,7 @@ type OperateParams struct {
     OperTm    time.Time
     Test      bool
     Check     CheckConditions
-    TQuality  *TimeQuality // T time quality; nil: go-mms default 0x0a
+    TQuality  *TimeQuality // T time quality; nil: the client Clock's (SystemClock: 0x2a)
 }
 ```
 
@@ -966,6 +968,51 @@ func (ts Timestamp) IsZero() bool
 func (ts Timestamp) String() string
 ```
 
+### Clock
+
+```go
+type Clock interface {
+    Now() time.Time
+    Quality() TimeQuality
+}
+
+type SystemClock struct{} // time.Now, ClockNotSynchronized, 10 bits (0x2a)
+
+func (SystemClock) Now() time.Time
+func (SystemClock) Quality() TimeQuality
+
+func ClockWithQuality(quality func() TimeQuality) Clock // time.Now + quality(); nil: SystemClock
+```
+
+A `Clock` stamps the protocol times the library sends, with the TimeQuality
+of IEC 61850-7-2 TimeStamp (IEC 61850-8-1 encodes it as the last UtcTime
+octet). `ClientOptions.Clock` / `DialOptions.Clock` stamp the T of Oper,
+SBOw and Cancel (a per-call `TQuality` overrides the quality only).
+`ServerOptions.Clock` stamps:
+
+| Value | Encoding | Quality |
+|---|---|---|
+| `t` written by the default operate and at the end of a `ProcessResponse` travel | UtcTime | clock |
+| report TimeStamp, BRCB TimeOfEntry | EntryTime (BinaryTime) | none on the wire |
+| journal entry time (value writes, integrity) | TimeOfDay | none on the wire |
+| SGCB LActTm | UtcTime | clock |
+| GOOSE T | UtcTime | clock, or `GOOSEOptions.TimeQuality` when set |
+| SV refrTm | UtcTime | clock |
+
+The default `SystemClock` cannot know whether the host clock is synchronised,
+so it says "not synchronised" (0x2a). An application that knows its sync state
+supplies its own `Clock`, typically `ClockWithQuality` over a status it
+refreshes in the background from chrony (`chronyc -c tracking`), ptp4l (pmc
+`TIME_STATUS_NP`, `PARENT_DATA_SET`) or the kernel NTP state (`adjtimex`);
+the library has no OS integration.
+
+Timers are not stamps: sboTimeout, the operTm wait, operTimeout, IntgPd,
+BufTm, ResvTms and the reservation and association-loss releases run on the
+Go runtime's monotonic clock and never call the `Clock`, so stepping the wall
+clock (an NTP or PTP correction, a fake clock in tests) does not fire, shorten
+or stretch them. The same split holds in the `goose` and `sv` publishers:
+`PublisherConfig.Now` paces, `PublisherConfig.Clock` stamps.
+
 ---
 
 ## Object References
@@ -1148,6 +1195,7 @@ type ServerOptions struct {
     // nil (or a nil result): NewMemoryReportBuffer(1000, 0).
     NewReportBuffer func(ldName, rcbItemID string) ReportBuffer
     MMS          mms.ServerOptions // incl. AssociationTimeout
+    Clock        Clock // stamps t, TimeOfEntry, journal, LActTm, GOOSE T, SV refrTm; nil: SystemClock
 }
 
 type ServerIdentity struct {
@@ -1347,6 +1395,7 @@ type GOOSEOptions struct {
     StartDisabled bool            // GoEna false initially
     Logger        *slog.Logger
     Metrics       goose.Metrics
+    TimeQuality   uint8 // non-zero overrides the ServerOptions.Clock quality of T
 }
 
 type GOOSEEngine struct { /* unexported */ }
@@ -1544,7 +1593,9 @@ type PublisherConfig struct {
     Values               []*mms.Value
     Logger               *slog.Logger
     Metrics              Metrics
-    Now                  func() time.Time
+    TimeQuality          uint8 // T quality without Clock; 0: DefaultTimeQuality (0x2a)
+    Now                  func() time.Time // paces retransmissions; stamps T without Clock
+    Clock                func() (t time.Time, quality uint8) // stamps T and its quality
 }
 
 type PublisherState struct {
@@ -1822,6 +1873,7 @@ func Volts(count int32) float64; func VoltsCount(v float64) int32 // 10 mV/count
 ```go
 const DefaultNominalFrequency = 50.0 // Hz, for SmpPerPeriod rates
 const DefaultMaxBurst = 16           // frames sent at once to catch up
+const DefaultTimeQuality uint8 = 0x2a // refrTm quality: not synchronised
 
 type PublisherConfig struct {
     Dst, Src         MAC
@@ -1844,7 +1896,9 @@ type PublisherConfig struct {
     Source           func(info SampleInfo, dst []byte) []byte
     Disabled         bool
     MaxBurst         int // default 16
-    Now              func() time.Time
+    Now              func() time.Time // paces samples; stamps refrTm without Clock
+    TimeQuality      uint8            // refrTm quality without Clock; 0: DefaultTimeQuality
+    Clock            func() (t time.Time, quality uint8) // refrTm of the frame's last sample
     Logger           *slog.Logger
     Metrics          Metrics
 }
