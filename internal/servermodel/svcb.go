@@ -137,6 +137,10 @@ func convertSvCB(sc *scl.SMVControl, smv *scl.SMVAddress, where string, warnings
 		warn("SMV %q: %v", sc.Name, err)
 		return def
 	}
+	if !addr.HasAppID {
+		addr.AppID = DefaultSVAppID
+		warn("SMV %q: no APPID, using the default 0x%04X (9-2 5.3.3.4.2)", sc.Name, addr.AppID)
+	}
 	def.HasAddress = true
 	def.DstAddr, def.AppID, def.VLANID, def.VLANPriority, def.HasVLAN = addr.Dst, addr.AppID, addr.VLANID, addr.VLANPriority, addr.HasVLAN
 	return def

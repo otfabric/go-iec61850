@@ -116,8 +116,8 @@ func TestControls_Edges(t *testing.T) {
 									{Name: "GCOK", DatSet: "DS1"},
 								},
 								SMVControls: []scl.SMVControl{
-									{Name: "SVEmpty", DatSet: ""},
-									{Name: "SVBad", DatSet: "Ghost"},
+									{Name: "SVEmpty", DatSet: "", SmpRate: 80, NofASDU: 1},
+									{Name: "SVBad", DatSet: "Ghost", SmpRate: 80, NofASDU: 1},
 								},
 							},
 							LNs: []scl.LN{{
@@ -168,7 +168,7 @@ func TestDatasets_Edges(t *testing.T) {
 										{LDInst: "", LNClass: "MMXU"},
 										{LDInst: "LD0", LNClass: ""},
 										{LDInst: "GhostLD", LNClass: "MMXU"},
-										{LDInst: "LD0", LNClass: "MMXU"},
+										{LDInst: "LD0", LNClass: "MMXU", LNInst: "1"}, // resolves (the LN is MMXU1)
 									},
 								}},
 							},
@@ -281,10 +281,13 @@ func TestTemplates_Edges(t *testing.T) {
 	if !hasCodeMsg(diags, "missing-dotype", "DOT_GHOST") {
 		t.Error("expected missing-dotype for SDO")
 	}
-	// Resolved Struct/Enum refs and empty typRef must not produce errors.
+	// 6 Ed2 9.5.4: bType Struct without type is an error (SCL-06).
+	if !hasCodeMsg(diags, "missing-type", "Struct") {
+		t.Error("expected missing-type for BDA emptyRef")
+	}
+	// Resolved Struct/Enum refs must not produce errors.
 	for _, d := range diags {
-		if strings.Contains(d.Path, ".DA[st]") || strings.Contains(d.Path, ".DA[en]") ||
-			strings.Contains(d.Path, ".BDA[emptyRef]") || strings.Contains(d.Path, ".SDO[ok]") {
+		if strings.Contains(d.Path, ".DA[st]") || strings.Contains(d.Path, ".DA[en]") || strings.Contains(d.Path, ".SDO[ok]") {
 			t.Errorf("unexpected diagnostic for valid/skipped ref: %v", d)
 		}
 	}

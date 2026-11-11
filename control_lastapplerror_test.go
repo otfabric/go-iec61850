@@ -337,17 +337,29 @@ func TestHandleControlReport_Routing(t *testing.T) {
 	}
 
 	// A LastApplError alone goes to the control write in flight.
-	w := c.watchLastApplError("LD/GGIO1$CO$SPCSO1")
-	other := c.watchLastApplError("LD/GGIO1$CO$SPCSO2")
+	w := c.watchLastApplError("LD/GGIO1$CO$SPCSO1", 1)
+	other := c.watchLastApplError("LD/GGIO1$CO$SPCSO2", 1)
+	// CTL-17: a write of the same control with another ctlNum does not
+	// get it (IEC 61850-8-1 20.11 NOTE).
+	otherNum := c.watchLastApplError("LD/GGIO1$CO$SPCSO1", 2)
 	c.handleControlReport(&mms.InformationReportIndication{
 		Variables: []mms.ObjectName{laeName},
 		Values:    []*mms.Value{laeValue("LD/GGIO1$CO$SPCSO1$Oper", mms.NewUnsigned(1), 18)},
 	})
-	if w.result() == nil || w.result().AddCause != AddCauseObjectNotSelected || other.result() != nil {
-		t.Errorf("LastApplError routed to %+v / %+v", w.result(), other.result())
+	if w.result() == nil || w.result().AddCause != AddCauseObjectNotSelected || other.result() != nil || otherNum.result() != nil {
+		t.Errorf("LastApplError routed to %+v / %+v / %+v", w.result(), other.result(), otherNum.result())
+	}
+	// The four-member layout has no ctlNum: matched by the control alone.
+	c.handleControlReport(&mms.InformationReportIndication{
+		Variables: []mms.ObjectName{laeName},
+		Values:    []*mms.Value{laeValue("LD/GGIO1$CO$SPCSO1$Oper", nil, 19)},
+	})
+	if otherNum.result() == nil || otherNum.result().AddCause != AddCauseObjectAlreadySelected {
+		t.Errorf("four-member LastApplError not routed: %+v", otherNum.result())
 	}
 	c.unwatchLastApplError(w)
 	c.unwatchLastApplError(other)
+	c.unwatchLastApplError(otherNum)
 
 	// A negative termination with an undecodable LastApplError is still
 	// negative; waiters are served in order.

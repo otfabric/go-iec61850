@@ -25,21 +25,31 @@ import (
 // The engine is created by [Server.EnableReports] and runs until the
 // server is shut down or [ReportEngine.Stop] is called.
 //
-// # Interoperability note
+// # Ownership and delivery
 //
-// The report encoding follows IEC 61850-8-1 field ordering (RptID,
-// OptFlds, optional fields by flag order, SubSeqNum, MoreSegments,
-// inclusion bitmap, values, reason codes). However, IEC 61850 report
-// encoding is unforgiving — small ordering or type mismatches can
-// cause decode failures on the receiving side. The encoding has been
-// validated in loopback tests with the go-iec61850 client decoder
-// but should be verified against real devices or libiec61850 before
-// being considered production-ready.
+// An RCB instance is owned by one client at a time and only that client
+// receives its reports (IEC 61850-7-2 §17.2.1). A URCB is reserved by
+// Resv=TRUE or implicitly by RptEna=TRUE (§17.2.4.5); a BRCB is reserved
+// by the client that enables it (Table 37 c3). While reserved, writes by
+// other clients are answered with temporarily-unavailable (IEC 61850-8-1
+// §8.1.3.4.4.2). When the owning association is lost the RCB is
+// disabled and released (§17.2.2.5 Figure 24, §17.2.4.4).
+//
+// Each enabled RCB has one delivery goroutine that formats and sends its
+// entries in creation order (§17.2.3.2.3.5), so buffered (replayed) and
+// live reports never overtake each other and SqNum is contiguous.
+//
+// A BRCB buffers entries in all states (§17.2.3.2.3.6) from the moment
+// its DatSet references an existing data set.
 type ReportEngine struct {
 	logger *slog.Logger
 	store  *servermodel.ValueStore
 	mmsSrv *mms.Server
 	model  *servermodel.Model
+
+	// maxPDU bounds the encoded size of one InformationReport; longer
+	// reports are segmented (IEC 61850-7-2 §17.2.3.2.2.5).
+	maxPDU int
 
 	mu   sync.RWMutex
 	rcbs map[string]*rcbRuntime // keyed by "ldName/rcbItemID"
@@ -55,6 +65,7 @@ type ReportEngine struct {
 }
 
 // rcbRuntime holds the live state for a single report control block.
+// All fields are guarded by mu.
 type rcbRuntime struct {
 	mu sync.Mutex
 
@@ -63,7 +74,8 @@ type rcbRuntime struct {
 	rcbItemID string
 	buffered  bool
 
-	// Configuration (read from store on enable).
+	// Configuration, kept equal to the store attributes: loaded at
+	// start-up and updated on every accepted write.
 	rptID   string
 	datSet  string
 	confRev uint32
@@ -72,14 +84,20 @@ type rcbRuntime struct {
 	bufTm   uint32
 	intgPd  uint32
 
+	// dsValid is true when datSet resolved to a data set of the model.
+	dsValid bool
+
+	// Ownership (IEC 61850-7-2 §17.2.1, §17.2.4.5, Table 37 c3).
+	owner        *mms.ServerConn // reserving client; nil when free or local
+	reserved     bool            // URCB Resv attribute
+	explicitResv bool            // URCB: reserved by Resv=TRUE (not only by RptEna)
+
 	// Runtime state.
-	enabled     bool
-	reserved    bool // URCB only
-	reserveConn *mms.ServerConn
-	enableConn  *mms.ServerConn // connection that enabled this RCB (URCB delivery target)
-	seqNum      uint32
-	bufOvfl     bool   // set when a buffered entry was dropped due to overflow
-	entryID     uint64 // BRCB: auto-incrementing entry ID
+	enabled    bool
+	enableConn *mms.ServerConn // delivery target; nil for a local enable
+	resync     bool            // BRCB resync state (Figure 24)
+	resyncID   uint64          // BRCB: EntryID set by the client in resync
+	seqNum     uint32          // SqNum of the next report
 
 	// Dataset member resolution cache.
 	memberKeys  []string                  // store keys for dataset members
@@ -90,27 +108,65 @@ type rcbRuntime struct {
 	// Previous values for change detection.
 	prevValues []*mms.Value
 
-	// Integrity timer.
-	intgTicker *time.Ticker
-	intgStop   chan struct{}
+	// Entry queue, in creation order. A BRCB keeps transmitted entries
+	// (up to bufMax) for a later resync; a URCB drops an entry once it
+	// is sent.
+	bufQueue    []*bufferedEntry
+	bufMax      int
+	entryID     uint64 // id of the newest entry created
+	lastSentID  uint64 // id of the last entry formatted and queued for transmission
+	pendingOvfl bool   // BufOvfl=TRUE goes into the next report
+	discarded   bool   // an entry was discarded since start-up or the last purge
 
-	// Buffered report queue (BRCB only).
-	bufQueue []*bufferedEntry
-	bufMax   int
+	// BufTm aggregation (IEC 61850-7-2 §17.2.2.9).
+	agg      *bufferedEntry
+	aggTimer *time.Timer
+	aggGen   uint64
+
+	// Integrity timer goroutine; closed to stop it.
+	intgStop chan struct{}
+
+	// Delivery goroutine of the current enable; sendStop is closed on
+	// disable, wake signals new entries.
+	sendStop chan struct{}
+	wake     chan struct{}
 }
 
-// bufferedEntry holds a single buffered report waiting for delivery.
+// bufferedEntry holds a single report entry waiting for, or kept after,
+// delivery.
 type bufferedEntry struct {
+	id          uint64
 	entryID     []byte
 	timeOfEntry time.Time
 	values      []*mms.Value
 	reasons     []ReasonCode
 	inclusion   []bool
+
+	// gi marks a general-interrogation entry: it is sent once in the
+	// enable session that requested it and never replayed (§17.2.2.13,
+	// §17.2.3.2.3.6 buffers dchg/qchg/dupd/integrity only).
+	gi   bool
+	sent bool
 }
 
+// defaultRCBBufMax is the default entry capacity of a BRCB buffer.
+const defaultRCBBufMax = 1000
+
+// reportDispatchDelay defers the first report after a quiet period so
+// that the Write response that triggered it reaches the client first;
+// libiec61850 discards a report received while it waits for that
+// response. Reports keep their order regardless (one sender per RCB).
+var reportDispatchDelay = 100 * time.Millisecond
+
+// connReapInterval is how often the engine checks for owners whose
+// association has ended (besides the check after every Server.Serve).
+var connReapInterval = time.Second
+
 // EnableReports creates and starts the [ReportEngine] for this server.
-// It scans all RCBs in the model, creates runtime state for each, and
-// begins monitoring for GI/integrity triggers.
+// It scans all RCBs in the model, creates runtime state for each, starts
+// buffering for every BRCB whose DatSet references an existing data set
+// (IEC 61850-7-2 §17.2.2.5 Figure 24 power-up), and begins monitoring
+// for GI/integrity triggers.
 //
 // Call this after [NewServer] and before [Server.Serve] or
 // [Server.ListenAndServe].
@@ -120,8 +176,12 @@ func (s *Server) EnableReports() *ReportEngine {
 		store:  s.store,
 		mmsSrv: s.mms,
 		model:  s.model,
+		maxPDU: s.reportMaxPDU,
 		rcbs:   make(map[string]*rcbRuntime),
 		stopCh: make(chan struct{}),
+	}
+	if engine.maxPDU <= 0 {
+		engine.maxPDU = defaultReportMaxPDU
 	}
 	engine.life, engine.stopLife = context.WithCancel(context.Background())
 
@@ -136,6 +196,9 @@ func (s *Server) EnableReports() *ReportEngine {
 		}
 	}
 
+	engine.wg.Add(1)
+	go engine.reapLoop()
+
 	s.reportEngine = engine
 	s.installWriteInterceptor()
 	s.logger.Info("iec61850: report engine enabled", "rcbs", len(engine.rcbs))
@@ -143,7 +206,7 @@ func (s *Server) EnableReports() *ReportEngine {
 }
 
 // Stop shuts down the report engine, stopping all integrity timers
-// and disabling all RCBs.
+// and delivery goroutines and disabling all RCBs.
 func (re *ReportEngine) Stop() {
 	re.stopOnce.Do(func() {
 		if re.stopLife != nil {
@@ -152,11 +215,25 @@ func (re *ReportEngine) Stop() {
 		close(re.stopCh)
 		re.mu.RLock()
 		for _, rt := range re.rcbs {
-			rt.disable()
+			rt.mu.Lock()
+			re.disableLocked(rt)
+			rt.stopIntegrityLocked()
+			rt.stopAggLocked()
+			rt.mu.Unlock()
 		}
 		re.mu.RUnlock()
 		re.wg.Wait()
 	})
+}
+
+// stopped reports whether Stop has been called.
+func (re *ReportEngine) stopped() bool {
+	select {
+	case <-re.stopCh:
+		return true
+	default:
+		return false
+	}
 }
 
 // lifeContext returns the engine's lifetime context, which ends on Stop.
@@ -173,19 +250,6 @@ func (re *ReportEngine) lifeContext() context.Context {
 // that stops reading cannot hold a delivery goroutine (and Stop) forever.
 func (re *ReportEngine) sendContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(re.lifeContext(), unsolicitedSendTimeout)
-}
-
-// pause waits for d and reports true, or returns false as soon as the
-// engine stops.
-func (re *ReportEngine) pause(d time.Duration) bool {
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-t.C:
-		return true
-	case <-re.lifeContext().Done():
-		return false
-	}
 }
 
 // send delivers one InformationReport within sendContext.
@@ -217,245 +281,69 @@ func (re *ReportEngine) registerRCBRuntime(ldName, lnName string, rpt *servermod
 		lnName:    lnName,
 		rcbItemID: rcbItemID,
 		buffered:  rpt.Buffered,
-		bufMax:    1000, // default buffer size for BRCB
+		bufMax:    defaultRCBBufMax,
+		wake:      make(chan struct{}, 1),
 	}
+
+	rt.mu.Lock()
+	re.loadConfigLocked(rt)
+	if rt.buffered {
+		// IEC 61850-7-2 §17.2.2.5 (Figure 24): upon power-up buffering
+		// starts if DatSet references an existing data set.
+		if re.resolveDataset(rt) == nil {
+			rt.prevValues = re.readMemberValues(rt)
+		}
+		re.restartIntegrityLocked(rt)
+	}
+	rt.mu.Unlock()
 
 	re.rcbs[key] = rt
 }
 
-// HandleRCBWrite is called when a client writes to an RCB subfield.
-// It intercepts RptEna, GI, Resv, and PurgeBuf writes to trigger
-// the appropriate runtime behavior. The optional conn parameter
-// identifies the MMS connection that issued the write, used for
-// URCB connection-scoped delivery.
-func (re *ReportEngine) HandleRCBWrite(ctx context.Context, ldName, rcbItemID, subfield string, val *mms.Value, conn ...*mms.ServerConn) error {
-	key := ldName + "/" + rcbItemID
-
-	re.mu.RLock()
-	rt, ok := re.rcbs[key]
-	re.mu.RUnlock()
-	if !ok {
-		return nil
-	}
-
-	var sc *mms.ServerConn
-	if len(conn) > 0 {
-		sc = conn[0]
-	}
-
-	switch subfield {
-	case "RptEna":
-		b, ok := val.Bool()
-		if !ok {
-			return fmt.Errorf("iec61850: RptEna: expected boolean")
-		}
-		if b {
-			// For URCB: enforce that only the reservation owner can enable.
-			if !rt.buffered {
-				rt.mu.Lock()
-				reserved := rt.reserved
-				reserveConn := rt.reserveConn
-				rt.mu.Unlock()
-				if reserved && reserveConn != nil && reserveConn != sc {
-					return &mms.DataAccessError{Code: mms.DataAccessErrorObjectAccessDenied}
-				}
-			}
-			return re.enableRCB(ctx, rt, sc)
-		}
-		rt.disable()
-		// BRCB: clear the server-written EntryID from the store so that a
-		// subsequent re-enable without a client-written EntryID results in a
-		// full replay rather than accidentally filtering entries by the stale
-		// value last written when the entry was buffered.
-		if rt.buffered {
-			skFn := func(suffix string) string {
-				return servermodel.StoreKey(rt.ldName, rt.rcbItemID+"$"+suffix)
-			}
-			re.store.Set(skFn("EntryID"), mms.NewOctetString(make([]byte, 8)))
-		}
-		return nil
-
-	case "GI":
-		b, ok := val.Bool()
-		if !ok {
-			return fmt.Errorf("iec61850: GI: expected boolean")
-		}
-		if b {
-			re.triggerGI(ctx, rt)
-		}
-		return nil
-
-	case "Resv":
-		if rt.buffered {
-			return fmt.Errorf("iec61850: Resv not applicable to BRCB")
-		}
-		b, ok := val.Bool()
-		if !ok {
-			return fmt.Errorf("iec61850: Resv: expected boolean")
-		}
-		rt.mu.Lock()
-		defer rt.mu.Unlock()
-		if b {
-			// Reject if already reserved by a different active connection.
-			if rt.reserved && rt.reserveConn != nil && rt.reserveConn != sc {
-				if re.isConnActive(rt.reserveConn) {
-					return &mms.DataAccessError{Code: mms.DataAccessErrorObjectAccessDenied}
-				}
-				// Previous owner disconnected — take over the reservation.
-			}
-			rt.reserved = true
-			rt.reserveConn = sc
-		} else {
-			// Only the reservation owner may clear it.
-			if rt.reserved && rt.reserveConn != nil && sc != nil && rt.reserveConn != sc {
-				return &mms.DataAccessError{Code: mms.DataAccessErrorObjectAccessDenied}
-			}
-			rt.reserved = false
-			rt.reserveConn = nil
-		}
-		return nil
-
-	case "PurgeBuf":
-		if !rt.buffered {
-			return nil
-		}
-		b, ok := val.Bool()
-		if !ok {
-			return nil
-		}
-		if b {
-			rt.mu.Lock()
-			rt.bufQueue = nil
-			rt.mu.Unlock()
-		}
-		return nil
-
-	default:
-		re.logger.Debug("iec61850: RCB write to unhandled subfield",
-			"rcb", key, "subfield", subfield)
-		return nil
-	}
+// sk returns the store key of RCB attribute suffix.
+func (rt *rcbRuntime) sk(suffix string) string {
+	return servermodel.StoreKey(rt.ldName, rt.rcbItemID+"$"+suffix)
 }
 
-// enableRCB reads current RCB configuration from the store, resolves
-// the dataset, and starts integrity/change monitoring. The optional
-// conn is stored as the delivery target for URCBs.
-func (re *ReportEngine) enableRCB(_ context.Context, rt *rcbRuntime, conn *mms.ServerConn) error {
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-
-	if rt.enabled {
-		return nil
-	}
-
-	sk := func(suffix string) string {
-		return servermodel.StoreKey(rt.ldName, rt.rcbItemID+"$"+suffix)
-	}
-
-	if v := re.store.Get(sk("RptID")); v != nil {
+// loadConfigLocked reads the RCB configuration attributes from the store.
+func (re *ReportEngine) loadConfigLocked(rt *rcbRuntime) {
+	rt.rptID = ""
+	if v := re.store.Get(rt.sk("RptID")); v != nil {
 		if s, ok := v.VisibleString(); ok {
 			rt.rptID = s
 		}
 	}
 	if rt.rptID == "" {
+		// IEC 61850-8-1 §17.2.1: a NULL RptID reports the RCB reference.
 		rt.rptID = rt.ldName + "/" + rt.rcbItemID
 	}
-
-	if v := re.store.Get(sk("DatSet")); v != nil {
+	rt.datSet = ""
+	if v := re.store.Get(rt.sk("DatSet")); v != nil {
 		if s, ok := v.VisibleString(); ok {
 			rt.datSet = s
 		}
 	}
-
-	if v := re.store.Get(sk("ConfRev")); v != nil {
+	if v := re.store.Get(rt.sk("ConfRev")); v != nil {
 		if u, ok := v.Uint32(); ok {
 			rt.confRev = u
 		}
 	}
-
-	if v := re.store.Get(sk("OptFlds")); v != nil {
+	if v := re.store.Get(rt.sk("OptFlds")); v != nil {
 		rt.optFlds = decodeOptFlds(v)
 	}
-
-	if v := re.store.Get(sk("TrgOps")); v != nil {
+	if v := re.store.Get(rt.sk("TrgOps")); v != nil {
 		rt.trgOps = decodeTrgOps(v)
 	}
-
-	if v := re.store.Get(sk("BufTm")); v != nil {
+	if v := re.store.Get(rt.sk("BufTm")); v != nil {
 		if u, ok := v.Uint32(); ok {
 			rt.bufTm = u
 		}
 	}
-
-	if v := re.store.Get(sk("IntgPd")); v != nil {
+	if v := re.store.Get(rt.sk("IntgPd")); v != nil {
 		if u, ok := v.Uint32(); ok {
 			rt.intgPd = u
 		}
 	}
-
-	if err := re.resolveDataset(rt); err != nil {
-		return fmt.Errorf("iec61850: enable RCB %s: %w", rt.rcbItemID, err)
-	}
-
-	rt.prevValues = re.readMemberValues(rt)
-	rt.enabled = true
-	rt.enableConn = conn
-	rt.bufOvfl = false
-
-	re.logger.Debug("iec61850: enableRCB", "rcb", rt.rcbItemID, "hasConn", conn != nil,
-		"datSet", rt.datSet, "memberKeys", rt.memberKeys)
-
-	// Invariant: store.Set calls here bypass the write interceptor.
-	// They go directly to ValueStore.Set, not through MMS write
-	// callbacks. This is safe and intentional — do not route these
-	// through the interceptor path or recursion will occur.
-	re.store.Set(sk("RptEna"), mms.NewBoolean(true))
-
-	// BRCB: replay buffered entries to the enabling connection so the
-	// client receives entries it missed while disconnected.
-	if rt.buffered && conn != nil && len(rt.bufQueue) > 0 {
-		// Read the resume EntryID that was (optionally) written by the client
-		// before enabling. If non-zero, only entries after that point are sent.
-		var resumeID uint64
-		if v := re.store.Get(sk("EntryID")); v != nil {
-			if bs, ok := v.OctetString(); ok {
-				resumeID = decodeEntryID(bs)
-			}
-		}
-		entries := filterEntriesAfter(rt.bufQueue, resumeID)
-		if len(entries) == 0 {
-			// Nothing to replay; skip starting the goroutine.
-			goto startIntegrity
-		}
-		replayEntries := make([]*bufferedEntry, len(entries))
-		copy(replayEntries, entries)
-		rptID := rt.rptID
-		optFlds := rt.optFlds
-		confRev := rt.confRev
-		datSet := rt.datSet
-		rcbItemID := rt.rcbItemID
-		dataRefs := append([]string(nil), rt.memberKeys...)
-		re.wg.Go(func() {
-			re.replayBRCBEntries(rcbItemID, rptID, optFlds, confRev, datSet, dataRefs, replayEntries, conn)
-		})
-	}
-
-startIntegrity:
-
-	// Start integrity timer if configured.
-	if rt.intgPd > 0 && rt.trgOps.Has(TrgOpIntegrity) {
-		rt.intgStop = make(chan struct{})
-		rt.intgTicker = time.NewTicker(time.Duration(rt.intgPd) * time.Millisecond)
-		tickC := rt.intgTicker.C
-		stopC := rt.intgStop
-		re.wg.Add(1)
-		go re.integrityLoop(rt, tickC, stopC)
-	}
-
-	re.logger.Info("iec61850: RCB enabled",
-		"rcb", rt.rcbItemID, "rptID", rt.rptID, "datSet", rt.datSet)
-
-	return nil
 }
 
 // SetRCBBufMax sets the maximum buffer capacity for the named BRCB. Returns
@@ -475,103 +363,15 @@ func (re *ReportEngine) SetRCBBufMax(ldName, rcbItemID string, max int) bool {
 	return true
 }
 
-// replayBRCBEntries delivers buffered BRCB entries to the given connection.
-// It is run in a background goroutine and stops early if delivery fails.
-func (re *ReportEngine) replayBRCBEntries(
-	rcbItemID, rptID string,
-	optFlds OptFlds, confRev uint32, datSet string,
-	dataRefs []string,
-	entries []*bufferedEntry,
-	conn *mms.ServerConn,
-) {
-	re.logger.Debug("iec61850: replaying BRCB entries",
-		"rcb", rcbItemID, "count", len(entries))
-
-	// Small delay so the client's RptEna write response arrives before the
-	// replayed reports, giving the client time to register its subscription
-	// channel before the first replayed report is delivered.
-	if !re.pause(150 * time.Millisecond) {
-		return
-	}
-
-	for i, entry := range entries {
-		reportValues := encodeReportValuesEx(reportParams{
-			rptID:     rptID,
-			optFlds:   optFlds,
-			seqNum:    uint32(i + 1),
-			confRev:   confRev,
-			datSet:    datSet,
-			entryID:   entry.entryID,
-			inclusion: entry.inclusion,
-			dataRefs:  dataRefs,
-			reasons:   entry.reasons,
-			values:    entry.values,
-		})
-
-		req := &mms.InformationReportRequest{
-			ListName: &mms.ObjectName{
-				Scope:  mms.ObjectScopeVMD,
-				ItemID: "RPT",
-			},
-			Values: reportValues,
-		}
-
-		if err := re.send(conn, req); err != nil {
-			re.logger.Debug("iec61850: BRCB replay send failed",
-				"rcb", rcbItemID, "entry", i, "error", err)
-			return
-		}
-	}
-
-	re.logger.Debug("iec61850: BRCB replay complete", "rcb", rcbItemID, "entries", len(entries))
-}
-
-// disable stops the RCB and clears runtime state.
-func (rt *rcbRuntime) disable() {
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-
-	if !rt.enabled {
-		return
-	}
-	rt.enabled = false
-
-	if rt.intgTicker != nil {
-		rt.intgTicker.Stop()
-		close(rt.intgStop)
-		rt.intgTicker = nil
-	}
-}
-
 // resolveDataset maps the DatSet string to ValueStore keys and MMS
-// ObjectNames for each member.
+// ObjectNames for each member and sets rt.dsValid. Caller holds rt.mu.
 func (re *ReportEngine) resolveDataset(rt *rcbRuntime) error {
+	rt.dsValid = false
+	rt.memberKeys, rt.memberVars, rt.memberNodes, rt.leafMembers, rt.prevValues = nil, nil, nil, nil, nil
 	if rt.datSet == "" {
 		return fmt.Errorf("empty DatSet")
 	}
-
-	var ds *servermodel.DataSetDef
-	for i := range re.model.LogicalDevices {
-		ld := &re.model.LogicalDevices[i]
-		if ld.Name != rt.ldName {
-			continue
-		}
-		for j := range ld.LogicalNodes {
-			ln := &ld.LogicalNodes[j]
-			for k := range ln.DataSets {
-				dsRef := rt.ldName + "/" + ln.Name + "$" + ln.DataSets[k].Name
-				if dsRef == rt.datSet || ln.DataSets[k].Name == rt.datSet {
-					ds = &ln.DataSets[k]
-					break
-				}
-			}
-			if ds != nil {
-				break
-			}
-		}
-		break
-	}
-
+	ds := re.findDataset(rt.ldName, rt.datSet)
 	if ds == nil {
 		return fmt.Errorf("dataset %q not found", rt.datSet)
 	}
@@ -607,7 +407,28 @@ func (re *ReportEngine) resolveDataset(rt *rcbRuntime) error {
 			rt.leafMembers[k] = append(rt.leafMembers[k], i)
 		}
 	}
+	rt.dsValid = true
+	return nil
+}
 
+// findDataset returns the data set named by ref (local name or
+// "LD/LN$name") in logical device ldName, or nil.
+func (re *ReportEngine) findDataset(ldName, ref string) *servermodel.DataSetDef {
+	for i := range re.model.LogicalDevices {
+		ld := &re.model.LogicalDevices[i]
+		if ld.Name != ldName {
+			continue
+		}
+		for j := range ld.LogicalNodes {
+			ln := &ld.LogicalNodes[j]
+			for k := range ln.DataSets {
+				dsRef := ldName + "/" + ln.Name + "$" + ln.DataSets[k].Name
+				if dsRef == ref || ln.DataSets[k].Name == ref {
+					return &ln.DataSets[k]
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -624,434 +445,126 @@ func (re *ReportEngine) readMemberValues(rt *rcbRuntime) []*mms.Value {
 	return values
 }
 
-// NotifyValueChanged is called when a data attribute value is changed
-// in the ValueStore. It checks all enabled RCBs for relevant triggers
-// and generates reports as needed.
-func (re *ReportEngine) NotifyValueChanged(ctx context.Context, storeKey string) {
-	select {
-	case <-re.stopCh:
-		return
-	default:
+// monitoringLocked reports whether the RCB records entries now: a BRCB
+// in every state once its data set is valid (§17.2.3.2.3.6), a URCB
+// only while enabled.
+func (rt *rcbRuntime) monitoringLocked() bool {
+	if !rt.dsValid {
+		return false
 	}
+	return rt.enabled || rt.buffered
+}
 
+// disableLocked stops reporting (RptEna=FALSE): the delivery goroutine
+// ends, unsent GI entries are dropped (§17.2.2.13 Figure 28: no GI
+// outside the enabled state) and a URCB forgets its queue. A BRCB keeps
+// buffering. Caller holds rt.mu.
+func (re *ReportEngine) disableLocked(rt *rcbRuntime) {
+	rt.resync = false
+	if !rt.enabled {
+		return
+	}
+	rt.enabled = false
+	rt.enableConn = nil
+	if rt.sendStop != nil {
+		close(rt.sendStop)
+		rt.sendStop = nil
+	}
+	if rt.buffered {
+		rt.bufQueue = slices.DeleteFunc(rt.bufQueue, func(e *bufferedEntry) bool { return e.gi && !e.sent })
+		re.publishNewestEntryLocked(rt)
+	} else {
+		rt.bufQueue = nil
+		rt.stopIntegrityLocked()
+		rt.stopAggLocked()
+	}
+	re.store.Set(rt.sk("RptEna"), mms.NewBoolean(false))
+}
+
+// releaseLocked frees the reservation of rt. Caller holds rt.mu.
+func (re *ReportEngine) releaseLocked(rt *rcbRuntime) {
+	rt.owner = nil
+	rt.explicitResv = false
+	if !rt.buffered && rt.reserved {
+		rt.reserved = false
+		re.store.Set(rt.sk("Resv"), mms.NewBoolean(false))
+	}
+}
+
+// connLost handles the end of an association: every RCB it owns or
+// reports to is disabled and released (IEC 61850-7-2 §17.2.2.5 Figure 24
+// "association lost", §17.2.4.4, Figure 27). BRCBs keep buffering, so the
+// reconnecting client can resynchronise.
+func (re *ReportEngine) connLost(conn *mms.ServerConn) {
+	if conn == nil {
+		return
+	}
 	re.mu.RLock()
 	defer re.mu.RUnlock()
-
-	re.logger.Debug("iec61850: NotifyValueChanged", "storeKey", storeKey, "rcbs", len(re.rcbs))
-
 	for _, rt := range re.rcbs {
 		rt.mu.Lock()
-		if !rt.enabled {
-			rt.mu.Unlock()
-			continue
+		if rt.owner == conn || rt.enableConn == conn {
+			re.disableLocked(rt)
+			re.releaseLocked(rt)
+			re.logger.Info("iec61850: RCB released after association loss", "rcb", rt.rcbItemID)
 		}
-
-		members := rt.leafMembers[storeKey]
-		if len(members) == 0 {
-			rt.mu.Unlock()
-			continue
-		}
-
-		currentValues := re.readMemberValues(rt)
-		inclusion := make([]bool, len(rt.memberKeys))
-		reasons := make([]ReasonCode, len(rt.memberKeys))
-		included := false
-		for _, memberIdx := range members {
-			newVal := currentValues[memberIdx]
-			prevVal := rt.prevValues[memberIdx]
-
-			var reason ReasonCode
-			if rt.trgOps.Has(TrgOpDataChanged) && !valuesEqual(prevVal, newVal) {
-				reason |= ReasonDataChanged
-			}
-			if rt.trgOps.Has(TrgOpQualityChanged) && qualityChanged(prevVal, newVal) {
-				reason |= ReasonQualityChanged
-			}
-			if rt.trgOps.Has(TrgOpDataUpdate) {
-				reason |= ReasonDataUpdate
-			}
-			if reason == 0 {
-				continue
-			}
-			rt.prevValues[memberIdx] = newVal
-			inclusion[memberIdx] = true
-			reasons[memberIdx] = reason
-			included = true
-		}
-
-		if !included {
-			rt.mu.Unlock()
-			continue
-		}
-
-		rt.seqNum++
-		seqNum := rt.seqNum
-
 		rt.mu.Unlock()
-
-		re.sendReport(ctx, rt, seqNum, inclusion, reasons, currentValues)
 	}
 }
 
-// triggerGI generates a General Interrogation report for the given RCB.
-func (re *ReportEngine) triggerGI(ctx context.Context, rt *rcbRuntime) {
-	rt.mu.Lock()
-	if !rt.enabled || !rt.trgOps.Has(TrgOpGI) {
-		rt.mu.Unlock()
+// reapClosedConns releases every RCB whose owner is no longer an active
+// association.
+func (re *ReportEngine) reapClosedConns() {
+	if re.mmsSrv == nil {
 		return
 	}
-
-	inclusion := make([]bool, len(rt.memberKeys))
-	reasons := make([]ReasonCode, len(rt.memberKeys))
-	for i := range inclusion {
-		inclusion[i] = true
-		reasons[i] = ReasonGI
+	active := re.mmsSrv.Connections()
+	var gone []*mms.ServerConn
+	re.mu.RLock()
+	for _, rt := range re.rcbs {
+		rt.mu.Lock()
+		for _, c := range []*mms.ServerConn{rt.owner, rt.enableConn} {
+			if c != nil && !slices.Contains(active, c) && !slices.Contains(gone, c) {
+				gone = append(gone, c)
+			}
+		}
+		rt.mu.Unlock()
 	}
-
-	currentValues := re.readMemberValues(rt)
-	rt.seqNum++
-	seqNum := rt.seqNum
-
-	rt.mu.Unlock()
-
-	re.sendReport(ctx, rt, seqNum, inclusion, reasons, currentValues)
-
-	// Reset GI flag.
-	sk := servermodel.StoreKey(rt.ldName, rt.rcbItemID+"$GI")
-	re.store.Set(sk, mms.NewBoolean(false))
+	re.mu.RUnlock()
+	for _, c := range gone {
+		re.connLost(c)
+	}
 }
 
-// integrityLoop runs the periodic integrity report timer.
-// tickC and stopC are captured from the rcbRuntime at goroutine start
-// to avoid data races with disable().
-func (re *ReportEngine) integrityLoop(rt *rcbRuntime, tickC <-chan time.Time, stopC <-chan struct{}) {
+// reapLoop periodically releases RCBs of lost associations, for servers
+// whose connections are not served through Server.Serve.
+func (re *ReportEngine) reapLoop() {
 	defer re.wg.Done()
-
+	t := time.NewTicker(connReapInterval)
+	defer t.Stop()
 	for {
 		select {
-		case <-tickC:
-			rt.mu.Lock()
-			if !rt.enabled {
-				rt.mu.Unlock()
-				return
-			}
-
-			inclusion := make([]bool, len(rt.memberKeys))
-			reasons := make([]ReasonCode, len(rt.memberKeys))
-			for i := range inclusion {
-				inclusion[i] = true
-				reasons[i] = ReasonIntegrity
-			}
-
-			currentValues := re.readMemberValues(rt)
-			rt.seqNum++
-			seqNum := rt.seqNum
-			rt.mu.Unlock()
-
-			re.sendReport(re.lifeContext(), rt, seqNum, inclusion, reasons, currentValues)
-
-		case <-stopC:
-			return
+		case <-t.C:
+			re.reapClosedConns()
 		case <-re.stopCh:
 			return
 		}
 	}
 }
 
-// sendReport builds and delivers an IEC 61850 InformationReport.
-// For URCBs, the report is sent only to the connection that enabled
-// the RCB. For BRCBs, the report is broadcast to all connections.
-func (re *ReportEngine) sendReport(_ context.Context, rt *rcbRuntime, seqNum uint32, inclusion []bool, reasons []ReasonCode, values []*mms.Value) {
-	rt.mu.Lock()
-	rptID := rt.rptID
-	optFlds := rt.optFlds
-	confRev := rt.confRev
-	datSet := rt.datSet
-	buffered := rt.buffered
-	enableConn := rt.enableConn
-	bufOvfl := rt.bufOvfl
-	dataRefs := append([]string(nil), rt.memberKeys...)
-	rt.mu.Unlock()
-
-	var entryIDBytes []byte
-
-	if buffered {
-		rt.mu.Lock()
-		rt.entryID++
-		entryIDBytes = encodeEntryID(rt.entryID)
-		entry := &bufferedEntry{
-			entryID:     entryIDBytes,
-			timeOfEntry: time.Now(),
-			values:      values,
-			reasons:     reasons,
-			inclusion:   inclusion,
-		}
-		if len(rt.bufQueue) >= rt.bufMax {
-			rt.bufQueue = rt.bufQueue[1:]
-			rt.bufOvfl = true
-			bufOvfl = true
-			re.logger.Debug("iec61850: BRCB buffer overflow, oldest entry dropped",
-				"rcb", rt.rcbItemID)
-		}
-		rt.bufQueue = append(rt.bufQueue, entry)
-
-		sk := func(suffix string) string {
-			return servermodel.StoreKey(rt.ldName, rt.rcbItemID+"$"+suffix)
-		}
-		re.store.Set(sk("EntryID"), mms.NewOctetString(entryIDBytes))
-		re.store.Set(sk("TimeOfEntry"), mms.NewBinaryTime(entry.timeOfEntry.UnixMilli()))
-		re.store.Set(sk("SqNum"), mms.NewUnsigned(uint64(seqNum)))
-		rt.mu.Unlock()
-	} else {
-		sk := servermodel.StoreKey(rt.ldName, rt.rcbItemID+"$SqNum")
-		re.store.Set(sk, mms.NewUnsigned(uint64(seqNum)))
-	}
-
-	reportValues := encodeReportValuesEx(reportParams{
-		rptID:     rptID,
-		optFlds:   optFlds,
-		seqNum:    seqNum,
-		confRev:   confRev,
-		datSet:    datSet,
-		bufOvfl:   bufOvfl,
-		entryID:   entryIDBytes,
-		inclusion: inclusion,
-		dataRefs:  dataRefs,
-		reasons:   reasons,
-		values:    values,
-	})
-
-	req := &mms.InformationReportRequest{
-		// IEC 61850-8-1 / libiec61850 compatibility: IEC 61850 reports must
-		// use VMD-specific variableListName "RPT" (not domain-specific).
-		// libiec61850 client ignores domain-specific InformationReports
-		// and only processes VMD-specific ones with name "RPT".
-		// The go-iec61850 client matches by RptID in the values list,
-		// so both clients receive correctly regardless of the list name.
-		ListName: &mms.ObjectName{
-			Scope:  mms.ObjectScopeVMD,
-			ItemID: "RPT",
-		},
-		Values: reportValues,
-	}
-
-	// Connection-aware delivery: URCBs send only to the enabling
-	// connection; BRCBs broadcast to all.
-	//
-	// Delivery is done in a background goroutine so the report is sent
-	// AFTER the current confirmed-service response (e.g. the Write response
-	// that triggered dchg). Sending the UnconfirmedPDU inside the Write
-	// handler — before the Write ConfirmedResponse — causes some clients
-	// (e.g. libiec61850) to receive the report while still waiting for the
-	// write confirmation, which can cause the report to be discarded.
-	if !buffered && enableConn != nil {
-		re.wg.Go(func() {
-			// Small yield to let the current confirmed response be sent first.
-			if !re.pause(100 * time.Millisecond) {
-				return
-			}
-			re.logger.Info("iec61850: sending URCB report", "rcb", rt.rcbItemID)
-
-			if err := re.send(enableConn, req); err != nil {
-				re.logger.Warn("iec61850: URCB report send to enableConn failed",
-					"rcb", rt.rcbItemID, "error", err)
-			} else {
-				re.logger.Info("iec61850: URCB report sent", "rcb", rt.rcbItemID)
-			}
-		})
-		return
-	}
-
-	conns := re.mmsSrv.Connections()
-	for _, conn := range conns {
-		c := conn
-		re.wg.Go(func() {
-			if !re.pause(100 * time.Millisecond) {
-				return
-			}
-			if err := re.send(c, req); err != nil {
-				re.logger.Debug("iec61850: report send failed",
-					"rcb", rt.rcbItemID, "error", err)
-			}
-		})
-	}
-}
-
-// reportParams holds all parameters needed to encode a report.
-type reportParams struct {
-	rptID     string
-	optFlds   OptFlds
-	seqNum    uint32
-	confRev   uint32
-	datSet    string
-	bufOvfl   bool
-	entryID   []byte // nil for URCB
-	inclusion []bool
-	// dataRefs are the data references of the data set members, in
-	// order: "<LD>/<LN>$<FC>$<DO>[$<DA>...]" (IEC 61850-8-1 report
-	// format, the MMS form of the member reference).
-	dataRefs []string
-	reasons  []ReasonCode
-	values   []*mms.Value
-}
-
-// encodeReportValues builds the flat MMS value list for an IEC 61850
-// InformationReport following the standard field order:
-//
-//	RptID, OptFlds, [SeqNum], [TimeStamp], [DatSet], [BufOvfl],
-//	[EntryID], [ConfRev], SubSeqNum, MoreSegments, Inclusion,
-//	[DataRef...], Values..., [ReasonCode...]
-func encodeReportValues(
-	rptID string,
-	optFlds OptFlds,
-	seqNum, confRev uint32,
-	datSet string,
-	inclusion []bool,
-	reasons []ReasonCode,
-	values []*mms.Value,
-) []*mms.Value {
-	return encodeReportValuesEx(reportParams{
-		rptID:     rptID,
-		optFlds:   optFlds,
-		seqNum:    seqNum,
-		confRev:   confRev,
-		datSet:    datSet,
-		inclusion: inclusion,
-		reasons:   reasons,
-		values:    values,
-	})
-}
-
-func encodeReportValuesEx(p reportParams) []*mms.Value {
-	var result []*mms.Value
-
-	result = append(result, mms.NewVisibleString(p.rptID))
-	result = append(result, encodeOptFlds(p.optFlds))
-
-	if p.optFlds.Has(OptFldSeqNum) {
-		result = append(result, mms.NewUnsigned(uint64(p.seqNum)))
-	}
-
-	if p.optFlds.Has(OptFldTimeStamp) {
-		result = append(result, mms.NewBinaryTime(time.Now().UTC().UnixMilli()))
-	}
-
-	if p.optFlds.Has(OptFldDataSet) {
-		result = append(result, mms.NewVisibleString(p.datSet))
-	}
-
-	if p.optFlds.Has(OptFldBufOvfl) {
-		result = append(result, mms.NewBoolean(p.bufOvfl))
-	}
-
-	if p.optFlds.Has(OptFldEntryID) {
-		eid := p.entryID
-		if eid == nil {
-			eid = make([]byte, 8)
-		}
-		result = append(result, mms.NewOctetString(eid))
-	}
-
-	if p.optFlds.Has(OptFldConfRev) {
-		result = append(result, mms.NewUnsigned(uint64(p.confRev)))
-	}
-
-	// SubSeqNum + MoreSegments (only present when segmentation is enabled).
-	if p.optFlds.Has(OptFldSegmentation) {
-		result = append(result, mms.NewUnsigned(0))
-		result = append(result, mms.NewBoolean(false))
-	}
-
-	inclusionBits := encodeInclusion(p.inclusion)
-	result = append(result, inclusionBits)
-
-	// One data reference per included member, between the inclusion
-	// bitstring and the values, when OptFlds asks for them.
-	if p.optFlds.Has(OptFldDataRef) {
-		for i, incl := range p.inclusion {
-			if !incl {
-				continue
-			}
-			ref := ""
-			if i < len(p.dataRefs) {
-				ref = p.dataRefs[i]
-			}
-			result = append(result, mms.NewVisibleString(ref))
-		}
-	}
-
-	for i, incl := range p.inclusion {
-		if incl && i < len(p.values) {
-			v := p.values[i]
-			if v == nil {
-				v = mms.NewBoolean(false)
-			}
-			result = append(result, v)
-		}
-	}
-
-	if p.optFlds.Has(OptFldReasonCode) {
-		for i, incl := range p.inclusion {
-			if incl && i < len(p.reasons) {
-				result = append(result, encodeReasonCode(p.reasons[i]))
-			}
-		}
-	}
-
-	return result
-}
-
-// encodeInclusion encodes the inclusion bitmap as an MMS bitstring.
-func encodeInclusion(inclusion []bool) *mms.Value {
-	bitLen := len(inclusion)
-	byteLen := (bitLen + 7) / 8
-	bits := make([]byte, byteLen)
-	for i, incl := range inclusion {
-		if incl {
-			bits[i/8] |= 0x80 >> (uint(i) % 8)
-		}
-	}
-	return mms.NewBitStringWithLength(bits, bitLen)
-}
-
-// encodeReasonCode encodes a ReasonCode as a 7-bit bitstring.
-func encodeReasonCode(r ReasonCode) *mms.Value {
-	b := byte(0)
-	if r&ReasonDataChanged != 0 {
-		b |= 0x40
-	}
-	if r&ReasonQualityChanged != 0 {
-		b |= 0x20
-	}
-	if r&ReasonDataUpdate != 0 {
-		b |= 0x10
-	}
-	if r&ReasonIntegrity != 0 {
-		b |= 0x08
-	}
-	if r&ReasonGI != 0 {
-		b |= 0x04
-	}
-	return mms.NewBitStringWithLength([]byte{b}, 7)
-}
-
 // encodeEntryID encodes a uint64 as an 8-byte big-endian entry ID.
 //
 // Entry IDs are monotonically increasing counters, starting at 1 for the
-// first buffered entry after server startup. The server never generates
-// ID 0; a stored EntryID of all-zero bytes is therefore the neutral value
-// that means "no resume point — replay the full buffer."
+// first entry after server startup. The server never generates ID 0
+// (IEC 61850-7-2 §17.2.2.15: all zeros is reserved for an empty buffer).
 //
-// The 8-byte big-endian encoding matches the IEC 61850-7-2 OctetString8
-// format expected for the EntryID attribute.
+// The 8-byte big-endian encoding matches the IEC 61850-8-1 §8.1.3.5
+// EntryID (OCTET STRING (SIZE(8))).
 //
 // Entry IDs are purely in-memory and reset to 1 on server restart. They
-// are NOT persistent across process restarts and are NOT stable across
-// server reboots. Clients should not cache EntryIDs across reconnects to
-// a different server process.
-//
-// Calling PurgeBuf=true invalidates all existing EntryIDs; subsequent
-// re-enables start replay from entry 1.
+// are NOT persistent across process restarts. A purge discards entries
+// but IDs keep counting, so an EntryID from before the purge is unknown
+// afterwards and a resync to it is refused (§17.2.2.5 Figure 24).
 func encodeEntryID(id uint64) []byte {
 	b := make([]byte, 8)
 	binary.BigEndian.PutUint64(b, id)
@@ -1065,38 +578,6 @@ func decodeEntryID(b []byte) uint64 {
 		return 0
 	}
 	return binary.BigEndian.Uint64(b[:8])
-}
-
-// filterEntriesAfter returns only the subset of entries whose entryID
-// is strictly greater than resumeID. When resumeID is 0, all entries
-// are returned (no filtering).
-//
-// Resume semantics:
-//   - The supplied EntryID is treated as EXCLUSIVE. The caller receives
-//     entries that were produced AFTER the entry with the given ID.
-//   - An unknown or future EntryID (greater than any buffered ID) yields
-//     an empty result — the client effectively says "I have everything up
-//     to a point beyond the current buffer."
-//   - A zero EntryID means "I have nothing; replay the full buffer."
-//   - These semantics follow the IEC 61850-7-2 description where the
-//     client writes the EntryID of the last received entry before
-//     enabling the BRCB, so the server skips that entry and all earlier
-//     entries in the replay.
-//   - When the server-side buffer has overflowed (entries were dropped)
-//     since the supplied EntryID, some entries that would have followed
-//     it may no longer be present. The BufOvfl flag in the next report
-//     will be set to notify the client of the gap.
-func filterEntriesAfter(entries []*bufferedEntry, resumeID uint64) []*bufferedEntry {
-	if resumeID == 0 {
-		return entries
-	}
-	var result []*bufferedEntry
-	for _, e := range entries {
-		if decodeEntryID(e.entryID) > resumeID {
-			result = append(result, e)
-		}
-	}
-	return result
 }
 
 // valuesEqual performs a recursive equality check between two MMS
@@ -1204,13 +685,10 @@ func bytesEqual(a, b []byte) bool {
 //     at [1] within a structure.
 //   - Falls back to full value comparison if the type is bitstring.
 //
-// qualityChanged is a heuristic quality-change detector. It checks
-// for bit-string changes in the quality attribute of common IEC 61850
-// CDC structures. For structures, it looks at position 1 which
-// matches the standard {stVal, q, t} layout used by most CDCs (SPS,
-// DPS, INS, MV, etc.). This is a pragmatic approximation, not a
-// semantically complete quality comparison for all possible CDC
-// structures.
+// qualityChanged is a heuristic quality-change detector, used for data
+// set members whose layout the model cannot resolve. It looks at
+// position 1 which matches the standard {stVal, q, t} layout used by
+// most CDCs (SPS, DPS, INS, MV, etc.).
 //
 // A missing value (never set) on one side is a quality change only when
 // the other side carries a quality.

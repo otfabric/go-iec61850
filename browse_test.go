@@ -13,54 +13,69 @@ import (
 )
 
 // chanTransport is a channel-based in-process MMS transport for testing.
+// Like a TCP connection, a Send to a peer that has closed fails, and a
+// blocked Send or Receive returns when its context ends.
 type chanTransport struct {
 	send chan []byte
 	recv chan []byte
 
-	mu     sync.Mutex
-	closed bool
+	gone     chan struct{} // closed by Close
+	peerGone chan struct{} // the peer's gone
+	once     sync.Once
 }
 
-func (t *chanTransport) Send(_ context.Context, data []byte) error {
-	t.mu.Lock()
-	if t.closed {
-		t.mu.Unlock()
+func (t *chanTransport) Send(ctx context.Context, data []byte) error {
+	select {
+	case <-t.gone:
 		return errors.New("transport closed")
+	case <-t.peerGone:
+		return errors.New("transport: peer closed")
+	default:
 	}
 	cp := make([]byte, len(data))
 	copy(cp, data)
-	t.send <- cp
-	t.mu.Unlock()
-	return nil
+	select {
+	case t.send <- cp:
+		return nil
+	case <-t.gone:
+		return errors.New("transport closed")
+	case <-t.peerGone:
+		return errors.New("transport: peer closed")
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (t *chanTransport) Receive(ctx context.Context) ([]byte, error) {
 	select {
 	case data := <-t.recv:
-		if data == nil {
+		return data, nil
+	case <-t.gone:
+		return nil, errors.New("transport closed")
+	case <-t.peerGone:
+		// Deliver what the peer sent before it closed.
+		select {
+		case data := <-t.recv:
+			return data, nil
+		default:
 			return nil, errors.New("transport closed")
 		}
-		return data, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
 }
 
 func (t *chanTransport) Close() error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if !t.closed {
-		t.closed = true
-		close(t.send)
-	}
+	t.once.Do(func() { close(t.gone) })
 	return nil
 }
 
 func loopbackPair() (clientTransport, serverTransport mms.Transport) {
 	c2s := make(chan []byte, 16)
 	s2c := make(chan []byte, 16)
-	cl := &chanTransport{send: c2s, recv: s2c}
-	sr := &chanTransport{send: s2c, recv: c2s}
+	cGone, sGone := make(chan struct{}), make(chan struct{})
+	cl := &chanTransport{send: c2s, recv: s2c, gone: cGone, peerGone: sGone}
+	sr := &chanTransport{send: s2c, recv: c2s, gone: sGone, peerGone: cGone}
 	return cl, sr
 }
 

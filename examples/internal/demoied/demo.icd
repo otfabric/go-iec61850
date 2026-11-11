@@ -10,7 +10,8 @@
       gcb01 (dataset dsGoose, 01-0C-CD-01-00-01, APPID 0x1001),
     - the 9-2LE dataset PhsMeas1 published by MSVCB01 (80 samples per
       period, 01-0C-CD-04-00-01, APPID 0x4000),
-    - an unbuffered report control block urcb01 on dsAll,
+    - unbuffered report control blocks urcb01..urcb05 on dsAll (an
+      indexed ReportControl "urcb" with RptEnabled max=5),
     - two setting groups (LLN0.SettingControl) with PTOC1.StrVal as a
       setting,
     - a log EventLog (MMS journal LLN0$EventLog).
@@ -77,7 +78,7 @@
           <FCDA ldInst="LD1" prefix="U" lnClass="TVTR" lnInst="4" doName="VolSv" daName="instMag.i" fc="MX"/>
           <FCDA ldInst="LD1" prefix="U" lnClass="TVTR" lnInst="4" doName="VolSv" daName="q" fc="MX"/>
             </DataSet>
-            <ReportControl name="urcb01" confRev="1" datSet="dsAll" rptID="DemoURCB01" buffered="false" intgPd="0">
+            <ReportControl name="urcb" confRev="1" datSet="dsAll" rptID="DemoURCB01" buffered="false" intgPd="0">
               <TrgOps dchg="true" qchg="true" dupd="false" period="false" gi="true"/>
               <OptFields seqNum="true" timeStamp="true" dataSet="true" reasonCode="true"/>
               <RptEnabled max="5"/>

@@ -45,8 +45,9 @@ const (
 	// one. The message is not delivered.
 	EventOutOfOrder
 
-	// EventRestart reports that the publisher restarted (stNum went
-	// back to 0 or 1). The message is also delivered.
+	// EventRestart reports that the publisher restarted: stNum went
+	// back to 0 or 1, or stNum/sqNum did not advance but T is newer than
+	// that of the last accepted state. The message is also delivered.
 	EventRestart
 
 	// EventInvalid reports a message that failed validation; Event.Err
@@ -549,8 +550,20 @@ func (sub *Subscription) process(f *Frame, now time.Time) {
 	base := Event{Received: now, Frame: f, PrevStNum: prevSt, PrevSqNum: prevSq}
 	newState := !st.have
 	var extra []EventKind
+	// restartT: T (7-2 18.2.3.5) only changes with a new state, so a
+	// frame whose T is newer than that of the last accepted state but
+	// whose stNum/sqNum would otherwise be a duplicate or out of order
+	// comes from a publisher that restarted (7-2 18.2.3.6: StNum
+	// restarts at 1 on GoEna TRUE / power-up, or a persisted lower
+	// value). 8-1 18.1.2.5.1 Fig. 11 key 3: a valid GOOSE message makes
+	// the subscriber VALID; the order rule is local (8-1 18.1.2.5.1).
+	restartT := st.have && p.T.After(st.lastT)
 	if st.have {
 		switch {
+		case p.StNum == prevSt && restartT && !seqAfter(p.SqNum, prevSq):
+			st.sup.Restarts++
+			extra = append(extra, EventRestart)
+			newState = true
 		case p.StNum == prevSt:
 			switch {
 			case p.SqNum == prevSq:
@@ -591,6 +604,12 @@ func (sub *Subscription) process(f *Frame, now time.Time) {
 				st.sup.SqNumGaps++
 				extra = append(extra, EventSqNumGap)
 			}
+		case restartT:
+			// Lower stNum (>1) with a newer T: restart of a publisher
+			// that persisted stNum (see restartT above).
+			st.sup.Restarts++
+			extra = append(extra, EventRestart)
+			newState = true
 		default:
 			st.sup.OutOfOrder++
 			sub.emit(st, withKind(base, EventOutOfOrder))

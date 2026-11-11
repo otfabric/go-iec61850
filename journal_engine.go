@@ -29,6 +29,14 @@ type JournalEngine struct {
 
 	mu       sync.RWMutex
 	journals map[string]*journalDef // keyed by "ldName/journalName"
+	lcbs     map[string]*lcbRuntime // keyed by "ldName/<LN>$LG$<name>"
+
+	refMu     sync.Mutex
+	byJournal map[journalKey][]*lcbRuntime // LCBs by LogRef
+
+	stopCh   chan struct{}
+	stopOnce sync.Once
+	wg       sync.WaitGroup
 }
 
 type journalDef struct {
@@ -63,11 +71,14 @@ func WithJournalProvider(p *MemoryJournalProvider) JournalEngineOption {
 
 func newJournalEngine(logger *slog.Logger, store *servermodel.ValueStore, model *servermodel.Model, opts []JournalEngineOption) *JournalEngine {
 	e := &JournalEngine{
-		logger:   logger,
-		provider: NewMemoryJournalProvider(),
-		store:    store,
-		model:    model,
-		journals: make(map[string]*journalDef),
+		logger:    logger,
+		provider:  NewMemoryJournalProvider(),
+		store:     store,
+		model:     model,
+		journals:  make(map[string]*journalDef),
+		lcbs:      make(map[string]*lcbRuntime),
+		byJournal: make(map[journalKey][]*lcbRuntime),
+		stopCh:    make(chan struct{}),
 	}
 	for _, o := range opts {
 		o(e)
@@ -86,76 +97,55 @@ func (e *JournalEngine) Provider() *MemoryJournalProvider {
 // MMS journal name (typically "LLN0$logName"). Variables contain
 // the data to record.
 func (e *JournalEngine) LogEvent(domain, journal string, occTime time.Time, vars []mms.JournalVariable) []byte {
-	return e.provider.AddEntry(domain, journal, occTime, vars)
+	return e.addEntry(journalKey{domain, journal}, occTime, vars)
 }
 
-// LogValueWrite records a value-write entry in all journals defined
-// for the logical device that contains the given store key. Every
-// write is logged regardless of whether the value actually changed;
-// this provides an audit trail rather than semantic change detection.
-// The store key format is "ldName/itemID".
-func (e *JournalEngine) LogValueWrite(ctx context.Context, storeKey string, occTime time.Time) {
-	parts := strings.SplitN(storeKey, "/", 2)
-	if len(parts) != 2 {
-		return
-	}
-	ldName := parts[0]
-	itemID := parts[1]
-
-	val := e.store.Get(storeKey)
-	if val == nil {
-		return
-	}
-
-	vars := []mms.JournalVariable{{
-		Tag:   itemID,
-		Value: val,
-	}}
-
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-
-	for _, jd := range e.journals {
-		if jd.ldName == ldName {
-			e.provider.AddEntry(ldName, jd.journalName, occTime, vars)
-			e.logger.Debug("iec61850: journal entry logged",
-				"ld", ldName, "journal", jd.journalName,
-				"key", storeKey)
-		}
-	}
-
-	_ = ctx
+// LogValueWrite evaluates the log control blocks for a write of the
+// value at storeKey ("ldName/itemID"). Every enabled LCB (LogEna TRUE)
+// whose data set contains the attribute and whose trigger options the
+// write meets journals the member value followed by its reason code
+// (IEC 61850-7-2 §17.3.4, IEC 61850-8-1 §17.3.3.4.4). Writes outside an
+// LCB data set are not journaled.
+func (e *JournalEngine) LogValueWrite(_ context.Context, storeKey string, occTime time.Time) {
+	e.notifyLCBs(storeKey, occTime)
 }
 
-// registerJournalsFromModel scans the model for log definitions and
-// registers corresponding journals in the provider. The MMS journal
-// name follows the convention "LNName$logName" (e.g., "LLN0$log1").
+// registerJournalsFromModel registers the journals the model's LCBs
+// write to: "<LN>$<logName>" in the LD of the log (IEC 61850-8-1
+// §17.3.3.3.2), and creates the LCB runtimes.
 func (e *JournalEngine) registerJournalsFromModel() int {
 	count := 0
 	for i := range e.model.LogicalDevices {
 		ld := &e.model.LogicalDevices[i]
 		for j := range ld.LogicalNodes {
 			ln := &ld.LogicalNodes[j]
-			for _, logDef := range ln.Logs {
-				journalName := ln.Name + "$" + logDef.Name
-				key := ld.Name + "/" + journalName
-
-				jd := &journalDef{
-					ldName:      ld.Name,
-					journalName: journalName,
-					logName:     logDef.Name,
-				}
-
+			for k := range ln.Logs {
+				logDef := &ln.Logs[k]
+				domain, journalName := logDef.JournalName(ld.Name, ln.Name)
+				key := domain + "/" + journalName
 				e.mu.Lock()
-				e.journals[key] = jd
+				if _, dup := e.journals[key]; !dup {
+					e.journals[key] = &journalDef{ldName: domain, journalName: journalName, logName: strings.TrimPrefix(journalName, lnPrefix(journalName))}
+					count++
+				}
 				e.mu.Unlock()
-
-				e.provider.RegisterJournal(ld.Name, journalName)
-				count++
+				e.provider.RegisterJournal(domain, journalName)
 			}
 		}
 	}
+	e.registerLCBs()
+	for k := range e.byJournal {
+		e.refreshStatus(k)
+	}
 	return count
+}
+
+// lnPrefix returns "<LN>$" of a journal item "<LN>$<name>".
+func lnPrefix(item string) string {
+	if i := strings.IndexByte(item, '$'); i >= 0 {
+		return item[:i+1]
+	}
+	return ""
 }
 
 // EnableJournals creates and starts the [JournalEngine] for this

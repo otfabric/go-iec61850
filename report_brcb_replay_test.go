@@ -79,8 +79,10 @@ func TestBRCB_ReplaysBufferedEntriesToEnablingClient(t *testing.T) {
 		if r.RptID != "rpt_brcb01" {
 			t.Errorf("#%d RptID = %q", i, r.RptID)
 		}
-		if r.SeqNum != uint32(i) {
-			t.Errorf("#%d SeqNum = %d, want %d", i, r.SeqNum, i)
+		// IEC 61850-7-2 §17.2.3.2.2.4: the first report after RptEna=TRUE
+		// carries SqNum 0.
+		if r.SeqNum != uint32(i-1) {
+			t.Errorf("#%d SeqNum = %d, want %d", i, r.SeqNum, i-1)
 		}
 		if got := decodeEntryID(r.EntryID); got != uint64(i) {
 			t.Errorf("#%d EntryID = %d, want %d", i, got, i)
@@ -137,9 +139,9 @@ func TestBRCB_ReplayResumesAfterClientEntryID(t *testing.T) {
 	if v, err := r.Values[0].Int64(); err != nil || v != 30 {
 		t.Errorf("value = %d (%v), want 30", v, err)
 	}
-	// Replay numbering restarts at 1 for the filtered set.
-	if r.SeqNum != 1 {
-		t.Errorf("SeqNum = %d, want 1", r.SeqNum)
+	// IEC 61850-7-2 §17.2.3.2.2.4: SqNum starts at 0 after the enable.
+	if r.SeqNum != 0 {
+		t.Errorf("SeqNum = %d, want 0", r.SeqNum)
 	}
 }
 

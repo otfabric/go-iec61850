@@ -4,7 +4,9 @@ package iec61850
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"sync"
 	"testing"
 	"time"
@@ -39,13 +41,16 @@ func TestReportEngine_ConcurrentSetValue(t *testing.T) {
 	}
 	wg.Wait()
 
+	// A local enable has no delivery target, so SqNum (assigned when a
+	// report is formatted for transmission, IEC 61850-7-2 §17.2.2.10)
+	// stays 0; the entries are buffered.
 	rt := engine.rcbs["LD1/LLN0$BR$brcb01"]
 	rt.mu.Lock()
-	seq := rt.seqNum
+	entries := rt.entryID
 	rt.mu.Unlock()
 
-	if seq == 0 {
-		t.Error("expected some reports to be generated")
+	if entries == 0 {
+		t.Error("expected some report entries to be generated")
 	}
 }
 
@@ -243,9 +248,11 @@ func TestReportEngine_InvalidSubfield(t *testing.T) {
 	defer engine.Stop()
 
 	ctx := context.Background()
+	// IEC 61850-8-1 §8.1.3.4.4.2: a write of an object that does not
+	// exist is answered with object-non-existent.
 	err := engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "UnknownField", mms.NewBoolean(true))
-	if err != nil {
-		t.Errorf("unknown subfield should be silently ignored, got: %v", err)
+	if code := dataAccessCode(err); code != mms.DataAccessErrorObjectNonExistent {
+		t.Errorf("unknown subfield: err = %v, want object-non-existent", err)
 	}
 }
 
@@ -364,9 +371,11 @@ func TestSettingGroup_DoubleEditReject(t *testing.T) {
 		t.Fatalf("first edit: %v", err)
 	}
 
-	err := srv.sgEngine.HandleSGCBWrite(ctx, "LD1", "EditSG", mms.NewUnsigned(2))
-	if err == nil {
-		t.Error("expected error for second edit while first is active")
+	// The reservation belongs to the client (IEC 61850-7-2 16.3.3.1): the
+	// holder may select another group (as libiec61850 allows); another
+	// client is refused (TestSpec_7_2_16_3_3_1_EditReservation).
+	if err := srv.sgEngine.HandleSGCBWrite(ctx, "LD1", "EditSG", mms.NewUnsigned(2)); err != nil {
+		t.Errorf("holder re-selecting another group: %v", err)
 	}
 
 	if err := srv.sgEngine.HandleSGCBWrite(ctx, "LD1", "EditSG", mms.NewUnsigned(0)); err != nil {
@@ -390,7 +399,7 @@ func TestSettingGroup_ReadOnlySubfield(t *testing.T) {
 	srv := newTestServer(t, model)
 	srv.EnableSettingGroups(SettingGroupHandler{})
 
-	err := srv.sgEngine.HandleSGCBWrite(context.Background(), "LD1", "NumOfSGs", mms.NewUnsigned(5))
+	err := srv.sgEngine.HandleSGCBWrite(context.Background(), "LD1", "NumOfSG", mms.NewUnsigned(5))
 	if err == nil {
 		t.Error("expected error for write to read-only subfield")
 	}
@@ -457,16 +466,15 @@ func TestJournalProvider_EmptyJournal(t *testing.T) {
 	}
 }
 
+// A QueryLogByTime of a journal that does not exist is answered with
+// Response– (IEC 61850-7-2 §17.3.5.2.4) (LOG-05).
 func TestJournalProvider_NonexistentJournal(t *testing.T) {
 	p := NewMemoryJournalProvider()
 
 	ctx := context.Background()
-	result, err := p.ReadTimeRange(ctx, "LD1", "nonexistent", time.Now().Add(-time.Hour), time.Now(), 10)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(result.Entries) != 0 {
-		t.Errorf("expected 0 entries, got %d", len(result.Entries))
+	_, err := p.ReadTimeRange(ctx, "LD1", "nonexistent", time.Now().Add(-time.Hour), time.Now(), 10)
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v, want fs.ErrNotExist", err)
 	}
 }
 
@@ -656,11 +664,11 @@ func TestServer_SetValue_TriggersReportAndJournal(t *testing.T) {
 
 	rt := engine.rcbs["LD1/LLN0$BR$brcb01"]
 	rt.mu.Lock()
-	seq := rt.seqNum
+	entries := rt.entryID
 	rt.mu.Unlock()
 
-	if seq == 0 {
-		t.Error("expected report to be generated")
+	if entries == 0 {
+		t.Error("expected a report entry to be generated")
 	}
 
 	count := je.Provider().EntryCount("LD1", "LLN0$log1")
@@ -792,7 +800,7 @@ func TestServer_Close_ClearsEngines(t *testing.T) {
 func testReportSCLWithLog() *servermodel.Model {
 	m := testReportSCL()
 	m.LogicalDevices[0].LogicalNodes[0].Logs = []servermodel.LogDef{
-		{Name: "log1"},
+		{Name: "log1", DatSet: "dsTest", TrgOps: servermodel.TrgOpsDef{Dchg: true}, LogEna: true},
 	}
 	return m
 }

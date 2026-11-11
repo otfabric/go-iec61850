@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -43,6 +44,13 @@ type sgcbRuntime struct {
 	editSG   uint8
 	resvTms  uint16
 	handler  SettingGroupHandler
+
+	// The edit reservation (IEC 61850-7-2 16.3.3.1): the client that
+	// selected editSG, and the timer of ResvTms (16.2.2.8). owner is nil
+	// for a selection without an MMS association (server side).
+	owner    *mms.ServerConn
+	resvGen  uint64
+	resvTime *time.Timer
 }
 
 // SettingGroupEngine manages server-side setting group control
@@ -61,6 +69,10 @@ type SettingGroupEngine struct {
 	sgcbs  map[string]*sgcbRuntime // key: ldName
 	store  *servermodel.ValueStore
 	logger interface{ Debug(string, ...any) }
+
+	// connActive reports whether an MMS association is still open; nil
+	// treats every owner as connected.
+	connActive func(*mms.ServerConn) bool
 }
 
 // newSettingGroupEngine creates a new engine backed by the given store.
@@ -94,48 +106,71 @@ func (e *SettingGroupEngine) registerSGCB(ldName string, sg *servermodel.Setting
 }
 
 // HandleSGCBWrite intercepts writes to SGCB subfields and enforces
-// setting group semantics. Returns nil if the write is handled
-// (accepted or rejected with an MMS error); returns an error to
-// propagate to the MMS layer as a write failure.
+// setting group semantics. It returns nil when the write is accepted,
+// and otherwise an error that carries the MMS DataAccessError of IEC
+// 61850-8-1 8.1.3.4.4.2 / Table 23 (16.2.1, 16.2.2, 16.2.4):
+// object-value-invalid for a group number out of range,
+// type-inconsistent for a value of the wrong type, object-access-denied
+// for a read-only member, temporarily-unavailable while another client
+// holds the edit reservation or when no edit is selected. An error from
+// a [SettingGroupHandler] callback keeps the code it carries (see
+// [ErrWriteAccessDenied] and the other Err* write sentinels), and is
+// object-access-denied otherwise.
 //
-// Supported subfields: ActSG, EditSG, CnfEdit.
+// Supported subfields: ActSG, EditSG, CnfEdit. The client is the MMS
+// association in ctx ([mms.ServerConnFromContext]).
 func (e *SettingGroupEngine) HandleSGCBWrite(ctx context.Context, ldName, subfield string, val *mms.Value) error {
 	e.mu.RLock()
 	rt, ok := e.sgcbs[ldName]
 	e.mu.RUnlock()
 	if !ok {
-		return fmt.Errorf("iec61850: SGCB write: unknown LD %q", ldName)
+		return asWriteError(fmt.Errorf("iec61850: SGCB write: unknown LD %q", ldName), mms.DataAccessErrorObjectNonExistent)
 	}
 
+	var err error
 	switch subfield {
 	case "ActSG":
-		return e.handleActSGWrite(ctx, rt, val)
+		err = e.handleActSGWrite(ctx, rt, val)
 	case "EditSG":
-		return e.handleEditSGWrite(ctx, rt, val)
+		err = e.handleEditSGWrite(ctx, rt, val)
 	case "CnfEdit":
-		return e.handleCnfEditWrite(ctx, rt, val)
+		err = e.handleCnfEditWrite(ctx, rt, val)
 	default:
-		return fmt.Errorf("iec61850: SGCB write: read-only subfield %q", subfield)
+		// NumOfSG, LActTm, ResvTms are read-only (IEC 61850-7-2 Table 36;
+		// IEC 61850-8-1 8.1.3.4.4.2: object-access-denied).
+		err = fmt.Errorf("iec61850: SGCB write: read-only subfield %q: %w", subfield, ErrWriteAccessDenied)
 	}
+	return asWriteError(err, mms.DataAccessErrorObjectAccessDenied)
+}
+
+// sgcbGroup decodes a written ActSG/EditSG: INT8U (IEC 61850-7-2 clause
+// 16). Another MMS type is type-inconsistent; a value above 255 is
+// refused instead of truncated, which would select a different group
+// (256 -> 0, 257 -> 1).
+func sgcbGroup(name string, val *mms.Value) (uint8, error) {
+	if val == nil || val.Type() != mms.ValueTypeUnsigned {
+		return 0, fmt.Errorf("iec61850: %s write: expected unsigned: %w", name, ErrWriteTypeInconsistent)
+	}
+	u, _ := val.Uint64()
+	if u > math.MaxUint8 {
+		return 0, fmt.Errorf("iec61850: %s write: group %d out of range: %w", name, u, ErrWriteTypeInconsistent)
+	}
+	return uint8(u), nil
 }
 
 func (e *SettingGroupEngine) handleActSGWrite(ctx context.Context, rt *sgcbRuntime, val *mms.Value) error {
-	u, ok := val.Uint32()
-	if !ok {
-		return fmt.Errorf("iec61850: ActSG write: expected unsigned")
+	newSG, err := sgcbGroup("ActSG", val)
+	if err != nil {
+		return err
 	}
-	// ActSG is INT8U (IEC 61850-7-2 clause 16): reject instead of
-	// truncating, which would select a different group (256 -> 0, 257 -> 1).
-	if u > math.MaxUint8 {
-		return fmt.Errorf("iec61850: ActSG write: group %d out of range", u)
-	}
-	newSG := uint8(u)
 
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 
+	// IEC 61850-7-2 16.3.2: ActSG 1..NumOfSG; out of range is
+	// parameter-value-inconsistent -> object-value-invalid (8-1 Table 23).
 	if newSG == 0 || newSG > rt.numOfSGs {
-		return fmt.Errorf("iec61850: ActSG write: group %d out of range [1, %d]", newSG, rt.numOfSGs)
+		return fmt.Errorf("iec61850: ActSG write: group %d out of range [1, %d]: %w", newSG, rt.numOfSGs, ErrWriteValueInvalid)
 	}
 
 	if rt.handler.OnActiveSGChanged != nil {
@@ -151,34 +186,64 @@ func (e *SettingGroupEngine) handleActSGWrite(ctx context.Context, rt *sgcbRunti
 	return nil
 }
 
+// liveOwnerLocked reports the edit reservation's owner, releasing the
+// reservation first when the owner's association was lost (IEC 61850-7-2
+// 16.3.3.1). Must be called with rt.mu held.
+func (e *SettingGroupEngine) liveOwnerLocked(rt *sgcbRuntime) *mms.ServerConn {
+	if rt.editSG != 0 && rt.owner != nil && e.connActive != nil && !e.connActive(rt.owner) {
+		e.logger.Debug("iec61850: edit SG released: association lost", "ld", rt.ldName)
+		e.releaseEditLocked(rt)
+	}
+	return rt.owner
+}
+
+// releaseEditLocked ends the edit reservation. Must be called with rt.mu
+// held.
+func (e *SettingGroupEngine) releaseEditLocked(rt *sgcbRuntime) {
+	rt.editSG = 0
+	rt.owner = nil
+	rt.resvGen++
+	if rt.resvTime != nil {
+		rt.resvTime.Stop()
+		rt.resvTime = nil
+	}
+	e.syncSGCBToStore(rt, false)
+}
+
+// reservedByOtherLocked reports whether another client holds the edit
+// reservation. Must be called with rt.mu held.
+func (e *SettingGroupEngine) reservedByOtherLocked(rt *sgcbRuntime, sc *mms.ServerConn) bool {
+	owner := e.liveOwnerLocked(rt)
+	return rt.editSG != 0 && owner != nil && owner != sc
+}
+
 func (e *SettingGroupEngine) handleEditSGWrite(ctx context.Context, rt *sgcbRuntime, val *mms.Value) error {
-	u, ok := val.Uint32()
-	if !ok {
-		return fmt.Errorf("iec61850: EditSG write: expected unsigned")
+	editSG, err := sgcbGroup("EditSG", val)
+	if err != nil {
+		return err
 	}
-	// EditSG is INT8U (IEC 61850-7-2 clause 16): reject instead of
-	// truncating, which would select a different group (256 -> 0, 257 -> 1).
-	if u > math.MaxUint8 {
-		return fmt.Errorf("iec61850: EditSG write: group %d out of range", u)
-	}
-	editSG := uint8(u)
+	sc := mms.ServerConnFromContext(ctx)
 
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 
+	// The reservation belongs to one client (IEC 61850-7-2 16.3.3.1);
+	// another client's SelectEditSG, including 0, is
+	// instance-locked-by-other-client -> temporarily-unavailable (8-1
+	// 8.1.3.4.4.2).
+	if e.reservedByOtherLocked(rt, sc) {
+		return fmt.Errorf("iec61850: EditSG write: edit of group %d reserved by another client: %w", rt.editSG, ErrWriteTemporarilyUnavailable)
+	}
+
 	if editSG == 0 {
-		rt.editSG = 0
-		e.syncSGCBToStore(rt, false)
+		// SelectEditSG with 0 cancels the edit (7-2 16.3.3.1).
+		e.releaseEditLocked(rt)
 		e.logger.Debug("iec61850: edit SG released", "ld", rt.ldName)
 		return nil
 	}
 
 	if editSG > rt.numOfSGs {
-		return fmt.Errorf("iec61850: EditSG write: group %d out of range [1, %d]", editSG, rt.numOfSGs)
-	}
-
-	if rt.editSG != 0 && rt.editSG != editSG {
-		return fmt.Errorf("iec61850: EditSG write: edit session already active for group %d", rt.editSG)
+		return fmt.Errorf("iec61850: EditSG write: group %d out of range [1, %d]: %w", editSG, rt.numOfSGs, ErrWriteValueInvalid)
 	}
 
 	if rt.handler.OnEditSGSelected != nil {
@@ -188,26 +253,60 @@ func (e *SettingGroupEngine) handleEditSGWrite(ctx context.Context, rt *sgcbRunt
 	}
 
 	rt.editSG = editSG
+	rt.owner = sc
+	e.armReservationLocked(rt)
 	e.syncSGCBToStore(rt, false)
 
 	e.logger.Debug("iec61850: edit SG selected", "ld", rt.ldName, "editSG", editSG)
 	return nil
 }
 
-func (e *SettingGroupEngine) handleCnfEditWrite(ctx context.Context, rt *sgcbRuntime, val *mms.Value) error {
-	b, ok := val.Bool()
-	if !ok {
-		return fmt.Errorf("iec61850: CnfEdit write: expected boolean")
+// armReservationLocked (re)starts the ResvTms timer of the reservation
+// (IEC 61850-7-2 16.2.2.8, 16.3.3.1: the reservation ends when no
+// ConfirmEditSGValues arrives within ResvTms seconds of SelectEditSG).
+// ResvTms 0 means no timeout. Must be called with rt.mu held.
+func (e *SettingGroupEngine) armReservationLocked(rt *sgcbRuntime) {
+	rt.resvGen++
+	if rt.resvTime != nil {
+		rt.resvTime.Stop()
+		rt.resvTime = nil
 	}
+	if rt.resvTms == 0 {
+		return
+	}
+	gen := rt.resvGen
+	rt.resvTime = time.AfterFunc(time.Duration(rt.resvTms)*time.Second, func() {
+		rt.mu.Lock()
+		defer rt.mu.Unlock()
+		if rt.resvGen != gen || rt.editSG == 0 {
+			return
+		}
+		e.logger.Debug("iec61850: edit SG released: ResvTms expired", "ld", rt.ldName)
+		e.releaseEditLocked(rt)
+	})
+}
+
+func (e *SettingGroupEngine) handleCnfEditWrite(ctx context.Context, rt *sgcbRuntime, val *mms.Value) error {
+	if val == nil || val.Type() != mms.ValueTypeBoolean {
+		return fmt.Errorf("iec61850: CnfEdit write: expected boolean: %w", ErrWriteTypeInconsistent)
+	}
+	b, _ := val.Bool()
 	if !b {
 		return nil
 	}
+	sc := mms.ServerConnFromContext(ctx)
 
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 
+	// ConfirmEditSGValues needs a selected edit group, reserved by this
+	// client; otherwise writability depends on another object (EditSG):
+	// temporarily-unavailable (IEC 61850-8-1 8.1.3.4.4.2).
+	if e.reservedByOtherLocked(rt, sc) {
+		return fmt.Errorf("iec61850: CnfEdit write: edit reserved by another client: %w", ErrWriteTemporarilyUnavailable)
+	}
 	if rt.editSG == 0 {
-		return fmt.Errorf("iec61850: CnfEdit write: no edit session active")
+		return fmt.Errorf("iec61850: CnfEdit write: no edit session active: %w", ErrWriteTemporarilyUnavailable)
 	}
 
 	if rt.handler.OnConfirmEdit != nil {
@@ -217,11 +316,55 @@ func (e *SettingGroupEngine) handleCnfEditWrite(ctx context.Context, rt *sgcbRun
 	}
 
 	confirmedSG := rt.editSG
-	rt.editSG = 0
-	e.syncSGCBToStore(rt, false)
+	e.releaseEditLocked(rt)
 
 	e.logger.Debug("iec61850: edit confirmed", "ld", rt.ldName, "sg", confirmedSG)
 	return nil
+}
+
+// checkEditAccess is the [servermodel.EditGuard] of FC=SE attributes:
+// with no edit group selected, SetEditSGValue and GetEditSGValue get
+// Response- (IEC 61850-7-2 16.2.2.5), temporarily-unavailable since the
+// access depends on another object (IEC 61850-8-1 8.1.3.4.4.2). A write
+// by a client other than the one holding the reservation is refused the
+// same way (7-2 16.3.3.1).
+func (e *SettingGroupEngine) checkEditAccess(ctx context.Context, storeKey string, write bool) error {
+	ld, _, ok := strings.Cut(storeKey, "/")
+	if !ok {
+		return nil
+	}
+	e.mu.RLock()
+	rt, ok := e.sgcbs[ld]
+	e.mu.RUnlock()
+	if !ok {
+		return nil
+	}
+	sc := mms.ServerConnFromContext(ctx)
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	owner := e.liveOwnerLocked(rt)
+	if rt.editSG == 0 {
+		return &mms.DataAccessError{Code: mms.DataAccessErrorTemporarilyUnavailable}
+	}
+	if write && owner != nil && owner != sc {
+		return &mms.DataAccessError{Code: mms.DataAccessErrorTemporarilyUnavailable}
+	}
+	return nil
+}
+
+// stop ends the ResvTms timers.
+func (e *SettingGroupEngine) stop() {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	for _, rt := range e.sgcbs {
+		rt.mu.Lock()
+		rt.resvGen++
+		if rt.resvTime != nil {
+			rt.resvTime.Stop()
+			rt.resvTime = nil
+		}
+		rt.mu.Unlock()
+	}
 }
 
 // syncSGCBToStore writes the runtime SGCB state back to the ValueStore.
@@ -292,7 +435,9 @@ func (s *Server) EnableSettingGroups(handler SettingGroupHandler) {
 		}
 	}
 
+	engine.connActive = func(sc *mms.ServerConn) bool { return s.mms == nil || s.isConnActive(sc) }
 	s.sgEngine = engine
+	s.store.SetEditGuard(engine.checkEditAccess)
 	s.installWriteInterceptor()
 }
 

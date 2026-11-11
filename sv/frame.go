@@ -20,7 +20,7 @@ const (
 	EtherTypeVLAN = l2.EtherTypeVLAN
 
 	// SimulationBit is the bit in Reserved1 that marks a simulated
-	// message (IEC 61850-9-2 Ed2.1 "S" bit).
+	// message (IEC 61850-9-2:2011 5.3.3.4.4 "S" bit).
 	SimulationBit uint16 = 0x8000
 
 	// MaxPayload is the maximum Ethernet payload (after the EtherType)

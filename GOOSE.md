@@ -58,14 +58,33 @@ g, err := goose.Decode(b)        // or DecodeWithLimits(b, goose.Limits{...})
 | `Dst`, `Src` | Ethernet addresses (`goose.MAC`, `ParseMAC` accepts `01:0c:cd:…`, `01-0C-CD-…`, `010ccd…`) |
 | `VLAN` | 802.1Q tag (priority, DEI, VID); nil for untagged |
 | `AppID` | APPID |
-| `Simulation` | the Edition 2 simulation bit (MSB of Reserved1) |
+| `Simulation` | the simulation bit (MSB of Reserved1, 8-1:2011 Figure C.5) |
 | `Reserved1`, `Reserved2` | other reserved bits, kept as received |
 | `PDU` | `goosePdu` (tag `0x61`): gocbRef, timeAllowedToLive (ms), datSet, goID (optional), t (UtcTime with time quality), stNum, sqNum, test (field `[7]`, `simulation` in the Edition 2 ASN.1), confRev, ndsCom, numDatSetEntries, allData, security (optional, opaque) |
 
 The encoder pads frames to the Ethernet minimum (60 octets without FCS)
 and writes `numDatSetEntries = len(AllData)`. Floats are sent as
 FloatingPoint with an 8-bit exponent when the value is exact in float32,
-otherwise with an 11-bit exponent.
+otherwise with an 11-bit exponent. The Ethernet payload is limited to
+`MaxPayload` = 1499 octets (Length = 8 + m, m < 1492, 8-1 Annex C).
+`EncodePDU`/`Encode` do not check the 8-1 18.1.2.5.2 value ranges (so
+negative test frames can be built); `NewPublisher` does. `VLAN.DEI` must
+be 0 on the wire (8-1 Annex C: the CFI bit "shall be reset") and is
+settable only for negative tests.
+
+**Fixed-length encoding** (8-1 Annex A.3, SCL `fixedOffs="true"`):
+`EncodeFixedLength`/`EncodePDUFixedLength` (and
+`PublisherConfig.FixedOffs` with `MemberTypes`) keep every field at a
+fixed offset: header INT32U fields (timeAllowedToLive, stNum, sqNum,
+confRev, numDatSetEntries) with length 5 (Table A.1), INT8/16/32/64 with
+2/3/5/9 octets, INT8U/16U/32U with 2/3/5 (INT24U as INT32U), OCTET STRING
+20 octets zero padded, VISIBLE STRING 35 octets NUL padded (Table A.2).
+Integer widths come from the member `TypeSpec.Size`; without a type an
+integer is sent as 32 bits (64 when the value needs it). Deviations from
+the letter of Table A.2: FLOAT32 keeps the 5-octet MMS FloatingPoint form
+(exponent-width octet plus IEEE 754 single) instead of 4 octets;
+MMSString, GeneralizedTime, BCD and object identifiers keep their BER
+encoding; a longer OCTET/VISIBLE STRING fails with `ErrInvalidValue`.
 
 The decoder is strict: field order and mandatory fields per Annex A,
 definite BER lengths only, length fields checked against the frame, no
@@ -76,7 +95,11 @@ generalized-time, binary-time, BCD, boolean-array, object-identifier,
 MMS string, UtcTime, arrays and structures). `Limits` bounds the nesting
 depth and the total number of data elements (`DefaultLimits`: 16 and
 4096); allocations are proportional to the frame size. Management APDUs
-(tag `0x60`) return `ErrUnsupportedPDU`.
+(tag `0x60`) return `ErrUnsupportedPDU`. Fixed-length frames (8-1 Annex
+A.3) decode: a 9-octet integer whose first octet only sign-extends,
+trailing NUL padding of VISIBLE STRINGs (header and `allData`) and the
+4-octet FLOAT32 of Table A.2 are accepted; a NUL followed by other
+characters is still rejected.
 
 `EncodeData`/`DecodeData` encode a single MMS Data value in the GOOSE
 form; `EncodePDU`/`DecodePDU` handle the APDU alone.
@@ -97,7 +120,17 @@ err = pub.Publish(values)   // state change: stNum+1, sqNum 0, schedule restarts
 
 - **State and sequence numbers.** Each `Publish` is a new state: stNum
   increments (wrapping from 2^32-1 to 1), sqNum restarts at 0 and counts
-  retransmissions (wrapping to 1). `InitialStNum` sets the first stNum.
+  retransmissions (wrapping to 1). `InitialStNum` sets the first stNum;
+  `SetEnabled(true)` after a disable restarts at stNum 1 (7-2 18.2.3.6).
+- **Configuration ranges** (`ErrInvalidConfig`): `Dst` must have the
+  multicast bit (8-1 Table 12); GocbRef and DatSet at most 129 octets, an
+  explicit GoID at most 65 (8-1 18.1.2.5.2; the default GoID, the
+  GocbRef, is not checked); `MaxTime` below 60 s and `TimeAllowedToLive`
+  at least 1 ms and greater than `MaxTime` (8-1 18.1.2.5.1 Figure 10).
+- **TimeQuality** of `T` is `PublisherConfig.TimeQuality`; zero uses
+  `DefaultTimeQuality` 0x2a (ClockNotSynchronized, 10 bits accuracy),
+  since the publisher cannot know that the host clock is synchronised.
+  Set e.g. 0x0a when it is.
 - **Retransmission.** After a change the frame is repeated after
   `MinTime`, then at doubling intervals up to `MaxTime`, which then
   repeats as the heartbeat (defaults 10 ms and 1 s).
@@ -150,7 +183,7 @@ Supervision is per stream (source MAC, APPID, gocbRef):
 | `EventSqNumGap` | sqNum skipped retransmissions |
 | `EventDuplicate` | same stNum and sqNum again |
 | `EventOutOfOrder` | an older stNum/sqNum |
-| `EventRestart` | stNum restarted at 1 (publisher restart), told apart from reordering by the frame time |
+| `EventRestart` | publisher restart: stNum went back to 1, or stNum/sqNum did not advance (or stNum went down) while `T` is newer than that of the last accepted state (7-2 18.2.3.5: T only changes with a new state); a frame with an older `T` is reordering |
 | `EventInvalid` | validation failed |
 | `EventSupervision` | the stream status changed |
 
@@ -228,16 +261,31 @@ srv.SetValue(ctx, "LD0/GGIO1$ST$Ind1$stVal", mms.NewBoolean(true)) // -> new GOO
 
 - Every GoCB with a GSE address starts enabled (`StartDisabled` to start
   with GoEna false). A change of any dataset member, through `SetValue`
-  or an MMS write, publishes a new state.
+  or an MMS write, publishes a new state. A GoCB that cannot be enabled
+  at start-up is logged and left with NdsCom true; the others publish.
+- Address defaults: a GSE address without `APPID` uses 0x0000 (8-1 Annex
+  C) and `VLAN-ID` without `VLAN-PRIORITY` uses priority 4 (Table C.1),
+  each with a model warning. Without any VLAN parameter frames are sent
+  untagged (VLAN use is optional, 8-1 Annex C; receivers must accept
+  untagged frames), unlike libiec61850, which always tags.
+- NdsCom is true, and GoEna TRUE fails with temporarily-unavailable, for
+  a GoCB without a usable GSE address (none, `00-00-00-00-00-00` = not
+  configured per 8-1 Annex B, or not multicast), with ConfRev 0 (7-2
+  18.2.1.3) or with a dataset that cannot be resolved.
+- `FixedOffs` true in SCL selects the fixed-length encoding (see
+  [Frames](#frames)); `GOOSEOptions.TimeQuality` sets the TimeQuality.
 - The GoCB is an MMS variable `LLN0$GO$<name>` with GoEna, GoID, DatSet,
   ConfRev, NdsCom, DstAddress {Addr, PRIORITY, VID, APPID}, MinTime,
   MaxTime and FixedOffs (IEC 61850-8-1 GoCB). GoEna, GoID and DatSet are
   writable; GoID and DatSet only while GoEna is false
-  (temporarily-unavailable otherwise); a new DatSet must exist
-  (object-value-invalid) and increments ConfRev; once ConfRev would pass
+  (temporarily-unavailable otherwise); a DatSet must exist
+  (object-value-invalid), is stored as the ObjectReference
+  (`LD/LLN0$ds`, 8-1 Table 73) also when written by its bare name, and
+  every DatSet write increments ConfRev, also to the same value (7-2
+  18.2.1.6); once ConfRev would pass
   2^32-1 the GoCB cannot be enabled (object-value-invalid). Other attributes are
-  read-only (object-access-denied). A GoCB without a GSE address has
-  NdsCom true and cannot be enabled.
+  read-only (object-access-denied). GoID and DatSet are writable as in
+  7-2 Table 42 although 8-1 Table 73 maps them read-only (PIXIT choice).
 - `GOOSEEngine.ControlBlocks()`, `Publisher(ref)`, `SetEnabled(ref, on)`
   and `Stop()`; `Server.Close` stops the engine.
 - The server's MMS domain is the logical device's IEC 61850-8-1 name, and
@@ -257,8 +305,9 @@ err = client.SetGoCB(ctx, "LD0", "LLN0$GO$gcb1", iec61850.GoCBUpdate{DatSet: &ds
 
 `GetGoCB` decodes the GoCB structure into `GoCB` (MinTime/MaxTime and
 FixedOffs are optional, `HasTimes` tells); an attribute outside its IEC
-61850-7-2 type (ConfRev, MinTime, MaxTime INT32U; VID, APPID INT16U;
-PRIORITY INT8U) is an `ErrProtocol`, not truncated. `SetGoCB` writes the
+61850-7-2 type (ConfRev, MinTime, MaxTime INT32U; APPID INT16U) or the
+8-1 Table 12 range (PRIORITY 0..7, VID 0..4095) is an `ErrProtocol`, not
+truncated. `SetGoCB` writes the
 selected attributes, GoEna last.
 
 ## Errors
@@ -303,7 +352,8 @@ Embed `goose.NopMetrics` to implement only some methods. See
 - Raw transport tests run on `lo` on Linux as root (CI does) and on
   `GOOSE_TEST_IFACE` elsewhere, e.g. a macOS host-only bridge member
   interface.
-- Fuzz targets: `FuzzDecode`, `FuzzDecodeData`.
+- Fuzz targets: `FuzzDecode`, `FuzzDecodeData`, `FuzzDecodePDU`,
+  `FuzzEncodeFixedLength` (seeded with Annex A.3 fixed-length vectors).
 - Interop: `interop/goose_test.go` against libiec61850, dscsystems, iec61850-rust and cbsigma
   publishers and subscribers on a Docker bridge (see
   [INTEROP.md](INTEROP.md)).
@@ -335,7 +385,9 @@ Embed `goose.NopMetrics` to implement only some methods. See
 
 - No GOOSE security (IEC 62351-6): the `security` field is carried
   opaquely, not generated or verified.
-- No fixed-offset encoding (`FixedOffs` is reported, not applied).
+- Fixed-length encoding deviates from Table A.2 for FLOAT32 (5 octets)
+  and limits OCTET/VISIBLE STRING members to 20/35 octets; it is not
+  verified against an independent fixed-length implementation.
 - No GSSE, no GOOSE management APDUs. Sampled Values are in package
   [`sv`](SV.md); both share the raw Ethernet layer of package `l2`.
 - No Windows transport.

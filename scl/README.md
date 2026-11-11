@@ -109,6 +109,23 @@ for _, d := range validate.All(s, idx, idxDiags) {
 `scl.Validate(s)` is still available but deprecated in favour of
 `validate.All`.
 
+What is checked (code, severity):
+
+| Area | Checks |
+|---|---|
+| Index (`index.Build`) | XSD keys and uniques: duplicate IED, AccessPoint, LDevice, LN, DataSet (error), ReportControl (warning), GSEControl / SampledValueControl per LN, DO per LNodeType, DA/SDO per DOType, BDA per DAType, EnumVal `ord`, SubNetwork, GSE/SMV per ConnectedAP (`duplicate-name`, `duplicate-id`, … error); a DA name repeated with a different FC is a warning |
+| Required (`scl.ValidateRequired`) | `missing-attribute` (error) for the required attributes of LN and LN0, DataSet, FCDA `fc`, ReportControl, GSEControl `name`/`appID`, SampledValueControl `name`/`smvID`, templates, communication |
+| Templates | unresolved DO/SDO/DA/BDA types, `missing-type` (error) for a Struct or Enum without `type` |
+| IEDs | unresolved `lnType`, `lnclass-mismatch` (error) when LN `lnClass` differs from its LNodeType |
+| Datasets | unresolved LN, DO/SDO path, DA and BDA path of each FCDA (`unresolved-fcda`, warning); no attribute of the FCDA `fc` (`fcda-fc-mismatch`, warning; SG and SE are treated as equivalent) |
+| Controls | dataset references, `invalid-attribute` (error) for SampledValueControl `smpRate` or `nofASDU` 0 |
+| Addresses | P patterns (`address-format` warning, `invalid-address` error when unreadable, e.g. VLAN-PRIORITY 8), repeated P type, VLAN-PRIORITY without VLAN-ID, GOOSE APPID 0x0000-0x3FFF / 0x8000-0xBFFF and SV APPID 0x4000-0x7FFF (`appid-range`), multicast bit (`mac-not-multicast`), recommended 01-0C-CD-01/04 ranges (`mac-range`, info), MAC+APPID reused in a SubNetwork (`duplicate-address`) |
+| Communication, topology | ConnectedAP, GSE/SMV and LNode references |
+
+`scl.Flatten` keeps rows for branches it cannot expand, with `Status`
+`unresolved-lntype`, `unresolved-dotype`, `unresolved-datype` or
+`type-cycle`.
+
 ### Inspection and export
 
 ```go

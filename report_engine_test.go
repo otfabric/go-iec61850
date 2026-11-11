@@ -209,18 +209,18 @@ func TestReportEngine_DataChange(t *testing.T) {
 
 	rt := engine.rcbs["LD1/LLN0$BR$brcb01"]
 	rt.mu.Lock()
-	prevSeq := rt.seqNum
+	prev := rt.entryID
 	rt.mu.Unlock()
 
 	storeKey := servermodel.StoreKey("LD1", "LLN0$ST$Mod$stVal")
 	srv.SetValue(ctx, storeKey, mms.NewInteger(42))
 
 	rt.mu.Lock()
-	newSeq := rt.seqNum
+	cur := rt.entryID
 	rt.mu.Unlock()
 
-	if newSeq <= prevSeq {
-		t.Errorf("seqNum should have incremented: got %d, prev %d", newSeq, prevSeq)
+	if cur <= prev {
+		t.Errorf("a data change should create an entry: entryID %d, prev %d", cur, prev)
 	}
 }
 
@@ -237,22 +237,14 @@ func TestReportEngine_GI(t *testing.T) {
 		t.Fatalf("enable: %v", err)
 	}
 
-	rt := engine.rcbs["LD1/LLN0$BR$brcb01"]
-	rt.mu.Lock()
-	prevSeq := rt.seqNum
-	rt.mu.Unlock()
-
 	// Trigger GI.
 	if err := engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "GI", mms.NewBoolean(true)); err != nil {
 		t.Fatalf("GI: %v", err)
 	}
 
-	rt.mu.Lock()
-	newSeq := rt.seqNum
-	rt.mu.Unlock()
-
-	if newSeq <= prevSeq {
-		t.Errorf("seqNum should have incremented after GI: got %d, prev %d", newSeq, prevSeq)
+	rt := engine.rcbs["LD1/LLN0$BR$brcb01"]
+	if e := lastEntry(t, rt); !e.gi || e.reasons[0] != ReasonGI {
+		t.Errorf("GI should queue a GI entry, got gi=%v reasons=%v", e.gi, e.reasons)
 	}
 
 	// GI flag should be reset.
@@ -272,21 +264,18 @@ func TestReportEngine_GI_Disabled(t *testing.T) {
 	defer engine.Stop()
 
 	rt := engine.rcbs["LD1/LLN0$BR$brcb01"]
-	rt.mu.Lock()
-	prevSeq := rt.seqNum
-	rt.mu.Unlock()
 
-	// GI without enable should be a no-op.
-	if err := engine.HandleRCBWrite(context.Background(), "LD1", "LLN0$BR$brcb01", "GI", mms.NewBoolean(true)); err != nil {
-		t.Fatalf("GI: %v", err)
+	// IEC 61850-7-2 §17.2.2.13 Figure 28 "NO GI ALLOWED": a GI request
+	// while disabled gets a negative response and GI is set to FALSE.
+	err := engine.HandleRCBWrite(context.Background(), "LD1", "LLN0$BR$brcb01", "GI", mms.NewBoolean(true))
+	if code := dataAccessCode(err); code != mms.DataAccessErrorTemporarilyUnavailable {
+		t.Fatalf("GI while disabled: err = %v, want temporarily-unavailable", err)
 	}
-
-	rt.mu.Lock()
-	newSeq := rt.seqNum
-	rt.mu.Unlock()
-
-	if newSeq != prevSeq {
-		t.Errorf("seqNum should not change when disabled: got %d, prev %d", newSeq, prevSeq)
+	if b, _ := srv.store.Get(servermodel.StoreKey("LD1", "LLN0$BR$brcb01$GI")).Bool(); b {
+		t.Error("GI should read FALSE after a refused request")
+	}
+	if n := queueLen(rt); n != 0 {
+		t.Errorf("GI while disabled queued %d entries", n)
 	}
 }
 
@@ -311,11 +300,11 @@ func TestReportEngine_IntegrityPeriod(t *testing.T) {
 	time.Sleep(150 * time.Millisecond)
 
 	rt.mu.Lock()
-	seq := rt.seqNum
+	entries := rt.entryID
 	rt.mu.Unlock()
 
-	if seq == 0 {
-		t.Error("expected at least one integrity report to have been generated")
+	if entries == 0 {
+		t.Error("expected at least one integrity entry to have been generated")
 	}
 }
 
@@ -406,9 +395,23 @@ func TestReportEngine_PurgeBuf(t *testing.T) {
 	}
 	rt.mu.Unlock()
 
+	// IEC 61850-8-1 Table 61: PurgeBuf may not be written while
+	// RptEna=TRUE.
+	err := engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "PurgeBuf", mms.NewBoolean(true))
+	if code := dataAccessCode(err); code != mms.DataAccessErrorTemporarilyUnavailable {
+		t.Fatalf("purge while enabled: err = %v, want temporarily-unavailable", err)
+	}
+	if err := engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "RptEna", mms.NewBoolean(false)); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+
 	// Purge buffer.
 	if err := engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "PurgeBuf", mms.NewBoolean(true)); err != nil {
 		t.Fatalf("purge: %v", err)
+	}
+	// IEC 61850-7-2 §17.2.2.14: PurgeBuf is set back to FALSE.
+	if b, _ := srv.store.Get(servermodel.StoreKey("LD1", "LLN0$BR$brcb01$PurgeBuf")).Bool(); b {
+		t.Error("PurgeBuf should read FALSE after the purge")
 	}
 
 	rt.mu.Lock()
@@ -633,12 +636,15 @@ func TestReportEngine_SequenceNumbering(t *testing.T) {
 		srv.SetValue(ctx, storeKey, mms.NewInteger(int64((i+1)*100)))
 	}
 
+	// Ten changes give ten entries with consecutive EntryIDs. SqNum is
+	// assigned when an entry is formatted for a client (see
+	// TestSpec_7_2_17_2_2_10_SqNumStartsAtZeroAndWraps).
 	rt.mu.Lock()
-	seq := rt.seqNum
+	n, last := len(rt.bufQueue), rt.entryID
 	rt.mu.Unlock()
 
-	if seq != 10 {
-		t.Errorf("seqNum = %d, want 10", seq)
+	if n != 10 || last != 10 {
+		t.Errorf("entries = %d, last EntryID = %d, want 10/10", n, last)
 	}
 }
 
@@ -705,17 +711,15 @@ func TestReportEngine_SqNumInStore(t *testing.T) {
 		t.Fatalf("enable: %v", err)
 	}
 
-	storeKey := servermodel.StoreKey("LD1", "LLN0$ST$Mod$stVal")
-	srv.SetValue(ctx, storeKey, mms.NewInteger(7))
-
+	// IEC 61850-7-2 §17.2.2.10: the FALSE→TRUE transition sets SqNum to 0.
 	sk := servermodel.StoreKey("LD1", "LLN0$BR$brcb01$SqNum")
 	v := srv.store.Get(sk)
 	if v == nil {
 		t.Fatal("SqNum not set in store")
 	}
 	seq, ok := v.Uint32()
-	if !ok || seq != 1 {
-		t.Errorf("SqNum in store = %d, want 1", seq)
+	if !ok || seq != 0 {
+		t.Errorf("SqNum in store = %d, want 0", seq)
 	}
 }
 
@@ -750,74 +754,13 @@ func TestDecodeEntryID_Short(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// filterEntriesAfter
-// ---------------------------------------------------------------------------
-
-func makeEntries(ids ...uint64) []*bufferedEntry {
-	out := make([]*bufferedEntry, len(ids))
-	for i, id := range ids {
-		out[i] = &bufferedEntry{entryID: encodeEntryID(id)}
-	}
-	return out
-}
-
-func entryIDs(entries []*bufferedEntry) []uint64 {
-	out := make([]uint64, len(entries))
-	for i, e := range entries {
-		out[i] = decodeEntryID(e.entryID)
-	}
-	return out
-}
-
-func TestFilterEntriesAfter_ZeroReturnsAll(t *testing.T) {
-	entries := makeEntries(1, 2, 3)
-	got := filterEntriesAfter(entries, 0)
-	if len(got) != 3 {
-		t.Errorf("want 3, got %d: %v", len(got), entryIDs(got))
-	}
-}
-
-func TestFilterEntriesAfter_KnownID(t *testing.T) {
-	entries := makeEntries(1, 2, 3, 4, 5)
-	got := filterEntriesAfter(entries, 2)
-	want := []uint64{3, 4, 5}
-	if ids := entryIDs(got); !slicesEqual(ids, want) {
-		t.Errorf("want %v, got %v", want, ids)
-	}
-}
-
-func TestFilterEntriesAfter_FutureIDReturnsNone(t *testing.T) {
-	entries := makeEntries(1, 2, 3)
-	got := filterEntriesAfter(entries, 99)
-	if len(got) != 0 {
-		t.Errorf("want empty, got %d: %v", len(got), entryIDs(got))
-	}
-}
-
-func TestFilterEntriesAfter_NilEntries(t *testing.T) {
-	got := filterEntriesAfter(nil, 0)
-	if got != nil {
-		t.Errorf("want nil, got %v", got)
-	}
-}
-
-func slicesEqual(a, b []uint64) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-// ---------------------------------------------------------------------------
 // BRCB disable clears EntryID in store — re-enable replays full buffer
 // ---------------------------------------------------------------------------
 
-func TestReportEngine_BRCB_DisableClearsEntryID(t *testing.T) {
+// TestReportEngine_BRCB_DisabledEntryIDIsNewest: a disabled BRCB reads
+// back the EntryID of the newest buffered entry (IEC 61850-7-2
+// §17.2.2.15). Before v1.17 a disable zeroed it.
+func TestReportEngine_BRCB_DisabledEntryIDIsNewest(t *testing.T) {
 	model := testReportSCL()
 	srv := newTestServer(t, model)
 	engine := srv.EnableReports()
@@ -827,34 +770,22 @@ func TestReportEngine_BRCB_DisableClearsEntryID(t *testing.T) {
 	storeKey := servermodel.StoreKey("LD1", "LLN0$ST$Mod$stVal")
 	entryIDKey := servermodel.StoreKey("LD1", "LLN0$BR$brcb01$EntryID")
 
-	// Enable BRCB and buffer one entry.
 	if err := engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "RptEna", mms.NewBoolean(true)); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
 	srv.SetValue(ctx, storeKey, mms.NewInteger(1))
-
-	// Verify server wrote a non-zero EntryID.
-	v := engine.store.Get(entryIDKey)
-	if v == nil {
-		t.Fatal("EntryID not set after buffering entry")
-	}
-	bs, _ := v.OctetString()
-	if decodeEntryID(bs) == 0 {
-		t.Fatal("EntryID should be non-zero after buffering entry")
-	}
-
-	// Disable — must clear the EntryID to zero.
 	if err := engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "RptEna", mms.NewBoolean(false)); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
-
-	v = engine.store.Get(entryIDKey)
-	if v == nil {
-		t.Fatal("EntryID should still exist in store (as zero) after disable")
+	bs, _ := engine.store.Get(entryIDKey).OctetString()
+	if got := decodeEntryID(bs); got != 1 {
+		t.Errorf("EntryID after disable = %d, want 1 (newest)", got)
 	}
-	bs, _ = v.OctetString()
-	if got := decodeEntryID(bs); got != 0 {
-		t.Errorf("EntryID after disable = %d, want 0", got)
+	// Buffering continues while disabled (§17.2.3.2.3.6).
+	srv.SetValue(ctx, storeKey, mms.NewInteger(2))
+	bs, _ = engine.store.Get(entryIDKey).OctetString()
+	if got := decodeEntryID(bs); got != 2 {
+		t.Errorf("EntryID after a disabled-state change = %d, want 2", got)
 	}
 }
 
@@ -893,10 +824,14 @@ func TestReportEngine_BRCB_ResumeID_FiltersBuf(t *testing.T) {
 		t.Fatalf("disable: %v", err)
 	}
 
-	// Client writes EntryID=2 (means "I have up to entry 2; replay from 3 onward").
-	engine.store.Set(entryIDKey, mms.NewOctetString(encodeEntryID(2)))
+	// Client writes EntryID=2 (means "I have up to entry 2; replay from 3
+	// onward"): the BRCB enters the resync state.
+	if err := engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "EntryID", mms.NewOctetString(encodeEntryID(2))); err != nil {
+		t.Fatalf("write EntryID: %v", err)
+	}
+	_ = entryIDKey
 
-	// Re-enable — filterEntriesAfter should return only entry 3.
+	// Re-enable — reporting resumes after entry 2.
 	if err := engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "RptEna", mms.NewBoolean(true)); err != nil {
 		t.Fatalf("re-enable: %v", err)
 	}
@@ -907,5 +842,11 @@ func TestReportEngine_BRCB_ResumeID_FiltersBuf(t *testing.T) {
 	rcb.mu.Unlock()
 	if qLen != 3 {
 		t.Errorf("bufQueue should still hold 3 entries, got %d", qLen)
+	}
+	rcb.mu.Lock()
+	last := rcb.lastSentID
+	rcb.mu.Unlock()
+	if last != 2 {
+		t.Errorf("transmission pointer = %d, want 2", last)
 	}
 }

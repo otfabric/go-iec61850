@@ -12,13 +12,28 @@ Validation is split into independent passes that each check a specific aspect of
 
 ## Functions
 
+### func Addresses
+
+```go
+func Addresses(s *scl.SCL, _ *index.Index) []scl.Diagnostic
+```
+
+Addresses checks the P values of ConnectedAP, GSE and SMV addresses:
+
+  - the tP\_MAC-Address, tP\_APPID, tP\_VLAN-ID, tP\_VLAN-PRIORITY and tP\_IP patterns (SCL\_Communication.xsd): warning "address-format" when the value deviates but can be read, error "invalid-address" when it cannot (for example VLAN-PRIORITY 8);
+  - a P type given twice in one Address: warning "duplicate-p-type" (the XSD only keys P types in PhysConn, uniquePTypeInPhysConn);
+  - VLAN-PRIORITY without VLAN-ID: warning "address-format" (8-1 Table 133 / 9-2 Table 19 condition c1);
+  - APPID ranges: GOOSE 0x0000-0x3FFF or 0x8000-0xBFFF (8-1 Annex C), SV 0x4000-0x7FFF (9-2 5.3.3.4.2): warning "appid-range";
+  - destination MAC without the multicast bit (8-1 Table 12): warning "mac-not-multicast"; outside the recommended 01-0C-CD-01-xx-xx (GOOSE) / 01-0C-CD-04-xx-xx (SV) ranges (8-1 Table B.1, 9-2 Table B.1): info "mac-range";
+  - the same MAC-Address and APPID used by two control blocks of one SubNetwork: warning "duplicate-address" (8-1 Annex C leaves APPID uniqueness to the configuration tool).
+
 ### func All
 
 ```go
 func All(s *scl.SCL, idx *index.Index, indexDiags []scl.Diagnostic) []scl.Diagnostic
 ```
 
-All runs every validation pass and returns the combined diagnostics. The index build diagnostics (duplicates) are included first, followed by template, IED, communication, dataset, control, topology and required-attribute checks.
+All runs every validation pass and returns the combined diagnostics. The index build diagnostics (duplicates) are included first, followed by template, IED, communication, address, dataset, control, topology and required-attribute checks.
 
 ### func Communication
 
@@ -42,7 +57,7 @@ Controls checks that report control blocks reference datasets that exist within 
 func Datasets(s *scl.SCL, idx *index.Index) []scl.Diagnostic
 ```
 
-Datasets checks dataset integrity: FCDA references resolve to real logical nodes via the index.
+Datasets checks dataset integrity (6 Ed2 9.3.10 FCDA): each FCDA must address existing data with its functional constraint. The logical device, the logical node, the data object (with "."-separated sub data objects), the data attribute (with "."-separated BDAs) and the FC are resolved in turn; the first step that fails is reported as a warning "unresolved-fcda" (FC mismatch: "fcda-fc-mismatch"), the severity this check has always used, since vendor files often carry such dangling members. Steps whose type cannot be resolved (missing LNodeType/DOType/DAType, reported by other passes) end the check silently.
 
 ### func IEDs
 
@@ -50,7 +65,7 @@ Datasets checks dataset integrity: FCDA references resolve to real logical nodes
 func IEDs(s *scl.SCL, idx *index.Index) []scl.Diagnostic
 ```
 
-IEDs checks IED-level structure: missing LN type references. Duplicate IED/AP/LD/LN checks are already handled by [index.Build](https://pkg.go.dev/github.com/otfabric/go-iec61850/scl/index#Build).
+IEDs checks IED-level structure: missing LN type references and LN types of another lnClass. Duplicate IED/AP/LD/LN checks are already handled by [index.Build](https://pkg.go.dev/github.com/otfabric/go-iec61850/scl/index#Build).
 
 ### func Templates
 
@@ -85,6 +100,7 @@ type Options struct {
 	SkipTemplates     bool
 	SkipIEDs          bool
 	SkipCommunication bool
+	SkipAddresses     bool
 	SkipDatasets      bool
 	SkipControls      bool
 	SkipTopology      bool

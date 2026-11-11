@@ -184,12 +184,21 @@ func TestGOOSEServerGoCBOverMMS(t *testing.T) {
 	if err := f.client.SetGoCB(ctx, "InteropIEDInteropLD", "LLN0$GO$gcbAll", GoCBUpdate{DatSet: &bad}); err == nil {
 		t.Error("unknown DatSet accepted")
 	}
-	// Writing the same DatSet is a no-op (ConfRev unchanged).
+	// 7-2 18.2.1.6: writing the same DatSet still increments ConfRev
+	// (GSE-07); a bare dataset name is stored as the ObjectReference
+	// (8-1 Table 73, GSE-08).
 	if err := f.client.SetGoCB(ctx, "InteropIEDInteropLD", "LLN0$GO$gcbAll", GoCBUpdate{DatSet: &ds}); err != nil {
 		t.Error(err)
 	}
-	if cb, _ = f.client.GetGoCB(ctx, "InteropIEDInteropLD", "LLN0$GO$gcbAll"); cb.ConfRev != 2 || cb.GoEna {
-		t.Errorf("after no-op: %+v", cb)
+	if cb, _ = f.client.GetGoCB(ctx, "InteropIEDInteropLD", "LLN0$GO$gcbAll"); cb.ConfRev != 3 || cb.GoEna {
+		t.Errorf("after same-value write: %+v", cb)
+	}
+	bare := "dsGooseBool"
+	if err := f.client.SetGoCB(ctx, "InteropIEDInteropLD", "LLN0$GO$gcbAll", GoCBUpdate{DatSet: &bare}); err != nil {
+		t.Error(err)
+	}
+	if cb, _ = f.client.GetGoCB(ctx, "InteropIEDInteropLD", "LLN0$GO$gcbAll"); cb.ConfRev != 4 || cb.DatSet != ds {
+		t.Errorf("after bare-name write: %+v", cb)
 	}
 	// A change to a dataset member publishes on the retargeted block
 	// (dsGooseBool: SPS1.stVal, q). ST is not client-writable.

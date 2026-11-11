@@ -59,7 +59,8 @@ type PublisherConfig struct {
 	// NoASDU is the number of samples per frame (default 1).
 	NoASDU int
 
-	// SmpSynch is the initial synchronization state.
+	// SmpSynch is the initial synchronization state. The values 3, 4
+	// and 255 are reserved (9-2 Table 14) and rejected.
 	SmpSynch uint8
 
 	// Optional ASDU fields (the OptFlds of the SVCB): RefrTm sends the
@@ -188,6 +189,9 @@ func NewPublisher(t Transport, cfg PublisherConfig) (*Publisher, error) {
 	}
 	if cfg.SmpRate == 0 {
 		return nil, configErr("SmpRate", "must be positive")
+	}
+	if ReservedSmpSynch(cfg.SmpSynch) {
+		return nil, configErr("SmpSynch", "%d is reserved (9-2 Table 14)", cfg.SmpSynch)
 	}
 	if cfg.SmpMod > SecPerSmp {
 		return nil, configErr("SmpMod", "unknown sample mode %d", cfg.SmpMod)
@@ -326,8 +330,18 @@ func (p *Publisher) SetEnabled(enabled bool) {
 	p.poke()
 }
 
+// ReservedSmpSynch reports whether s is a reserved smpSynch value:
+// 3, 4 and 255 "Reserved values – Do not use" (9-2 Table 14).
+func ReservedSmpSynch(s uint8) bool { return s == 3 || s == 4 || s == 255 }
+
 // SetSmpSynch sets the synchronization state sent from the next frame.
+// A reserved value ([ReservedSmpSynch]) is ignored and logged: the
+// state is left unchanged.
 func (p *Publisher) SetSmpSynch(s uint8) {
+	if ReservedSmpSynch(s) {
+		p.logger.Warn("sv: reserved smpSynch value ignored (9-2 Table 14)", "smpSynch", s)
+		return
+	}
 	p.mu.Lock()
 	p.smpSynch = s
 	p.mu.Unlock()

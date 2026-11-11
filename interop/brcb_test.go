@@ -22,12 +22,11 @@ import (
 	"time"
 
 	iec61850 "github.com/otfabric/go-iec61850"
-	mms "github.com/otfabric/go-mms"
 )
 
 const (
 	brcbLD     = "InteropLD"
-	brcbItemID = "LLN0$BR$brcb01"
+	brcbItemID = "LLN0$BR$brcb0101" // indexed SCL brcb01, first instance
 	brcbRptID  = "interop_brcb01"
 )
 
@@ -63,9 +62,7 @@ func TestGoServer_BRCB_EntryID(t *testing.T) {
 		if len(rpt.EntryID) == 0 {
 			t.Error("expected non-empty EntryID in BRCB report")
 		}
-		if rpt.SeqNum == 0 {
-			t.Error("expected non-zero SeqNum in BRCB report")
-		}
+		// SqNum starts at 0 after enable (IEC 61850-7-2 §17.2.2.10).
 	case <-time.After(5 * time.Second):
 		t.Fatal("BRCB GI report not received within timeout")
 	}
@@ -77,9 +74,13 @@ func TestGoServer_BRCB_EntryID(t *testing.T) {
 
 // TestGoServer_BRCB_Replay verifies that buffered entries are replayed when
 // the BRCB is re-enabled after being disabled. The sequence:
-//  1. Enable BRCB, trigger GI → report received and buffered.
+//  1. Enable BRCB, change a member → data-change report received.
 //  2. Disable BRCB.
-//  3. Re-enable BRCB → buffered entry is replayed to the client.
+//  3. Re-enable BRCB → the buffered entry is sent again (no EntryID
+//     resync: the whole buffer, IEC 61850-7-2 Figure 24).
+//
+// A GI report is not used: GI reports are not buffered
+// (IEC 61850-7-2 §17.2.3.2.3.6).
 func TestGoServer_BRCB_Replay(t *testing.T) {
 	h := startGoIEDServerWithReports(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -88,32 +89,21 @@ func TestGoServer_BRCB_Replay(t *testing.T) {
 	c := dialIED(t, ctx, fmt.Sprintf("127.0.0.1:%d", h.port))
 	defer c.Close(ctx)
 
-	// Step 1: enable BRCB and buffer one entry via GI.
 	sub, err := c.SubscribeReport(ctx, brcbRptID, iec61850.SubscribeReportOptions{
-		LD:            brcbLD,
-		RCBItemID:     brcbItemID,
-		AutoEnable:    true,
-		GIOnSubscribe: true,
+		LD:         brcbLD,
+		RCBItemID:  brcbItemID,
+		AutoEnable: true,
 	})
 	if err != nil {
 		t.Fatalf("SubscribeReport: %v", err)
 	}
+	toggleSPS1(h, 1)
+	firstEntryID := recvReportT(t, sub, "step 1 report").EntryID
 
-	var firstEntryID []byte
-	select {
-	case rpt := <-sub.Reports():
-		t.Logf("step 1 report: seqNum=%d entryID=%x", rpt.SeqNum, rpt.EntryID)
-		firstEntryID = rpt.EntryID
-	case <-time.After(5 * time.Second):
-		t.Fatal("step 1: GI report not received")
-	}
-
-	// Step 2: disable BRCB.
 	if err := sub.Close(); err != nil {
 		t.Fatalf("sub.Close: %v", err)
 	}
 
-	// Step 3: re-enable BRCB and wait for the replay.
 	sub2, err := c.SubscribeReport(ctx, brcbRptID, iec61850.SubscribeReportOptions{
 		LD:         brcbLD,
 		RCBItemID:  brcbItemID,
@@ -124,20 +114,12 @@ func TestGoServer_BRCB_Replay(t *testing.T) {
 	}
 	defer sub2.Close()
 
-	select {
-	case rpt := <-sub2.Reports():
-		t.Logf("replay report: seqNum=%d entryID=%x", rpt.SeqNum, rpt.EntryID)
-		if len(rpt.EntryID) == 0 {
-			t.Error("replayed report should have non-empty EntryID")
-		}
-		// The replayed entry should have the same EntryID as the original.
-		if len(firstEntryID) > 0 && len(rpt.EntryID) > 0 {
-			if string(rpt.EntryID) != string(firstEntryID) {
-				t.Errorf("replayed EntryID: want %x, got %x", firstEntryID, rpt.EntryID)
-			}
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("replay report not received after re-enabling BRCB")
+	rpt := recvReportT(t, sub2, "replay report")
+	if string(rpt.EntryID) != string(firstEntryID) {
+		t.Errorf("replayed EntryID: want %x, got %x", firstEntryID, rpt.EntryID)
+	}
+	if rpt.SeqNum != 0 {
+		t.Errorf("replayed SeqNum = %d, want 0 after the enable (7-2 §17.2.2.10)", rpt.SeqNum)
 	}
 }
 
@@ -156,23 +138,17 @@ func TestGoServer_BRCB_Purge(t *testing.T) {
 	c := dialIED(t, ctx, fmt.Sprintf("127.0.0.1:%d", h.port))
 	defer c.Close(ctx)
 
-	// Step 1: enable BRCB, buffer one entry.
+	// Step 1: enable BRCB, buffer one data-change entry.
 	sub, err := c.SubscribeReport(ctx, brcbRptID, iec61850.SubscribeReportOptions{
-		LD:            brcbLD,
-		RCBItemID:     brcbItemID,
-		AutoEnable:    true,
-		GIOnSubscribe: true,
+		LD:         brcbLD,
+		RCBItemID:  brcbItemID,
+		AutoEnable: true,
 	})
 	if err != nil {
 		t.Fatalf("SubscribeReport: %v", err)
 	}
-
-	select {
-	case rpt := <-sub.Reports():
-		t.Logf("step 1 report: seqNum=%d entryID=%x", rpt.SeqNum, rpt.EntryID)
-	case <-time.After(5 * time.Second):
-		t.Fatal("step 1: GI report not received")
-	}
+	toggleSPS1(h, 1)
+	recvReportT(t, sub, "step 1 report")
 
 	// Step 2: disable BRCB.
 	if err := sub.Close(); err != nil {
@@ -211,11 +187,13 @@ func TestGoServer_BRCB_Purge(t *testing.T) {
 // TestGoServer_BRCB_Overflow
 // ---------------------------------------------------------------------------
 
-// TestGoServer_BRCB_Overflow fills the BRCB buffer beyond its capacity and
-// verifies that the BufOvfl flag is set in the resulting report.
+// TestGoServer_BRCB_Overflow fills the BRCB buffer beyond its capacity
+// while the BRCB is disabled and verifies that the first report after the
+// enable has BufOvfl=true and the next one BufOvfl=false
+// (IEC 61850-7-2 §17.2.3.2.2.8: entries not yet sent were discarded).
 //
 // We shrink the buffer to 2 entries via SetRCBBufMax so we only need to
-// generate 3 reports to trigger an overflow.
+// generate 4 changes to discard two.
 func TestGoServer_BRCB_Overflow(t *testing.T) {
 	h := startGoIEDServerWithReports(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -224,7 +202,15 @@ func TestGoServer_BRCB_Overflow(t *testing.T) {
 	c := dialIED(t, ctx, fmt.Sprintf("127.0.0.1:%d", h.port))
 	defer c.Close(ctx)
 
-	// Enable BRCB.
+	re := h.srv.ReportEngine()
+	if re == nil {
+		t.Skip("report engine not available")
+	}
+	if !re.SetRCBBufMax(goLD, brcbItemID, 2) {
+		t.Fatalf("BRCB runtime not found: %s/%s", brcbLD, brcbItemID)
+	}
+	toggleSPS1(h, 4)
+
 	sub, err := c.SubscribeReport(ctx, brcbRptID, iec61850.SubscribeReportOptions{
 		LD:         brcbLD,
 		RCBItemID:  brcbItemID,
@@ -235,51 +221,10 @@ func TestGoServer_BRCB_Overflow(t *testing.T) {
 	}
 	defer sub.Close()
 
-	// Shrink the buffer to 2 so we can overflow with just 3 reports.
-	re := h.srv.ReportEngine()
-	if re == nil {
-		t.Skip("report engine not available")
+	if rpt := recvReportT(t, sub, "first report"); !rpt.BufOvfl {
+		t.Error("first report after the overflow: BufOvfl=false, want true")
 	}
-	if !re.SetRCBBufMax(goLD, brcbItemID, 2) {
-		t.Fatalf("BRCB runtime not found: %s/%s", brcbLD, brcbItemID)
-	}
-
-	// Drain any pending reports before generating overflow traffic.
-	time.Sleep(200 * time.Millisecond)
-drainLoop:
-	for {
-		select {
-		case <-sub.Reports():
-		default:
-			break drainLoop
-		}
-	}
-
-	// Generate 4 value changes via SetValue (which notifies the report engine).
-	// The 3rd change overflows the buffer of 2.
-	writeCtx := context.Background()
-	for i := 0; i < 4; i++ {
-		h.srv.SetValue(writeCtx, goLD+"/GGIO1$ST$SPS1$stVal",
-			mms.NewBoolean(i%2 == 0))
-		time.Sleep(50 * time.Millisecond)
-	}
-
-	// Collect reports and look for BufOvfl=true.
-	deadline := time.After(5 * time.Second)
-	sawOverflow := false
-	for !sawOverflow {
-		select {
-		case rpt, open := <-sub.Reports():
-			if !open {
-				t.Fatal("subscription channel closed")
-			}
-			t.Logf("report: seqNum=%d bufOvfl=%v", rpt.SeqNum, rpt.BufOvfl)
-			if rpt.BufOvfl {
-				sawOverflow = true
-			}
-		case <-deadline:
-			t.Error("no report with BufOvfl=true received after filling buffer")
-			return
-		}
+	if rpt := recvReportT(t, sub, "second report"); rpt.BufOvfl {
+		t.Error("second report: BufOvfl=true, want false")
 	}
 }

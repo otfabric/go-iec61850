@@ -64,9 +64,14 @@ type Server struct {
 	mms    *mms.Server
 
 	controlMu sync.RWMutex
-	controls  map[string]*controlRegistration
+	// controlLife orders control-model value writes (stSeld, the default
+	// operate) before Close; controlClosed is set by Close.
+	controlLife   sync.RWMutex
+	controlClosed bool
+	controls      map[string]*controlRegistration
 
 	reportEngine       *ReportEngine
+	reportMaxPDU       int // MMS MaxPDUSize bounding one InformationReport
 	sgEngine           *SettingGroupEngine
 	journalEngine      *JournalEngine
 	mmsJournalProvider *MemoryJournalProvider
@@ -212,6 +217,7 @@ func NewServer(model *servermodel.Model, opts ServerOptions) (*Server, error) {
 		hasFileProvider:    mmsOpts.FileProvider != nil,
 		onConnect:          opts.OnConnect,
 		onDisconnect:       opts.OnDisconnect,
+		reportMaxPDU:       mmsOpts.MMS.MaxPDUSize,
 	}
 
 	if opts.Identity != nil {
@@ -219,6 +225,7 @@ func NewServer(model *servermodel.Model, opts ServerOptions) (*Server, error) {
 	}
 	s.HandleStatus()
 	s.installWriteInterceptor()
+	vs.SetWriteGuard(s.guardControlWrite)
 
 	logger.Info("iec61850: server created",
 		"logical_devices", len(model.LogicalDevices))
@@ -305,6 +312,12 @@ func (s *Server) installWriteInterceptor() {
 			}
 		}
 
+		if s.journalEngine != nil {
+			if lcbItem, attr, ok := servermodel.ParseLCBItem(itemID); ok {
+				return true, s.journalEngine.HandleLCBWrite(ctx, ldName, lcbItem, attr, val)
+			}
+		}
+
 		if s.sgEngine != nil {
 			if subfield, ok := parseSGCBStoreKey(itemID); ok {
 				err := s.sgEngine.HandleSGCBWrite(ctx, ldName, subfield, val)
@@ -342,6 +355,11 @@ func (s *Server) installWriteInterceptor() {
 		}
 		if s.svEngine != nil {
 			s.svEngine.notify(storeKey)
+		}
+		// A client write is logged like a local one (IEC 61850-7-2
+		// §17.3.4: the log is triggered as reporting is).
+		if s.journalEngine != nil {
+			s.journalEngine.LogValueWrite(ctx, storeKey, time.Now())
 		}
 		if s.reportEngine != nil {
 			s.reportEngine.NotifyValueChanged(ctx, storeKey)
@@ -437,6 +455,7 @@ func parseSGCBStoreKey(itemID string) (subfield string, ok bool) {
 // clearing for garbage collection.
 func (s *Server) Close() {
 	s.bg.stop()
+	s.stopControls()
 	if s.reportEngine != nil {
 		s.reportEngine.Stop()
 	}
@@ -446,7 +465,13 @@ func (s *Server) Close() {
 	if s.svEngine != nil {
 		s.svEngine.Stop()
 	}
+	if s.journalEngine != nil {
+		s.journalEngine.stop()
+	}
 	s.journalEngine = nil
+	if s.sgEngine != nil {
+		s.sgEngine.stop()
+	}
 	s.sgEngine = nil
 	s.logger.Info("iec61850: server closed")
 }
@@ -489,6 +514,14 @@ func (s *Server) Serve(ctx context.Context, conn mms.Transport) error {
 		s.onConnect(ConnectionEvent{})
 	}
 	err := s.mms.Serve(ctx, conn)
+	// IEC 61850-7-2 Table 47: the association is gone, so are its
+	// selections (other paths release them on the next control service).
+	s.releaseLostSelections()
+	// The association has ended: release the report control blocks it
+	// owned (IEC 61850-7-2 §17.2.2.5 Figure 24, §17.2.4.4).
+	if s.reportEngine != nil {
+		s.reportEngine.reapClosedConns()
+	}
 	if s.onDisconnect != nil {
 		s.onDisconnect(ConnectionEvent{})
 	}

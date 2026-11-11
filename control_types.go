@@ -189,13 +189,20 @@ type OperateParams struct {
 	// Origin with OrCatRemoteControl and empty OrIdent is used.
 	Origin *Origin
 
-	// CtlNum is the control sequence number. For enhanced security
-	// models, this must be unique per select/operate cycle. When
-	// zero, the library auto-increments an internal counter.
+	// CtlNum is the control sequence number (INT8U, 0..255). All
+	// commands of one control sequence carry the same ctlNum (IEC
+	// 61850-7-2 20.5.2.4). Zero, with CtlNumSet false, means unset: the
+	// library uses the ctlNum of the last SelectWithValue of the control
+	// (Operate), or the next value of an auto-incrementing counter.
 	CtlNum uint8
 
+	// CtlNumSet sends CtlNum as given, zero included.
+	CtlNumSet bool
+
 	// OperTm is the scheduled operation time. A zero value means
-	// "operate now" (no timed command).
+	// "operate now" (no timed command); the library then sends operTm
+	// all zero when the server's Oper type has it (IEC 61850-8-1
+	// 20.10.2.2).
 	OperTm time.Time
 
 	// Test, when true, sets the Test bit to indicate a test command
@@ -204,6 +211,12 @@ type OperateParams struct {
 
 	// Check specifies synchrocheck/interlockCheck conditions.
 	Check CheckConditions
+
+	// TQuality, when set, is the TimeQuality of the T member (the time
+	// the command was sent, IEC 61850-7-2 20.5.2.5; IEC 61850-8-1 Table
+	// 32). Nil sends go-mms's default: synchronized, 10 bits of
+	// accuracy (0x0a).
+	TQuality *TimeQuality
 }
 
 // CancelParams contains parameters for an IEC 61850 Cancel command.
@@ -217,12 +230,26 @@ type CancelParams struct {
 	Origin *Origin
 
 	// CtlNum is the control sequence number that matches the
-	// original Operate.
+	// original Operate or SelectWithValue. Zero, with CtlNumSet false,
+	// means the ctlNum of the last SelectWithValue of the control.
 	CtlNum uint8
+
+	// CtlNumSet sends CtlNum as given, zero included.
+	CtlNumSet bool
 
 	// OperTm is the scheduled operation time from the original
 	// Operate. A zero value means the original was immediate.
 	OperTm time.Time
+
+	// Test is the test status of the control sequence being cancelled
+	// (IEC 61850-7-2 20.5.2.6: every command of a sequence carries the
+	// same test status; IEC 61850-8-1 Table 88). Before v1.17.0 a
+	// Cancel always sent FALSE.
+	Test bool
+
+	// TQuality, when set, is the TimeQuality of the T member; see
+	// [OperateParams.TQuality].
+	TQuality *TimeQuality
 }
 
 // AddCause represents the AdditionalCause field in LastApplError,
@@ -341,90 +368,118 @@ func BspCtlVal(bits []byte, bitLen int) *mms.Value {
 	return mms.NewBitStringWithLength(bits, bitLen)
 }
 
-// DpCtlVal creates a Dbpos (double-point) control value using
-// a two-bit bitstring: 01=off, 10=on.
-func DpCtlVal(on bool) *mms.Value {
+// DpCtlVal creates a Dbpos (double-point) value: a two-bit bitstring,
+// 01=off, 10=on. That is the type of a DPC's stVal, not of its ctlVal.
+//
+// Deprecated: the ctlVal of a DPC is BOOLEAN (IEC 61850-7-3, DPC); a
+// server refuses this value in an Oper with type-inconsistent. Use
+// [DPCCtlVal] (or [BoolCtlVal]) for the ctlVal and [DbposValue] for a
+// Dbpos status value.
+func DpCtlVal(on bool) *mms.Value { return DbposValue(on) }
+
+// DPCCtlVal creates the ctlVal of a double-point controllable (DPC):
+// BOOLEAN, off (false) or on (true) (IEC 61850-7-3, DPC ctlVal).
+func DPCCtlVal(on bool) *mms.Value { return mms.NewBoolean(on) }
+
+// DbposValue creates a Dbpos value (IEC 61850-7-3 Dbpos, IEC 61850-8-1
+// 8.1.2.1: a two-bit bitstring): 10 on (true), 01 off (false).
+func DbposValue(on bool) *mms.Value {
 	if on {
 		return mms.NewBitStringWithLength([]byte{0x80}, 2) // 10
 	}
 	return mms.NewBitStringWithLength([]byte{0x40}, 2) // 01
 }
 
-// buildOper constructs the Oper MMS structure for direct-operate
-// or select-with-value (SBOw). The structure matches:
+// controlTime is the T member of a control command: now, with the
+// TimeQuality given or go-mms's default.
+func controlTime(q *TimeQuality) *mms.Value {
+	now := time.Now().UTC()
+	if q == nil {
+		return mms.NewUTCTime(now)
+	}
+	return mms.NewUTCTimeWithQuality(now, encodeTimeQuality(*q))
+}
+
+// zeroUTCTime is an operTm of an immediate command: all octets zero (IEC
+// 61850-8-1 20.10.2.2).
+func zeroUTCTime() *mms.Value { return mms.NewUTCTimeWithQuality(time.Unix(0, 0).UTC(), 0) }
+
+// buildOper constructs the Oper MMS structure for direct-operate or
+// select-with-value (SBOw), with operTm only when p.OperTm is set (see
+// [encodeOper]).
+func buildOper(p OperateParams) *mms.Value { return encodeOper(p, !p.OperTm.IsZero()) }
+
+// encodeOper constructs the Oper/SBOw structure (IEC 61850-8-1 Tables 85,
+// 90):
 //
 //	Oper ::= SEQUENCE {
 //	    ctlVal     <type>,
-//	    operTm     UTC-Time,
+//	    operTm     UTC-Time OPTIONAL,  -- present iff withOperTm
 //	    origin     Origin,
 //	    ctlNum     INT8U,
 //	    T          UTC-Time,
 //	    Test       BOOLEAN,
 //	    Check      BIT STRING (SIZE(2))
 //	}
-func buildOper(p OperateParams) *mms.Value {
+//
+// operTm is present when the control's Oper type has it (IEC 61850-7-2
+// 20.5.2.8), all zero for an immediate command. Servers whose OperSPC
+// has no operTm (libiec61850, iec61850bean without time activation)
+// refuse a 7-member structure with type-inconsistent.
+func encodeOper(p OperateParams, withOperTm bool) *mms.Value {
 	origin := p.Origin
 	if origin == nil {
 		origin = &Origin{OrCat: OrCatRemoteControl}
 	}
-
-	// operTm is optional: only include it when a future activation time is
-	// requested. Many servers (libiec61850, iec61850bean) define OperSPC/DPC
-	// without operTm and will reject a 7-element structure with TypeInconsistent.
-	if !p.OperTm.IsZero() {
-		return mms.NewStructure([]*mms.Value{
-			p.CtlVal,
-			mms.NewUTCTime(p.OperTm),
-			origin.toMMS(),
-			mms.NewUnsigned(uint64(p.CtlNum)),
-			mms.NewUTCTime(time.Now().UTC()),
-			mms.NewBoolean(p.Test),
-			p.Check.toMMS(),
-		})
+	m := make([]*mms.Value, 0, 7)
+	m = append(m, p.CtlVal)
+	if withOperTm {
+		m = append(m, operTmValue(p.OperTm))
 	}
-
-	return mms.NewStructure([]*mms.Value{
-		p.CtlVal,
+	return mms.NewStructure(append(m,
 		origin.toMMS(),
 		mms.NewUnsigned(uint64(p.CtlNum)),
-		mms.NewUTCTime(time.Now().UTC()),
+		controlTime(p.TQuality),
 		mms.NewBoolean(p.Test),
 		p.Check.toMMS(),
-	})
+	))
 }
 
-// buildCancel constructs the Cancel MMS structure:
+func operTmValue(t time.Time) *mms.Value {
+	if t.IsZero() {
+		return zeroUTCTime()
+	}
+	return mms.NewUTCTime(t)
+}
+
+// buildCancel constructs the Cancel MMS structure, with operTm only when
+// p.OperTm is set (see [encodeCancel]).
+func buildCancel(p CancelParams) *mms.Value { return encodeCancel(p, !p.OperTm.IsZero()) }
+
+// encodeCancel constructs the Cancel structure (IEC 61850-8-1 Table 88):
 //
 //	Cancel ::= SEQUENCE {
 //	    ctlVal     <type>,
-//	    operTm     UTC-Time,
+//	    operTm     UTC-Time OPTIONAL,  -- present iff withOperTm
 //	    origin     Origin,
 //	    ctlNum     INT8U,
 //	    T          UTC-Time,
-//	    Test       BOOLEAN (always false for cancel)
+//	    Test       BOOLEAN
 //	}
-func buildCancel(p CancelParams) *mms.Value {
+func encodeCancel(p CancelParams, withOperTm bool) *mms.Value {
 	origin := p.Origin
 	if origin == nil {
 		origin = &Origin{OrCat: OrCatRemoteControl}
 	}
-
-	if !p.OperTm.IsZero() {
-		return mms.NewStructure([]*mms.Value{
-			p.CtlVal,
-			mms.NewUTCTime(p.OperTm),
-			origin.toMMS(),
-			mms.NewUnsigned(uint64(p.CtlNum)),
-			mms.NewUTCTime(time.Now().UTC()),
-			mms.NewBoolean(false),
-		})
+	m := make([]*mms.Value, 0, 6)
+	m = append(m, p.CtlVal)
+	if withOperTm {
+		m = append(m, operTmValue(p.OperTm))
 	}
-
-	return mms.NewStructure([]*mms.Value{
-		p.CtlVal,
+	return mms.NewStructure(append(m,
 		origin.toMMS(),
 		mms.NewUnsigned(uint64(p.CtlNum)),
-		mms.NewUTCTime(time.Now().UTC()),
-		mms.NewBoolean(false),
-	})
+		controlTime(p.TQuality),
+		mms.NewBoolean(p.Test),
+	))
 }

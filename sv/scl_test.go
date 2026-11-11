@@ -136,10 +136,10 @@ func TestSCLErrors(t *testing.T) {
 	}
 	ln0 := src.IEDs[0].AccessPoints[0].Server.LDevices[0].LN0
 	ln0.SMVControls = append(ln0.SMVControls,
-		scl.SMVControl{Name: "bad1", SmvID: "x", DatSet: "missing", SmpRate: 80, NofASDU: 1},
-		scl.SMVControl{Name: "bad2", SmvID: "x", SmpRate: 80, NofASDU: 1},
-		scl.SMVControl{Name: "bad3", SmvID: "x", DatSet: "strs", SmpRate: 80, NofASDU: 1},
-		scl.SMVControl{Name: "bad4", SmvID: "x", DatSet: "nolink", SmpRate: 80, NofASDU: 1},
+		scl.SMVControl{Name: "bad1", SmvID: "x", DatSet: "missing", SmpRate: 80, NofASDU: 1, Multicast: true},
+		scl.SMVControl{Name: "bad2", SmvID: "x", SmpRate: 80, NofASDU: 1, Multicast: true},
+		scl.SMVControl{Name: "bad3", SmvID: "x", DatSet: "strs", SmpRate: 80, NofASDU: 1, Multicast: true},
+		scl.SMVControl{Name: "bad4", SmvID: "x", DatSet: "nolink", SmpRate: 80, NofASDU: 1, Multicast: true},
 	)
 	// A string member cannot be sampled.
 	for i := range src.DataTypeTemplates.DOTypes {

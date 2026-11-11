@@ -185,12 +185,25 @@ const (
 	EventConfRev
 	// EventInvalid: an ASDU failed validation (Event.Err).
 	EventInvalid
+	// EventResync: the stream was resynchronised to the counter of
+	// this ASDU, which is delivered. It is reported when smpCnt went
+	// back to 0 out of sequence (9-2 Table 14: the counter is set to
+	// zero by a synchronising pulse; also a publisher restart) or after
+	// [ResyncAfter] consecutive out-of-order counters. The number of
+	// lost samples is unknown (Event.Lost is 0).
+	EventResync
 )
+
+// ResyncAfter is the number of consecutive out-of-order smpCnt values
+// after which a stream resynchronises to the received counter
+// ([EventResync]) instead of discarding it: a genuinely reordered ASDU
+// is followed by in-sequence ones, a counter that jumped back is not.
+const ResyncAfter = 3
 
 var eventNames = map[EventKind]string{
 	EventStart: "start", EventGap: "gap", EventDuplicate: "duplicate", EventOutOfOrder: "out-of-order",
 	EventTimeout: "timeout", EventRestored: "restored", EventSynch: "synch", EventConfRev: "confrev",
-	EventInvalid: "invalid",
+	EventInvalid: "invalid", EventResync: "resync",
 }
 
 // String returns the event kind name.
@@ -234,6 +247,9 @@ type Stats struct {
 	// Timeouts counts timeout transitions; QueueDrops counts samples not
 	// delivered because the sample queue was full.
 	Frames, ASDUs, Lost, Duplicates, OutOfOrder, Invalid, Timeouts, QueueDrops uint64
+
+	// Resyncs counts [EventResync] resynchronisations of smpCnt.
+	Resyncs uint64
 
 	// LastSmpCnt, SmpSynch, ConfRev and Simulation are the values of the
 	// last accepted ASDU.
@@ -308,6 +324,8 @@ type stream struct {
 	have    bool
 	wrap    int // 0 = unknown (65536 assumed, learnable)
 	learned bool
+	ooo     int  // consecutive out-of-order counters
+	simSeen bool // a simulated ASDU was accepted (SV-07)
 	winAt   time.Time
 	winN    uint64
 }
@@ -501,6 +519,16 @@ func (sub *Subscription) handleASDU(f *Frame, idx int, a *ASDU, now time.Time, s
 		st.wrap = sub.cfg.SmpCntWrap
 		sub.streams[key] = st
 	}
+	// Simulation (9-2 5.3.3.4.4 S bit, 7-4 LPHD.Sim): as for GOOSE, once
+	// a simulated ASDU of this stream was accepted the real ones are
+	// ignored, so the two streams are not interleaved.
+	if f.Simulation {
+		st.simSeen = true
+	} else if st.simSeen {
+		sub.mu.Unlock()
+		sub.s.metrics.FrameDropped("simulation")
+		return
+	}
 	if idx == 0 || st.st.Frames == 0 {
 		st.st.Frames++
 	}
@@ -523,7 +551,8 @@ func (sub *Subscription) handleASDU(f *Frame, idx int, a *ASDU, now time.Time, s
 	var evs [4]Event
 	ne := 0
 	base := Event{Stream: key, Time: now, SmpCnt: a.SmpCnt, SmpSynch: a.SmpSynch, ConfRev: a.ConfRev}
-	if st.st.Status == StatusTimeout {
+	restored := st.st.Status == StatusTimeout
+	if restored {
 		ev := base
 		ev.Kind = EventRestored
 		evs[ne] = ev
@@ -563,7 +592,28 @@ func (sub *Subscription) handleASDU(f *Frame, idx int, a *ASDU, now time.Time, s
 			ne++
 		}
 		kind, n := st.sequence(a.SmpCnt)
+		if restored && (kind == EventOutOfOrder || kind == EventDuplicate) {
+			// After a timeout an older or equal counter is a restarted
+			// publisher, not a late ASDU: accept it (EventRestored was
+			// reported). A forward jump is still reported as a gap.
+			kind = 0
+		}
+		if kind == EventOutOfOrder {
+			st.ooo++
+			if a.SmpCnt == 0 || st.ooo >= ResyncAfter {
+				kind = EventResync
+			}
+		}
+		if kind != EventOutOfOrder {
+			st.ooo = 0
+		}
 		switch kind {
+		case EventResync:
+			st.st.Resyncs++
+			ev := base
+			ev.Kind = EventResync
+			evs[ne] = ev
+			ne++
 		case EventGap:
 			lost = n
 			st.st.Lost += uint64(max(n, 0)) // sequence reports gaps as 1..w/2

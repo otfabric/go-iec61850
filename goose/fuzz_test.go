@@ -33,10 +33,26 @@ func fuzzSeedFrame(f *testing.F) []byte {
 	return b
 }
 
+// fuzzSeedFixedFrame is the seed frame in the fixed-length encoding of
+// IEC 61850-8-1 Annex A.3.
+func fuzzSeedFixedFrame(f *testing.F) []byte {
+	f.Helper()
+	fr, err := Decode(fuzzSeedFrame(f))
+	if err != nil {
+		f.Fatal(err)
+	}
+	b, err := EncodeFixedLength(fr, nil)
+	if err != nil {
+		f.Fatal(err)
+	}
+	return b
+}
+
 // FuzzDecode checks that Decode never panics, and that every frame it
 // accepts re-encodes to a frame that decodes to the same PDU.
 func FuzzDecode(f *testing.F) {
 	f.Add(fuzzSeedFrame(f))
+	f.Add(fuzzSeedFixedFrame(f))
 	f.Add(make([]byte, 60))
 	f.Add([]byte{1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6, 0x88, 0xb8, 0, 1, 0, 9, 0, 0, 0, 0, 0x61})
 	f.Fuzz(func(t *testing.T, b []byte) {
@@ -69,6 +85,11 @@ func FuzzDecodeData(f *testing.F) {
 		b, _ := EncodeData(v)
 		f.Add(b)
 	}
+	// Annex A.3 Table A.2 fixed-length vectors.
+	f.Add([]byte{0x85, 9, 0, 0, 0, 0, 0, 0, 0, 0, 1})
+	f.Add([]byte{0x85, 9, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
+	f.Add(append([]byte{0x8a, 35, 'a', 'b', 'c'}, make([]byte, 32)...))
+	f.Add([]byte{0x87, 4, 0x3f, 0x80, 0, 0})
 	f.Fuzz(func(t *testing.T, b []byte) {
 		v, err := DecodeData(b)
 		if err != nil {
@@ -93,6 +114,12 @@ func FuzzDecodePDU(f *testing.F) {
 		f.Fatal(err)
 	}
 	f.Add(pdu)
+	fixed, err := EncodePDUFixedLength(&PDU{GocbRef: "IEDLD/LLN0$GO$g", DatSet: "IEDLD/LLN0$ds", StNum: 1,
+		AllData: []*mms.Value{mms.NewInteger(-1), mms.NewVisibleString("ab")}}, nil)
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(fixed)
 	f.Add([]byte{0x61, 0x00})
 	f.Add([]byte{0x61, 0x84, 0xff, 0xff, 0xff, 0xff})
 	f.Add([]byte{0x61, 0x80, 0x00, 0x00})
@@ -116,6 +143,40 @@ func FuzzDecodePDU(f *testing.F) {
 		enc2, err := EncodePDU(p2)
 		if err != nil || !bytes.Equal(enc, enc2) {
 			t.Fatalf("APDU not stable across round trip: %v", err)
+		}
+	})
+}
+
+// FuzzEncodeFixedLength checks that every PDU the decoder accepts that
+// can be BER-encoded also encodes in the fixed-length form (or fails
+// with a typed value error), and that the fixed-length form decodes
+// back to the same BER encoding (IEC 61850-8-1 Annex A.3: fixed-length
+// encoding is valid BER for a tolerant decoder).
+func FuzzEncodeFixedLength(f *testing.F) {
+	f.Add(fuzzSeedFixedFrame(f)[26:]) // after addresses, VLAN tag, EtherType and the 8-octet GOOSE header
+	pdu, _ := EncodePDU(&PDU{GocbRef: "g", DatSet: "d", AllData: []*mms.Value{mms.NewInteger(1 << 40), mms.NewOctetString([]byte{1})}})
+	f.Add(pdu)
+	f.Fuzz(func(t *testing.T, b []byte) {
+		p, err := DecodePDU(b)
+		if err != nil {
+			return
+		}
+		if _, err := EncodePDU(p); err != nil {
+			return
+		}
+		fixed, err := EncodePDUFixedLength(p, nil)
+		if err != nil {
+			if !errors.Is(err, ErrInvalidValue) && !errors.Is(err, ErrLimitExceeded) {
+				t.Fatalf("untyped fixed-length error: %v", err)
+			}
+			return
+		}
+		p2, err := DecodePDU(fixed)
+		if err != nil {
+			t.Fatalf("fixed-length re-decode: %v", err)
+		}
+		if len(p2.AllData) != len(p.AllData) || p2.StNum != p.StNum || p2.GocbRef != p.GocbRef {
+			t.Fatalf("fixed-length round trip changed the PDU")
 		}
 	})
 }

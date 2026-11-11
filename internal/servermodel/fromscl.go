@@ -103,6 +103,12 @@ func standardDomainNames(m *Model, iedName string, lds []scl.LDevice) error {
 		ld := &m.LogicalDevices[i]
 		ld.Name = names[ld.Inst]
 		for j := range ld.LogicalNodes {
+			for k := range ld.LogicalNodes[j].Logs {
+				lg := &ld.LogicalNodes[j].Logs[k]
+				if name, ok := names[lg.LogLD]; ok {
+					lg.LogLD = name
+				}
+			}
 			for k := range ld.LogicalNodes[j].DataSets {
 				ds := &ld.LogicalNodes[j].DataSets[k]
 				for n := range ds.Members {
@@ -188,6 +194,15 @@ func convertLD(s *scl.SCL, sclLD *scl.LDevice, dotIdx map[string]*scl.DOType, da
 		}
 		for i := range sclLD.LN0.SMVControls {
 			sc := &sclLD.LN0.SMVControls[i]
+			if !sc.Multicast {
+				// 6 Table 30: multicast="false" is a unicast (USVCB)
+				// block (7-2 19.3), which is not implemented; serving
+				// it as an MSVCB would misrepresent it.
+				if warnings != nil {
+					*warnings = append(*warnings, fmt.Sprintf("%s/%s: SampledValueControl %q is unicast (multicast=\"false\", USVCB): not supported, skipped", sclLD.Inst, ln.Name, sc.Name))
+				}
+				continue
+			}
 			ln.SvCBs = append(ln.SvCBs, convertSvCB(sc, smv[sclLD.Inst+"/"+sc.Name], sclLD.Inst+"/"+ln.Name, warnings))
 		}
 		ld.LogicalNodes = append(ld.LogicalNodes, *ln)
@@ -250,11 +265,11 @@ func convertLN(s *scl.SCL, sclLN *scl.LN, dotIdx map[string]*scl.DOType, datIdx 
 	}
 
 	for _, sclRpt := range sclLN.Reports {
-		ln.Reports = append(ln.Reports, convertReport(&sclRpt))
+		ln.Reports = append(ln.Reports, expandReport(&sclRpt)...)
 	}
 
 	for _, sclLog := range sclLN.Logs {
-		ln.Logs = append(ln.Logs, LogDef{Name: sclLog.Name})
+		ln.Logs = append(ln.Logs, convertLog(&sclLog, ldInst))
 	}
 
 	if sclLN.SettingControl != nil {
@@ -317,10 +332,21 @@ func expandDO(do scl.DO, dotIdx map[string]*scl.DOType, datIdx map[string]*scl.D
 		if err != nil {
 			return obj, fmt.Errorf("DA %s: %w", da.Name, err)
 		}
+		setTrgOps(&attr, da.Dchg, da.Qchg, da.Dupd)
 		obj.Attributes = append(obj.Attributes, attr)
 	}
 
 	return obj, nil
+}
+
+// setTrgOps sets the trigger options of a DA on it and all its
+// sub-attributes: a BDA has no TrgOp of its own (IEC 61850-7-3 §5.5.2,
+// IEC 61850-6 tBDA).
+func setTrgOps(a *DataAttribute, dchg, qchg, dupd bool) {
+	a.Dchg, a.Qchg, a.Dupd = dchg, qchg, dupd
+	for i := range a.Children {
+		setTrgOps(&a.Children[i], dchg, qchg, dupd)
+	}
 }
 
 func expandDA(name, fc, btype, typeRef, val string, datIdx map[string]*scl.DAType, enumIdx map[string]*scl.EnumType, visited map[string]bool, warnings *[]string) (DataAttribute, error) {
@@ -501,6 +527,63 @@ func convertDataSet(ds *scl.DataSet) DataSetDef {
 		}
 		m.DOPath = doPath
 		def.Members = append(def.Members, m)
+	}
+	return def
+}
+
+// expandReport returns the instances of an SCL ReportControl: with
+// indexed, instances named after the control block with a two-digit
+// suffix from 01 up to RptEnabled max (at most 99); without, one instance
+// named as the control block (IEC 61850-8-1 §17.1.2 and §17.1.3.2,
+// IEC 61850-6 §9.3.8).
+func expandReport(rpt *scl.ReportControl) []ReportDef {
+	base := convertReport(rpt)
+	if !rpt.Indexed {
+		return []ReportDef{base}
+	}
+	n := max(rpt.MaxInstances, 1)
+	n = min(n, 99)
+	out := make([]ReportDef, n)
+	for i := range out {
+		out[i] = base
+		out[i].Name = fmt.Sprintf("%s%02d", rpt.Name, i+1)
+	}
+	return out
+}
+
+// convertLog maps an SCL LogControl onto an LCB definition. The log is
+// "<prefix><lnClass><lnInst>" (default LLN0) in LD ldInst (default the LD
+// of the control block) (IEC 61850-6 §9.3.9 Table 26). LogLD holds the LD
+// instance until standardDomainNames maps it to the domain name.
+func convertLog(lg *scl.Log, ldInst string) LogDef {
+	def := LogDef{
+		Name:       lg.Name,
+		LogName:    lg.LogName,
+		LogLD:      lg.LDInst,
+		DatSet:     lg.DatSet,
+		IntgPd:     lg.IntgPd,
+		LogEna:     lg.LogEna,
+		ReasonCode: lg.ReasonCode,
+		TrgOps: TrgOpsDef{
+			Dchg:   lg.TrgOps.Dchg,
+			Qchg:   lg.TrgOps.Qchg,
+			Dupd:   lg.TrgOps.Dupd,
+			Period: lg.TrgOps.Period,
+			GI:     lg.TrgOps.GI,
+		},
+	}
+	if def.LogLD == "" {
+		def.LogLD = ldInst
+	}
+	lnClass := lg.LNClass
+	if lnClass == "" {
+		lnClass = "LLN0"
+	}
+	def.LogLN = lg.Prefix + lnClass + lg.LNInst
+	if def.LogName == "" {
+		// Without a configured log name the default journal is
+		// GeneralLog (IEC 61850-8-1 §17.3.3.3.2).
+		def.LogName = "GeneralLog"
 	}
 	return def
 }

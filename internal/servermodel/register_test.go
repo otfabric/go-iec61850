@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/otfabric/go-mms"
@@ -436,33 +437,66 @@ func TestValueStore_WriteInterceptor_Replace(t *testing.T) {
 	}
 }
 
+// chanTransport is an in-process MMS transport. Like a TCP connection,
+// a Send to a peer that has closed fails, and a blocked Send or Receive
+// returns when its context ends.
 type chanTransport struct {
-	send chan []byte
-	recv chan []byte
+	send, recv     chan []byte
+	gone, peerGone chan struct{}
+	once           sync.Once
 }
 
-func (t *chanTransport) Send(_ context.Context, data []byte) error {
+func (t *chanTransport) Send(ctx context.Context, data []byte) error {
 	cp := make([]byte, len(data))
 	copy(cp, data)
-	t.send <- cp
-	return nil
+	select {
+	case <-t.gone:
+		return errors.New("transport closed")
+	case <-t.peerGone:
+		return errors.New("transport: peer closed")
+	default:
+	}
+	select {
+	case t.send <- cp:
+		return nil
+	case <-t.gone:
+		return errors.New("transport closed")
+	case <-t.peerGone:
+		return errors.New("transport: peer closed")
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (t *chanTransport) Receive(ctx context.Context) ([]byte, error) {
 	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
 	case b := <-t.recv:
 		return b, nil
+	case <-t.gone:
+		return nil, errors.New("transport closed")
+	case <-t.peerGone:
+		select {
+		case b := <-t.recv:
+			return b, nil
+		default:
+			return nil, errors.New("transport closed")
+		}
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
 }
 
-func (t *chanTransport) Close() error { return nil }
+func (t *chanTransport) Close() error {
+	t.once.Do(func() { close(t.gone) })
+	return nil
+}
 
 func loopbackPair() (mms.Transport, mms.Transport) {
 	c2s := make(chan []byte, 16)
 	s2c := make(chan []byte, 16)
-	return &chanTransport{send: c2s, recv: s2c}, &chanTransport{send: s2c, recv: c2s}
+	cGone, sGone := make(chan struct{}), make(chan struct{})
+	return &chanTransport{send: c2s, recv: s2c, gone: cGone, peerGone: sGone},
+		&chanTransport{send: s2c, recv: c2s, gone: sGone, peerGone: cGone}
 }
 
 func TestRegisterModel_SGCB(t *testing.T) {
@@ -494,13 +528,13 @@ func TestRegisterModel_SGCB(t *testing.T) {
 		t.Fatalf("RegisterModel: %v", err)
 	}
 
-	for _, sf := range []string{"NumOfSGs", "ActSG", "EditSG", "CnfEdit", "LActTm", "ResvTms"} {
+	for _, sf := range []string{"NumOfSG", "ActSG", "EditSG", "CnfEdit", "LActTm", "ResvTms"} {
 		if vs.Get(StoreKey("LD1", "LLN0$SP$SGCB$"+sf)) == nil {
 			t.Errorf("missing SGCB subfield %s", sf)
 		}
 	}
 
-	num := vs.Get(StoreKey("LD1", "LLN0$SP$SGCB$NumOfSGs"))
+	num := vs.Get(StoreKey("LD1", "LLN0$SP$SGCB$NumOfSG"))
 	u, ok := num.Uint32()
 	if !ok || u != 4 {
 		t.Errorf("NumOfSGs = %v, want 4", num)
@@ -739,11 +773,16 @@ func TestRegisterRCB_URCBAndDefaultRptID(t *testing.T) {
 		t.Error("RptEna should restore previous true after rejection")
 	}
 
+	// IEC 61850-8-1 §8.1.3.4.4.2: the RCB structure has read-only
+	// components (ConfRev, SqNum), so a write of the whole structure is
+	// object-access-denied.
 	vs.SetWriteInterceptor(nil)
-	if _, err := client.Write(ctx, mms.WriteRequest{
+	res, err := client.Write(ctx, mms.WriteRequest{
 		DomainID: "LD1", ItemID: "LLN0$RP$urcb01", Value: parent.Value,
-	}); err != nil {
-		t.Fatalf("URCB parent write: %v", err)
+	})
+	var dae *mms.DataAccessError
+	if !errors.As(err, &dae) || dae.Code != mms.DataAccessErrorObjectAccessDenied {
+		t.Fatalf("URCB parent write: res=%v err=%v, want object-access-denied", res, err)
 	}
 }
 

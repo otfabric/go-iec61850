@@ -91,7 +91,7 @@
 //     [Client.TriggerGI], [Client.ReserveURCB], [Client.ReleaseURCB]
 //   - Controls: [Client.Operate], [Client.Select],
 //     [Client.SelectWithValue], [Client.Cancel],
-//     [Client.ReadCtlModel], [Client.ReadLastApplError]
+//     [Client.ReadCtlModel], [Client.OperateWait]
 //   - Setting groups: [Client.GetSettingGroupInfo],
 //     [Client.SelectActiveSG], [Client.SelectEditSG],
 //     [Client.ConfirmEditSG], [Client.GetEditSGValue],

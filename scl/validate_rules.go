@@ -38,6 +38,29 @@ func ValidateRequired(s *SCL) []Diagnostic {
 		}
 		return fmt.Sprintf("#%d", i+1)
 	}
+	// lnBody checks the content of an LN or LN0 (tAnyLN, tLN0).
+	lnBody := func(np string, ln *LN) {
+		for n, ds := range ln.DataSets {
+			dp := np + "/DataSet[" + at(ds.Name, n) + "]"
+			need(dp, "DataSet", "name", ds.Name)
+			for q, f := range ds.FCDAs {
+				need(fmt.Sprintf("%s/FCDA[#%d]", dp, q+1), "FCDA", "fc", f.FC)
+			}
+		}
+		for n, rc := range ln.Reports {
+			need(np+"/ReportControl["+at(rc.Name, n)+"]", "ReportControl", "name", rc.Name)
+		}
+		for n, gc := range ln.GSEControls {
+			gp := np + "/GSEControl[" + at(gc.Name, n) + "]"
+			need(gp, "GSEControl", "name", gc.Name)
+			need(gp, "GSEControl", "appID", gc.AppID)
+		}
+		for n, sc := range ln.SMVControls {
+			sp := np + "/SampledValueControl[" + at(sc.Name, n) + "]"
+			need(sp, "SampledValueControl", "name", sc.Name)
+			need(sp, "SampledValueControl", "smvID", sc.SmvID)
+		}
+	}
 
 	for i, sub := range s.Substations {
 		sp := "Substation[" + at(sub.Name, i) + "]"
@@ -81,25 +104,20 @@ func ValidateRequired(s *SCL) []Diagnostic {
 			for k, ld := range ap.Server.LDevices {
 				lp := ap2 + "/LDevice[" + at(ld.Inst, k) + "]"
 				need(lp, "LDevice", "inst", ld.Inst)
+				if ln0 := ld.LN0; ln0 != nil {
+					// tLN0 (SCL_IED.xsd): lnClass fixed LLN0, lnType
+					// required; GSEControl and SampledValueControl only
+					// occur here (6 Ed2 9.3.8).
+					np := lp + "/LN0"
+					need(np, "LN0", "lnClass", ln0.LNClass)
+					need(np, "LN0", "lnType", ln0.LNType)
+					lnBody(np, ln0)
+				}
 				for m, ln := range ld.LNs {
 					np := fmt.Sprintf("%s/LN[%s%s%s]", lp, ln.Prefix, at(ln.LNClass, m), ln.Inst)
 					need(np, "LN", "lnClass", ln.LNClass)
 					need(np, "LN", "lnType", ln.LNType)
-					for n, ds := range ln.DataSets {
-						dp := np + "/DataSet[" + at(ds.Name, n) + "]"
-						need(dp, "DataSet", "name", ds.Name)
-						for q, f := range ds.FCDAs {
-							need(fmt.Sprintf("%s/FCDA[#%d]", dp, q+1), "FCDA", "fc", f.FC)
-						}
-					}
-					for n, rc := range ln.Reports {
-						need(np+"/ReportControl["+at(rc.Name, n)+"]", "ReportControl", "name", rc.Name)
-					}
-					for n, gc := range ln.GSEControls {
-						gp := np + "/GSEControl[" + at(gc.Name, n) + "]"
-						need(gp, "GSEControl", "name", gc.Name)
-						need(gp, "GSEControl", "appID", gc.AppID)
-					}
+					lnBody(np, &ln)
 				}
 			}
 		}

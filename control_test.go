@@ -429,14 +429,15 @@ func TestDecodeControlRequest_Cancel(t *testing.T) {
 		}),
 		mms.NewUnsigned(7),
 		mms.NewUTCTime(zeroTime),
+		mms.NewBoolean(false), // Test (IEC 61850-8-1 Table 88)
 	})
 
 	req, err := decodeControlRequest("LD/LN.DO", "Cancel", v)
 	if err != nil {
 		t.Fatalf("decode error: %v", err)
 	}
-	if req.Operation != "Cancel" {
-		t.Errorf("Operation = %q, want Cancel", req.Operation)
+	if req.Operation != "cancel" {
+		t.Errorf("Operation = %q, want cancel (ControlRequest.Operation)", req.Operation)
 	}
 	if req.CtlNum != 7 {
 		t.Errorf("CtlNum = %d, want 7", req.CtlNum)
@@ -704,6 +705,8 @@ func TestServerControlDispatch_OperateRejected(t *testing.T) {
 	}
 }
 
+// CTL-10: a control write without a registration is refused with
+// object-access-denied (as libiec61850 answers), not accepted silently.
 func TestServerControlDispatch_Unregistered(t *testing.T) {
 	s := &Server{
 		logger:   discardLogger(),
@@ -716,59 +719,42 @@ func TestServerControlDispatch_Unregistered(t *testing.T) {
 	})
 
 	err := s.handleControlWrite(context.Background(), "LD1", "GGIO1", []string{"SPCSO1", "Oper"}, "Oper", operVal)
-	if err != nil {
-		t.Fatalf("unregistered control should be silently ignored, got: %v", err)
+	if dataAccessCode(err) != mms.DataAccessErrorObjectAccessDenied {
+		t.Fatalf("unregistered control = %v, want object-access-denied", err)
 	}
 }
 
-func TestSBOOwnershipEnforcement(t *testing.T) {
+// IEC 61850-7-2 Table 47: a second Select while Ready is refused with
+// object-already-selected, also for the client holding the selection
+// (CTL-08); after the operate the SBO-normal control is unselected.
+func TestSelectNormal_AlreadySelected(t *testing.T) {
 	s := &Server{
 		logger:   discardLogger(),
 		controls: make(map[string]*controlRegistration),
 	}
-
 	if err := s.RegisterControl("LD1", "GGIO1.SPCSO1", CtlModelSBONormal, ControlHandler{}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-
-	origin1 := &Origin{OrCat: OrCatRemoteControl, OrIdent: []byte{1}}
-	origin2 := &Origin{OrCat: OrCatRemoteControl, OrIdent: []byte{2}}
-
-	// Client 1 selects.
-	sboVal := mms.NewVisibleString("select")
-	selectReq, _ := decodeControlRequest("LD1/GGIO1.SPCSO1", "SBO", sboVal)
-	selectReq.Origin = *origin1
-	selectReq.CtlNum = 1
-
 	reg := s.controls["LD1/GGIO1.SPCSO1"]
-	if err := s.executeSelect(context.Background(), reg, selectReq); err != nil {
-		t.Fatalf("select: %v", err)
+	ctx := context.Background()
+	if !s.selectNormal(ctx, reg) {
+		t.Fatal("first select denied")
 	}
-
-	// Client 2 tries to operate — should be denied (owner mismatch).
-	operReq := ControlRequest{
-		Ref:       "LD1/GGIO1.SPCSO1",
-		Operation: "operate",
-		CtlVal:    BoolCtlVal(true),
-		Origin:    *origin2,
-		CtlNum:    1,
+	if s.selectNormal(ctx, reg) {
+		t.Fatal("second select granted, want object-already-selected")
 	}
-	err := s.executeOperate(context.Background(), reg, operReq)
-	if err == nil {
-		t.Fatal("expected error for owner mismatch")
+	operReq := ControlRequest{Ref: "LD1/GGIO1.SPCSO1", Operation: "operate", CtlVal: BoolCtlVal(true), Origin: Origin{OrCat: OrCatRemoteControl}}
+	if err := s.operate(ctx, reg, operReq, nil, "GGIO1$CO$SPCSO1$Oper"); err != nil {
+		t.Fatalf("operate: %v", err)
 	}
-	if !errors.Is(err, ErrOperateFailed) {
-		t.Errorf("expected ErrOperateFailed, got %v", err)
-	}
-
-	// Client 1 operates — should succeed.
-	operReq.Origin = *origin1
-	err = s.executeOperate(context.Background(), reg, operReq)
-	if err != nil {
-		t.Fatalf("operate by owner should succeed: %v", err)
+	if err := s.operate(ctx, reg, operReq, nil, "GGIO1$CO$SPCSO1$Oper"); addCauseOf(err) != AddCauseObjectNotSelected {
+		t.Fatalf("second operate = %v, want object-not-selected", err)
 	}
 }
 
+// IEC 61850-7-2 20.5.2 / Table 47: an Operate whose ctlNum differs from
+// the SelectWithValue gets inconsistent-parameters, and (as in
+// libiec61850) the selection is released.
 func TestEnhancedSBO_CtlNumMismatch(t *testing.T) {
 	s := &Server{
 		logger:   discardLogger(),
@@ -779,35 +765,24 @@ func TestEnhancedSBO_CtlNumMismatch(t *testing.T) {
 		t.Fatalf("register: %v", err)
 	}
 
-	origin := &Origin{OrCat: OrCatRemoteControl, OrIdent: []byte{1}}
+	origin := Origin{OrCat: OrCatRemoteControl, OrIdent: []byte{1}}
 	reg := s.controls["LD1/GGIO1.SPCSO1"]
 
-	// Select with ctlNum=5.
-	selectReq := ControlRequest{
-		Ref:       "LD1/GGIO1.SPCSO1",
-		Operation: "select",
-		Origin:    *origin,
-		CtlNum:    5,
-		CtlVal:    BoolCtlVal(true),
-	}
-	if err := s.executeSelect(context.Background(), reg, selectReq); err != nil {
+	selectReq := ControlRequest{Ref: "LD1/GGIO1.SPCSO1", Operation: "select", Origin: origin, CtlNum: 5, CtlVal: BoolCtlVal(true)}
+	if err := s.selectWithValue(context.Background(), reg, selectReq); err != nil {
 		t.Fatalf("select: %v", err)
 	}
 
-	// Operate with mismatched ctlNum=6.
-	operReq := ControlRequest{
-		Ref:       "LD1/GGIO1.SPCSO1",
-		Operation: "operate",
-		Origin:    *origin,
-		CtlNum:    6,
-		CtlVal:    BoolCtlVal(true),
+	operReq := ControlRequest{Ref: "LD1/GGIO1.SPCSO1", Operation: "operate", Origin: origin, CtlNum: 6, CtlVal: BoolCtlVal(true)}
+	err := s.operate(context.Background(), reg, operReq, nil, "GGIO1$CO$SPCSO1$Oper")
+	if !errors.Is(err, ErrOperateFailed) || addCauseOf(err) != AddCauseInconsistentParameters {
+		t.Errorf("operate = %v, want ErrOperateFailed with inconsistent-parameters", err)
 	}
-	err := s.executeOperate(context.Background(), reg, operReq)
-	if err == nil {
-		t.Fatal("expected error for ctlNum mismatch in enhanced mode")
-	}
-	if !errors.Is(err, ErrOperateFailed) {
-		t.Errorf("expected ErrOperateFailed, got %v", err)
+	reg.mu.Lock()
+	state := reg.state
+	reg.mu.Unlock()
+	if state != ctlUnselected {
+		t.Errorf("state = %v, want unselected", state)
 	}
 }
 
@@ -1066,35 +1041,23 @@ func TestMmsValuesEqual(t *testing.T) {
 	}
 }
 
-// TestExecuteSelect_NonSBOModel verifies that executeSelect rejects a
-// direct-normal model with an error.
-func TestExecuteSelect_NonSBOModel(t *testing.T) {
+// IEC 61850-7-2 Table 47: SelectWithValue on a control without SBO with
+// enhanced security is refused with AddCause not-supported.
+func TestSelectWithValue_NonEnhancedModel(t *testing.T) {
 	s := &Server{logger: discardLogger(), controls: make(map[string]*controlRegistration)}
-	reg := &controlRegistration{ctlModel: CtlModelDirectNormal, selectTimeout: DefaultSelectTimeout}
-	req := ControlRequest{Ref: "LD1/GGIO1.SPCSO1", Operation: "select"}
-	if err := s.executeSelect(context.Background(), reg, req); err == nil {
-		t.Fatal("expected error for non-SBO ctlModel, got nil")
+	for _, m := range []CtlModel{CtlModelDirectNormal, CtlModelSBONormal, CtlModelDirectEnhanced} {
+		reg := &controlRegistration{ctlModel: m}
+		req := ControlRequest{Ref: "LD1/GGIO1.SPCSO1", Operation: "select", CtlVal: BoolCtlVal(true), Origin: Origin{OrCat: OrCatRemoteControl}}
+		err := s.selectWithValue(context.Background(), reg, req)
+		if !errors.Is(err, ErrSelectFailed) || addCauseOf(err) != AddCauseNotSupported {
+			t.Errorf("%v: %v, want not-supported", m, err)
+		}
 	}
 }
 
-// TestExecuteSelectWithValue_NonEnhancedModel verifies that
-// executeSelectWithValue rejects SBO-normal with a helpful message.
-func TestExecuteSelectWithValue_NonEnhancedModel(t *testing.T) {
-	s := &Server{logger: discardLogger(), controls: make(map[string]*controlRegistration)}
-	reg := &controlRegistration{ctlModel: CtlModelSBONormal, selectTimeout: DefaultSelectTimeout}
-	req := ControlRequest{Ref: "LD1/GGIO1.SPCSO1", Operation: "select", CtlVal: BoolCtlVal(true)}
-	err := s.executeSelectWithValue(context.Background(), reg, req)
-	if err == nil {
-		t.Fatal("expected error for non-enhanced ctlModel, got nil")
-	}
-	if _, ok := errors.AsType[*ControlError](err); !ok {
-		t.Fatalf("want *ControlError, got %T", err)
-	}
-}
-
-// TestExecuteOperate_SBOwCtlValMismatch verifies that an SBOw Operate is
-// rejected when the ctlVal differs from the one used at select time.
-func TestExecuteOperate_SBOwCtlValMismatch(t *testing.T) {
+// IEC 61850-7-2 20.5.2 / Table 47: an Operate whose ctlVal differs from
+// the SelectWithValue gets inconsistent-parameters.
+func TestOperate_SBOwCtlValMismatch(t *testing.T) {
 	s := &Server{logger: discardLogger(), controls: make(map[string]*controlRegistration)}
 	if err := s.RegisterControl("LD1", "GGIO1.SPCSO1", CtlModelSBOEnhanced, ControlHandler{}); err != nil {
 		t.Fatalf("register: %v", err)
@@ -1102,24 +1065,12 @@ func TestExecuteOperate_SBOwCtlValMismatch(t *testing.T) {
 	reg := s.controls["LD1/GGIO1.SPCSO1"]
 	origin := Origin{OrCat: OrCatRemoteControl, OrIdent: []byte{1}}
 
-	// Select with CtlVal=true.
-	selReq := ControlRequest{
-		Ref: "LD1/GGIO1.SPCSO1", Operation: "select",
-		Origin: origin, CtlNum: 3, CtlVal: BoolCtlVal(true),
-	}
-	if err := s.executeSelect(context.Background(), reg, selReq); err != nil {
+	selReq := ControlRequest{Ref: "LD1/GGIO1.SPCSO1", Operation: "select", Origin: origin, CtlNum: 3, CtlVal: BoolCtlVal(true)}
+	if err := s.selectWithValue(context.Background(), reg, selReq); err != nil {
 		t.Fatalf("select: %v", err)
 	}
-
-	// Operate with CtlVal=false — ctlVal mismatch must be caught.
-	operReq := ControlRequest{
-		Ref: "LD1/GGIO1.SPCSO1", Operation: "operate",
-		Origin: origin, CtlNum: 3, CtlVal: BoolCtlVal(false),
-	}
-	err := s.executeOperate(context.Background(), reg, operReq)
-	if err == nil {
-		t.Fatal("expected error for ctlVal mismatch, got nil")
-	}
+	operReq := ControlRequest{Ref: "LD1/GGIO1.SPCSO1", Operation: "operate", Origin: origin, CtlNum: 3, CtlVal: BoolCtlVal(false)}
+	err := s.operate(context.Background(), reg, operReq, nil, "GGIO1$CO$SPCSO1$Oper")
 	var ce *ControlError
 	if !errors.As(err, &ce) {
 		t.Fatalf("want *ControlError, got %T", err)
@@ -1129,48 +1080,39 @@ func TestExecuteOperate_SBOwCtlValMismatch(t *testing.T) {
 	}
 }
 
-// TestExecuteOperate_SBONormal_OriginMismatch exercises the write-path
-// ownership check: when selectOwner is set (from a Write-to-SBO select)
-// and the operate arrives with a different origin, it must be denied.
-func TestExecuteOperate_SBONormal_OriginMismatch(t *testing.T) {
+// SBO with normal security: the selection belongs to the association, the
+// Operate's origin is not compared with the Select (a Read carries none;
+// libiec61850 compares the connection only).
+func TestOperate_SBONormal_OriginNotCompared(t *testing.T) {
 	s := &Server{logger: discardLogger(), controls: make(map[string]*controlRegistration)}
 	if err := s.RegisterControl("LD1", "GGIO1.SPCSO1", CtlModelSBONormal, ControlHandler{}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	reg := s.controls["LD1/GGIO1.SPCSO1"]
-
-	// Simulate a write-path select by origin "1:01".
-	reg.mu.Lock()
-	reg.selectOwner = fmt.Sprintf("%d:%x", OrCatRemoteControl, []byte{1})
-	reg.selectTime = time.Now()
-	reg.selectConn = nil // write-path: no connection stored
-	reg.mu.Unlock()
-
-	// Operate arrives with origin "1:02" — different owner.
+	if !s.selectNormal(context.Background(), reg) {
+		t.Fatal("select denied")
+	}
 	operReq := ControlRequest{
 		Ref: "LD1/GGIO1.SPCSO1", Operation: "operate",
 		Origin: Origin{OrCat: OrCatRemoteControl, OrIdent: []byte{2}},
 		CtlNum: 1, CtlVal: BoolCtlVal(true),
 	}
-	err := s.executeOperate(context.Background(), reg, operReq)
-	if !errors.Is(err, ErrOperateFailed) {
-		t.Errorf("expected ErrOperateFailed for origin mismatch, got %v", err)
+	if err := s.operate(context.Background(), reg, operReq, nil, "GGIO1$CO$SPCSO1$Oper"); err != nil {
+		t.Errorf("operate: %v", err)
 	}
 }
 
-// TestExecuteOperate_SBONormal_Timeout verifies that an expired SBO
-// select is treated as if no select is active.
-func TestExecuteOperate_SBONormal_Timeout(t *testing.T) {
+// IEC 61850-7-2 20.2.2 a: an expired selection is treated as no
+// selection (object-not-selected).
+func TestOperate_SBONormal_Timeout(t *testing.T) {
 	s := &Server{logger: discardLogger(), controls: make(map[string]*controlRegistration)}
 	if err := s.RegisterControl("LD1", "GGIO1.SPCSO1", CtlModelSBONormal, ControlHandler{}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	reg := s.controls["LD1/GGIO1.SPCSO1"]
-
-	// Seed a timed-out selection.
 	reg.mu.Lock()
-	reg.selectOwner = fmt.Sprintf("%d:%x", OrCatRemoteControl, []byte{1})
-	reg.selectTime = time.Now().Add(-2 * DefaultSelectTimeout) // well in the past
+	reg.state = ctlReady
+	reg.selTime = time.Now().Add(-2 * DefaultSelectTimeout)
 	reg.mu.Unlock()
 
 	operReq := ControlRequest{
@@ -1178,65 +1120,58 @@ func TestExecuteOperate_SBONormal_Timeout(t *testing.T) {
 		Origin: Origin{OrCat: OrCatRemoteControl, OrIdent: []byte{1}},
 		CtlNum: 1, CtlVal: BoolCtlVal(true),
 	}
-	err := s.executeOperate(context.Background(), reg, operReq)
-	if !errors.Is(err, ErrOperateFailed) {
-		t.Errorf("expected ErrOperateFailed for timed-out select, got %v", err)
+	err := s.operate(context.Background(), reg, operReq, nil, "GGIO1$CO$SPCSO1$Oper")
+	if !errors.Is(err, ErrOperateFailed) || addCauseOf(err) != AddCauseObjectNotSelected {
+		t.Errorf("operate = %v, want object-not-selected", err)
 	}
 }
 
-// TestExecuteCancel_SBOw_OriginMismatch verifies that a cancel by a
-// different origin is rejected for SBOw controls.
-func TestExecuteCancel_SBOw_OriginMismatch(t *testing.T) {
+// IEC 61850-7-2 20.6 / Table 47: a Cancel whose parameters differ from the
+// SelectWithValue gets inconsistent-parameters (as libiec61850 compares).
+func TestCancel_SBOw_OriginMismatch(t *testing.T) {
 	s := &Server{logger: discardLogger(), controls: make(map[string]*controlRegistration)}
 	if err := s.RegisterControl("LD1", "GGIO1.SPCSO1", CtlModelSBOEnhanced, ControlHandler{}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	reg := s.controls["LD1/GGIO1.SPCSO1"]
-
-	// Seed a selection by origin "1:01".
-	reg.mu.Lock()
-	reg.selectOwner = fmt.Sprintf("%d:%x", OrCatRemoteControl, []byte{1})
-	reg.mu.Unlock()
-
-	// Cancel arrives from origin "1:02".
-	cancelReq := ControlRequest{
-		Ref: "LD1/GGIO1.SPCSO1", Operation: "cancel",
-		Origin: Origin{OrCat: OrCatRemoteControl, OrIdent: []byte{2}},
-		CtlNum: 1, CtlVal: BoolCtlVal(true),
+	sel := ControlRequest{Ref: "LD1/GGIO1.SPCSO1", Operation: "select",
+		Origin: Origin{OrCat: OrCatRemoteControl, OrIdent: []byte{1}}, CtlNum: 1, CtlVal: BoolCtlVal(true)}
+	if err := s.selectWithValue(context.Background(), reg, sel); err != nil {
+		t.Fatal(err)
 	}
-	err := s.executeCancel(context.Background(), reg, cancelReq)
-	if !errors.Is(err, ErrSelectFailed) {
-		t.Errorf("expected ErrSelectFailed for origin mismatch, got %v", err)
+
+	cancelReq := sel
+	cancelReq.Operation = "cancel"
+	cancelReq.Origin = Origin{OrCat: OrCatRemoteControl, OrIdent: []byte{2}}
+	err := s.cancel(context.Background(), reg, cancelReq)
+	if !errors.Is(err, ErrCancelFailed) || addCauseOf(err) != AddCauseInconsistentParameters {
+		t.Errorf("cancel = %v, want ErrCancelFailed with inconsistent-parameters", err)
 	}
 }
 
-// TestExecuteCancel_SBOw_OwnerCancels verifies that the selecting origin
-// can successfully cancel, clearing the selection.
-func TestExecuteCancel_SBOw_OwnerCancels(t *testing.T) {
+// IEC 61850-7-2 20.6: the selecting client cancels; the control returns to
+// Unselected.
+func TestCancel_SBOw_OwnerCancels(t *testing.T) {
 	s := &Server{logger: discardLogger(), controls: make(map[string]*controlRegistration)}
 	if err := s.RegisterControl("LD1", "GGIO1.SPCSO1", CtlModelSBOEnhanced, ControlHandler{}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	reg := s.controls["LD1/GGIO1.SPCSO1"]
-	origin := Origin{OrCat: OrCatRemoteControl, OrIdent: []byte{5}}
-	ownerKey := fmt.Sprintf("%d:%x", origin.OrCat, origin.OrIdent)
-
-	reg.mu.Lock()
-	reg.selectOwner = ownerKey
-	reg.mu.Unlock()
-
-	cancelReq := ControlRequest{
-		Ref: "LD1/GGIO1.SPCSO1", Operation: "cancel",
-		Origin: origin, CtlNum: 1, CtlVal: BoolCtlVal(true),
+	sel := ControlRequest{Ref: "LD1/GGIO1.SPCSO1", Operation: "select",
+		Origin: Origin{OrCat: OrCatRemoteControl, OrIdent: []byte{5}}, CtlNum: 1, CtlVal: BoolCtlVal(true)}
+	if err := s.selectWithValue(context.Background(), reg, sel); err != nil {
+		t.Fatal(err)
 	}
-	if err := s.executeCancel(context.Background(), reg, cancelReq); err != nil {
+	cancelReq := sel
+	cancelReq.Operation = "cancel"
+	if err := s.cancel(context.Background(), reg, cancelReq); err != nil {
 		t.Fatalf("owner cancel should succeed: %v", err)
 	}
 	reg.mu.Lock()
-	owner := reg.selectOwner
+	state := reg.state
 	reg.mu.Unlock()
-	if owner != "" {
-		t.Errorf("selectOwner should be cleared after cancel, got %q", owner)
+	if state != ctlUnselected {
+		t.Errorf("state = %v, want unselected", state)
 	}
 }
 

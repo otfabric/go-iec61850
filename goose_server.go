@@ -39,6 +39,11 @@ type GOOSEOptions struct {
 
 	// Metrics receives publisher counters. Nil disables metrics.
 	Metrics goose.Metrics
+
+	// TimeQuality is the TimeQuality octet of T in every GOOSE message
+	// (see goose.PublisherConfig.TimeQuality). Zero uses
+	// goose.DefaultTimeQuality (clock not synchronised).
+	TimeQuality uint8
 }
 
 // GOOSEEngine publishes the GOOSE control blocks of a [Server]'s model.
@@ -50,13 +55,21 @@ type GOOSEOptions struct {
 //
 // The GoCB attributes are served over MMS under the GO functional
 // constraint: GoEna, GoID and DatSet are writable (GoID and DatSet only
-// while GoEna is false; a DatSet change increments ConfRev), all other
-// attributes are read-only.
+// while GoEna is false; every DatSet write increments ConfRev, 7-2
+// 18.2.1.6), all other attributes are read-only. GoID and DatSet are
+// writable as in IEC 61850-7-2 Table 42, although the 8-1 Table 73
+// mapping lists them read-only.
+//
+// A GoCB whose address is unconfigured (00-00-00-00-00-00, 8-1 Annex B)
+// or not multicast, whose ConfRev is 0 (7-2 18.2.1.3) or whose dataset
+// cannot be resolved has NdsCom TRUE and cannot be enabled. A GoCB with
+// FixedOffs TRUE publishes the fixed-length encoding of 8-1 Annex A.3.
 type GOOSEEngine struct {
 	s       *Server
 	t       goose.Transport
 	logger  *slog.Logger
 	metrics goose.Metrics
+	tq      uint8
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -96,7 +109,7 @@ func (s *Server) EnableGOOSE(opts GOOSEOptions) (*GOOSEEngine, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	e := &GOOSEEngine{
-		s: s, t: opts.Transport, logger: logger, metrics: opts.Metrics,
+		s: s, t: opts.Transport, logger: logger, metrics: opts.Metrics, tq: opts.TimeQuality,
 		ctx: ctx, cancel: cancel, gocbs: map[string]*gocbRuntime{},
 	}
 	for i := range s.model.LogicalDevices {
@@ -120,8 +133,10 @@ func (s *Server) EnableGOOSE(opts GOOSEOptions) (*GOOSEEngine, error) {
 		rt.mu.Unlock()
 		if err == nil && !opts.StartDisabled {
 			if err := rt.setEnabled(true); err != nil {
-				e.Stop()
-				return nil, fmt.Errorf("%w: %s: %w", ErrGOOSE, rt.ref(), err)
+				// One unusable GoCB does not stop the others: it needs
+				// commissioning (7-2 18.2.1.7 NdsCom).
+				logger.Warn("iec61850: GoCB cannot be enabled, needs commissioning", "gocbRef", rt.ref(), "error", err)
+				s.store.Set(rt.key("NdsCom"), mms.NewBoolean(true))
 			}
 		}
 	}
@@ -213,6 +228,19 @@ func (rt *gocbRuntime) resolveLocked() error {
 		if !rt.def.HasAddress {
 			return errors.New("no GSE address")
 		}
+		if rt.def.DstAddr == ([6]byte{}) {
+			// 8-1 Annex B: 00-00-00-00-00-00 means "not configured".
+			return errors.New("MAC-Address 00-00-00-00-00-00 (not configured)")
+		}
+		if rt.def.DstAddr[0]&0x01 == 0 {
+			// 8-1 Table 12: the multicast bit shall be set.
+			return fmt.Errorf("MAC-Address %x is not multicast", rt.def.DstAddr)
+		}
+		if cr, _ := rt.get("ConfRev").Uint64(); cr == 0 {
+			// 7-2 18.2.1.3: GoEna TRUE shall fail while ConfRev is 0
+			// (18.2.1.6: the value 0 is reserved).
+			return errors.New("ConfRev 0")
+		}
 		ds := rt.str("DatSet")
 		if ds == "" {
 			return errors.New("empty DatSet")
@@ -288,6 +316,15 @@ func (rt *gocbRuntime) setEnabled(on bool) error {
 		Values:  rt.readValues(),
 		Logger:  rt.e.logger,
 		Metrics: rt.e.metrics,
+
+		TimeQuality: rt.e.tq,
+		FixedOffs:   rt.def.FixedOffs,
+	}
+	if cfg.FixedOffs {
+		cfg.MemberTypes = make([]mms.TypeSpec, len(rt.members))
+		for i, n := range rt.members {
+			cfg.MemberTypes[i] = n.Type
+		}
 	}
 	if cfg.MinTime > cfg.MaxTime && cfg.MaxTime > 0 {
 		cfg.MinTime = cfg.MaxTime
@@ -385,13 +422,16 @@ func (e *GOOSEEngine) handleWrite(storeKey string, val *mms.Value) (bool, error)
 			return true, nil
 		}
 		ds, _ := val.VisibleString()
-		if def, _ := e.s.model.FindDataSet(rt.ldName, ds); def == nil {
+		def, ln := e.s.model.FindDataSet(rt.ldName, ds)
+		if def == nil {
 			return true, &mms.DataAccessError{Code: mms.DataAccessErrorObjectValueInvalid}
 		}
-		if ds == rt.str("DatSet") {
-			return true, nil
-		}
-		e.s.store.Set(storeKey, val)
+		// The GoCB and the PDU carry the ObjectReference of the dataset
+		// (8-1 Table 73, 18.1.2.5.2), also when written by its bare
+		// name.
+		e.s.store.Set(storeKey, mms.NewVisibleString(servermodel.QualifiedDatSet(rt.ldName, ln.Name, def.Name)))
+		// 7-2 18.2.1.6: ConfRev is incremented also when DatSet is set
+		// to the same value.
 		cr, _ := rt.get("ConfRev").Uint64()
 		e.s.store.Set(rt.key("ConfRev"), mms.NewUnsigned(cr+1))
 		if err := rt.resolveLocked(); err != nil {

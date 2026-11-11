@@ -22,12 +22,13 @@ const (
 	EtherTypeVLAN = l2.EtherTypeVLAN
 
 	// SimulationBit is the bit in Reserved1 that marks a simulated
-	// message (IEC 61850-8-1 Ed2.1 "S" bit).
+	// message (IEC 61850-8-1:2011 Figure C.5 "S" bit).
 	SimulationBit uint16 = 0x8000
 
 	// MaxPayload is the maximum Ethernet payload (after the EtherType)
-	// produced by the encoder.
-	MaxPayload = 1500
+	// produced by the encoder: Length = 8 + m with the APDU length m
+	// less than 1492 (IEC 61850-8-1:2011 Annex C), i.e. 1499 octets.
+	MaxPayload = headerLen + 1491
 
 	// minFrame is the minimum Ethernet frame length without FCS; the
 	// encoder pads shorter frames.
@@ -66,7 +67,9 @@ type VLAN struct {
 	// recommends 4 for GOOSE.
 	Priority uint8
 
-	// DEI is the drop eligible indicator.
+	// DEI is the drop eligible indicator. IEC 61850-8-1 Annex C
+	// requires the bit (CFI) to be reset; it is settable only to build
+	// negative test frames.
 	DEI bool
 
 	// ID is the 12-bit VLAN identifier (0-4095). 0 means priority
@@ -159,11 +162,13 @@ type PDU struct {
 func Encode(f *Frame) ([]byte, error) { return AppendFrame(nil, f) }
 
 // AppendFrame appends the wire encoding of f to dst.
-func AppendFrame(dst []byte, f *Frame) ([]byte, error) {
+func AppendFrame(dst []byte, f *Frame) ([]byte, error) { return appendFrame(dst, f, nil) }
+
+func appendFrame(dst []byte, f *Frame, fx *fixedLength) ([]byte, error) {
 	if f == nil {
 		return dst, errValue("nil frame")
 	}
-	apdu, err := EncodePDU(&f.PDU)
+	apdu, err := encodePDU(&f.PDU, fx)
 	if err != nil {
 		return dst, err
 	}
@@ -203,10 +208,20 @@ func AppendFrame(dst []byte, f *Frame) ([]byte, error) {
 
 // EncodePDU returns the BER encoding of the goosePdu APDU
 // ([APPLICATION 1]).
-func EncodePDU(p *PDU) ([]byte, error) {
-	allData, err := encodeAllData(p.AllData)
+//
+// The encoder does not enforce the value ranges of IEC 61850-8-1
+// 18.1.2.5.2 (string sizes, stNum and timeAllowedToLive >= 1) so that
+// negative test frames can be built; [NewPublisher] enforces them.
+func EncodePDU(p *PDU) ([]byte, error) { return encodePDU(p, nil) }
+
+func encodePDU(p *PDU, fx *fixedLength) ([]byte, error) {
+	allData, err := fx.encodeAllData(p.AllData)
 	if err != nil {
 		return nil, err
+	}
+	u32 := encodeUnsigned
+	if fx != nil {
+		u32 = fixedUint32 // 8-1 Annex A.3 Table A.1: INT32U length 5
 	}
 	n := p.NumDatSetEntries
 	if n == 0 {
@@ -218,7 +233,7 @@ func EncodePDU(p *PDU) ([]byte, error) {
 	}
 	c := make([]byte, 0, 64+len(p.GocbRef)+len(p.DatSet)+len(p.GoID)+len(allData))
 	c = appendTLV(c, tagGocbRef, []byte(p.GocbRef))
-	c = appendTLV(c, tagTAL, encodeUnsigned(uint64(p.TimeAllowedToLive)))
+	c = appendTLV(c, tagTAL, u32(uint64(p.TimeAllowedToLive)))
 	c = appendTLV(c, tagDatSet, []byte(p.DatSet))
 	if p.GoID != "" {
 		c = appendTLV(c, tagGoID, []byte(p.GoID))
@@ -228,12 +243,12 @@ func EncodePDU(p *PDU) ([]byte, error) {
 		return nil, err
 	}
 	c = appendTLV(c, tagT, t)
-	c = appendTLV(c, tagStNum, encodeUnsigned(uint64(p.StNum)))
-	c = appendTLV(c, tagSqNum, encodeUnsigned(uint64(p.SqNum)))
+	c = appendTLV(c, tagStNum, u32(uint64(p.StNum)))
+	c = appendTLV(c, tagSqNum, u32(uint64(p.SqNum)))
 	c = appendTLV(c, tagSimulation, []byte{boolOctet(p.Test)})
-	c = appendTLV(c, tagConfRev, encodeUnsigned(uint64(p.ConfRev)))
+	c = appendTLV(c, tagConfRev, u32(uint64(p.ConfRev)))
 	c = appendTLV(c, tagNdsCom, []byte{boolOctet(p.NdsCom)})
-	c = appendTLV(c, tagNumEntries, encodeUnsigned(uint64(n)))
+	c = appendTLV(c, tagNumEntries, u32(uint64(n)))
 	c = appendTLV(c, tagAllData, allData)
 	if p.Security != nil {
 		c = appendTLV(c, tagSecurity, p.Security)
@@ -438,6 +453,7 @@ func fieldIndex(tag byte) int {
 }
 
 func visibleString(c []byte, field string, off int) (string, error) {
+	c = stripNULPadding(c) // fixed-length header strings, 8-1 Annex A.3 Table A.1
 	for _, ch := range c {
 		if ch < 0x20 || ch > 0x7e {
 			return "", decodeErr(ErrInvalidPDU, field, off, "non-visible character 0x%02x", ch)

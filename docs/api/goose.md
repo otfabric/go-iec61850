@@ -10,6 +10,20 @@ import "github.com/otfabric/go-iec61850/goose"
 
 ```go
 const (
+	// FixedOctetStringLen is the content length of an OCTET STRING in a
+	// fixed-length message (Table A.2: 20, zero padded).
+	FixedOctetStringLen = 20
+
+	// FixedVisibleStringLen is the content length of a VISIBLE STRING in
+	// a fixed-length message (Table A.2: 35, "Null terminated").
+	FixedVisibleStringLen = 35
+)
+```
+
+Fixed sizes of Table A.2 that do not follow from the member type.
+
+```go
+const (
 	// EtherType is the GOOSE EtherType.
 	EtherType = l2.EtherTypeGOOSE
 
@@ -17,12 +31,13 @@ const (
 	EtherTypeVLAN = l2.EtherTypeVLAN
 
 	// SimulationBit is the bit in Reserved1 that marks a simulated
-	// message (IEC 61850-8-1 Ed2.1 "S" bit).
+	// message (IEC 61850-8-1:2011 Figure C.5 "S" bit).
 	SimulationBit uint16 = 0x8000
 
 	// MaxPayload is the maximum Ethernet payload (after the EtherType)
-	// produced by the encoder.
-	MaxPayload = 1500
+	// produced by the encoder: Length = 8 + m with the APDU length m
+	// less than 1492 (IEC 61850-8-1:2011 Annex C), i.e. 1499 octets.
+	MaxPayload = headerLen + 1491
 
 	// minFrame is the minimum Ethernet frame length without FCS; the
 	// encoder pads shorter frames.
@@ -35,8 +50,25 @@ Ethernet and GOOSE framing constants (IEC 61850-8-1 Annex C).
 
 ```go
 const (
-	// timeQuality is the TimeQuality of T: clock synchronised, 10 bits
-	// of sub-second accuracy.
+	// timeQuality is the TimeQuality of zero values (ZeroValue): no
+	// flags, 10 bits of sub-second accuracy.
+
+	// DefaultTimeQuality is the TimeQuality octet of T when
+	// PublisherConfig.TimeQuality is zero: ClockNotSynchronized (0x20,
+	// 7-2 TimeQuality / 8-1 8.1.3.7) with 10 bits of sub-second
+	// accuracy. The publisher cannot know whether the host clock is
+	// synchronised, so it does not claim it.
+	DefaultTimeQuality uint8 = 0x2a
+
+	// MaxRefLen and MaxGoIDLen are the maximum gocbRef/datSet and goID
+	// lengths (IEC 61850-8-1 18.1.2.5.2: VISIBLE-STRING up to 129 and
+	// 65 octets).
+	MaxRefLen  = 129
+	MaxGoIDLen = 65
+
+	// MaxRetransmission bounds MaxTime: the retransmission interval
+	// stays below 60 s (IEC 61850-8-1 18.1.2.5.1 Figure 10 key 4).
+	MaxRetransmission = 60 * time.Second
 
 	DefaultMinTime = 10 * time.Millisecond
 	DefaultMaxTime = 1000 * time.Millisecond
@@ -190,6 +222,14 @@ func EncodeData(v *mms.Value) ([]byte, error)
 
 EncodeData returns the BER encoding of a single MMS Data value as used in GOOSE allData. Floats are sent as FLOAT32 when exactly representable and as FLOAT64 otherwise.
 
+### func EncodeFixedLength
+
+```go
+func EncodeFixedLength(f *Frame, types []mms.TypeSpec) ([]byte, error)
+```
+
+EncodeFixedLength is [Encode](#func-encode) with the fixed-length goosePdu of [EncodePDUFixedLength](#func-encodepdufixedlength).
+
 ### func EncodePDU
 
 ```go
@@ -197,6 +237,18 @@ func EncodePDU(p *PDU) ([]byte, error)
 ```
 
 EncodePDU returns the BER encoding of the goosePdu APDU (\[APPLICATION 1]).
+
+The encoder does not enforce the value ranges of IEC 61850-8-1 18.1.2.5.2 (string sizes, stNum and timeAllowedToLive >= 1) so that negative test frames can be built; [NewPublisher](#func-newpublisher) enforces them.
+
+### func EncodePDUFixedLength
+
+```go
+func EncodePDUFixedLength(p *PDU, types []mms.TypeSpec) ([]byte, error)
+```
+
+EncodePDUFixedLength returns the fixed-length encoding of the goosePdu (IEC 61850-8-1 Annex A.3). types gives the MMS type of each allData member: integer widths come from TypeSpec.Size (8, 16, 32 or 64 bits; unknown widths are sent as 32 bits, or 64 for values outside the 32-bit range), FLOAT64 from FormatWidth 64. Without a type every member is encoded as above with unknown widths. Values that do not fit their fixed size (an OCTET STRING longer than 20 octets, a VISIBLE STRING longer than 35) fail with ErrInvalidValue.
+
+Deviations: FLOAT32 is sent with the 5-octet MMS FloatingPoint encoding (exponent-width octet 8 plus IEEE 754 single) that MMS decoders expect, not the 4 octets of Table A.2; MMSString, GeneralizedTime, BCD and object identifiers, not covered by Table A.2, keep their BER encoding.
 
 ### func MatchesType
 
@@ -446,8 +498,9 @@ const (
 	// one. The message is not delivered.
 	EventOutOfOrder
 
-	// EventRestart reports that the publisher restarted (stNum went
-	// back to 0 or 1). The message is also delivered.
+	// EventRestart reports that the publisher restarted: stNum went
+	// back to 0 or 1, or stNum/sqNum did not advance but T is newer than
+	// that of the last accepted state. The message is also delivered.
 	EventRestart
 
 	// EventInvalid reports a message that failed validation; Event.Err
@@ -750,6 +803,8 @@ type Publisher struct {
 
 	// a first state has been sent
 
+	// non-nil for FixedOffs
+
 }
 ```
 
@@ -805,7 +860,7 @@ Run drives retransmissions until ctx is done or the publisher is closed; it then
 func (p *Publisher) SetEnabled(enabled bool) error
 ```
 
-SetEnabled starts or stops transmission (GoEna). Re-enabling sends the current values as a new state.
+SetEnabled starts or stops transmission (GoEna). Re-enabling sends the current values as a new state with stNum 1: enabling GoEna restarts StNum at 1 (IEC 61850-7-2 18.2.3.6).
 
 #### func (Publisher) SetFlags
 
@@ -848,7 +903,8 @@ type PublisherConfig struct {
 	// Required unless NdsCom is set.
 	DatSet string
 
-	// GoID is the GOOSE identifier. Empty uses GocbRef.
+	// GoID is the GOOSE identifier, at most [MaxGoIDLen] octets. Empty
+	// uses GocbRef (not length-checked).
 	GoID string
 
 	// ConfRev is the configuration revision.
@@ -864,7 +920,23 @@ type PublisherConfig struct {
 	MaxTime time.Duration
 
 	// TimeAllowedToLive is sent in every message. Zero uses 2*MaxTime.
+	// It must be at least 1 ms and greater than MaxTime (8-1 18.1.2.5.1
+	// Figure 10 key 2: the retransmission time is less than the
+	// timeAllowedToLive).
 	TimeAllowedToLive time.Duration
+
+	// TimeQuality is the TimeQuality octet of T. Zero uses
+	// [DefaultTimeQuality] (clock not synchronised); set it (for
+	// example 0x0a) when the host clock is known to be synchronised.
+	TimeQuality uint8
+
+	// FixedOffs selects the fixed-length encoding of IEC 61850-8-1
+	// Annex A.3 (SCL fixedOffs="true", see [EncodePDUFixedLength]).
+	FixedOffs bool
+
+	// MemberTypes are the MMS types of the dataset members, used by
+	// FixedOffs for the integer and float widths. Optional.
+	MemberTypes []mms.TypeSpec
 
 	// Test sets the goosePdu test/simulation field.
 	Test bool
@@ -1199,7 +1271,9 @@ type VLAN struct {
 	// recommends 4 for GOOSE.
 	Priority uint8
 
-	// DEI is the drop eligible indicator.
+	// DEI is the drop eligible indicator. IEC 61850-8-1 Annex C
+	// requires the bit (CFI) to be reset; it is settable only to build
+	// negative test frames.
 	DEI bool
 
 	// ID is the 12-bit VLAN identifier (0-4095). 0 means priority

@@ -167,7 +167,7 @@ func TestOperate_AutoCtlNum(t *testing.T) {
 
 func TestWriteControlValue_RefToMMSError(t *testing.T) {
 	c := &Client{logger: discardLogger(), mmsClient: &mms.Client{}}
-	_, err := c.writeControlValue(context.Background(), Ref{LD: "bad/ld", LN: "LN", Path: []string{"Oper"}, FC: FCCO}, mms.NewBoolean(true))
+	_, err := c.writeControlValue(context.Background(), Ref{LD: "bad/ld", LN: "LN", Path: []string{"Oper"}, FC: FCCO}, mms.NewBoolean(true), 0)
 	if err == nil {
 		t.Fatal("expected refToMMS error")
 	}

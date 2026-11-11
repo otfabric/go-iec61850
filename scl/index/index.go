@@ -4,6 +4,7 @@ package index
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/otfabric/go-iec61850/scl"
 )
@@ -52,7 +53,62 @@ func Build(s *scl.SCL) (*Index, []scl.Diagnostic) {
 		})
 	}
 
-	// Templates
+	// unique reports a duplicate name in one parent element (an
+	// xs:unique of the SCL schema, named in code).
+	unique := func(path, what string, names []string) {
+		seen := make(map[string]bool, len(names))
+		for _, n := range names {
+			if seen[n] {
+				add(scl.DiagError, "duplicate-name", path, fmt.Sprintf("duplicate %s %q", what, n))
+			}
+			seen[n] = true
+		}
+	}
+
+	// Templates (SCL_DataTypeTemplates.xsd uniqueDOInLNodeType,
+	// uniqueDAorSDOInDOType, uniqueBDAInDAType, uniqueOrdInEnumType).
+	for _, lnt := range s.DataTypeTemplates.LNodeTypes {
+		var names []string
+		for _, do := range lnt.DOs {
+			names = append(names, do.Name)
+		}
+		unique("LNodeType["+lnt.ID+"]", "DO", names)
+	}
+	for _, dot := range s.DataTypeTemplates.DOTypes {
+		// The same DA name under two FCs (for example setVal as SP and
+		// SG in setting-group examples) also violates the schema but is
+		// common in tool output: a warning. Other duplicates are errors.
+		fcs := map[string]string{}
+		var names []string
+		for _, da := range dot.DAs {
+			if fc, dup := fcs[da.Name]; dup && fc != da.FC {
+				add(scl.DiagWarning, "duplicate-name", "DOType["+dot.ID+"]",
+					fmt.Sprintf("DA %q given for FC %s and %s (uniqueDAorSDOInDOType)", da.Name, fc, da.FC))
+				continue
+			}
+			fcs[da.Name] = da.FC
+			names = append(names, da.Name)
+		}
+		for _, sdo := range dot.SDOs {
+			names = append(names, sdo.Name)
+		}
+		unique("DOType["+dot.ID+"]", "DA/SDO", names)
+	}
+	for _, dat := range s.DataTypeTemplates.DATypes {
+		var names []string
+		for _, b := range dat.BDAs {
+			names = append(names, b.Name)
+		}
+		unique("DAType["+dat.ID+"]", "BDA", names)
+	}
+	for _, et := range s.DataTypeTemplates.EnumTypes {
+		var ords []string
+		for _, v := range et.Vals {
+			ords = append(ords, strconv.Itoa(v.Ord))
+		}
+		unique("EnumType["+et.ID+"]", "EnumVal ord", ords)
+	}
+
 	for i := range s.DataTypeTemplates.LNodeTypes {
 		lnt := &s.DataTypeTemplates.LNodeTypes[i]
 		if _, dup := idx.LNodeTypes[lnt.ID]; dup {
@@ -124,6 +180,20 @@ func Build(s *scl.SCL) (*Index, []scl.Diagnostic) {
 							fmt.Sprintf("duplicate LN %s%s%s", ln.Prefix, ln.LNClass, ln.Inst))
 					}
 					idx.LNs[lnKey] = ln
+					lnPath := fmt.Sprintf("IED[%s]/LD[%s]/LN[%s%s%s]", ied.Name, ld.Inst, ln.Prefix, ln.LNClass, ln.Inst)
+					// SCL_IED.xsd uniqueGSEControlInLN0 and
+					// uniqueSampledValueControlInLN0. (uniqueDOIinLN is
+					// not checked: the model drops DOI@ix, which tells
+					// array elements of the same name apart.)
+					var gcs, svs []string
+					for _, gc := range ln.GSEControls {
+						gcs = append(gcs, gc.Name)
+					}
+					for _, sv := range ln.SMVControls {
+						svs = append(svs, sv.Name)
+					}
+					unique(lnPath, "GSEControl", gcs)
+					unique(lnPath, "SampledValueControl", svs)
 
 					for m := range ln.DataSets {
 						ds := &ln.DataSets[m]
@@ -133,7 +203,9 @@ func Build(s *scl.SCL) (*Index, []scl.Diagnostic) {
 							Name: ds.Name,
 						}
 						if _, dup := idx.DataSets[dsKey]; dup {
-							add(scl.DiagWarning, "duplicate-dataset",
+							// DataSetKeyLN0 / DataSetKeyInLN are
+							// xs:key constraints: an error.
+							add(scl.DiagError, "duplicate-dataset",
 								fmt.Sprintf("IED[%s]/LD[%s]/LN[%s%s%s]", ied.Name, ld.Inst, ln.Prefix, ln.LNClass, ln.Inst),
 								fmt.Sprintf("duplicate DataSet %q", ds.Name))
 						}
@@ -185,10 +257,27 @@ func Build(s *scl.SCL) (*Index, []scl.Diagnostic) {
 
 	// Communication → ConnectedAPs
 	if s.Communication != nil {
+		var sns []string
+		for _, sn := range s.Communication.SubNetworks {
+			sns = append(sns, sn.Name)
+		}
+		unique("Communication", "SubNetwork", sns) // uniqueSubNetwork
 		for i := range s.Communication.SubNetworks {
 			sn := &s.Communication.SubNetworks[i]
 			for j := range sn.ConnectedAPs {
 				cap := &sn.ConnectedAPs[j]
+				// uniqueGSEinConnectedAP / uniqueSMVinConnectedAP:
+				// (cbName, ldInst).
+				var gses, smvs []string
+				for _, g := range cap.GSEs {
+					gses = append(gses, g.LDInst+"/"+g.CBName)
+				}
+				for _, v := range cap.SMVs {
+					smvs = append(smvs, v.LDInst+"/"+v.CBName)
+				}
+				capPath := fmt.Sprintf("SubNetwork[%s]/ConnectedAP[%s/%s]", sn.Name, cap.IEDName, cap.APName)
+				unique(capPath, "GSE", gses)
+				unique(capPath, "SMV", smvs)
 				capKey := AccessPointKey{IED: cap.IEDName, AP: cap.APName}
 				if _, dup := idx.ConnectedAPs[capKey]; dup {
 					add(scl.DiagWarning, "duplicate-connected-ap",

@@ -26,12 +26,12 @@ func TestRun(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- run(ctx, addr, slog.New(slog.NewTextHandler(io.Discard, nil)), 2, &out) }()
 	out.WaitFor(t, "subscribed to LLN0$RP$urcb01 (RptID DemoURCB01)", 5*time.Second)
-	out.WaitFor(t, "report seq=1", 5*time.Second)
+	out.WaitFor(t, "report seq=0", 5*time.Second)
 	srv.SetValue(ctx, demoied.Domain+"/MMXU1$MX$PhV$phsA$cVal$mag$f", mms.NewFloat(231))
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
 	t.Log("\n" + out.String())
 	out.WaitFor(t, "connected to OTFabric DemoIED 1", 0)
-	out.WaitFor(t, "report seq=2: 231", 0)
+	out.WaitFor(t, "report seq=1: 231", 0)
 }

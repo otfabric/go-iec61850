@@ -17,12 +17,22 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
 
 ## Client limitations
 
-- **Control: no time-activated operate** — the control models (direct,
+- **Control: per-client sequence state** — the control models (direct,
   SBO, SBOw, normal and enhanced security) are typed APIs (`Operate`,
   `Select`, `SelectWithValue`, `Cancel`, and `OperateWait`, which waits for
-  the CommandTermination), but the client does not schedule time-activated
-  operations (`operTm`). Once the client sends a control or subscribes to
+  the CommandTermination). An Operate or Cancel without a ctlNum reuses
+  the ctlNum of the last `SelectWithValue` of that control on the same
+  `Client` only. Whether operTm is sent is learned once per control with
+  GetVariableAccessAttributes; when the server does not answer it, operTm
+  is sent only for a time-activated operate (non-zero `OperTm`).
+  `ReadLastApplError` is deprecated: LastApplError is a transient
+  VMD-specific variable (IEC 61850-8-1 20.11), so it returns the last one
+  this client received. Once the client sends a control or subscribes to
   reports, it owns the MMS client's InformationReport handler.
+- **Data sets: SetDataSetValues is one MMS Write** —
+  `WriteDataSet` sends one Write of the named variable list; the server
+  decides per member. `@name` data sets are scoped to the association and
+  never cached.
 - **No automatic model discovery caching persistence** — the client cache is
   in-memory only and does not survive process restarts.
 - **`DialOptions.Dialer` covers only the TCP connect** — the COTP, ACSE
@@ -31,50 +41,78 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   go-mms `iso.Dial` (`iso.WithDialer`, `iso.WithTLSConfig`) and wrap the
   result with `NewClient`, or return a `tls.Conn` from the dialer. `Client` built with
   `NewClient` dials nothing, and the server ignores the dialer.
-- **Report subscription assumes single-client ownership** — the library does
-  not handle multi-client RCB arbitration beyond basic URCB reserve/release.
+- **One subscription per RptID** — the client routes InformationReports
+  to subscriptions by RptID. The server, not the client, arbitrates RCB
+  ownership between associations (see the report limitations below).
 
 ## Server limitations
 
-- **Reports: in-memory BRCB buffer, no segmentation** — the server generates
-  InformationReports for data-change, quality-change, data-update,
-  integrity, and GI triggers. RCB writes from MMS clients are
-  automatically dispatched to the report engine. BRCB buffering is
-  in-memory with configurable depth and no persistent storage; buffered
-  entries are replayed to a client that re-enables the BRCB (optionally
-  resuming after a given `EntryID`, see [INTEROP.md](INTEROP.md)), but the
-  buffer does not survive a server restart. Multi-client RCB
-  ownership arbitration and segmented report generation are not yet
-  implemented.
-- **Controls: no interlocking** — control handlers (`RegisterControl`)
-  support select/operate/cancel dispatch with SBO timeout tracking, but
-  interlocking and synchrocheck are application-responsibility via
-  callbacks. A refused control write is preceded by a LastApplError. After
-  a successful enhanced-security operate the server sends a positive
-  CommandTermination, or a negative one when `ControlHandler.OnExecute`
-  fails.
+- **Reports: in-memory BRCB buffer, no ResvTms/Owner** — the report engine
+  implements the IEC 61850-7-2 §17.2 URCB and BRCB state machines per
+  association (see API.md "Report engine"), with these limits:
+  - The BRCB buffer is in memory (default 1000 entries, `SetRCBBufMax`)
+    and does not survive a server restart; EntryIDs restart at 1.
+  - The optional BRCB attributes ResvTms and Owner (IEC 61850-7-2
+    Table 37 c3/c4) are not modelled: a BRCB is reserved only by the
+    association that enables it, and released when it disables it or the
+    association ends.
+  - Segmentation uses the server's configured MMS `MaxPDUSize` (default
+    65000), not the size negotiated with each client, which go-mms does
+    not expose per connection. A data set member whose value does not fit
+    one PDU is not reported.
+  - Association loss is detected when `Server.Serve` returns, when a
+    report cannot be sent, and by a one-second check of the go-mms
+    connection list; a connection served by `mms.Server` directly can keep
+    its RCBs up to one second.
+  - An indexed ReportControl with ClientLN entries creates the instances
+    `<name>01..<name>NN` but does not pre-assign them to those clients.
+  - Without attribute trigger options in the model (SCL DA
+    dchg/qchg/dupd), the reason for inclusion is derived by comparing the
+    member value.
+- **Controls: no interlocking, demo-grade default operate** — control
+  handlers (`RegisterControl`) follow the states of IEC 61850-7-2 Table 47
+  (select, time-activated wait, execution until the CommandTermination),
+  with CF sboTimeout, sboClass and operTimeout; interlocking and
+  synchrocheck are application-responsibility via callbacks. A refused
+  control write is preceded by a LastApplError. Without `OnOperate` the
+  server only mirrors ctlVal into `stVal` (BOOLEAN to Dbpos for a DPC)
+  when it fits stVal's type, with `t`, `ctlNum` and `origin`; APC, BSC
+  and other CDCs need an `OnOperate`. A selection held by an association
+  that ended is released when its `Server.Serve` returns; with
+  `ListenAndServe` without connection hooks (go-mms serves the
+  connection), it is released at the next control service on that object,
+  and `stSeld` stays TRUE until then. Choices where the standard is
+  ambiguous follow libiec61850; see [INTEROP.md](INTEROP.md#control-model-choices).
 - **Setting groups: no per-group value banks** — the server supports SGCB
   registration, active/edit group selection, confirmation, handler
-  callbacks, and automatic dispatch from MMS client writes. However,
-  persistent multi-bank SE/SG value storage is not yet implemented:
-  the SGCB lifecycle (select/edit/confirm) exists, but there are no
-  per-group value banks to store separate FC=SE/FC=SG attribute sets.
-  Reservation timeouts (ResvTms), multi-connection edit ownership
-  tracking, and connection-scoped reservation are also not yet
-  implemented.
-- **Journals: in-memory, no LCB runtime configuration** — the server supports runtime journal
-  entry generation, in-memory storage via `MemoryJournalProvider`, and
-  MMS journal service integration. Persistent journal storage, log
-  control block (LCB) runtime configuration, and automatic event
-  logging from control operations are not yet implemented.
+  callbacks, automatic dispatch from MMS client writes, the edit
+  reservation per association (ResvTms, release on association loss) and
+  the FC=SE guard. Persistent multi-bank SE/SG value storage is not
+  implemented: there are no per-group value banks to store separate
+  FC=SE/FC=SG attribute sets.
+- **Journals: in memory, no EVENT-DATA entries** — log control blocks
+  (FC LG, IEC 61850-8-1 §17.3) select what is journaled; the journal
+  itself has these limits:
+  - `MemoryJournalProvider` keeps entries in memory; "LogEntries shall be
+    non-volatile" (8-1 §17.3.3.4.1) is up to a persistent provider.
+  - LogEna transitions and power-up are not journaled as EVENT-DATA
+    Event Transition Records (8-1 §17.3.3.4.3): go-mms journal entries
+    carry DATA only.
+  - The SCL LogControl `reasonCode` attribute is kept in the model but
+    does not change the journal: IEC 61850-8-1 Table 65 does not map
+    OptFlds and "forces the reasonCodes to always appear in the Log".
+  - The LCB status attributes (OldEntrTm, NewEntrTm, OldEnt, NewEnt) are
+    updated when the journal engine adds an entry; entries added with
+    `MemoryJournalProvider.AddEntry` directly show up there with the next
+    one.
+  - Control operations are not journaled automatically.
 - **File serving requires external provider** — file MMS services are
   enabled by setting `ServerOptions.FileProvider` (or `MMS.FileProvider`).
   No built-in filesystem-backed provider is included; applications must
   implement the `mms.FileProvider` interface.
 - **No dynamic server model updates** — the server model is immutable after
-  construction, and clients cannot create or delete named variable lists
-  on the server (`DefineNamedVariableList` / `DeleteNamedVariableList`);
-  the client supports both against other servers.
+  construction. Named variable lists that clients define (domain or
+  association scope) are kept by go-mms in memory and are not persisted.
 
 ## GOOSE and Sampled Values
 
@@ -87,12 +125,18 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   `AF_PACKET` and needs `CAP_NET_RAW` (or root); macOS/BSD use BPF and need
   read/write access to `/dev/bpf*`. Other platforms (Windows) return
   `ErrUnsupportedPlatform`; the in-memory `Hub` works everywhere.
-- **GOOSE** — no fixed-offset (IEC 61850-8-1 Ed. 2.1) encoding, no GSSE and
-  no GOOSE management APDUs (GetGoReference/GetGOOSEElementNumber).
+- **GOOSE** — no GSSE and no GOOSE management APDUs
+  (GetGoReference/GetGOOSEElementNumber). The fixed-length encoding
+  (IEC 61850-8-1:2011 Annex A.3, `fixedOffs`) is implemented but sends
+  FLOAT32 in 5 octets (not the 4 of Table A.2), limits OCTET/VISIBLE
+  STRING members to 20/35 octets and is not verified against an
+  independent fixed-length implementation. Without VLAN parameters in
+  the GSE address frames are sent untagged.
   Received GOOSE values are not mapped into a server model (no `ExtRef` /
   `InRef` binding); applications map them from subscriber events.
 - **Sampled Values** — multicast control blocks (MSVCB) only: no unicast
-  SV (USVCB, `SendUSVMessage`). The server's SV engine publishes the
+  SV (USVCB, `SendUSVMessage`); an SCL `SampledValueControl` with
+  `multicast="false"` is skipped with a model warning. The server's SV engine publishes the
   dataset values from its value store at `smpRate`; waveform sources feed
   the engine's publishers (`SVEngine.Publisher`) directly. Software timing
   is subject to OS scheduling: the publisher paces on an absolute schedule
@@ -132,10 +176,15 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   `SubFunction`, `PowerTransformer`, `GeneralEquipment`, `ConnectivityNode`.
   These are accessible only via raw XML unmarshalling.
 - **No XSD schema validation** — the parser performs structural XML parsing
-  and comprehensive semantic validation (type templates, IED structure,
-  communication linkage, dataset references, control block references,
-  topology LNode resolution), but does not validate against the official
-  IEC XSD schema files.
+  and the semantic checks listed under Validation in scl/README.md
+  (selected XSD keys and keyrefs, required attributes, type references,
+  FCDA resolution, control block and address checks); it does not validate
+  against the official IEC XSD schema files. Not checked: DOI/DAI
+  uniqueness (the model does not keep `ix`), LogControl `datSet`
+  references, ExtRef/Inputs (not in the model), most XSD patterns and
+  enumerations (only the address P patterns), the IEC 61850-7-4/7-3
+  mandatory-content rules for LN classes and CDCs, and array `count`
+  (flattened as one element).
 - **Round-trip fidelity** — `scl.Generate` preserves the model structure but
   may not reproduce the exact formatting, namespace prefixes, or ordering of
   the original XML file. GSE and SMV control blocks are not serialized by
@@ -154,6 +203,8 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
 
 - **No automatic type coercion** — reading a `FLOAT32` as `Int64()` returns
   an error, not a coerced value. Use the correct accessor for each type.
+- **Quality bit strings** — a quality of fewer than 13 bits decodes with
+  the missing bits 0 (IEC 61850-8-1 8.2); bits beyond 13 are ignored.
 - **Timestamp precision** — timestamps are decoded to Go `time.Time` which
   has nanosecond precision. Sub-nanosecond IEC 61850 time accuracy bits are
   preserved in `TimeQuality.TimeAccuracy` but not reflected in the `Time` field.

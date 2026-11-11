@@ -37,6 +37,34 @@ Use `errors.Is(err, iec61850.ErrXxx)` for category classification.
 | `ErrGOOSE` | Server GOOSE engine: already enabled, no transport, engine stopped, GoCB without address |
 | `ErrSV` | Server SV engine: already enabled, no transport, engine stopped, MSVCB sample not encodable |
 
+### Server write refusals
+
+A server application callback (`ControlHandler`, `SettingGroupHandler`)
+returns, or wraps, one of these to choose the MMS DataAccessError of the
+refused client write (IEC 61850-8-1 8.1.3.4.4.2, Table 23); an
+`*mms.DataAccessError` works too. Without one the service default applies.
+
+| Sentinel | DataAccessError |
+|----------|-----------------|
+| `ErrWriteAccessDenied` | object-access-denied |
+| `ErrWriteTemporarilyUnavailable` | temporarily-unavailable |
+| `ErrWriteTypeInconsistent` | type-inconsistent |
+| `ErrWriteValueInvalid` | object-value-invalid |
+| `ErrWriteHardwareFault` | hardware-fault |
+
+Codes the server sends on its own:
+
+| Situation | DataAccessError |
+|-----------|-----------------|
+| Value of another type or layout, integer outside INTn, string or bit string of the wrong size (including a malformed Oper/SBOw/Cancel) | type-inconsistent |
+| ENUMERATED value outside the EnumType | object-value-invalid |
+| Read-only attribute or SGCB member, write of SBO or of an Oper/SBOw/Cancel member alone, CF ctlModel of a registered control, control without `RegisterControl` | object-access-denied |
+| Control refused with AddCause 12, 19 or 27 (in execution, already selected, locked by another client) | temporarily-unavailable |
+| Other control refusals (not selected, inconsistent parameters, application refusal) | object-access-denied |
+| SGCB EditSG/CnfEdit/FC=SE while another client holds the edit reservation, FC=SE without an edit group | temporarily-unavailable |
+| SGCB ActSG/EditSG out of 1..NumOfSG | object-value-invalid |
+| SGCB of an unknown LD | object-non-existent |
+
 ### Package `goose`
 
 Use `errors.Is(err, goose.ErrXxx)`. Decoder failures are `*goose.DecodeError`
@@ -226,7 +254,7 @@ reports a per-variable data access failure. Wraps `ErrDataAccess`;
 type DataAccessError struct {
     Ref       string // object reference of the failed item
     ErrorCode int    // mms.DataAccessErrorCode value
-    Operation string // "read", "write", or "read-dataset"
+    Operation string // "read", "write", "read-dataset" or "write-dataset"
 }
 ```
 
@@ -254,6 +282,13 @@ type ControlError struct {
     Wrapped   error    // underlying error, if any
 }
 ```
+
+`LastApplError.Error` is 0 for a refusal, 1 (Unknown) for an internal
+server error, 2 (Timeout Test Not OK) or 3 (Operator Test Not OK) for a
+failed time-activated or immediate operate with Test (IEC 61850-8-1
+20.11); a server callback sets another one with a `ControlError` whose
+`LastApplError.Error` is non-zero. A server error in the `ControlError`
+chain may carry the write's `*mms.DataAccessError` (`errors.As`).
 
 `Client.OperateWait` returns a `*ControlError` wrapping
 `ErrCommandTerminationNegative` when the server ends an accepted operate with a

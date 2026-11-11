@@ -15,6 +15,7 @@ import "fmt"
 func Validate(s *SCL) []Diagnostic {
 	v := &validator{
 		lntIdx:  make(map[string]bool),
+		lntCls:  make(map[string]string),
 		dotIdx:  make(map[string]bool),
 		datIdx:  make(map[string]bool),
 		enumIdx: make(map[string]bool),
@@ -33,6 +34,7 @@ func Validate(s *SCL) []Diagnostic {
 type validator struct {
 	diags   []Diagnostic
 	lntIdx  map[string]bool
+	lntCls  map[string]string // LNodeType id -> lnClass
 	dotIdx  map[string]bool
 	datIdx  map[string]bool
 	enumIdx map[string]bool
@@ -50,6 +52,7 @@ func (v *validator) buildIndexes(s *SCL) {
 			v.addErr("duplicate-id", "LNodeType", fmt.Sprintf("duplicate ID %q", lnt.ID))
 		}
 		v.lntIdx[lnt.ID] = true
+		v.lntCls[lnt.ID] = lnt.LNClass
 	}
 	for _, dot := range s.DataTypeTemplates.DOTypes {
 		if v.dotIdx[dot.ID] {
@@ -177,6 +180,9 @@ func (v *validator) validateLN(ldPath string, ln LN) {
 	lnPath := ldPath + "/LN[" + ln.Prefix + ln.LNClass + ln.Inst + "]"
 	if !v.lntIdx[ln.LNType] {
 		v.addErr("missing-lnodetype", lnPath, fmt.Sprintf("references LNodeType %q which does not exist", ln.LNType))
+	} else if c := v.lntCls[ln.LNType]; c != ln.LNClass {
+		// SCL.xsd LNodeTypeKey (@id, @lnClass) and its keyrefs.
+		v.addErr("lnclass-mismatch", lnPath, fmt.Sprintf("lnClass %q references LNodeType %q of lnClass %q (SCL key LNodeTypeKey)", ln.LNClass, ln.LNType, c))
 	}
 	dsNames := make(map[string]bool)
 	for _, ds := range ln.DataSets {

@@ -58,14 +58,36 @@ type GSEAddress struct {
 	VLANID       uint16
 	VLANPriority uint8
 	HasVLAN      bool
+
+	// HasAppID and HasPriority report whether APPID and VLAN-PRIORITY
+	// were present (both are optional, 8-1 Table 133 / 9-2 Table 19).
+	HasAppID, HasPriority bool
 }
 
+// Defaults for absent GSE/SMV address parameters.
+const (
+	// DefaultGOOSEAppID is the APPID of a GOOSE GSE address without
+	// APPID (8-1 Annex C: an unconfigured APPID defaults to 0x0000).
+	DefaultGOOSEAppID uint16 = 0x0000
+
+	// DefaultSVAppID is the APPID of an SMV address without APPID
+	// (9-2 5.3.3.4.2: default 0x4000).
+	DefaultSVAppID uint16 = 0x4000
+
+	// DefaultVLANPriority is the user priority of GOOSE and SV frames
+	// when VLAN-ID is configured without VLAN-PRIORITY (8-1 Annex C
+	// Table C.1, 9-2 Table 7).
+	DefaultVLANPriority uint8 = 4
+)
+
 // ParseGSEAddress parses the P elements of an SCL GSE Address:
-// MAC-Address (required, "01-0C-CD-01-00-01"), APPID (required, 4 hex
-// digits), VLAN-ID (3 hex digits) and VLAN-PRIORITY (0-7).
+// MAC-Address (required, "01-0C-CD-01-00-01"), APPID (optional, 4 hex
+// digits; AppID stays 0 and HasAppID false when absent), VLAN-ID (3 hex
+// digits) and VLAN-PRIORITY (0-7). With VLAN-ID but no VLAN-PRIORITY
+// the priority is [DefaultVLANPriority].
 func ParseGSEAddress(ps []scl.P) (GSEAddress, error) {
 	var a GSEAddress
-	var haveMAC, haveAppID bool
+	var haveMAC bool
 	for _, p := range ps {
 		v := strings.TrimSpace(p.Value)
 		switch p.Type {
@@ -88,7 +110,7 @@ func ParseGSEAddress(ps []scl.P) (GSEAddress, error) {
 				return a, fmt.Errorf("APPID %q: %w", v, err)
 			}
 			a.AppID = uint16(x)
-			haveAppID = true
+			a.HasAppID = true
 		case "VLAN-ID":
 			x, err := strconv.ParseUint(strings.TrimPrefix(strings.ToLower(v), "0x"), 16, 16)
 			if err != nil || x > 0xfff {
@@ -103,13 +125,14 @@ func ParseGSEAddress(ps []scl.P) (GSEAddress, error) {
 			}
 			a.VLANPriority = uint8(x)
 			a.HasVLAN = true
+			a.HasPriority = true
 		}
 	}
 	if !haveMAC {
 		return a, fmt.Errorf("missing MAC-Address")
 	}
-	if !haveAppID {
-		return a, fmt.Errorf("missing APPID")
+	if a.HasVLAN && !a.HasPriority {
+		a.VLANPriority = DefaultVLANPriority
 	}
 	return a, nil
 }
@@ -145,6 +168,10 @@ func convertGoCB(gc *scl.GSEControl, gse *scl.GSEAddress, where string, warnings
 	if err != nil {
 		warn("GSE %q: %v", gc.Name, err)
 		return def
+	}
+	if !addr.HasAppID {
+		addr.AppID = DefaultGOOSEAppID
+		warn("GSE %q: no APPID, using the default 0x%04X (8-1 Annex C)", gc.Name, addr.AppID)
 	}
 	def.HasAddress = true
 	def.DstAddr, def.AppID, def.VLANID, def.VLANPriority, def.HasVLAN = addr.Dst, addr.AppID, addr.VLANID, addr.VLANPriority, addr.HasVLAN
@@ -365,6 +392,46 @@ type MemberNode struct {
 	BType    string       // SCL basic type, leaves only
 	Type     mms.TypeSpec // full type of this node
 	Children []*MemberNode
+
+	// Dchg, Qchg and Dupd are the trigger options of a leaf's data
+	// attribute (IEC 61850-7-3 TrgOp).
+	Dchg, Qchg, Dupd bool
+}
+
+// HasTrgOps reports whether any leaf under n has a trigger option.
+func (n *MemberNode) HasTrgOps() bool {
+	if n.Key != "" {
+		return n.Dchg || n.Qchg || n.Dupd
+	}
+	for _, c := range n.Children {
+		if c.HasTrgOps() {
+			return true
+		}
+	}
+	return false
+}
+
+// Leaf returns the leaf with store key key under n and its value within
+// v, a value of n's layout (as ReadMember returns). The value is nil
+// when v does not have the layout.
+func (n *MemberNode) Leaf(v *mms.Value, key string) (*MemberNode, *mms.Value, bool) {
+	if n.Key != "" {
+		return n, v, n.Key == key
+	}
+	var elems []*mms.Value
+	if v != nil && v.Type() == mms.ValueTypeStructure {
+		elems, _ = v.Structure()
+	}
+	for i, c := range n.Children {
+		var cv *mms.Value
+		if i < len(elems) {
+			cv = elems[i]
+		}
+		if leaf, lv, ok := c.Leaf(cv, key); ok {
+			return leaf, lv, true
+		}
+	}
+	return nil, nil, false
 }
 
 // Leaves returns the leaves under n, in order.
@@ -551,7 +618,8 @@ func attrNode(a *DataAttribute, base string, parent []string) (*MemberNode, erro
 		if !ok {
 			return nil, fmt.Errorf("unsupported BType %q", a.BType)
 		}
-		return &MemberNode{Name: a.Name, Key: base + "$" + strings.Join(path, "$"), BType: a.BType, Type: ts}, nil
+		return &MemberNode{Name: a.Name, Key: base + "$" + strings.Join(path, "$"), BType: a.BType, Type: ts,
+			Dchg: a.Dchg, Qchg: a.Qchg, Dupd: a.Dupd}, nil
 	}
 	n := &MemberNode{Name: a.Name}
 	var elems []mms.TypeSpecElement

@@ -449,7 +449,7 @@ func TestLibIECServer_DS_MultiWrite(t *testing.T) {
 
 	const (
 		srvUrcbLD = "InteropLD"
-		srvUrcbID = "LLN0$RP$urcb01"
+		srvUrcbID = "LLN0$RP$urcb0101"
 	)
 
 	rcb, err := c.GetReportControlBlock(writeCtx, srvUrcbLD, srvUrcbID)

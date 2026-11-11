@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
+	"io/fs"
 	"testing"
 	"time"
 
@@ -29,8 +31,14 @@ func testJournalModel() *servermodel.Model {
 						{Name: "t", FC: "ST", BType: "Timestamp"},
 					},
 				}},
+				// The LCB log1 journals Mod.stVal on data change
+				// (IEC 61850-7-2 §17.3.4: only data set members, only
+				// while LogEna is TRUE).
+				DataSets: []servermodel.DataSetDef{{Name: "dsLog", Members: []servermodel.DataSetMemberDef{
+					{LNName: "LLN0", DOPath: "Mod.stVal", FC: "ST"},
+				}}},
 				Logs: []servermodel.LogDef{
-					{Name: "log1"},
+					{Name: "log1", DatSet: "dsLog", TrgOps: servermodel.TrgOpsDef{Dchg: true}, LogEna: true},
 				},
 			}},
 		}},
@@ -209,15 +217,14 @@ func TestMemoryJournalProvider_ReadTimeRange_MoreFollows(t *testing.T) {
 	}
 }
 
+// An unknown journal is a Response– (IEC 61850-7-2 §17.3.5.2.4,
+// §17.3.5.3.4), mapped by go-mms to object-non-existent (LOG-05).
 func TestMemoryJournalProvider_ReadTimeRange_UnknownJournal(t *testing.T) {
 	p := NewMemoryJournalProvider()
-	result, err := p.ReadTimeRange(context.Background(), "LD1", "nope",
+	_, err := p.ReadTimeRange(context.Background(), "LD1", "nope",
 		time.Now(), time.Now(), 100)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(result.Entries) != 0 {
-		t.Fatalf("expected 0 entries for unknown journal, got %d", len(result.Entries))
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v, want fs.ErrNotExist", err)
 	}
 }
 
@@ -270,15 +277,14 @@ func TestMemoryJournalProvider_ReadStartAfter_MoreFollows(t *testing.T) {
 	}
 }
 
+// An unknown journal is a Response– (IEC 61850-7-2 §17.3.5.2.4,
+// §17.3.5.3.4), mapped by go-mms to object-non-existent (LOG-05).
 func TestMemoryJournalProvider_ReadStartAfter_UnknownJournal(t *testing.T) {
 	p := NewMemoryJournalProvider()
-	result, err := p.ReadStartAfter(context.Background(), "LD1", "nope",
+	_, err := p.ReadStartAfter(context.Background(), "LD1", "nope",
 		nil, time.Now(), 100)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(result.Entries) != 0 {
-		t.Fatalf("expected 0 entries for unknown journal, got %d", len(result.Entries))
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v, want fs.ErrNotExist", err)
 	}
 }
 
@@ -456,8 +462,15 @@ func TestJournalEngine_LogValueWrite(t *testing.T) {
 	if len(result.Entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(result.Entries))
 	}
-	if result.Entries[0].Variables[0].Tag != "LLN0$ST$Mod$stVal" {
-		t.Fatalf("unexpected tag: %s", result.Entries[0].Variables[0].Tag)
+	// Each entry holds the data reference/value variable first and the
+	// reason code variable second; the first tag is an ObjectReference,
+	// the second is ReasonCode (IEC 61850-8-1 §17.3.3.4.4) (LOG-03).
+	vars := result.Entries[0].Variables
+	if len(vars) != 2 || vars[0].Tag != "LD1/LLN0$ST$Mod$stVal" || vars[1].Tag != "ReasonCode" {
+		t.Fatalf("unexpected variables: %+v", vars)
+	}
+	if b, _ := vars[1].Value.BitString(); len(b) != 1 || b[0] != 0x40 {
+		t.Fatalf("ReasonCode = %x, want data-change (0x40)", b)
 	}
 	v, ok := result.Entries[0].Variables[0].Value.Int64()
 	if !ok || v != 99 {
@@ -631,9 +644,12 @@ func TestJournalEngine_MultipleLogsMultipleLDs(t *testing.T) {
 							{Name: "stVal", FC: "ST", BType: "INT32"},
 						},
 					}},
+					DataSets: []servermodel.DataSetDef{{Name: "dsMod", Members: []servermodel.DataSetMemberDef{
+						{LNName: "LLN0", DOPath: "Mod.stVal", FC: "ST"},
+					}}},
 					Logs: []servermodel.LogDef{
-						{Name: "logA"},
-						{Name: "logB"},
+						{Name: "logA", DatSet: "dsMod", TrgOps: servermodel.TrgOpsDef{Dchg: true}, LogEna: true},
+						{Name: "logB", DatSet: "dsMod", TrgOps: servermodel.TrgOpsDef{Dchg: true}, LogEna: true},
 					},
 				}},
 			},

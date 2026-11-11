@@ -79,8 +79,48 @@ type LogicalNode struct {
 
 // LogDef defines a log control block in the server model.
 type LogDef struct {
-	// Name is the log name (e.g. "log1").
+	// Name is the log control block name (e.g. "log1"): the LCB is
+	// registered as "<LN>$LG$<Name>" (IEC 61850-8-1 §17.3.3.2).
 	Name string
+
+	// LogName is the name of the log (MMS journal "<LN>$<LogName>") the
+	// LCB writes to; empty means Name, as in models built before LCBs
+	// were modelled.
+	LogName string
+	// LogLD and LogLN locate the log: the MMS domain and LN name. Empty
+	// means the LD and LN of the control block.
+	LogLD string
+	LogLN string
+
+	// DatSet is the data set whose members are logged (LN-relative name
+	// or "LD/LN$name"); empty is NULL, nothing is logged.
+	DatSet string
+	// TrgOps and IntgPd are the trigger options and integrity period
+	// (ms) of the LCB (IEC 61850-7-2 §17.3.3.2).
+	TrgOps TrgOpsDef
+	IntgPd uint32
+	// LogEna is the initial LogEna.
+	LogEna bool
+	// ReasonCode is the SCL reasonCode attribute. IEC 61850-8-1 Table 65
+	// does not map OptFlds and "forces the reasonCodes to always appear
+	// in the Log", so it does not change what is journaled.
+	ReasonCode bool
+}
+
+// JournalName returns the MMS journal item of the log: "<LN>$<LogName>"
+// in domain ld (IEC 61850-8-1 §17.3.3.3.2).
+func (l *LogDef) JournalName(ld, ln string) (domain, journal string) {
+	domain, lnName, name := l.LogLD, l.LogLN, l.LogName
+	if domain == "" {
+		domain = ld
+	}
+	if lnName == "" {
+		lnName = ln
+	}
+	if name == "" {
+		name = l.Name
+	}
+	return domain, lnName + "$" + name
 }
 
 // SettingGroupDef defines a setting group control block in the
@@ -147,6 +187,15 @@ type DataAttribute struct {
 
 	// Children are sub-attributes for structured types (BType="Struct").
 	Children []DataAttribute
+
+	// Dchg, Qchg and Dupd are the trigger options of the attribute
+	// (IEC 61850-7-3 TrgOp; SCL DA dchg/qchg/dupd). The sub-attributes of
+	// a constructed attribute carry the options of their DA. A model in
+	// which no attribute of a data set member sets one is reported with
+	// value comparison instead (see the report engine).
+	Dchg bool
+	Qchg bool
+	Dupd bool
 }
 
 // DataSetDef defines a dataset in the server model.
@@ -352,9 +401,20 @@ func validateLD(ld *LogicalDevice, opts ValidateOptions) []error {
 			errs = append(errs, fmt.Errorf("model: LD %q LN %q: SGCB NumOfSGs must be >= 1", ld.Name, ln.Name))
 		}
 
+		logNames := make(map[string]bool)
 		for _, logDef := range ln.Logs {
 			if logDef.Name == "" {
 				errs = append(errs, fmt.Errorf("model: LD %q LN %q: log with empty name", ld.Name, ln.Name))
+			}
+			// "The name of the log control block shall be unique within
+			// the LN" and its datSet must reference a data set of the LN
+			// (IEC 61850-6 §9.3.9).
+			if logNames[logDef.Name] {
+				errs = append(errs, fmt.Errorf("model: LD %q LN %q: duplicate log control block %q", ld.Name, ln.Name, logDef.Name))
+			}
+			logNames[logDef.Name] = true
+			if logDef.DatSet != "" && !strings.Contains(logDef.DatSet, "/") && !dsNames[logDef.DatSet] {
+				errs = append(errs, fmt.Errorf("model: LD %q LN %q: log control block %q references non-existent dataset %q", ld.Name, ln.Name, logDef.Name, logDef.DatSet))
 			}
 		}
 

@@ -53,6 +53,15 @@ func Controls(s *scl.SCL, idx *index.Index) []scl.Diagnostic {
 						}
 					}
 					for _, sv := range ln.SMVControls {
+						// smpRate and nofASDU are required (6 Ed2 Table
+						// 30, tSampledValueControl); 0 is no usable value.
+						if sv.SmpRate == 0 || sv.NofASDU == 0 {
+							diags = append(diags, scl.Diagnostic{
+								Severity: scl.DiagError, Code: "invalid-attribute",
+								Path:    lnPath + "/SV[" + sv.Name + "]",
+								Message: fmt.Sprintf("smpRate %d / nofASDU %d: both must be at least 1", sv.SmpRate, sv.NofASDU),
+							})
+						}
 						if sv.DatSet == "" {
 							continue
 						}

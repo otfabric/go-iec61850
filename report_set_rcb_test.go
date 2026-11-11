@@ -104,8 +104,10 @@ func TestSetReportControlBlock_AllFieldsWrittenWithRptEnaLast(t *testing.T) {
 
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
-	wantOrder := []string{"RptID", "DatSet", "OptFlds", "BufTm", "TrgOps", "IntgPd", "GI",
-		"Resv", "PurgeBuf", "EntryID", "ResvTms", "RptEna"}
+	// IEC 61850-7-2 §17.2.1/§17.2.4.5 (reservation first), Table 37 c1
+	// (configuration while disabled), §17.2.2.13 (GI only when enabled).
+	wantOrder := []string{"Resv", "ResvTms", "RptID", "DatSet", "OptFlds", "BufTm", "TrgOps",
+		"IntgPd", "PurgeBuf", "EntryID", "RptEna", "GI"}
 	if !reflect.DeepEqual(rec.order, wantOrder) {
 		t.Fatalf("write order = %v, want %v", rec.order, wantOrder)
 	}
@@ -134,6 +136,26 @@ func TestSetReportControlBlock_AllFieldsWrittenWithRptEnaLast(t *testing.T) {
 	}
 	if n, _ := rec.values["ResvTms"].Int64(); n != 30 {
 		t.Errorf("ResvTms = %d", n)
+	}
+}
+
+// TestSetReportControlBlock_DisableFirst: RptEna=FALSE is written before
+// any attribute that is read-only while enabled (IEC 61850-8-1
+// Tables 61 and 63), including Resv.
+func TestSetReportControlBlock_DisableFirst(t *testing.T) {
+	c, rec := newRCBWriteRecorder(t)
+	err := c.SetReportControlBlock(context.Background(), "LD1", "LLN0$BR$brcb01", RCBUpdate{
+		Fields: RCBFieldDatSet | RCBFieldResv | RCBFieldRptEna | RCBFieldGI,
+		DatSet: "LD1/LLN0$ds",
+		RptEna: false,
+	})
+	if err != nil {
+		t.Fatalf("SetReportControlBlock: %v", err)
+	}
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	if want := []string{"RptEna", "Resv", "DatSet", "GI"}; !reflect.DeepEqual(rec.order, want) {
+		t.Fatalf("write order = %v, want %v", rec.order, want)
 	}
 }
 

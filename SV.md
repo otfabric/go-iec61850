@@ -163,7 +163,10 @@ go pub.Run(ctx)
   to call while `Run` is running. With `Source` the function is called
   for every sample with its index, `smpCnt` and due time.
 - `SetEnabled`, `SetSmpSynch` and `SetSimulation` change the stream at
-  run time. `Disabled` starts it disabled.
+  run time. `Disabled` starts it disabled. The reserved `smpSynch` values
+  3, 4 and 255 (9-2 Table 14, `ReservedSmpSynch`) are rejected by
+  `NewPublisher` (`ErrInvalidConfig`) and ignored, with a warning, by
+  `SetSmpSynch`.
 - `RefrTm`, `SendSmpRate`, `SendSmpMod`, `GmIdentity` and a non-empty
   `DatSet` add the optional ASDU fields.
 - `Run` returns when `ctx` is cancelled or the publisher is closed;
@@ -196,7 +199,13 @@ for ev := range sub.Events() { … }             // gaps, timeouts, …
   configured with `SmpCntWrap`, or learned from the first wrap to 0.
   A forward jump is a gap (`EventGap`, `Sample.Lost`), a repeat of the
   last counter a duplicate, and an older counter out of order; duplicate
-  and late ASDUs are counted and not delivered.
+  and late ASDUs are counted and not delivered. An out-of-sequence
+  `smpCnt` of 0 (9-2 Table 14: the counter is set to zero by a
+  synchronising pulse; also a publisher restart) and the
+  `ResyncAfter`-th (3) consecutive out-of-order counter resynchronise the
+  stream: `EventResync`, the ASDU is delivered and `Stats.Resyncs` counts
+  it. The first ASDU after a timeout is accepted even if its counter is
+  older (a forward jump is still a gap).
 - Supervision: `EventStart`, `EventTimeout` (no ASDU within `Timeout`,
   default 100 ms), `EventRestored`, `EventSynch` (`smpSynch` changed),
   `EventConfRev` (when `ConfRev` is not configured).
@@ -206,10 +215,13 @@ for ev := range sub.Events() { … }             // gaps, timeouts, …
   to `Events()` (`EventQueue`, default 256).
 - `Stats()` returns per stream: `Status` (ok, timeout, invalid), frame
   and ASDU counts, `Lost`, `Duplicates`, `OutOfOrder`, `Invalid`,
-  `Timeouts`, `QueueDrops`, `LastSmpCnt`, `SmpSynch`, `ConfRev`,
+  `Timeouts`, `QueueDrops`, `Resyncs`, `LastSmpCnt`, `SmpSynch`, `ConfRev`,
   `Simulation`, the wrap and the measured `Rate` (samples/s over 500 ms).
 - Frames with the simulation bit are dropped unless
-  `SubscriberConfig.AcceptSimulation` is set.
+  `SubscriberConfig.AcceptSimulation` is set. With it, once a simulated
+  ASDU of a stream was accepted the non-simulated ASDUs of that stream
+  are dropped (metrics reason `simulation`), as for GOOSE (7-4 LPHD.Sim),
+  so the real and simulated counters are not interleaved.
 - `HandleFrame` and `CheckTimeouts` drive the subscriber without a
   transport (e.g. from a pcap).
 
@@ -266,9 +278,17 @@ The MSVCB attributes are served under functional constraint `MS`
 (IEC 61850-8-1): `SvEna`, `MsvID`, `DatSet`, `ConfRev`, `SmpRate`,
 `OptFlds`, `SmpMod`, `DstAddress` (`Addr`, `PRIORITY`, `VID`, `APPID`)
 and `noASDU`. `SvEna`, `MsvID`, `DatSet`, `SmpRate`, `OptFlds` and
-`SmpMod` are writable; all but `SvEna` only while `SvEna` is false
-(temporarily-unavailable otherwise). A `DatSet` change increments
-`ConfRev`. Invalid values (empty `MsvID`, zero `SmpRate`, `SmpMod`
+`SmpMod` are writable (7-2 Table 44; 9-2 Table 9 maps all but `SvEna`
+read-only — a PIXIT choice); all but `SvEna` only while `SvEna` is false
+(temporarily-unavailable otherwise). A write that changes the value of
+`MsvID`, `DatSet`, `SmpMod`, `SmpRate` or `OptFlds` increments `ConfRev`
+(7-2 19.2.1.6); writing the current value does not. A `DatSet` written
+by its bare name is stored, and sent in the ASDU `datSet`, as the
+qualified reference (`LD/LLN0$ds`, 9-2 Table 9). An `SMV` address
+without `APPID` uses 0x4000 (9-2 5.3.3.4.2) and `VLAN-ID` without
+`VLAN-PRIORITY` priority 4 (9-2 Table 7), each with a model warning; a
+`SampledValueControl` with `multicast="false"` (USVCB) is skipped with a
+warning. Invalid values (empty `MsvID`, zero `SmpRate`, `SmpMod`
 outside 0–2, an unknown dataset, a `SmpRate` above 65535) are rejected with
 object-value-invalid. A publisher does not start while a stored `ConfRev`,
 `SmpRate`, `noASDU` or `SmpMod` is outside its type.

@@ -69,7 +69,7 @@ const (
 	EtherTypeVLAN = l2.EtherTypeVLAN
 
 	// SimulationBit is the bit in Reserved1 that marks a simulated
-	// message (IEC 61850-9-2 Ed2.1 "S" bit).
+	// message (IEC 61850-9-2:2011 5.3.3.4.4 "S" bit).
 	SimulationBit uint16 = 0x8000
 
 	// MaxPayload is the maximum Ethernet payload (after the EtherType)
@@ -118,6 +118,12 @@ const DefaultTimeout = 100 * time.Millisecond
 ```
 
 DefaultTimeout is the default stream supervision timeout.
+
+```go
+const ResyncAfter = 3
+```
+
+ResyncAfter is the number of consecutive out-of-order smpCnt values after which a stream resynchronises to the received counter (EventResync) instead of discarding it: a genuinely reordered ASDU is followed by in-sequence ones, a counter that jumped back is not.
 
 ## Variables
 
@@ -304,6 +310,14 @@ func Int32At(sample []byte, off int) int32
 ```
 
 Int32At returns the INT32 at byte offset off of a sample, for zero-allocation access with [Layout.Offsets](#func-layout-offsets).
+
+### func ReservedSmpSynch
+
+```go
+func ReservedSmpSynch(s uint8) bool
+```
+
+ReservedSmpSynch reports whether s is a reserved smpSynch value: 3, 4 and 255 "Reserved values – Do not use" (9-2 Table 14).
 
 ### func SamplesPerSecond
 
@@ -561,6 +575,13 @@ const (
 	EventConfRev
 	// EventInvalid: an ASDU failed validation (Event.Err).
 	EventInvalid
+	// EventResync: the stream was resynchronised to the counter of
+	// this ASDU, which is delivered. It is reported when smpCnt went
+	// back to 0 out of sequence (9-2 Table 14: the counter is set to
+	// zero by a synchronising pulse; also a publisher restart) or after
+	// [ResyncAfter] consecutive out-of-order counters. The number of
+	// lost samples is unknown (Event.Lost is 0).
+	EventResync
 )
 ```
 
@@ -1039,7 +1060,7 @@ SetSimulation sets the simulation bit from the next frame.
 func (p *Publisher) SetSmpSynch(s uint8)
 ```
 
-SetSmpSynch sets the synchronization state sent from the next frame.
+SetSmpSynch sets the synchronization state sent from the next frame. A reserved value ([ReservedSmpSynch](#func-reservedsmpsynch)) is ignored and logged: the state is left unchanged.
 
 #### func (Publisher) State
 
@@ -1104,7 +1125,8 @@ type PublisherConfig struct {
 	// NoASDU is the number of samples per frame (default 1).
 	NoASDU int
 
-	// SmpSynch is the initial synchronization state.
+	// SmpSynch is the initial synchronization state. The values 3, 4
+	// and 255 are reserved (9-2 Table 14) and rejected.
 	SmpSynch uint8
 
 	// Optional ASDU fields (the OptFlds of the SVCB): RefrTm sends the
@@ -1335,6 +1357,9 @@ type Stats struct {
 	// Timeouts counts timeout transitions; QueueDrops counts samples not
 	// delivered because the sample queue was full.
 	Frames, ASDUs, Lost, Duplicates, OutOfOrder, Invalid, Timeouts, QueueDrops uint64
+
+	// Resyncs counts [EventResync] resynchronisations of smpCnt.
+	Resyncs uint64
 
 	// LastSmpCnt, SmpSynch, ConfRev and Simulation are the values of the
 	// last accepted ASDU.

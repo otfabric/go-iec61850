@@ -12,7 +12,8 @@ import (
 	"github.com/otfabric/go-mms"
 )
 
-// operWithCtlNum builds an Oper (or Cancel, without Test/Check) structure
+// operWithCtlNum builds an Oper (or Cancel, without Check: IEC 61850-8-1
+// Table 88) structure
 // carrying ctlNum as an MMS unsigned value.
 func operWithCtlNum(ctlNum uint64, cancel bool) *mms.Value {
 	m := []*mms.Value{
@@ -21,9 +22,10 @@ func operWithCtlNum(ctlNum uint64, cancel bool) *mms.Value {
 		mms.NewStructure([]*mms.Value{mms.NewInteger(int64(OrCatRemoteControl)), mms.NewOctetString(nil)}),
 		mms.NewUnsigned(ctlNum),
 		mms.NewUTCTime(zeroTime),
+		mms.NewBoolean(false),
 	}
 	if !cancel {
-		m = append(m, mms.NewBoolean(false), mms.NewBitStringWithLength([]byte{0}, 2))
+		m = append(m, mms.NewBitStringWithLength([]byte{0}, 2))
 	}
 	return mms.NewStructure(m)
 }
@@ -46,12 +48,13 @@ func TestDecodeCtlNumBounds(t *testing.T) {
 			}
 		}
 	}
-	// A ctlNum member of another type keeps the previous lenient decode.
+	// A ctlNum member of another type is malformed (INT8U, IEC 61850-8-1
+	// Table 85; SRV-02): refused, no longer decoded leniently as 0.
 	v := operWithCtlNum(0, false)
 	m, _ := v.Structure()
 	m[3] = mms.NewBoolean(true)
-	if req, err := decodeControlRequest("LD/LN.DO", "Oper", mms.NewStructure(m)); err != nil || req.CtlNum != 0 {
-		t.Errorf("non-unsigned ctlNum: %d, %v", req.CtlNum, err)
+	if _, err := decodeControlRequest("LD/LN.DO", "Oper", mms.NewStructure(m)); err == nil {
+		t.Error("non-unsigned ctlNum decoded, want error")
 	}
 }
 
@@ -220,13 +223,17 @@ func TestReportEngineStopCancelsSends(t *testing.T) {
 	}
 
 	paused := make(chan bool, 1)
-	re.wg.Go(func() { paused <- re.pause(time.Hour) })
+	re.wg.Go(func() { paused <- re.pauseUntil(time.Hour, nil) })
 	replayed := make(chan struct{})
 	var sc mms.ServerConn
-	re.wg.Go(func() {
-		re.replayBRCBEntries("LLN0$BR$brcb01", "r", 0, 1, "LD1/ds", nil, []*bufferedEntry{{entryID: []byte{0, 0, 0, 0, 0, 0, 0, 1}}}, &sc)
+	rt := &rcbRuntime{rcbItemID: "LLN0$BR$brcb01", buffered: true}
+	stop, wake := make(chan struct{}), make(chan struct{}, 1)
+	wake <- struct{}{}
+	re.wg.Add(1)
+	go func() {
+		re.senderLoop(rt, &sc, stop, wake)
 		close(replayed)
-	})
+	}()
 
 	start := time.Now()
 	srv.Close() // stops the report engine
@@ -249,7 +256,7 @@ func TestReportEngineStopCancelsSends(t *testing.T) {
 	if _, ok := ctx.Deadline(); !ok {
 		t.Error("bare engine send has no deadline")
 	}
-	if !bare.pause(time.Millisecond) {
+	if !bare.pauseUntil(time.Millisecond, nil) {
 		t.Error("bare engine pause")
 	}
 }
