@@ -80,11 +80,13 @@ func (c *Client) controlHasOperTm(ctx context.Context, sub Ref, fallback bool) b
 	layout, ok := c.ctlLayouts[key]
 	c.ctlMu.Unlock()
 	if !ok {
+		hasCheck := false
 		layout = operTmUnknown
 		attrs, err := c.mmsClient.GetVariableAccessAttributes(ctx, mms.ObjectName{Scope: mms.ObjectScopeDomain, Domain: domainID, ItemID: itemID})
 		switch {
 		case err == nil:
 			layout = operTmLayoutOf(attrs.TypeSpec)
+			hasCheck = typeHasMember(attrs.TypeSpec, "Check")
 		case ctx.Err() != nil:
 			return fallback // not cached: the next command asks again
 		default:
@@ -95,6 +97,10 @@ func (c *Client) controlHasOperTm(ctx context.Context, sub Ref, fallback bool) b
 			c.ctlLayouts = make(map[string]operTmLayout)
 		}
 		c.ctlLayouts[key] = layout
+		if c.ctlChecks == nil {
+			c.ctlChecks = make(map[string]bool)
+		}
+		c.ctlChecks[key] = hasCheck
 		c.ctlMu.Unlock()
 	}
 	switch layout {
@@ -105,6 +111,35 @@ func (c *Client) controlHasOperTm(ctx context.Context, sub Ref, fallback bool) b
 	default:
 		return fallback
 	}
+}
+
+// controlCancelHasCheck reports whether the server's Cancel type sub,
+// already read by [Client.controlHasOperTm], has a Check member. IEC
+// 61850-8-1 Table 88 defines Cancel without Check, but SCL files that
+// reuse the Oper type for Cancel are common (the iec61850-interop
+// fixture is one); a client that follows the server's declared type
+// interoperates with both.
+func (c *Client) controlCancelHasCheck(sub Ref) bool {
+	domainID, itemID, err := c.refToMMS(sub)
+	if err != nil {
+		return false
+	}
+	c.ctlMu.Lock()
+	defer c.ctlMu.Unlock()
+	return c.ctlChecks[string(domainID)+"/"+string(itemID)]
+}
+
+// typeHasMember reports whether the structure type ts has a member name.
+func typeHasMember(ts mms.TypeSpec, name string) bool {
+	if ts.Type != mms.ValueTypeStructure {
+		return false
+	}
+	for _, e := range ts.Elements {
+		if e.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // operTmLayoutOf finds operTm in an Oper/SBOw/Cancel type: by name, or,

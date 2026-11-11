@@ -1127,16 +1127,32 @@ func decodeControlRequest(ref, operation string, val *mms.Value) (ControlRequest
 	default:
 		return ControlRequest{}, fmt.Errorf("unknown control service %q", operation)
 	}
-	if len(members) != base && len(members) != base+1 {
-		return req, fmt.Errorf("%s structure: need %d or %d members, got %d", operation, base, base+1, len(members))
+	// operTm is the second member when present; it is told apart from
+	// origin (a structure) by its type, so a Cancel that also carries a
+	// Check (a model reusing the Oper type for Cancel, common in SCL
+	// files) decodes too. The Check of a Cancel is ignored: Table 88 has
+	// none.
+	withOperTm := false
+	if len(members) > 1 {
+		_, withOperTm = members[1].UTCTime()
+	}
+	want := base
+	if withOperTm {
+		want++
+	}
+	cancelCheck := false
+	if operation == "Cancel" && len(members) == want+1 {
+		if _, ok := members[want].BitString(); ok {
+			cancelCheck = true
+		}
+	}
+	if len(members) != want && !cancelCheck {
+		return req, fmt.Errorf("%s structure: need %d members, got %d", operation, want, len(members))
 	}
 	req.CtlVal = members[0]
 	i := 1
-	if len(members) == base+1 {
-		t, ok := members[1].UTCTime()
-		if !ok {
-			return req, fmt.Errorf("%s: operTm: expected UtcTime, got %s", operation, members[1].Type())
-		}
+	if withOperTm {
+		t, _ := members[1].UTCTime()
 		// operTm all zero is an immediate command (IEC 61850-8-1
 		// 20.10.2.2).
 		if t.Unix() != 0 || t.Nanosecond() != 0 {

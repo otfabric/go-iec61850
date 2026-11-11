@@ -212,6 +212,13 @@ func (c *Client) Cancel(ctx context.Context, ref Ref, params CancelParams) error
 		}
 	}
 	cancelVal := encodeCancel(params, c.controlHasOperTm(ctx, cancelRef, !params.OperTm.IsZero()))
+	if c.controlCancelHasCheck(cancelRef) {
+		// The server models Cancel with the Oper type: send Check last,
+		// as in Oper (IEC 61850-8-1 Table 83 member order).
+		if members, ok := cancelVal.Structure(); ok {
+			cancelVal = mms.NewStructure(append(members, CheckConditions(0).toMMS()))
+		}
+	}
 
 	if lae, err := c.writeControlValue(ctx, cancelRef, cancelVal, params.CtlNum); err != nil {
 		return controlError(ref, "cancel", lae, err)

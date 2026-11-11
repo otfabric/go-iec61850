@@ -61,6 +61,7 @@ type Client struct {
 	ctlWrites  map[*lastApplErrorWatch]struct{}
 	ctlNums    map[string]uint8        // ctlNum of the last SelectWithValue per control
 	ctlLayouts map[string]operTmLayout // operTm in the Oper/SBOw/Cancel type
+	ctlChecks  map[string]bool         // a Check member in the Cancel type
 	ctlLAE     map[string]laeEntry     // last LastApplError per control
 	ctlLAESeq  uint64
 
