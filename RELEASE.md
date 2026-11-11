@@ -1,9 +1,9 @@
 # go-iec61850 Releases
 
-## v1.18.0
+## v1.19.0
 
 **Date:** 2026-11-11
-**Previous release:** v1.17.1
+**Previous release:** v1.18.0
 
 Setting groups get value banks (IEC 61850-7-2 §16, 8-1 §16). This closes the "no per-group value banks" limitation of v1.17.
 
@@ -22,6 +22,45 @@ Setting groups get value banks (IEC 61850-7-2 §16, 8-1 §16). This closes the "
 - SetEditSGValue of a constructed attribute (an FCDA such as `StrVal.setMag`) sets its leaves. Before, the structure was stored apart from the leaves that reads and the edit buffer use, so the write was lost.
 - A `SettingGroupHandler` callback runs before the bank operation. Values that `OnActiveSGChanged` sets on FC=SG, or `OnEditSGSelected` sets on FC=SE, win over the bank and are kept in it. Applications that kept their own group values (as the v1.17 demo IED did) keep working. They can drop that code and give the values in SCL or through `SetSettingGroupValue`.
 - The demo IED (`examples/internal/demoied`) takes its two PTOC1.StrVal groups from `Val sGroup` in `demo.icd`, with no handler code.
+
+---
+
+## v1.18.0
+
+**Date:** 2026-11-11
+**Previous release:** v1.17.1
+
+R-GOOSE and R-SV: GOOSE and Sampled Values over UDP/IP with authenticated
+SPDUs. The API is additive; packages `goose` and `sv` are unchanged.
+
+### Added
+
+- **Package `rsession`**: the session protocol of IEC TR 61850-90-5 for
+  routable GOOSE and SV (R-GOOSE, R-SV), unicast and multicast, UDP port
+  102 by default. `rsession.Transport` implements the layer-2 `Transport`
+  of `goose` and `sv`, so their publishers and subscribers run over UDP
+  unchanged. Protocol versions 1 and 2 are received; 2 is sent by default.
+- **Authentication**: HMAC-SHA256 truncated to 80, 128 or 256 bits over
+  every SPDU, with keys from a `KeyProvider` interface (`KeyRing` is a
+  static provider that supports key changes). Secured by default:
+  `Open` needs a key provider unless `Insecure` is set, and a receiver
+  refuses unsecured, unknown-key, tampered and replayed SPDUs (64-entry
+  window per sender and key), counting them in `Stats` and reporting them
+  to `OnReject`.
+- `rsession.Encode`, `Decode` and `Verify` for single SPDUs; fuzz targets
+  `FuzzDecode` and `FuzzVerify`.
+- [ADR 0001](docs/adr/0001-routable-goose-sv.md): the wire layout, the
+  references it follows (IEC TR 61850-90-5 and IEC 62351-6 were not
+  available; the layout follows libiec61850, Wireshark and dscsystems where
+  they agree) and the scope.
+
+### Not included
+
+- Layer-2 IEC 62351-6 authentication (Reserved 1/2 and the extension
+  field) is deferred until IEC 62351-6 is available; see
+  KNOWN_LIMITATIONS.md.
+- AES-GMAC, AES-GCM encryption and IEC 62351-9 key distribution.
+- Interop: no independent R-GOOSE/R-SV peer has been tested yet.
 
 ---
 

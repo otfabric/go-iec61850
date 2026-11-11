@@ -352,7 +352,7 @@ in iec61850-interop.
 | GetRCBValues | ✓ | ✓ | URCB and BRCB |
 | SetRCBValues | ✓ | ✓ | URCB and BRCB |
 | GetSGCBValues | ✓ | ✓ | |
-| SetSGValues | ✓ | ✓ | server: one value bank per group (v1.18.0); own tests only |
+| SetSGValues | ✓ | ✓ | server: one value bank per group (v1.19.0); own tests only |
 | ConfirmEditSGValues | ✓ | ✓ | own tests only |
 | GetEditSGValues | ✓ | ✓ | |
 | GetLCBValues / SetLCBValues | ✓ | ✓ | MMS Read/Write of `LN$LG$<lcb>` (8-1 Table 68); own tests only |

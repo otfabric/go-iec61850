@@ -114,6 +114,27 @@ that unwrap to one of the decode sentinels. `*sv.ValidationError` unwraps to
 | `ErrSmpRateMismatch` | Received smpRate or smpMod differs from the expected one |
 | `ErrSampleSizeMismatch` | Sample length differs from the expected dataset layout |
 
+### Package `rsession`
+
+Use `errors.Is(err, rsession.ErrXxx)`. Decoder failures are
+`*rsession.DecodeError` values that unwrap to `ErrMalformed` or
+`ErrUnsupported`. `ErrInvalidConfig` and `ErrClosed` are the `l2` values
+below. See [GOOSE.md](GOOSE.md#r-goose-and-r-sv-over-udp).
+
+| Sentinel | Meaning |
+|----------|---------|
+| `ErrMalformed` | Datagram is not a well-formed SPDU: transport header, a length past the datagram, a truncated field, trailing octets |
+| `ErrUnsupported` | Protocol version other than 1 or 2, encryption, or a MAC algorithm other than HMAC-SHA256 |
+| `ErrUnsecured` | SPDU without key ID and signature, refused without `Insecure` |
+| `ErrUnknownKey` | SPDU under a key ID the key provider does not hold |
+| `ErrAuthentication` | Signature missing, of the wrong length or algorithm, or not verifying |
+| `ErrReplay` | SPDU number already accepted, or older than the replay window, for that sender and key |
+| `ErrNoKey` | The key provider has no current key to send with |
+| `ErrInvalidKey` | Key ID 0, key material shorter than 16 octets, or an unsupported MAC algorithm |
+| `ErrInvalidFrame` | Frame passed to `Transport.Send` is not a GOOSE or SV frame of the transport's kind |
+| `ErrLimitExceeded` | SPDU larger than 65507 octets, or an APDU longer than 65535 |
+| `ErrUnsupportedPlatform` | Multicast socket options requested on a platform other than Linux, macOS or a BSD |
+
 ### Transport sentinels
 
 These are the same values in `goose`, `sv` and `l2`, so `errors.Is` matches

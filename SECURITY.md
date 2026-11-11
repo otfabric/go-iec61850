@@ -54,12 +54,15 @@ The following are **out of scope**:
 - Vulnerabilities in dependencies not maintained by this project.
 - Issues requiring physical access to the machine running the library.
 - Theoretical attacks with no practical exploitation path.
-- IEC 62351 role-based access control and IEC 62351-6 GOOSE/SV
+- IEC 62351 role-based access control and layer-2 IEC 62351-6 GOOSE/SV
   authentication (not implemented; see below).
-- Spoofed or replayed GOOSE/SV frames: without IEC 62351-6, any host on
-  the Ethernet segment can publish frames a subscriber accepts. Subscriber
-  validation (APPID, gocbRef/svID, datSet, confRev, member types) protects
-  against misconfiguration, not against an attacker.
+- Spoofed or replayed layer-2 GOOSE/SV frames: without IEC 62351-6, any
+  host on the Ethernet segment can publish frames a subscriber accepts.
+  Subscriber validation (APPID, gocbRef/svID, datSet, confRev, member
+  types) protects against misconfiguration, not against an attacker.
+
+In scope, on the other hand: a forged, tampered or replayed R-GOOSE/R-SV
+SPDU that a `rsession.Transport` with a key provider accepts.
 
 ## Certification statement
 
@@ -91,6 +94,12 @@ support.
   Run them on a dedicated, physically or VLAN-separated process bus;
   restrict which ports may source the multicast addresses (switch port
   security, IEEE 802.1X); do not bridge the process bus to IT networks.
+- **R-GOOSE and R-SV** (`rsession`) — keep the default: a key provider and
+  no `Insecure`. HMAC authenticates but does not encrypt, so the values
+  are readable on the network. Generate keys of at least 32 random octets,
+  distribute them out of band, change them with the old and the new key
+  both held at the receivers, and log `OnReject`. Set `MulticastTTL` no
+  higher than the routed path needs.
 - **Raw socket privileges** — publishers and subscribers need
   `CAP_NET_RAW` on Linux or `/dev/bpf*` access on macOS/BSD. Grant the
   capability to the binary (`setcap cap_net_raw+ep`) instead of running
