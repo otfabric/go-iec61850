@@ -757,10 +757,9 @@ func TestDecodeEntryID_Short(t *testing.T) {
 // BRCB disable clears EntryID in store — re-enable replays full buffer
 // ---------------------------------------------------------------------------
 
-// TestReportEngine_BRCB_DisabledEntryIDIsNewest: "When the BRCB state is
-// RptEna=FALSE: a GetBRCBValues shall return the EntryID value that
-// represents the last (i.e., newest) entry that has been entered into the
-// buffer" (IEC 61850-7-2 §17.2.2.15). Before v1.17 a disable zeroed it.
+// TestReportEngine_BRCB_DisabledEntryIDIsNewest: a disabled BRCB reads
+// back the EntryID of the newest buffered entry (IEC 61850-7-2
+// §17.2.2.15). Before v1.17 a disable zeroed it.
 func TestReportEngine_BRCB_DisabledEntryIDIsNewest(t *testing.T) {
 	model := testReportSCL()
 	srv := newTestServer(t, model)

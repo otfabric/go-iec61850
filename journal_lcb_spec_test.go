@@ -170,9 +170,9 @@ func TestSpec_7_2_17_3_4_LogsOnlyDatasetMembersWithReason(t *testing.T) {
 	}
 }
 
-// TestSpec_8_1_17_3_4_3_LCBWriteRules: "A V-Put, while the component
-// LogEna has a value of TRUE, shall fail for the components of LogRef,
-// DatSet, TrgOps, and IntgPd"; a LogRef or DatSet naming nothing fails;
+// TestSpec_8_1_17_3_4_3_LCBWriteRules: with LogEna TRUE, writes to
+// LogRef, DatSet, TrgOps and IntgPd fail; a LogRef or DatSet naming
+// nothing fails;
 // OldEntrTm/NewEntrTm/OldEnt/NewEnt are read-only (8-1 §17.3.4.3,
 // Table 65) (LOG-01).
 func TestSpec_8_1_17_3_4_3_LCBWriteRules(t *testing.T) {
@@ -242,9 +242,8 @@ func TestSpec_8_1_17_3_4_3_LCBWriteRules(t *testing.T) {
 	}
 }
 
-// TestSpec_8_1_17_3_3_3_4_StatusReflectsJournal: "If there are no
-// journal entries ... the value of these components shall be equal and
-// the binary-time values shall be 0"; OldEnt/NewEnt are the entry IDs of
+// TestSpec_8_1_17_3_3_3_4_StatusReflectsJournal: an empty journal
+// reports equal entry times of zero; OldEnt/NewEnt are the entry IDs of
 // the oldest and newest entries (8-1 §17.3.3.3.4/5) (LOG-01).
 func TestSpec_8_1_17_3_3_3_4_StatusReflectsJournal(t *testing.T) {
 	srv, je := newLCBServer(t, lcbModel())

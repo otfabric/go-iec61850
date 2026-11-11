@@ -787,8 +787,8 @@ func (c *Client) SetReportControlBlock(ctx context.Context, ld, rcbItemID string
 	//     EntryID "May not be written when RptEna=TRUE" (8-1 Tables 61
 	//     and 63; 7-2 Table 37 c1/c2).
 	//  2. Resv, ResvTms: the reservation precedes the configuration, since
-	//     "no other client shall have access rights to set the control
-	//     block attributes" once it is reserved (7-2 §17.2.1, §17.2.4.5).
+	//     a reserved control block accepts writes from its owner only
+	//     (7-2 §17.2.1, §17.2.4.5).
 	//  3. Configuration (RptID, DatSet, OptFlds, BufTm, TrgOps, IntgPd),
 	//     then PurgeBuf and EntryID (resync, 7-2 Figure 24).
 	//  4. RptEna=TRUE.
@@ -1870,9 +1870,8 @@ func (s *ReportSubscription) assembleSegments() *ReportIndication {
 	hasDataRefs := first.OptFlds.Has(OptFldDataRef)
 	hasReasonCodes := first.OptFlds.Has(OptFldReasonCode)
 
-	// IEC 61850-8-1 §17.2.1: "The number of used bits, within the
-	// bitstring, shall be equal to the number of members of the
-	// NamedVariableList designated as the DataSet": every segment carries
+	// IEC 61850-8-1 §17.2.1: the inclusion bitstring has one bit per
+	// data set member, so every segment carries
 	// a full-width inclusion bitstring with the bits of its own members.
 	// The assembled report ORs them and lists the members in data set
 	// order.

@@ -18,9 +18,8 @@ import (
 // IEC 61850-8-1 §17.3.3 onto the "<LN>$LG$<name>" structure (Table 65)
 // and MMS journals.
 
-// lcbReasonTag is the journal variable tag of a reason code: "A journal
-// variable tag representing journal data relating to reasonCode shall
-// have the value of “ReasonCode”" (IEC 61850-8-1 §17.3.3.4.4).
+// lcbReasonTag is the journal variable tag of a reason code
+// (IEC 61850-8-1 §17.3.3.4.4).
 const lcbReasonTag = "ReasonCode"
 
 // lcbRuntime is the state of one LCB. The store holds the attribute
@@ -51,8 +50,8 @@ func (rt *lcbRuntime) key(attr string) string {
 }
 
 // lcbError is a DataAccessError for a refused LCB write
-// (IEC 61850-8-1 §17.3.4.3: "The Response– shall be mapped as per the
-// ServiceError mapping specified in 8.1.3.4.4.2").
+// (IEC 61850-8-1 §17.3.4.3 maps a negative response with the
+// ServiceError mapping of §8.1.3.4.4.2).
 func lcbError(code mms.DataAccessErrorCode, rt *lcbRuntime, format string, args ...any) error {
 	return fmt.Errorf("iec61850: LCB %s/%s: %s: %w", rt.ldName, rt.item, fmt.Sprintf(format, args...), &mms.DataAccessError{Code: code})
 }
@@ -121,7 +120,7 @@ func (e *JournalEngine) resolveLocked(rt *lcbRuntime) {
 	rt.dsValid = false
 	rt.memberKeys, rt.memberNodes, rt.leafMembers, rt.prevValues = nil, nil, nil, nil
 	if rt.datSet == "" {
-		return // "A NULL value is reserved to indicate that no DataSet has been selected."
+		return // an empty DatSet means no data set is selected
 	}
 	ds, _ := e.model.FindDataSet(rt.ldName, rt.datSet)
 	if ds == nil {
@@ -195,11 +194,10 @@ func (e *JournalEngine) detectLocked(rt *lcbRuntime, storeKey string, occTime ti
 	}
 }
 
-// lcbEntryData is one EntryData: "the journal variable representing the
-// datRef/value followed by the journal variable representing the
-// reasonCode", the DatRef tag an ObjectReference (IEC 61850-8-1
-// §17.3.3.4.4). Table 65 does not map OptFlds and "forces the
-// reasonCodes to always appear in the Log".
+// lcbEntryData is one EntryData: the data reference/value variable,
+// then the reason code variable; the DatRef tag is an ObjectReference
+// (IEC 61850-8-1 §17.3.3.4.4). Table 65 does not map OptFlds, so the
+// reason code is always logged.
 func lcbEntryData(ref string, v *mms.Value, reason ReasonCode) []mms.JournalVariable {
 	if v == nil {
 		return nil
@@ -207,9 +205,8 @@ func lcbEntryData(ref string, v *mms.Value, reason ReasonCode) []mms.JournalVari
 	return []mms.JournalVariable{{Tag: ref, Value: v}, {Tag: lcbReasonTag, Value: encodeReasonCode(reason)}}
 }
 
-// addEntry appends one journal entry ("a sequence of entryDat(s) may be
-// entered within a single MMS journal entry", IEC 61850-8-1
-// §17.3.3.4.3) and refreshes the status of the LCBs using that journal.
+// addEntry appends one journal entry (one MMS journal entry may hold
+// several EntryData, IEC 61850-8-1 §17.3.3.4.3) and refreshes the status of the LCBs using that journal.
 func (e *JournalEngine) addEntry(k journalKey, occTime time.Time, vars []mms.JournalVariable) []byte {
 	id := e.provider.AddEntry(k.domain, k.journal, occTime, vars)
 	e.refreshStatus(k)
@@ -217,8 +214,7 @@ func (e *JournalEngine) addEntry(k journalKey, occTime time.Time, vars []mms.Jou
 }
 
 // refreshStatus writes OldEntrTm, NewEntrTm, OldEnt and NewEnt of every
-// LCB whose LogRef is k: "The values of these attributes shall reflect
-// the appropriate values for the Log specified by the value of LogRef"
+// LCB whose LogRef is k, so that they describe that log
 // (IEC 61850-8-1 Table 65 a). An empty journal has equal zero times and
 // NULL (all-zero) entry IDs (§17.3.3.3.4/5).
 func (e *JournalEngine) refreshStatus(k journalKey) {
@@ -332,12 +328,11 @@ func (e *JournalEngine) integrityLocked(rt *lcbRuntime, now time.Time) {
 }
 
 // HandleLCBWrite applies a client write of LCB attribute attr
-// (IEC 61850-8-1 §17.3.4.3 SetLCBValues): "A V-Put, while the component
-// LogEna has a value of TRUE, shall fail for the components of LogRef,
-// DatSet, TrgOps, and IntgPd"; "A V-Put of a LogRef value that specifies
-// a non-existent MMS journal shall fail"; "A V-Put of a DataSet value
-// that specifies a non-existent MMS NamedVariableList shall fail". The
-// value is committed only when the write is accepted.
+// (IEC 61850-8-1 §17.3.4.3 SetLCBValues). While LogEna is TRUE, writes
+// to LogRef, DatSet, TrgOps and IntgPd are rejected; a LogRef naming no
+// existing journal and a DatSet naming no existing named variable list
+// are rejected too. The value is committed only when the write is
+// accepted.
 func (e *JournalEngine) HandleLCBWrite(_ context.Context, ldName, lcbItem, attr string, val *mms.Value) error {
 	e.mu.RLock()
 	rt := e.lcbs[ldName+"/"+lcbItem]

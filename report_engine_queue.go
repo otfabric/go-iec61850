@@ -125,8 +125,7 @@ func triggerReason(trg TrgOps, n *servermodel.MemberNode, storeKey string, prevV
 // notifications for BufTm (IEC 61850-7-2 §17.2.2.9). Caller holds rt.mu.
 func (re *ReportEngine) recordEventLocked(rt *rcbRuntime, inclusion []bool, reasons []ReasonCode, values []*mms.Value, now time.Time) {
 	if rt.bufTm == 0 {
-		// "The default value of 0 ... each internal notification shall
-		// cause the BRCB to send a single report."
+		// BufTm 0: every internal notification becomes its own report.
 		re.appendEntryLocked(rt, &bufferedEntry{
 			timeOfEntry: now,
 			values:      values,
@@ -135,11 +134,10 @@ func (re *ReportEngine) recordEventLocked(rt *rcbRuntime, inclusion []bool, reas
 		})
 		return
 	}
-	// "In the case where a second internal notification of the same
-	// member of a data-set has occurred prior to the expiration of BufTm,
-	// the BRCB shall [for ST, may for MX] behave as if BufTm has expired
-	// and immediately send the report, restart the timer ... and process
-	// the second notification."
+	// A second notification for a member that is already pending before
+	// BufTm expires ends the buffer period early (mandatory for ST,
+	// optional for MX): the pending report goes out now, the timer
+	// restarts and the new notification starts the next report.
 	if rt.agg != nil {
 		for i, in := range inclusion {
 			if in && rt.agg.inclusion[i] {
@@ -158,8 +156,7 @@ func (re *ReportEngine) recordEventLocked(rt *rcbRuntime, inclusion []bool, reas
 		}
 		rt.aggGen++
 		gen := rt.aggGen
-		// "Upon receipt of the first set of internal notification ... the
-		// BRCB shall start a timer of the duration buffer time."
+		// The first notification of a buffer period starts a BufTm timer.
 		rt.aggTimer = time.AfterFunc(time.Duration(rt.bufTm)*time.Millisecond, func() {
 			rt.mu.Lock()
 			defer rt.mu.Unlock()
@@ -238,11 +235,10 @@ func (re *ReportEngine) appendEntryLocked(rt *rcbRuntime, e *bufferedEntry) {
 		d := rt.bufQueue[0]
 		rt.bufQueue = rt.bufQueue[1:]
 		rt.discarded = true
-		// "If one of the entries discarded causes the report handler to
-		// move the pointer to the next entry for transmission, the
-		// implementation shall indicate BufOvfl=TRUE in the next entry
-		// that is formatted and transmitted only." Discarding an entry
-		// already transmitted does not (Figure 30).
+		// Discarding an entry that was still waiting to be sent moves the
+		// send pointer, so only the next transmitted entry carries
+		// BufOvfl=TRUE. Discarding an entry already transmitted does not
+		// (Figure 30).
 		if rt.enabled && d.id > rt.lastSentID && !d.sent {
 			rt.pendingOvfl = true
 		}
@@ -300,8 +296,8 @@ func (re *ReportEngine) integrityLoop(rt *rcbRuntime, period time.Duration, stop
 				return
 			}
 			if rt.monitoringLocked() {
-				// "BufTm shall have no effect when this change issues a
-				// report": pending events go first, then the integrity.
+				// BufTm does not delay an integrity report: pending
+				// events go first, then the integrity.
 				re.flushAggLocked(rt)
 				re.appendEntryLocked(rt, re.snapshotEntryLocked(rt, ReasonIntegrity, false))
 			}

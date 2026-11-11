@@ -67,8 +67,7 @@ type GSEAddress struct {
 // Defaults for absent GSE/SMV address parameters.
 const (
 	// DefaultGOOSEAppID is the APPID of a GOOSE GSE address without
-	// APPID (8-1 Annex C: "If no APPID is configured, the default value
-	// shall be 0x0000").
+	// APPID (8-1 Annex C: an unconfigured APPID defaults to 0x0000).
 	DefaultGOOSEAppID uint16 = 0x0000
 
 	// DefaultSVAppID is the APPID of an SMV address without APPID

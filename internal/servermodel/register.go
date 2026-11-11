@@ -1091,8 +1091,7 @@ func sqNumBits(buffered bool) int {
 }
 
 // rcbOptFields returns the OptFlds a client reads back: a URCB never
-// reports buffer-overflow or entryID, and "The value returned for
-// OptFlds.buffer-overflow and OptFlds.entryID shall always be false"
+// reports buffer-overflow or entryID, so both read back as false
 // (IEC 61850-8-1 Table 63).
 func rcbOptFields(rpt *ReportDef) OptFieldsDef {
 	o := rpt.OptFlds
@@ -1216,9 +1215,8 @@ func registerRCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, rpt *Re
 			}
 			return mms.NewStructure(elems), nil
 		},
-		// IEC 61850-8-1 §8.1.3.4.4.2: object-access-denied "shall be
-		// returned if the entire VariableAccessSpecification is read-only
-		// or one or more of its sub-components is read-only"; the RCB
+		// IEC 61850-8-1 §8.1.3.4.4.2: a write that covers any read-only
+		// part is answered with object-access-denied; the RCB
 		// structure contains ConfRev, SqNum (and TimeOfEntry). Clients
 		// write the attributes one by one (SetBRCBValues, 8-1 §17.2.3).
 		Write: func(context.Context, *mms.Value) error {

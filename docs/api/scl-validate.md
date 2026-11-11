@@ -25,7 +25,7 @@ Addresses checks the P values of ConnectedAP, GSE and SMV addresses:
   - VLAN-PRIORITY without VLAN-ID: warning "address-format" (8-1 Table 133 / 9-2 Table 19 condition c1);
   - APPID ranges: GOOSE 0x0000-0x3FFF or 0x8000-0xBFFF (8-1 Annex C), SV 0x4000-0x7FFF (9-2 5.3.3.4.2): warning "appid-range";
   - destination MAC without the multicast bit (8-1 Table 12): warning "mac-not-multicast"; outside the recommended 01-0C-CD-01-xx-xx (GOOSE) / 01-0C-CD-04-xx-xx (SV) ranges (8-1 Table B.1, 9-2 Table B.1): info "mac-range";
-  - the same MAC-Address and APPID used by two control blocks of one SubNetwork: warning "duplicate-address" (8-1 Annex C: a unique APPID "should be enforced by the configuration system").
+  - the same MAC-Address and APPID used by two control blocks of one SubNetwork: warning "duplicate-address" (8-1 Annex C leaves APPID uniqueness to the configuration tool).
 
 ### func All
 

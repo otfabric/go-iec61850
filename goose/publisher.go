@@ -34,8 +34,7 @@ const (
 	MaxGoIDLen = 65
 
 	// MaxRetransmission bounds MaxTime: the retransmission interval
-	// "shall be less than 60 s" (IEC 61850-8-1 18.1.2.5.1 Figure 10
-	// key 4).
+	// stays below 60 s (IEC 61850-8-1 18.1.2.5.1 Figure 10 key 4).
 	MaxRetransmission = 60 * time.Second
 
 	DefaultMinTime = 10 * time.Millisecond
@@ -134,8 +133,8 @@ func (c *PublisherConfig) normalize() error {
 		return configErr("Dst", "destination address required")
 	}
 	if c.Dst[0]&0x01 == 0 {
-		// 8-1 Table 12: DstAddress "shall be an Ethernet address that
-		// has the multicast bit set to TRUE".
+		// 8-1 Table 12: DstAddress must be a multicast Ethernet
+		// address.
 		return configErr("Dst", "%s is not a multicast address", c.Dst)
 	}
 	if c.GocbRef == "" {
@@ -339,9 +338,8 @@ func (p *Publisher) SetFlags(test, simulation, ndsCom bool) error {
 }
 
 // SetEnabled starts or stops transmission (GoEna). Re-enabling sends
-// the current values as a new state with stNum 1 (IEC 61850-7-2
-// 18.2.3.6: "The initial value for StNum upon a transition of GoEna to
-// TRUE shall be 1").
+// the current values as a new state with stNum 1: enabling GoEna
+// restarts StNum at 1 (IEC 61850-7-2 18.2.3.6).
 func (p *Publisher) SetEnabled(enabled bool) error {
 	if err := p.checkOpen(); err != nil {
 		return err

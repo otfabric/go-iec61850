@@ -532,9 +532,8 @@ func convertDataSet(ds *scl.DataSet) DataSetDef {
 }
 
 // expandReport returns the instances of an SCL ReportControl: with
-// indexed, "the BRCB instance numbering shall start with 01 and progress
-// through 99 ... myRCB01, myRCB02, ….myRcbXX where XX represents the
-// attribute max of the SCL subElement RptEnabled"; without, one instance
+// indexed, instances named after the control block with a two-digit
+// suffix from 01 up to RptEnabled max (at most 99); without, one instance
 // named as the control block (IEC 61850-8-1 §17.1.2 and §17.1.3.2,
 // IEC 61850-6 §9.3.8).
 func expandReport(rpt *scl.ReportControl) []ReportDef {
@@ -582,8 +581,8 @@ func convertLog(lg *scl.Log, ldInst string) LogDef {
 	}
 	def.LogLN = lg.Prefix + lnClass + lg.LNInst
 	if def.LogName == "" {
-		// "The name of the default journal shall be “GeneralLog”"
-		// (IEC 61850-8-1 §17.3.3.3.2).
+		// Without a configured log name the default journal is
+		// GeneralLog (IEC 61850-8-1 §17.3.3.3.2).
 		def.LogName = "GeneralLog"
 	}
 	return def

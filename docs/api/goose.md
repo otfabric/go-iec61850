@@ -67,8 +67,7 @@ const (
 	MaxGoIDLen = 65
 
 	// MaxRetransmission bounds MaxTime: the retransmission interval
-	// "shall be less than 60 s" (IEC 61850-8-1 18.1.2.5.1 Figure 10
-	// key 4).
+	// stays below 60 s (IEC 61850-8-1 18.1.2.5.1 Figure 10 key 4).
 	MaxRetransmission = 60 * time.Second
 
 	DefaultMinTime = 10 * time.Millisecond
@@ -861,7 +860,7 @@ Run drives retransmissions until ctx is done or the publisher is closed; it then
 func (p *Publisher) SetEnabled(enabled bool) error
 ```
 
-SetEnabled starts or stops transmission (GoEna). Re-enabling sends the current values as a new state with stNum 1 (IEC 61850-7-2 18.2.3.6: "The initial value for StNum upon a transition of GoEna to TRUE shall be 1").
+SetEnabled starts or stops transmission (GoEna). Re-enabling sends the current values as a new state with stNum 1: enabling GoEna restarts StNum at 1 (IEC 61850-7-2 18.2.3.6).
 
 #### func (Publisher) SetFlags
 

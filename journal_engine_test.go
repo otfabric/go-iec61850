@@ -462,10 +462,9 @@ func TestJournalEngine_LogValueWrite(t *testing.T) {
 	if len(result.Entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(result.Entries))
 	}
-	// "the journal variable representing the datRef/value followed by
-	// the journal variable representing the reasonCode"; the DatRef tag
-	// is an ObjectReference and the reason tag "ReasonCode"
-	// (IEC 61850-8-1 §17.3.3.4.4) (LOG-03).
+	// Each entry holds the data reference/value variable first and the
+	// reason code variable second; the first tag is an ObjectReference,
+	// the second is ReasonCode (IEC 61850-8-1 §17.3.3.4.4) (LOG-03).
 	vars := result.Entries[0].Variables
 	if len(vars) != 2 || vars[0].Tag != "LD1/LLN0$ST$Mod$stVal" || vars[1].Tag != "ReasonCode" {
 		t.Fatalf("unexpected variables: %+v", vars)

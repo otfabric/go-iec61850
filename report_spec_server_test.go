@@ -136,9 +136,9 @@ func rcbOwner(engine *ReportEngine, rcb string) *mms.ServerConn {
 	return rt.owner
 }
 
-// TestSpec_7_2_17_2_1_BRCBReportsOnlyToEnablingAssociation: "That client
-// exclusively shall 'own' that instance and shall receive reports from
-// that instance" (RPT-01).
+// TestSpec_7_2_17_2_1_BRCBReportsOnlyToEnablingAssociation: the
+// enabling client owns the instance and is the only one that receives
+// its reports (RPT-01).
 func TestSpec_7_2_17_2_1_BRCBReportsOnlyToEnablingAssociation(t *testing.T) {
 	srv, _ := newSpecServer(t)
 	ctx := context.Background()
@@ -153,10 +153,9 @@ func TestSpec_7_2_17_2_1_BRCBReportsOnlyToEnablingAssociation(t *testing.T) {
 	expectNoReport(t, subB, 200*time.Millisecond)
 }
 
-// TestSpec_7_2_17_2_4_5_URCBImplicitReservation: "If the attribute Resv
-// is not set to TRUE, then setting the attribute RptEna to TRUE reserves
-// the instance implicitly"; "Other clients shall not be allowed to set
-// any attribute of that URCB"; reserved by another client maps to
+// TestSpec_7_2_17_2_4_5_URCBImplicitReservation: enabling RptEna
+// without Resv reserves the URCB implicitly, after which other clients
+// cannot write any of its attributes; reserved by another client maps to
 // temporarily-unavailable (8-1 §8.1.3.4.4.2) (RPT-03, RPT-18).
 func TestSpec_7_2_17_2_4_5_URCBImplicitReservation(t *testing.T) {
 	srv, _ := newSpecServer(t)
@@ -190,9 +189,8 @@ func TestSpec_7_2_17_2_4_5_URCBImplicitReservation(t *testing.T) {
 	}
 }
 
-// TestSpec_7_2_TableC3_BRCBFirstEnablerOwns: without ResvTms "the
-// reservation of the control block shall occur ... by the client that
-// performs the first SetBRCBValues with RptEna=TRUE" (Table 37 c3).
+// TestSpec_7_2_TableC3_BRCBFirstEnablerOwns: without ResvTms the
+// first client that enables RptEna reserves the BRCB (Table 37 c3).
 func TestSpec_7_2_TableC3_BRCBFirstEnablerOwns(t *testing.T) {
 	srv, _ := newSpecServer(t)
 	ctx := context.Background()
@@ -209,10 +207,9 @@ func TestSpec_7_2_TableC3_BRCBFirstEnablerOwns(t *testing.T) {
 	recvReport(t, subA)
 }
 
-// TestSpec_7_2_17_2_4_4_URCBAssociationLossDisablesAndReleases: "If the
-// two-party-application-association to the client over which URCB has
-// been enabled is lost, the server shall set the attribute RptEna to
-// FALSE" (RPT-02).
+// TestSpec_7_2_17_2_4_4_URCBAssociationLossDisablesAndReleases: losing
+// the association that enabled a URCB sets its RptEna to FALSE
+// (RPT-02).
 func TestSpec_7_2_17_2_4_4_URCBAssociationLossDisablesAndReleases(t *testing.T) {
 	srv, engine := newSpecServer(t)
 	ctx := context.Background()
@@ -241,9 +238,8 @@ func TestSpec_7_2_17_2_4_4_URCBAssociationLossDisablesAndReleases(t *testing.T) 
 	recvReport(t, sub)
 }
 
-// TestSpec_7_2_17_2_2_5_BRCBAssociationLossThenReplay: "When an
-// association is lost, the state shall transition to disabled"
-// (Figure 24) and the BRCB keeps buffering (§17.2.3.2.3.6) (RPT-02,
+// TestSpec_7_2_17_2_2_5_BRCBAssociationLossThenReplay: losing the
+// association disables the BRCB (Figure 24) and the BRCB keeps buffering (§17.2.3.2.3.6) (RPT-02,
 // RPT-08).
 func TestSpec_7_2_17_2_2_5_BRCBAssociationLossThenReplay(t *testing.T) {
 	srv, engine := newSpecServer(t)
@@ -274,7 +270,7 @@ func TestSpec_7_2_17_2_2_5_BRCBAssociationLossThenReplay(t *testing.T) {
 }
 
 // TestSpec_8_1_Table61_63_WriteWhileEnabledRejected: attributes marked
-// "May not be written when RptEna=TRUE" fail with temporarily-unavailable
+// read-only while RptEna is TRUE fail with temporarily-unavailable
 // (8-1 §8.1.3.4.4.2) and keep their value (RPT-04).
 func TestSpec_8_1_Table61_63_WriteWhileEnabledRejected(t *testing.T) {
 	writes := map[string]*mms.Value{
@@ -386,10 +382,8 @@ func TestSpec_8_1_8_1_3_4_4_2_RCBErrorCodes(t *testing.T) {
 	}
 }
 
-// TestSpec_7_2_17_2_2_10_SqNumStartsAtZeroAndWraps: "Upon that
-// transition, the value of SqNum shall be set to zero (0) ... When the
-// maximum value of SqNum is obtained, the next value shall be a value of
-// zero (0)"; INT8U for a URCB (§17.2.5.2), INT16U for a BRCB (RPT-06).
+// TestSpec_7_2_17_2_2_10_SqNumStartsAtZeroAndWraps: enabling resets
+// SqNum to 0 and it wraps to 0 after its maximum; INT8U for a URCB (§17.2.5.2), INT16U for a BRCB (RPT-06).
 func TestSpec_7_2_17_2_2_10_SqNumStartsAtZeroAndWraps(t *testing.T) {
 	srv, engine := newSpecServer(t)
 	ctx := context.Background()
@@ -478,9 +472,8 @@ func TestSpec_7_2_17_2_3_2_2_8_BufOvflNotSetForTransmittedDiscard(t *testing.T) 
 }
 
 // TestSpec_7_2_17_2_3_2_2_8_BufOvflOnceAfterLoss: entries discarded while
-// disabled are a possible loss: BufOvfl=TRUE "in the first report that is
-// sent after the transition from disabled to enabled. Subsequent reports
-// shall have BufOvfl = FALSE" (RPT-07, RPT-08).
+// disabled are a possible loss: the first report after re-enabling has
+// BufOvfl=TRUE and later ones FALSE (RPT-07, RPT-08).
 func TestSpec_7_2_17_2_3_2_2_8_BufOvflOnceAfterLoss(t *testing.T) {
 	srv, engine := newSpecServer(t)
 	engine.SetRCBBufMax("LD1", specBRCB, 2)
@@ -524,8 +517,8 @@ func TestSpec_7_2_17_2_3_2_3_6_BuffersWhileDisabled(t *testing.T) {
 	}
 }
 
-// TestSpec_7_2_17_2_2_16_ReplayPreservesTimeOfEntry: "TimeOfEntry shall
-// specify the time when the EntryID was created" (§17.2.3.2.2.9) (RPT-09).
+// TestSpec_7_2_17_2_2_16_ReplayPreservesTimeOfEntry: TimeOfEntry is the
+// creation time of the entry, also on replay (§17.2.3.2.2.9) (RPT-09).
 func TestSpec_7_2_17_2_2_16_ReplayPreservesTimeOfEntry(t *testing.T) {
 	srv, _ := newSpecServer(t)
 	ctx := context.Background()
@@ -561,9 +554,8 @@ func TestSpec_7_2_17_2_3_2_3_6_ReplayThenLiveSqNumContiguous(t *testing.T) {
 	}
 }
 
-// TestSpec_7_2_17_2_3_2_3_5_URCBBurstOrder: "shall send all reports in
-// the time sequence order in which the related entries have been
-// created" (RPT-10).
+// TestSpec_7_2_17_2_3_2_3_5_URCBBurstOrder: reports go out in the
+// order their entries were created (RPT-10).
 func TestSpec_7_2_17_2_3_2_3_5_URCBBurstOrder(t *testing.T) {
 	srv, _ := newSpecServer(t)
 	ctx := context.Background()
@@ -584,10 +576,10 @@ func TestSpec_7_2_17_2_3_2_3_5_URCBBurstOrder(t *testing.T) {
 	}
 }
 
-// TestSpec_7_2_17_2_5_2_URCBNoEntryIDOrBufOvfl: "regardless of the value
-// of OptFlds.EntryID, no EntryID shall be included in the report" and
-// "The value returned for OptFlds.buffer-overflow and OptFlds.entryID
-// shall always be false" (8-1 Table 63) (RPT-11).
+// TestSpec_7_2_17_2_5_2_URCBNoEntryIDOrBufOvfl: a URCB report never
+// carries an EntryID, whatever OptFlds.EntryID says, and reading
+// OptFlds returns buffer-overflow and entryID as false (8-1 Table 63)
+// (RPT-11).
 func TestSpec_7_2_17_2_5_2_URCBNoEntryIDOrBufOvfl(t *testing.T) {
 	srv, _ := newSpecServer(t)
 	ctx := context.Background()

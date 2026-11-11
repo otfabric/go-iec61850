@@ -13,8 +13,8 @@ import (
 )
 
 // TestSpec_8_1_A3_FixedLengthDecode: 8-1 Annex A.3 fixed-length encoding
-// is backward compatible "as long as the subscriber implementation does
-// not check if the shortest-length strategy has been respected"; Table
+// stays compatible with subscribers that do not insist on the shortest
+// encoding; Table
 // A.2 sizes must decode (GSE-02).
 func TestSpec_8_1_A3_FixedLengthDecode(t *testing.T) {
 	t.Parallel()

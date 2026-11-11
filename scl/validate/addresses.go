@@ -42,8 +42,8 @@ var (
 //     (GOOSE) / 01-0C-CD-04-xx-xx (SV) ranges (8-1 Table B.1, 9-2 Table
 //     B.1): info "mac-range";
 //   - the same MAC-Address and APPID used by two control blocks of one
-//     SubNetwork: warning "duplicate-address" (8-1 Annex C: a unique
-//     APPID "should be enforced by the configuration system").
+//     SubNetwork: warning "duplicate-address" (8-1 Annex C leaves APPID
+//     uniqueness to the configuration tool).
 func Addresses(s *scl.SCL, _ *index.Index) []scl.Diagnostic {
 	if s.Communication == nil {
 		return nil

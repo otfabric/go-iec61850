@@ -77,9 +77,8 @@ func (re *ReportEngine) HandleRCBWrite(_ context.Context, ldName, rcbItemID, sub
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 
-	// Ownership: "Once a report control block is reserved, by a specific
-	// client, no other client shall have access rights to set the control
-	// block attributes" (IEC 61850-7-2 §17.2.1; URCB §17.2.4.5). An owner
+	// Ownership: a reserved control block accepts attribute writes from
+	// its owner only (IEC 61850-7-2 §17.2.1; URCB §17.2.4.5). An owner
 	// whose association is gone no longer holds the reservation.
 	if sc != nil && rt.owner != nil && rt.owner != sc {
 		if re.isConnActive(rt.owner) {
@@ -179,8 +178,8 @@ func (re *ReportEngine) enableLocked(rt *rcbRuntime, sc *mms.ServerConn) error {
 	if rt.enabled {
 		return nil
 	}
-	// IEC 61850-8-1 §17.1.2/§17.1.3: "A V-Put of RptEna shall fail if
-	// the value of DatSet is NULL"; Figure 24: no transition from
+	// IEC 61850-8-1 §17.1.2/§17.1.3: enabling RptEna fails while DatSet
+	// is empty; Figure 24: no transition from
 	// disabled with a NULL or invalid DatSet.
 	if rt.datSet == "" {
 		return rcbError(rcbErrValue, rt.rcbItemID, "RptEna: DatSet is NULL")
@@ -260,8 +259,7 @@ func (re *ReportEngine) writeGILocked(rt *rcbRuntime, val *mms.Value) error {
 	if !ok {
 		return rcbError(rcbErrType, rt.rcbItemID, "GI: expected boolean")
 	}
-	// GI=FALSE: "a positive response shall be issued. However, GI pending
-	// processing will not be impacted."
+	// GI=FALSE: accepted, and a GI already in progress continues.
 	if !b {
 		re.store.Set(rt.sk("GI"), mms.NewBoolean(false))
 		return nil
@@ -273,9 +271,8 @@ func (re *ReportEngine) writeGILocked(rt *rcbRuntime, val *mms.Value) error {
 	}
 	// After initiation GI is set back to FALSE by the RCB.
 	re.store.Set(rt.sk("GI"), mms.NewBoolean(false))
-	// "If a BRCB contains TrgOps.GI = FALSE then an attempt to set the GI
-	// attribute to TRUE shall cause a SetBRCBValues positive response. No
-	// GI report shall be generated."
+	// With TrgOps.GI FALSE, setting GI to TRUE is accepted but produces no
+	// GI report.
 	if !rt.trgOps.Has(TrgOpGI) {
 		return nil
 	}
@@ -300,15 +297,15 @@ func (re *ReportEngine) writeEntryIDLocked(rt *rcbRuntime, val *mms.Value) error
 	}
 	id := decodeEntryID(bs)
 	if id == 0 {
-		// "zero (0) ... is reserved to be used by the client to
-		// resynchronize to the first entry in the queue"; resync → disabled.
+		// EntryID zero asks for a resync to the oldest queued entry;
+		// resync → disabled.
 		rt.resync = false
 		re.store.Set(rt.sk("EntryID"), mms.NewOctetString(append([]byte(nil), bs...)))
 		return nil
 	}
 	if rt.findEntryLocked(id) < 0 {
-		// "a ServiceError of parameter-value-inappropriate shall be
-		// returned" and the state becomes (stays) disabled.
+		// An unknown EntryID is answered with parameter-value-
+		// inappropriate and the state becomes (stays) disabled.
 		rt.resync = false
 		return rcbError(rcbErrValue, rt.rcbItemID, "EntryID %d is not in the buffer", id)
 	}
@@ -388,9 +385,8 @@ func (re *ReportEngine) writeConfigLocked(rt *rcbRuntime, subfield string, val *
 			rt.prevValues = re.readMemberValues(rt)
 		}
 	}
-	// IEC 61850-8-1 §17.1.2: "A write of a change of value to RptID,
-	// DatSet, BufTm, TrgOps, IntgPd, or PurgeBuf shall execute the
-	// PurgeBuf procedure" (IEC 61850-7-2 Table 37 c1).
+	// IEC 61850-8-1 §17.1.2: changing RptID, DatSet, BufTm, TrgOps,
+	// IntgPd or PurgeBuf purges the buffer (IEC 61850-7-2 Table 37 c1).
 	if rt.buffered {
 		re.purgeLocked(rt)
 	}
@@ -434,9 +430,8 @@ func (rt *rcbRuntime) findEntryLocked(id uint64) int {
 }
 
 // publishNewestEntryLocked exposes the newest buffered entry in EntryID
-// and TimeOfEntry: "When the BRCB state is RptEna=FALSE: a GetBRCBValues
-// shall return the EntryID value that represents the last (i.e., newest)
-// entry that has been entered into the buffer" (§17.2.2.15, §17.2.2.16).
+// and TimeOfEntry, which a disabled BRCB reads back (§17.2.2.15,
+// §17.2.2.16).
 func (re *ReportEngine) publishNewestEntryLocked(rt *rcbRuntime) {
 	if len(rt.bufQueue) == 0 {
 		re.store.Set(rt.sk("EntryID"), mms.NewOctetString(make([]byte, 8)))

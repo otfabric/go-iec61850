@@ -168,11 +168,8 @@ func encodeReportValuesEx(p reportParams) []*mms.Value {
 }
 
 // formatReport encodes p as one InformationReport when it fits maxPDU,
-// otherwise as segments: "For the case of long reports that do not fit
-// into one message, a single report shall be divided into subreports.
-// Each segment – of one report – shall be numbered with the same sequence
-// number and a unique SubSqNum" starting at 0 (IEC 61850-7-2
-// §17.2.3.2.2.5). Each segment carries the full-width inclusion bitstring
+// otherwise as segments that share the SqNum and carry a SubSqNum
+// counting from 0 (IEC 61850-7-2 §17.2.3.2.2.5). Each segment carries the full-width inclusion bitstring
 // with the bits of its own members (IEC 61850-8-1 §17.2.1), the
 // segmentation bit in the reported OptFlds and MoreSegmentsFollow TRUE
 // on all but the last. It returns nil when a single member does not fit.

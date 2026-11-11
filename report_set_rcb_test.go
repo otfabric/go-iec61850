@@ -140,7 +140,7 @@ func TestSetReportControlBlock_AllFieldsWrittenWithRptEnaLast(t *testing.T) {
 }
 
 // TestSetReportControlBlock_DisableFirst: RptEna=FALSE is written before
-// anything that "May not be written when RptEna=TRUE" (IEC 61850-8-1
+// any attribute that is read-only while enabled (IEC 61850-8-1
 // Tables 61 and 63), including Resv.
 func TestSetReportControlBlock_DisableFirst(t *testing.T) {
 	c, rec := newRCBWriteRecorder(t)

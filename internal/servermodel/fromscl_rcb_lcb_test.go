@@ -19,10 +19,9 @@ func reportNames(m *Model) []string {
 	return out
 }
 
-// TestFromSCL_IndexedRCBExpands: "If the IEC 61850-6 RCB attribute
-// "indexed" is TRUE, the BRCB instance numbering shall start with 01 ...
-// If ... FALSE, the BRCB instance shall be without additional instance
-// number" (IEC 61850-8-1 §17.1.2) (RPT-20).
+// TestFromSCL_IndexedRCBExpands: an RCB with indexed=true expands to
+// instances numbered from 01; with indexed=false the single instance
+// keeps its name without a number (IEC 61850-8-1 §17.1.2) (RPT-20).
 func TestFromSCL_IndexedRCBExpands(t *testing.T) {
 	for _, tc := range []struct {
 		indexed bool

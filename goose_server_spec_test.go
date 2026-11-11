@@ -85,9 +85,8 @@ func TestSpec_8_1_AnnexB_UnconfiguredMAC(t *testing.T) {
 	}
 }
 
-// TestSpec_7_2_18_2_1_3_ConfRevZero: "if the value of ConfRev equals
-// 0, a SetGoCBValues with the parameter GoEna equals TRUE shall fail"
-// (GSE-06).
+// TestSpec_7_2_18_2_1_3_ConfRevZero: with ConfRev 0, SetGoCBValues
+// enabling GoEna fails (GSE-06).
 func TestSpec_7_2_18_2_1_3_ConfRevZero(t *testing.T) {
 	srv := gooseServerFromCID(t, `datSet="dsGooseBool"
                         confRev="1"`, `datSet="dsGooseBool"
