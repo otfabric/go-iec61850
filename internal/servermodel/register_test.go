@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -1066,5 +1067,142 @@ func TestRegister_AllowReadOnlyFCWrites(t *testing.T) {
 	if _, err := client.Write(ctx, mms.WriteRequest{DomainID: "LD1", ItemID: "GGIO1$MX$Do1$mag",
 		Value: mms.NewStructure([]*mms.Value{mms.NewInteger(1)})}); err != nil {
 		t.Fatalf("MX compound write with opt-in: %v", err)
+	}
+}
+
+// A client write of a constructed DA of a writable FC sets its leaves:
+// reads of the compound and of each leaf are built from the leaves, and
+// the post-write interceptor is told of every leaf, so reports, GOOSE and
+// the journal see the change. Before v1.21.1 only FC=SE did this; for the
+// other FCs the value went under the compound key and was never read.
+func TestRegister_CompoundWriteSetsLeaves(t *testing.T) {
+	fcs := []string{"CF", "DC", "SP", "SV", "BL"}
+	var attrs []DataAttribute
+	for _, fc := range fcs {
+		attrs = append(attrs, DataAttribute{Name: "cmp" + fc, FC: fc, Children: []DataAttribute{
+			{Name: "i", BType: "INT32", InitialValue: "1"},
+			{Name: "sub", Children: []DataAttribute{
+				{Name: "f", BType: "FLOAT32"},
+				{Name: "e", BType: "Enum", EnumValues: []int{1, 2}, InitialValue: "1"},
+			}},
+		}})
+	}
+	m := &Model{LogicalDevices: []LogicalDevice{{
+		Name: "LD1",
+		LogicalNodes: []LogicalNode{{
+			Name: "GGIO1", LNClass: "GGIO",
+			DataObjects: []DataObject{{Name: "Do1", Attributes: attrs}},
+		}},
+	}}}
+	srv := mms.NewServer(mms.ServerOptions{MMS: mms.ServerMMSOptions{
+		MaxPDUSize: 65000, MaxOutstandingCalling: 5, MaxOutstandingCalled: 5,
+		DataStructureNestingLevel: 10,
+	}})
+	vs, err := RegisterModel(srv, m, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var notified []string
+	vs.SetWriteInterceptor(func(_ context.Context, key string, _ *mms.Value) (bool, error) {
+		notified = append(notified, key)
+		return false, nil
+	})
+	ctx := context.Background()
+	clientT, serverT := loopbackPair()
+	go func() { _ = srv.Serve(ctx, serverT) }()
+	client, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close(ctx) })
+	read := func(item string) *mms.Value {
+		t.Helper()
+		r, err := client.Read(ctx, mms.ReadRequest{DomainID: "LD1", ItemID: mms.ItemID(item)})
+		if err != nil || r == nil || r.Value == nil {
+			t.Fatalf("read %s: %v", item, err)
+		}
+		return r.Value
+	}
+	write := func(item string, v *mms.Value) error {
+		_, err := client.Write(ctx, mms.WriteRequest{DomainID: "LD1", ItemID: mms.ItemID(item), Value: v})
+		return err
+	}
+	value := func(i int64, f float64, e int64) *mms.Value {
+		return mms.NewStructure([]*mms.Value{
+			mms.NewInteger(i),
+			mms.NewStructure([]*mms.Value{mms.NewFloat(f), mms.NewInteger(e)}),
+		})
+	}
+
+	for _, fc := range fcs {
+		cmp := "GGIO1$" + fc + "$Do1$cmp" + fc
+		notified = nil
+		if err := write(cmp, value(7, 2.5, 2)); err != nil {
+			t.Fatalf("%s: write: %v", cmp, err)
+		}
+		if got := read(cmp); !got.Equal(value(7, 2.5, 2)) {
+			t.Errorf("%s read = %v after write", cmp, got)
+		}
+		if i, _ := read(cmp + "$i").Int64(); i != 7 {
+			t.Errorf("%s$i = %d after write, want 7", cmp, i)
+		}
+		if f, _ := read(cmp + "$sub$f").Float64(); f != 2.5 {
+			t.Errorf("%s$sub$f = %v after write, want 2.5", cmp, f)
+		}
+		if vs.Get(StoreKey("LD1", cmp)) != nil {
+			t.Errorf("%s: value kept under the compound key", cmp)
+		}
+		wantKeys := []string{
+			StoreKey("LD1", cmp+"$i"),
+			StoreKey("LD1", cmp+"$sub$f"),
+			StoreKey("LD1", cmp+"$sub$e"),
+		}
+		if !slices.Equal(notified, wantKeys) {
+			t.Errorf("%s: interceptor keys = %v, want %v", cmp, notified, wantKeys)
+		}
+
+		// An enum leaf outside its EnumType refuses the whole write: no
+		// leaf changes.
+		notified = nil
+		err := write(cmp, value(8, 3, 9))
+		var dae *mms.DataAccessError
+		if !errors.As(err, &dae) || dae.Code != mms.DataAccessErrorObjectValueInvalid {
+			t.Errorf("%s: write of enum 9 err = %v, want object-value-invalid", cmp, err)
+		}
+		if got := read(cmp); !got.Equal(value(7, 2.5, 2)) || len(notified) != 0 {
+			t.Errorf("%s = %v, notified %v after a refused write", cmp, got, notified)
+		}
+	}
+
+	// The write guard sees every leaf before any is stored.
+	vs.SetWriteGuard(func(_ context.Context, key string) error {
+		if strings.HasSuffix(key, "$sub$f") {
+			return &mms.DataAccessError{Code: mms.DataAccessErrorObjectAccessDenied}
+		}
+		return nil
+	})
+	if err := write("GGIO1$CF$Do1$cmpCF", value(9, 9, 1)); err == nil {
+		t.Error("compound write past the write guard")
+	}
+	if i, _ := read("GGIO1$CF$Do1$cmpCF$i").Int64(); i != 7 {
+		t.Errorf("cmpCF$i = %d after a guarded write, want 7", i)
+	}
+
+	// A failed notification fails the write, after every leaf is stored
+	// and notified.
+	vs.SetWriteGuard(nil)
+	notified = nil
+	vs.SetWriteInterceptor(func(_ context.Context, key string, _ *mms.Value) (bool, error) {
+		notified = append(notified, key)
+		if strings.HasSuffix(key, "$i") {
+			return true, &mms.DataAccessError{Code: mms.DataAccessErrorTemporarilyUnavailable}
+		}
+		return false, nil
+	})
+	if err := write("GGIO1$DC$Do1$cmpDC", value(5, 5, 1)); err == nil {
+		t.Error("compound write with a failed notification succeeded")
+	}
+	if got := read("GGIO1$DC$Do1$cmpDC"); !got.Equal(value(5, 5, 1)) || len(notified) != 3 {
+		t.Errorf("cmpDC = %v, notified %v after a failed notification", got, notified)
 	}
 }

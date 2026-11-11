@@ -227,6 +227,8 @@ func (vs *ValueStore) Set(key string, v *mms.Value) {
 // the interceptor cannot prevent the write — the value is already in the store
 // before the call.  It is used purely for notification (e.g. to trigger
 // report-engine dchg evaluation after a client writes a dataset member).
+// A write of a constructed attribute (other than a CO control service)
+// stores and notifies its leaves one by one, each under its leaf key.
 //
 // Because of this split role, do NOT assume that every MMS client write flows
 // through the interceptor before reaching the store.  Regular DA writes are
@@ -826,18 +828,41 @@ func registerDAWithFC(srv *mms.Server, vs *ValueStore, ldName, lnName string, pa
 			}
 		}
 	case vs.allowReadOnlyFCWrites || clientWritableFC(attr.FC):
+		// A write of a constructed attribute sets its leaves, as reads of
+		// it and of its leaves are built from them; SetEditSGValue of an
+		// FC=SE attribute (IEC 61850-7-2 16.3.4.2.1, an FCDA such as
+		// StrVal.setMag) confirms the edit buffer leaf by leaf. Before
+		// v1.21.1 only FC=SE did this: the other FCs kept the value under
+		// the compound key, where no read found it.
+		fc := attr.FC
 		write = func(ctx context.Context, val *mms.Value) error {
+			if err := vs.checkEdit(ctx, fc, storeKey, true); err != nil {
+				return err
+			}
 			// The value must match the declared structure (IEC 61850-8-1
 			// 8.1.3.4.4.2): before v1.17.0 any value was stored.
 			if err := CheckWriteValue(val, compoundTS); err != nil {
 				return fmt.Errorf("write %s: %w", storeKey, err)
 			}
-			// Store the compound value so the interceptor can read it if needed.
-			vs.Set(storeKey, val)
-			if handled, err := vs.callInterceptor(ctx, storeKey, val); handled || err != nil {
-				return err
+			leaves, err := vs.compoundLeaves(ctx, nil, storeKey, attr, compoundTS, val)
+			if err != nil {
+				return fmt.Errorf("write %s: %w", storeKey, err)
 			}
-			return nil
+			// Each leaf is stored and then notified, as a leaf write is:
+			// the report, GOOSE, SV and journal engines index data set
+			// members by leaf key, and the report engine judges a
+			// trigger option by the change of the notified leaf against
+			// the member value at the previous notification. Storing all
+			// leaves first would let a leaf without dchg hide the change
+			// of the next one.
+			var first error
+			for _, l := range leaves {
+				vs.Set(l.key, l.val)
+				if _, err := vs.callInterceptor(ctx, l.key, l.val); err != nil && first == nil {
+					first = err
+				}
+			}
+			return first
 		}
 	}
 	if attr.FC == "SE" {
@@ -847,19 +872,6 @@ func registerDAWithFC(srv *mms.Server, vs *ValueStore, ldName, lnName string, pa
 				return nil, err
 			}
 			return baseRead(ctx)
-		}
-		// SetEditSGValue of a constructed attribute (IEC 61850-7-2
-		// 16.3.4.2.1, an FCDA such as StrVal.setMag) sets its leaves: the
-		// edit buffer is read and confirmed leaf by leaf.
-		write = func(ctx context.Context, val *mms.Value) error {
-			if err := vs.checkEdit(ctx, fc, storeKey, true); err != nil {
-				return err
-			}
-			if err := CheckWriteValue(val, compoundTS); err != nil {
-				return fmt.Errorf("write %s: %w", storeKey, err)
-			}
-			setLeaves(vs, storeKey, compoundTS, val)
-			return nil
 		}
 	}
 	if err := srv.RegisterVariable(mms.Variable{
@@ -982,6 +994,40 @@ func registerDA(srv *mms.Server, vs *ValueStore, ldName, lnName string, path []s
 	}
 
 	return srv.RegisterVariable(v)
+}
+
+// leafWrite is one leaf of a client write of a constructed attribute.
+type leafWrite struct {
+	key string
+	val *mms.Value
+}
+
+// compoundLeaves appends to out the leaves of val, a value of the
+// constructed attribute attr (type ts) under key, already checked against
+// ts. Each leaf passes the checks of a leaf write (enumeration range,
+// write guard) before any is stored, so a refused leaf refuses the whole
+// write.
+func (vs *ValueStore) compoundLeaves(ctx context.Context, out []leafWrite, key string, attr *DataAttribute, ts mms.TypeSpec, val *mms.Value) ([]leafWrite, error) {
+	if len(attr.Children) == 0 {
+		if err := checkEnumValue(val, attr); err != nil {
+			return nil, err
+		}
+		if err := vs.checkWrite(ctx, key); err != nil {
+			return nil, err
+		}
+		return append(out, leafWrite{key: key, val: val}), nil
+	}
+	members, _ := val.Structure()
+	for i := range attr.Children {
+		if i >= len(members) || i >= len(ts.Elements) {
+			break
+		}
+		var err error
+		if out, err = vs.compoundLeaves(ctx, out, key+"$"+attr.Children[i].Name, &attr.Children[i], ts.Elements[i].Type, members[i]); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // isControlServiceAttr reports whether name is a control service
