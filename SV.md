@@ -241,6 +241,10 @@ svTr, _ := d.Port(l2.EtherTypeSV)
 
 `sv.NewHub()` is the in-memory segment with fault injection.
 
+Over UDP/IP, `rsession.Open(rsession.Config{SI: rsession.SISV, ...})`
+returns a `Transport` that carries the same frames as R-SV; see
+[GOOSE.md](GOOSE.md#r-goose-and-r-sv-over-udp).
+
 ## SCL binding
 
 ```go
@@ -393,7 +397,11 @@ to zero allocations.
 
 ## Limitations
 
-- No SV security (IEC 62351-6/-9): `security` is carried opaquely.
+- No layer-2 SV security (IEC 62351-6 extension in Reserved 1/2):
+  `security` and the reserved fields are carried opaquely. Authenticated
+  SV is available over UDP as R-SV with package `rsession`
+  ([GOOSE.md](GOOSE.md#r-goose-and-r-sv-over-udp)); it is not verified
+  against another implementation. No IEC 62351-9 key management.
 - No unicast SV (USVCB) on the server; no SCL `multicast="false"`
   handling (the SCL parser cannot tell an absent attribute from false).
 - `SmvOpts sampleSynchronized` is reported but has no effect: `smpSynch`

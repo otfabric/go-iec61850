@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SPDX-License-Identifier: MIT
+
+  Setting group fixture for go-iec61850 (authored for this repository).
+
+  IED SGIED, access point AP1, logical device Prot (MMS domain SGIEDProt):
+    - LLN0.SettingControl: numOfSGs 3, actSG 1, resvTms 30
+    - PTOC1.StrVal (ASG): setMag declared with fc="SE" only, which
+      implies fc="SG" (IEC 61850-6 Table 47). setMag.f is 600 in group 1
+      and 800 in group 2; group 3 has no value of its own and takes the
+      Val without sGroup, 500. A Val for sGroup 7 is beyond numOfSGs.
+    - PTOC1.OpDlTmms (ING): setVal under SG and SE, 300 in group 1 and
+      500 in group 2, no Val for all groups: group 3 keeps the DOType
+      value, 100.
+    - PTOC1.TmMult (ASG): setMag under SG only (visible, not editable),
+      1.5 in every group.
+    - PTOC1.TmACrv (ENG): an enumerated setting, by name per group.
+    - dataset dsSettings {StrVal.setMag.f [SG], OpDlTmms.setVal [SG]},
+      reported by URCB urcbSG (dchg) and published by GoCB gcbSG.
+-->
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL" version="2007" revision="B">
+  <Header id="setting-groups" version="1" revision="0" nameStructure="IEDName"/>
+  <Communication>
+    <SubNetwork name="StationBus" type="8-MMS">
+      <ConnectedAP iedName="SGIED" apName="AP1">
+        <Address>
+          <P type="IP">127.0.0.1</P>
+        </Address>
+        <GSE ldInst="Prot" cbName="gcbSG">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-01-00-21</P>
+            <P type="APPID">1021</P>
+            <P type="VLAN-ID">000</P>
+            <P type="VLAN-PRIORITY">4</P>
+          </Address>
+          <MinTime unit="s" multiplier="m">10</MinTime>
+          <MaxTime unit="s" multiplier="m">1000</MaxTime>
+        </GSE>
+      </ConnectedAP>
+    </SubNetwork>
+  </Communication>
+  <IED name="SGIED" manufacturer="OTFabric" type="fixture" revision="1.0">
+    <Services>
+      <SettingGroups>
+        <SGEdit resvTms="true"/>
+        <ConfSG resvTms="true"/>
+      </SettingGroups>
+      <ConfReportControl max="2"/>
+      <GOOSE max="1"/>
+    </Services>
+    <AccessPoint name="AP1">
+      <Server>
+        <Authentication/>
+        <LDevice inst="Prot">
+          <LN0 lnClass="LLN0" inst="" lnType="LLN0_T">
+            <DataSet name="dsSettings">
+              <FCDA ldInst="Prot" lnClass="PTOC" lnInst="1" doName="StrVal" daName="setMag.f" fc="SG"/>
+              <FCDA ldInst="Prot" lnClass="PTOC" lnInst="1" doName="OpDlTmms" daName="setVal" fc="SG"/>
+            </DataSet>
+            <ReportControl name="urcbSG" rptID="urcbSG" datSet="dsSettings" confRev="1" buffered="false">
+              <TrgOps dchg="true" gi="true"/>
+              <OptFields seqNum="true" dataSet="true" reasonCode="true"/>
+              <RptEnabled max="2"/>
+            </ReportControl>
+            <GSEControl name="gcbSG" appID="SGIEDSettings" datSet="dsSettings" confRev="1" type="GOOSE"/>
+            <SettingControl numOfSGs="3" actSG="1" resvTms="30"/>
+          </LN0>
+          <LN lnClass="PTOC" inst="1" lnType="PTOC_T">
+            <DOI name="StrVal">
+              <SDI name="setMag">
+                <DAI name="f">
+                  <Val sGroup="1">600</Val>
+                  <Val sGroup="2">800</Val>
+                  <Val>500</Val>
+                  <Val sGroup="7">999</Val>
+                </DAI>
+              </SDI>
+            </DOI>
+            <DOI name="OpDlTmms">
+              <DAI name="setVal">
+                <Val sGroup="1">300</Val>
+                <Val sGroup="2">500</Val>
+              </DAI>
+            </DOI>
+            <DOI name="TmMult">
+              <SDI name="setMag">
+                <DAI name="f">
+                  <Val>1.5</Val>
+                </DAI>
+              </SDI>
+            </DOI>
+            <DOI name="TmACrv">
+              <DAI name="setCharact">
+                <Val sGroup="1">ANSI Very Inverse</Val>
+                <Val sGroup="2">IEC Normal Inverse</Val>
+                <Val sGroup="3">ANSI Very Inverse</Val>
+              </DAI>
+            </DOI>
+          </LN>
+        </LDevice>
+      </Server>
+    </AccessPoint>
+  </IED>
+  <DataTypeTemplates>
+    <LNodeType id="LLN0_T" lnClass="LLN0">
+      <DO name="Mod" type="INC_T"/>
+    </LNodeType>
+    <LNodeType id="PTOC_T" lnClass="PTOC">
+      <DO name="StrVal" type="ASG_SE"/>
+      <DO name="OpDlTmms" type="ING_T"/>
+      <DO name="TmMult" type="ASG_SG"/>
+      <DO name="TmACrv" type="CURVE_T"/>
+    </LNodeType>
+    <DOType id="INC_T" cdc="INC">
+      <DA name="stVal" bType="INT32" fc="ST" dchg="true"/>
+    </DOType>
+    <DOType id="ASG_SE" cdc="ASG">
+      <DA name="setMag" bType="Struct" type="AnalogueValue_F" fc="SE"/>
+    </DOType>
+    <DOType id="ASG_SG" cdc="ASG">
+      <DA name="setMag" bType="Struct" type="AnalogueValue_F" fc="SG"/>
+    </DOType>
+    <DOType id="ING_T" cdc="ING">
+      <DA name="setVal" bType="INT32" fc="SG" dchg="true">
+        <Val>100</Val>
+      </DA>
+      <DA name="setVal" bType="INT32" fc="SE"/>
+    </DOType>
+    <DOType id="CURVE_T" cdc="CURVE">
+      <DA name="setCharact" bType="Enum" type="CurveChar" fc="SG"/>
+      <DA name="setCharact" bType="Enum" type="CurveChar" fc="SE"/>
+    </DOType>
+    <DAType id="AnalogueValue_F">
+      <BDA name="f" bType="FLOAT32"/>
+    </DAType>
+    <EnumType id="CurveChar">
+      <EnumVal ord="1">ANSI Extremely Inverse</EnumVal>
+      <EnumVal ord="2">ANSI Very Inverse</EnumVal>
+      <EnumVal ord="9">IEC Normal Inverse</EnumVal>
+    </EnumType>
+  </DataTypeTemplates>
+</SCL>

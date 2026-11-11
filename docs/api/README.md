@@ -9,6 +9,7 @@ Generated from the source of `github.com/otfabric/go-iec61850` with `docsync api
 | [github.com/otfabric/go-iec61850](go-iec61850.md) | Package iec61850 is a pure-Go IEC 61850 stack: an MMS client and server (IEC 61850-8-1 over github.com/otfabric/go-mms), GOOSE (IEC 61850-8-1) and Sampled Values (IEC 61850-9-2, UCA 9-2LE), with SCL (IEC 61850-6) parsing, validation and model binding. |
 | [github.com/otfabric/go-iec61850/goose](goose.md) |  |
 | [github.com/otfabric/go-iec61850/l2](l2.md) | Package l2 is the raw Ethernet layer shared by the IEC 61850 layer-2 protocols: GOOSE (package goose, EtherType 0x88B8) and Sampled Values (package sv, EtherType 0x88BA). |
+| [github.com/otfabric/go-iec61850/rsession](rsession.md) | Package rsession carries GOOSE and Sampled Values over UDP/IP: R-GOOSE and R-SV, with the session protocol of IEC TR 61850-90-5 and its per-SPDU authentication (HMAC-SHA256). |
 | [github.com/otfabric/go-iec61850/scl](scl.md) | Package scl provides parsing and inspection of IEC 61850 SCL (Substation Configuration Language) files. |
 | [github.com/otfabric/go-iec61850/scl/index](scl-index.md) | Package index provides a shared, indexed view of a parsed SCL model. |
 | [github.com/otfabric/go-iec61850/scl/validate](scl-validate.md) | Package validate provides semantic validation of a parsed SCL model. |

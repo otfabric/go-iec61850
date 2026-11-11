@@ -44,7 +44,7 @@ independent evidence: the feature must not be described as interoperable.
 | Process response of the default operate (DPC travel, OpCnt, position-reached) | n/a | ◐ opt-in model | in-memory | none |
 | Quality and timestamps | ✅ | ✅ | in-memory, go-to-go in `interop/` | none as a dedicated scenario |
 | Several clients at once | ✅ | ✅ | TCP, go-to-go in `interop/` | none |
-| Setting groups | ✅ | ◐ no value banks | in-memory, TCP | none |
+| Setting groups (value bank per group, SCL `sGroup`) | ✅ | ✅ in memory | in-memory, TCP, chaos | none: no adapter in the pinned images covers SGCB |
 | Journals | ✅ | ◐ in-memory | in-memory | none here; go-mms's interop covers the MMS journal services |
 | Files | ✅ | ◐ needs a `FileProvider` | in-memory | none here; go-mms's interop covers the MMS file services |
 | GOOSE publisher and subscriber | ✅ subscriber | ✅ publisher | in-memory hub, chaos, raw socket | libiec61850, dscsystems, iec61850-rust, cbsigma, both directions |
@@ -54,6 +54,8 @@ independent evidence: the feature must not be described as interoperable.
 | Server MSVCB published at `smpRate` | n/a | ✅ | in-memory hub | libiec61850, dscsystems, iec61850-rust |
 | MSVCB read over MMS | ✅ | ✅ | in-memory | libiec61850, dscsystems |
 | MSVCB write over MMS | ✅ | ✅ | in-memory | none |
+| R-GOOSE and R-SV over UDP (`rsession`, HMAC-SHA256) | ✅ subscriber | ✅ publisher | UDP loopback, multicast, hand-built SPDU vectors, tamper and replay, fuzz | none |
+| Layer-2 GOOSE/SV authentication (IEC 62351-6) | — | — | n/a | n/a |
 | SCL parse, validate, flatten, generate | n/a | model from SCL | fixtures, specification examples, ABB CID files | peers load the same ICD fixture; no independent validator compares results |
 | TLS | ◐ through go-mms | ◐ through go-mms | none here | none; see [SECURITY.md](../SECURITY.md) |
 

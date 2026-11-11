@@ -1,9 +1,9 @@
 # go-iec61850 Releases
 
-## v1.18.0
+## v1.21.0
 
 **Date:** 2026-11-11
-**Previous release:** v1.17.1
+**Previous release:** v1.19.0
 
 Server control: the check conditions of IEC 61850-7-2 §20 (interlocking and synchrocheck), CILO and RSYN bindings (IEC 61850-7-4), and an opt-in process response for the default operate. The API is additive.
 
@@ -25,6 +25,71 @@ Server control: the check conditions of IEC 61850-7-2 §20 (interlocking and syn
 ### Known limitations
 
 - No pinned iec61850-interop adapter sends Check bits, so the checks are verified in-process only (`TestSpec_*` in `control_checks_test.go`, `TestChaos_ControlChecks`).
+
+---
+
+
+## v1.19.0
+
+**Date:** 2026-11-11
+**Previous release:** v1.18.0
+
+Setting groups get value banks (IEC 61850-7-2 §16, 8-1 §16). This closes the "no per-group value banks" limitation of v1.17.
+
+### Added
+
+- **One value bank per setting group.** The server keeps a value for every FC=SG and FC=SE leaf of the logical device in each group. FC=SG reads give the active group. SelectActiveSG loads the selected group into FC=SG (and sets ActSG and LActTm). SelectEditSG copies the group into the edit buffer, FC=SE, which SetEditSGValue writes. ConfirmEditSGValues copies FC=SE into the group, and into FC=SG when that group is active. SelectEditSG 0, ResvTms expiry and loss of the association discard the edit. The edit reservation per association is as in v1.17.
+- **Banks from SCL.** `SettingControl numOfSGs` gives the number of groups. Each DAI `Val sGroup="n"` is that group's value (IEC 61850-6 9.5.4.4). A group without one takes the `Val` without `sGroup`, else the DA's value. An `sGroup` above `numOfSGs` is a model warning. The active group's value becomes the attribute's initial value.
+- `SettingGroupEngine.SettingKeys`, `SettingGroupValue` and `SetSettingGroupValue` read and seed the banks, for example to restore persisted groups at startup. Seeding the active group changes FC=SG.
+- When the active group's values change (SelectActiveSG, or ConfirmEditSGValues of the active group), the change goes through `Server.SetValue`: data change reports, logs and GOOSE follow.
+- Tests: `TestSpec_*` per SGCB service on an authored fixture (`testdata/setting-groups.cid`, MIT), a chaos test of concurrent select, edit, confirm and cancel, and unit tests of the SCL value handling.
+
+### Changed
+
+- A DA with `fc="SE"` and no `fc="SG"` twin gets one in the server model, since `fc="SE"` implies `fc="SG"` (IEC 61850-6 Table 47). Before, such a setting (common in ABB CID files) had no FC=SG attribute to read its active value.
+- A DAI without an FC sets the attributes of that name under every FC, so both SG and SE twins get it. Before, only the first one did.
+- SetEditSGValue of a constructed attribute (an FCDA such as `StrVal.setMag`) sets its leaves. Before, the structure was stored apart from the leaves that reads and the edit buffer use, so the write was lost.
+- A `SettingGroupHandler` callback runs before the bank operation. Values that `OnActiveSGChanged` sets on FC=SG, or `OnEditSGSelected` sets on FC=SE, win over the bank and are kept in it. Applications that kept their own group values (as the v1.17 demo IED did) keep working. They can drop that code and give the values in SCL or through `SetSettingGroupValue`.
+- The demo IED (`examples/internal/demoied`) takes its two PTOC1.StrVal groups from `Val sGroup` in `demo.icd`, with no handler code.
+
+---
+
+## v1.18.0
+
+**Date:** 2026-11-11
+**Previous release:** v1.17.1
+
+R-GOOSE and R-SV: GOOSE and Sampled Values over UDP/IP with authenticated
+SPDUs. The API is additive; packages `goose` and `sv` are unchanged.
+
+### Added
+
+- **Package `rsession`**: the session protocol of IEC TR 61850-90-5 for
+  routable GOOSE and SV (R-GOOSE, R-SV), unicast and multicast, UDP port
+  102 by default. `rsession.Transport` implements the layer-2 `Transport`
+  of `goose` and `sv`, so their publishers and subscribers run over UDP
+  unchanged. Protocol versions 1 and 2 are received; 2 is sent by default.
+- **Authentication**: HMAC-SHA256 truncated to 80, 128 or 256 bits over
+  every SPDU, with keys from a `KeyProvider` interface (`KeyRing` is a
+  static provider that supports key changes). Secured by default:
+  `Open` needs a key provider unless `Insecure` is set, and a receiver
+  refuses unsecured, unknown-key, tampered and replayed SPDUs (64-entry
+  window per sender and key), counting them in `Stats` and reporting them
+  to `OnReject`.
+- `rsession.Encode`, `Decode` and `Verify` for single SPDUs; fuzz targets
+  `FuzzDecode` and `FuzzVerify`.
+- [ADR 0001](docs/adr/0001-routable-goose-sv.md): the wire layout, the
+  references it follows (IEC TR 61850-90-5 and IEC 62351-6 were not
+  available; the layout follows libiec61850, Wireshark and dscsystems where
+  they agree) and the scope.
+
+### Not included
+
+- Layer-2 IEC 62351-6 authentication (Reserved 1/2 and the extension
+  field) is deferred until IEC 62351-6 is available; see
+  KNOWN_LIMITATIONS.md.
+- AES-GMAC, AES-GCM encryption and IEC 62351-9 key distribution.
+- Interop: no independent R-GOOSE/R-SV peer has been tested yet.
 
 ---
 

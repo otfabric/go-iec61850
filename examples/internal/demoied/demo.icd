@@ -13,7 +13,7 @@
     - unbuffered report control blocks urcb01..urcb05 on dsAll (an
       indexed ReportControl "urcb" with RptEnabled max=5),
     - two setting groups (LLN0.SettingControl) with PTOC1.StrVal as a
-      setting,
+      setting: 100 in group 1, 150 in group 2 (Val sGroup),
     - a log EventLog (MMS journal LLN0$EventLog).
 -->
 <SCL xmlns="http://www.iec.ch/61850/2003/SCL" version="2007" revision="B">
@@ -100,7 +100,16 @@
             </DOI>
           </LN>
           <LN lnClass="MMXU" inst="1" lnType="MMXU_T"/>
-          <LN lnClass="PTOC" inst="1" lnType="PTOC_T"/>
+          <LN lnClass="PTOC" inst="1" lnType="PTOC_T">
+            <DOI name="StrVal">
+              <SDI name="setMag">
+                <DAI name="f">
+                  <Val sGroup="1">100</Val>
+                  <Val sGroup="2">150</Val>
+                </DAI>
+              </SDI>
+            </DOI>
+          </LN>
         <LN prefix="I" lnClass="TCTR" inst="1" lnType="TCTR_LE"/>
         <LN prefix="I" lnClass="TCTR" inst="2" lnType="TCTR_LE"/>
         <LN prefix="I" lnClass="TCTR" inst="3" lnType="TCTR_LE"/>
