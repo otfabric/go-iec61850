@@ -446,7 +446,7 @@ clause differ, the server does the following:
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| GOOSE security (IEC 62351-6), fixed-offset encoding | not implemented | see [GOOSE.md](GOOSE.md#limitations) |
+| GOOSE security (IEC 62351-6), fixed-offset encoding | not implemented; layer-2 IEC 62351-6 is open, to do (needs the specification) | see [GOOSE.md](GOOSE.md#limitations) |
 | SV security (IEC 62351), unicast SV (USVCB) | not implemented | see [SV.md](SV.md#limitations) |
 | CommandTermination− (negative) | own tests only | no peer in the matrix sends one on demand |
 | TimeActivatedOperate | own tests only | no peer in the matrix exercises it |

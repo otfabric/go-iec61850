@@ -151,24 +151,31 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
 
 ## GOOSE and Sampled Values
 
-- **No layer-2 IEC 62351-6 security** — layer-2 GOOSE and SV frames are
+- **No layer-2 IEC 62351-6 security (open, to do)** — layer-2 GOOSE and SV frames are
   neither signed nor encrypted: the 62351-6 extension (the security bits
   of Reserved 1, Reserved 2 and the extension after the APDU) is not
   implemented, because IEC 62351-6 was not available to implement it from
   ([ADR 0001](docs/adr/0001-routable-goose-sv.md#layer-2-iec-62351-6-extension-in-reserved-12));
   the reserved fields and the SV `security` field are carried opaquely.
   Protect the process bus at the network layer (VLANs, port security,
-  separate switches), or use R-GOOSE/R-SV.
-- **R-GOOSE / R-SV: authentication only, unverified layout** — package
+  separate switches), or use R-GOOSE/R-SV. Status: open, to do. Blocked
+  on the IEC 62351-6 specification (preferably the 2020 edition): no
+  reference implementation of the layer-2 extension exists to follow
+  instead (libiec61850 and Wireshark do not parse it; dscsystems does not
+  implement it).
+- **R-GOOSE / R-SV: authentication only, interop pending a pinned image** — package
   `rsession` signs and verifies SPDUs with HMAC-SHA256 (80, 128, 256 bits).
   Not implemented: AES-GMAC, AES-GCM encryption, tunnelled and management
   SPDUs, several APDUs per SPDU on send, IEC 62351-9 (GDOI) key
   distribution (keys come from a `KeyProvider`), and SCL `IP` addresses of
   R-GOOSE/R-SV control blocks. The wire layout follows the IEC TR
   61850-90-5 structure as libiec61850, Wireshark and dscsystems implement
-  it, since 90-5 itself was not available; it has not been exchanged with
-  another implementation (libiec61850 at the pinned revision writes an
-  APDU length its own decoder refuses). A restarted publisher's SPDUs are
+  it, since 90-5 itself was not available. `interop/rsession_test.go`
+  exchanges it with dscsystems/go-iec61850 (both directions, GOOSE and
+  SV, versions 1 and 2, the three HMACs) and passes against an adapter
+  image built from iec61850-interop#24; it becomes interop evidence once
+  a released image is pinned in CI. libiec61850 is no peer: at the pinned
+  revision it writes an APDU length its own decoder refuses. A restarted publisher's SPDUs are
   refused as replays until the key changes, unless `ReplayResetAfter` or
   `InitialSPDUNumber` is used. Multicast needs Linux, macOS or a BSD.
 - **Raw Ethernet only on Linux, macOS and the BSDs** — Linux uses

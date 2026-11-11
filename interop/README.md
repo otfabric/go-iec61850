@@ -14,6 +14,7 @@ This package contains interoperability tests for `go-iec61850` against independe
 | `libiec61850_urcb_server_test.go` | URCB server | `libiec61850-ied-reporter` | 2C-b |
 | `goose_test.go` | GOOSE publisher, subscriber, IED server GoCB | `libiec61850-goose-*`, `dscsystems-goose-*`, `iec61850-rust-goose-*`, `cbsigma-goose-*` | GOOSE |
 | `sv_test.go` | SV publisher, subscriber, IED server MSVCB; MSVCB over MMS | `*-sv-publisher`, `*-sv-subscriber`, `*-ied-server` | SV |
+| `rsession_test.go` | R-GOOSE and R-SV publisher and subscriber (`rsession`) | `*-goose-*`, `*-sv-*` with `--transport udp` | R-GOOSE/R-SV |
 
 The `TestLibIEC*` tests drive the libiec61850 adapters by default. With
 `IEC61850_PEER_STACK=dscsystems` the same tests drive the
@@ -114,6 +115,36 @@ iec61850-rust:
 - `TestLibIECClient_SVCB_Read` reads `LLN0$MS$MSVCB02` from the peer IED
   server where `capabilities.json` `svcbOverMms` is true (libiec61850,
   dscsystems).
+
+## R-GOOSE and R-SV
+
+`rsession_test.go` runs package `rsession` (IEC TR 61850-90-5 session
+protocol over UDP, HMAC-SHA256) against every stack whose image lists
+`"transports":["ethernet","udp"]` in `--capabilities` (iec61850-interop
+contract 1.4, `docs/routable.md`); it skips when none does. Today that is
+the dscsystems adapter, from
+[iec61850-interop#24](https://github.com/otfabric/iec61850-interop/pull/24).
+
+UDP needs no shared layer-2 segment and no `CAP_NET_RAW`: an adapter
+subscriber publishes its port 102/udp on 127.0.0.1, and an adapter
+publisher reaches a Go subscriber at `host.docker.internal` (the host
+gateway). That works the same on a Linux host and on Docker Desktop.
+
+| Test | Direction | Checks |
+|---|---|---|
+| `TestRGOOSE_GoPublisher` | `goose.Publisher` over `rsession` → `*-goose-subscriber` | both states of `gcbAll` with the fixture values; the peer refuses an SPDU under the wrong key (`authentication`), an unsecured one, and a replay |
+| `TestRGOOSE_GoSubscriber` | `*-goose-publisher` → `goose.Subscriber` over `rsession` (SCL-validated) | a rogue publisher (same key ID, other key) is refused; both states; supervision timeout after stop |
+| `TestRSV_GoPublisher` | `sv.Publisher` → `*-sv-subscriber` | `MSVCB01` values and update, no loss |
+| `TestRSV_GoSubscriber` | `*-sv-publisher` → `sv.Subscriber` (SCL-validated) | values and update in every 100th sample, no refusals |
+
+Each runs three profiles: session version 1 with HMAC-SHA256-80, version 2
+with HMAC-SHA256-128 and with -256. Their names match the `GOOSE|SV_` filter
+of `make interop-goose` and the CI step, so they run there; without root:
+
+```bash
+DSCSYSTEMS_IMAGE=iec61850-interop-dscsystems:local \
+  go test -tags=interop -v -run '^TestR(GOOSE|SV)_' ./interop/...
+```
 
 ## Environment variables
 
