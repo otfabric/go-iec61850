@@ -9,8 +9,9 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
 
 - **MMS, GOOSE and Sampled Values** — this library implements IEC 61850
   over MMS (ISO 9506), GOOSE (IEC 61850-8-1, see [GOOSE.md](GOOSE.md)) and
-  Sampled Values (IEC 61850-9-2, see [SV.md](SV.md)). R-GOOSE/R-SV
-  (IEC 61850-90-5) are out of scope.
+  Sampled Values (IEC 61850-9-2, see [SV.md](SV.md)), and both over
+  UDP/IP as R-GOOSE/R-SV (IEC TR 61850-90-5 session protocol, package
+  `rsession`, see [GOOSE.md](GOOSE.md#r-goose-and-r-sv-over-udp)).
 - **No ACSI mapping completeness guarantee** — not every ACSI service defined
   in IEC 61850-7-2 is mapped. The library focuses on the services needed for
   practical client/server use cases.
@@ -47,11 +48,19 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
 
 ## Server limitations
 
-- **Reports: in-memory BRCB buffer, no ResvTms/Owner** — the report engine
-  implements the IEC 61850-7-2 §17.2 URCB and BRCB state machines per
-  association (see API.md "Report engine"), with these limits:
-  - The BRCB buffer is in memory (default 1000 entries, `SetRCBBufMax`)
-    and does not survive a server restart; EntryIDs restart at 1.
+- **Reports: no persistent BRCB buffer, no ResvTms/Owner** — the report
+  engine implements the IEC 61850-7-2 §17.2 URCB and BRCB state machines
+  per association, including BufTm (see API.md "Report engine"), with
+  these limits:
+  - The default BRCB buffer is in memory (`NewMemoryReportBuffer`: 1000
+    entries, optionally a byte limit) and does not survive a server
+    restart; EntryIDs restart at 1. No persistent `ReportBuffer` ships;
+    one supplied through `ServerOptions.NewReportBuffer` is continued
+    after a restart.
+  - BufTm treats FC=MX members like FC=ST: a second change of a member
+    within BufTm sends the pending report. The alternative the standard
+    allows for MX, replacing the value in the pending report, is not
+    offered.
   - The optional BRCB attributes ResvTms and Owner (IEC 61850-7-2
     Table 37 c3/c4) are not modelled: a BRCB is reserved only by the
     association that enables it, and released when it disables it or the
@@ -69,27 +78,47 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   - Without attribute trigger options in the model (SCL DA
     dchg/qchg/dupd), the reason for inclusion is derived by comparing the
     member value.
-- **Controls: no interlocking, demo-grade default operate** — control
+- **Controls: process response is a model, not supervision** — control
   handlers (`RegisterControl`) follow the states of IEC 61850-7-2 Table 47
-  (select, time-activated wait, execution until the CommandTermination),
-  with CF sboTimeout, sboClass and operTimeout; interlocking and
-  synchrocheck are application-responsibility via callbacks. A refused
-  control write is preceded by a LastApplError. Without `OnOperate` the
-  server only mirrors ctlVal into `stVal` (BOOLEAN to Dbpos for a DPC)
-  when it fits stVal's type, with `t`, `ctlNum` and `origin`; APC, BSC
-  and other CDCs need an `OnOperate`. A selection held by an association
-  that ended is released when its `Server.Serve` returns; with
-  `ListenAndServe` without connection hooks (go-mms serves the
-  connection), it is released at the next control service on that object,
-  and `stSeld` stays TRUE until then. Choices where the standard is
+  (select, tests, time-activated wait, execution until the
+  CommandTermination), with CF sboTimeout, sboClass and operTimeout. The
+  Check conditions run when the request asks for them and the
+  registration supplies them (`CheckInterlock`, a CILO via
+  `Interlocking`, `CheckSynchro`, an RSYN via `Synchrocheck`): the
+  interlocking algorithm itself (which positions a CILO depends on) is
+  the application's, and the CILO and RSYN values are read from the
+  value store, which the application or a GOOSE subscription keeps
+  current; a waiting synchrocheck reads the RSYN release every 10 ms.
+  The Select of SBO with normal security (a Read of SBO) carries no
+  Check, so no check runs at it. Other operative tests of 7-2 20.2.1
+  (Beh, blocking, local/remote) are not evaluated; use `OnSelect` and
+  `OnOperate`. Without `OnOperate` the server mirrors ctlVal into
+  `stVal` (BOOLEAN to Dbpos for a DPC) when it fits stVal's type, with
+  `t`, `ctlNum` and `origin`; the opt-in `ProcessResponse` adds a DPC's
+  travel through intermediate-state, an operation counter and
+  position-reached, nothing else (no Beh mirror, pulse output or
+  OpOpn/OpCls). APC, BSC and other CDCs need an `OnOperate`. A Cancel of
+  a time activated operate before operTm sends no
+  TimeActivatedOperate termination. A selection held by an association
+  that ended is released when its `Server.Serve` returns (also for
+  `ListenAndServe`, which serves every connection through it); for a
+  connection given to `mms.Server` directly, it is released at the next
+  control service on that object, and `stSeld` stays TRUE until then. Choices where the standard is
   ambiguous follow libiec61850; see [INTEROP.md](INTEROP.md#control-model-choices).
-- **Setting groups: no per-group value banks** — the server supports SGCB
-  registration, active/edit group selection, confirmation, handler
-  callbacks, automatic dispatch from MMS client writes, the edit
-  reservation per association (ResvTms, release on association loss) and
-  the FC=SE guard. Persistent multi-bank SE/SG value storage is not
-  implemented: there are no per-group value banks to store separate
-  FC=SE/FC=SG attribute sets.
+- **Setting groups: value banks in memory** — the server keeps one value
+  bank per setting group (IEC 61850-7-2 §16, built from SCL `Val sGroup`)
+  with the SGCB services and the edit reservation per association. Limits:
+  - The banks are in memory. IEC 61850-8-1 §16.1 wants the groups
+    non-volatile; an application persists them in `OnConfirmEdit` and
+    restores them with `SettingGroupEngine.SetSettingGroupValue`.
+  - A group switch changes each setting with its own `SetValue`: with
+    BufTm 0 every changed setting is a report and a GOOSE state change
+    of its own, not one per switch.
+  - SetEditSGValue of a whole data object (an FCD, `LN$SE$DO`) is refused
+    (object-access-denied); FCDA writes, leaf or constructed, work.
+  - `Val sGroup` is read on DAI elements, not on DA/BDA template values.
+  - No independent stack in the pinned iec61850-interop images exercises
+    the SGCB services, so the banks have own tests only.
 - **Journals: in memory, no EVENT-DATA entries** — log control blocks
   (FC LG, IEC 61850-8-1 §17.3) select what is journaled; the journal
   itself has these limits:
@@ -116,11 +145,26 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
 
 ## GOOSE and Sampled Values
 
-- **No IEC 62351-6 security** — GOOSE and SV frames are neither signed nor
-  encrypted; the SV `security` field is carried opaquely. Protect the
-  process bus at the network layer (VLANs, port security, separate
-  switches).
-- **No R-GOOSE / R-SV** (IEC 61850-90-5, routable over UDP/IP).
+- **No layer-2 IEC 62351-6 security** — layer-2 GOOSE and SV frames are
+  neither signed nor encrypted: the 62351-6 extension (the security bits
+  of Reserved 1, Reserved 2 and the extension after the APDU) is not
+  implemented, because IEC 62351-6 was not available to implement it from
+  ([ADR 0001](docs/adr/0001-routable-goose-sv.md#layer-2-iec-62351-6-extension-in-reserved-12));
+  the reserved fields and the SV `security` field are carried opaquely.
+  Protect the process bus at the network layer (VLANs, port security,
+  separate switches), or use R-GOOSE/R-SV.
+- **R-GOOSE / R-SV: authentication only, unverified layout** — package
+  `rsession` signs and verifies SPDUs with HMAC-SHA256 (80, 128, 256 bits).
+  Not implemented: AES-GMAC, AES-GCM encryption, tunnelled and management
+  SPDUs, several APDUs per SPDU on send, IEC 62351-9 (GDOI) key
+  distribution (keys come from a `KeyProvider`), and SCL `IP` addresses of
+  R-GOOSE/R-SV control blocks. The wire layout follows the IEC TR
+  61850-90-5 structure as libiec61850, Wireshark and dscsystems implement
+  it, since 90-5 itself was not available; it has not been exchanged with
+  another implementation (libiec61850 at the pinned revision writes an
+  APDU length its own decoder refuses). A restarted publisher's SPDUs are
+  refused as replays until the key changes, unless `ReplayResetAfter` or
+  `InitialSPDUNumber` is used. Multicast needs Linux, macOS or a BSD.
 - **Raw Ethernet only on Linux, macOS and the BSDs** — Linux uses
   `AF_PACKET` and needs `CAP_NET_RAW` (or root); macOS/BSD use BPF and need
   read/write access to `/dev/bpf*`. Other platforms (Windows) return

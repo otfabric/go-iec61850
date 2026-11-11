@@ -71,6 +71,7 @@ type Server struct {
 
 	reportEngine       *ReportEngine
 	reportMaxPDU       int // MMS MaxPDUSize bounding one InformationReport
+	newReportBuffer    func(ldName, rcbItemID string) ReportBuffer
 	sgEngine           *SettingGroupEngine
 	journalEngine      *JournalEngine
 	mmsJournalProvider *MemoryJournalProvider
@@ -148,6 +149,14 @@ type ServerOptions struct {
 	// Enabling an RCB while its DatSet is still empty is refused either way.
 	AllowEmptyReportDatSet bool
 
+	// NewReportBuffer, when non-nil, returns the buffer of each buffered
+	// report control block (ldName is the logical device, rcbItemID the
+	// MMS item such as "LLN0$BR$brcb01"); [Server.EnableReports] calls it
+	// once per BRCB. A nil result, or a nil NewReportBuffer, uses
+	// [NewMemoryReportBuffer] with 1000 entries and no byte limit. URCBs
+	// always use the in-memory queue.
+	NewReportBuffer func(ldName, rcbItemID string) ReportBuffer
+
 	// Metrics, when non-nil, receives the MMS request and connection
 	// events of the server (see [mms.Metrics]). It is a convenience field
 	// equivalent to MMS.Metrics, which takes precedence when both are set.
@@ -159,7 +168,8 @@ type ServerOptions struct {
 	MMS mms.ServerOptions
 
 	// Clock stamps the protocol times the server sets: the `t` the
-	// default operate writes, report TimeStamp and BRCB TimeOfEntry,
+	// default operate writes (also at the end of a ProcessResponse
+	// travel), report TimeStamp and BRCB TimeOfEntry,
 	// journal entry times, SGCB LActTm, and GOOSE T and SV RefrTm
 	// (with their TimeQuality). Nil is [SystemClock]: the host time,
 	// "clock not synchronised". Timers (sboTimeout, operTm, IntgPd,
@@ -231,6 +241,7 @@ func NewServer(model *servermodel.Model, opts ServerOptions) (*Server, error) {
 		onDisconnect:       opts.OnDisconnect,
 		reportMaxPDU:       mmsOpts.MMS.MaxPDUSize,
 		clock:              clockOrSystem(opts.Clock),
+		newReportBuffer:    opts.NewReportBuffer,
 	}
 
 	if opts.Identity != nil {
@@ -526,7 +537,11 @@ func (s *Server) Serve(ctx context.Context, conn mms.Transport) error {
 	if s.onConnect != nil {
 		s.onConnect(ConnectionEvent{})
 	}
-	err := s.mms.Serve(ctx, conn)
+	// The gate orders reports after the response to the request that
+	// triggered them (see respGate).
+	gate := newRespGate()
+	ctx = context.WithValue(ctx, respGateKey{}, gate)
+	err := s.mms.Serve(ctx, &gatedTransport{Transport: conn, gate: gate})
 	// IEC 61850-7-2 Table 47: the association is gone, so are its
 	// selections (other paths release them on the next control service).
 	s.releaseLostSelections()
@@ -548,14 +563,12 @@ func (s *Server) Serve(ctx context.Context, conn mms.Transport) error {
 // Each accepted connection is handled by [Server.Serve] in its own
 // goroutine, which ensures that connection lifecycle hooks are invoked.
 func (s *Server) ListenAndServe(ctx context.Context, ln mms.TransportListener) error {
-	if s.onConnect == nil && s.onDisconnect == nil {
-		return s.mms.ListenAndServe(ctx, ln)
-	}
 	return s.listenAndServeWithHooks(ctx, ln)
 }
 
-// listenAndServeWithHooks implements a custom accept loop that routes
-// through [Server.Serve] so connection hooks are invoked.
+// listenAndServeWithHooks implements the accept loop: every connection
+// goes through [Server.Serve], so connection hooks are invoked and
+// reports are ordered after responses.
 func (s *Server) listenAndServeWithHooks(ctx context.Context, ln mms.TransportListener) error {
 	s.lnMu.Lock()
 	if s.shutdown {
@@ -586,6 +599,10 @@ func (s *Server) listenAndServeWithHooks(ctx context.Context, ln mms.TransportLi
 			s.lnMu.Unlock()
 			if down {
 				return mms.ErrServerClosed
+			}
+			if isTemporaryAcceptError(err) {
+				s.logger.Warn("iec61850: temporary accept error, retrying", "error", err)
+				continue
 			}
 			s.logger.Error("iec61850: accept error", "error", err)
 			return err
@@ -628,4 +645,15 @@ type ServerModelOptions struct {
 // options.
 func NewServerModelFromSCLWithOptions(s *scl.SCL, iedName, apName string, o ServerModelOptions) (*servermodel.Model, error) {
 	return servermodel.FromSCLWithOptions(s, iedName, apName, servermodel.Options{InstanceDomainNames: o.InstanceDomainNames})
+}
+
+// isTemporaryAcceptError reports whether an Accept error is temporary, as
+// mms.Server.ListenAndServe does.
+func isTemporaryAcceptError(err error) bool {
+	type temporary interface {
+		error
+		Temporary() bool
+	}
+	t, ok := errors.AsType[temporary](err)
+	return ok && t.Temporary()
 }

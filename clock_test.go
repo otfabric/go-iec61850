@@ -208,8 +208,8 @@ func TestSpec_7_2_17_2_2_16_TimeOfEntryFromClock(t *testing.T) {
 	rt.mu.Lock()
 	snap := engine.snapshotEntryLocked(rt, ReasonGI, true)
 	rt.mu.Unlock()
-	if !snap.timeOfEntry.Equal(clockStamp.Add(time.Minute)) {
-		t.Errorf("GI TimeOfEntry = %v", snap.timeOfEntry)
+	if !snap.TimeOfEntry.Equal(clockStamp.Add(time.Minute)) {
+		t.Errorf("GI TimeOfEntry = %v", snap.TimeOfEntry)
 	}
 	vals := encodeReportValuesEx(reportParams{optFlds: OptFldTimeStamp, clock: clk})
 	if ms, _ := vals[2].BinaryTime(); ms != clockStamp.Add(time.Minute).UnixMilli() {
@@ -430,4 +430,19 @@ func TestSpec_7_2_ClockStepKeepsTimers(t *testing.T) {
 			}
 		}
 	})
+}
+
+// IEC 61850-7-3 DPC t: the end of the opt-in travel (ProcessResponse)
+// stamps stVal's t from the server's Clock, like the default operate.
+func TestSpec_7_3_ClockStampsTravelEnd(t *testing.T) {
+	srv := checksServer(t, checksCF{}, CtlModelDirectNormal, ControlHandler{Process: &ProcessResponse{TravelTime: 30 * time.Millisecond}})
+	clk := newStepClock()
+	srv.clock = clk
+	c := controlClient(t, srv)
+	ctx := waitCtx(t)
+	if err := c.Operate(ctx, mustParseRef(t, ctlPos), posParams(1, true, 0)); err != nil {
+		t.Fatalf("Operate: %v", err)
+	}
+	waitFor(t, func() bool { return dbpos(t, getST(srv, "XCBR1.Pos", "stVal")) == 0x80 })
+	checkStamp(t, "t at the end position", getST(srv, "XCBR1.Pos", "t"), clockStamp)
 }

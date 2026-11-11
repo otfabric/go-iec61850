@@ -143,6 +143,9 @@ fuzz: ## Run all fuzz targets for FUZZTIME each (default 15s)
 	@go test -fuzz=^FuzzDecodePDU$$                  -fuzztime=$(FUZZTIME) ./goose
 	@go test -fuzz=^FuzzEncodeFixedLength$$          -fuzztime=$(FUZZTIME) ./goose
 	@go test -fuzz=^FuzzParseGSEAddress$$            -fuzztime=$(FUZZTIME) ./internal/servermodel
+	@echo "=== Fuzzing rsession ==="
+	@go test -fuzz=^FuzzDecode$$                     -fuzztime=$(FUZZTIME) ./rsession
+	@go test -fuzz=^FuzzVerify$$                     -fuzztime=$(FUZZTIME) ./rsession
 
 bench: ## Run all benchmarks
 	@echo "Running benchmarks"

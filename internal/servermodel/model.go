@@ -185,6 +185,14 @@ type DataAttribute struct {
 	// DOI/DAI/SDI override rather than the template default.
 	Overridden bool
 
+	// GroupValues are the values of a setting (FC SG or SE) per setting
+	// group, from the SCL Val elements with sGroup (IEC 61850-6 9.5.4.4).
+	// Key 0 is the value of the groups that have none of their own: the
+	// Val without sGroup, else the value of the data type ("" is the
+	// zero value of the type). Nil when the SCL gives no sGroup value;
+	// every group then starts with the attribute's value.
+	GroupValues map[uint8]string
+
 	// Children are sub-attributes for structured types (BType="Struct").
 	Children []DataAttribute
 

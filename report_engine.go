@@ -66,6 +66,13 @@ type ReportEngine struct {
 	// derives its context from it (see sendContext).
 	life     context.Context
 	stopLife context.CancelFunc
+
+	// clk runs the BufTm timers; TimeOfEntry comes from clock.
+	clk reportClock
+
+	// newBuffer returns the buffer of an RCB (ServerOptions.NewReportBuffer);
+	// nil or a nil result is the default MemoryReportBuffer.
+	newBuffer func(ldName, rcbItemID string) ReportBuffer
 }
 
 // rcbRuntime holds the live state for a single report control block.
@@ -113,19 +120,28 @@ type rcbRuntime struct {
 	prevValues []*mms.Value
 
 	// Entry queue, in creation order. A BRCB keeps transmitted entries
-	// (up to bufMax) for a later resync; a URCB drops an entry once it
-	// is sent.
-	bufQueue    []*bufferedEntry
-	bufMax      int
+	// (within the buffer's limits) for a later resync; a URCB drops an
+	// entry once it is sent.
+	buf         ReportBuffer
 	entryID     uint64 // id of the newest entry created
 	lastSentID  uint64 // id of the last entry formatted and queued for transmission
 	pendingOvfl bool   // BufOvfl=TRUE goes into the next report
 	discarded   bool   // an entry was discarded since start-up or the last purge
 
-	// BufTm aggregation (IEC 61850-7-2 §17.2.2.9).
-	agg      *bufferedEntry
-	aggTimer *time.Timer
+	// GI entries: the one queued and not yet sent (0: none), and those
+	// sent, which stay in the buffer for a resync but are not replayed.
+	giPending uint64
+	giSent    map[uint64]struct{}
+
+	// BufTm aggregation (IEC 61850-7-2 §17.2.2.9): the pending report
+	// and its timer.
+	agg      *ReportEntry
+	aggTimer reportTimer
 	aggGen   uint64
+
+	// sendGate orders the reports of the enable session after the
+	// pending response of the receiving association (see respGate).
+	sendGate *respGate
 
 	// Integrity timer goroutine; closed to stop it.
 	intgStop chan struct{}
@@ -135,32 +151,6 @@ type rcbRuntime struct {
 	sendStop chan struct{}
 	wake     chan struct{}
 }
-
-// bufferedEntry holds a single report entry waiting for, or kept after,
-// delivery.
-type bufferedEntry struct {
-	id          uint64
-	entryID     []byte
-	timeOfEntry time.Time
-	values      []*mms.Value
-	reasons     []ReasonCode
-	inclusion   []bool
-
-	// gi marks a general-interrogation entry: it is sent once in the
-	// enable session that requested it and never replayed (§17.2.2.13,
-	// §17.2.3.2.3.6 buffers dchg/qchg/dupd/integrity only).
-	gi   bool
-	sent bool
-}
-
-// defaultRCBBufMax is the default entry capacity of a BRCB buffer.
-const defaultRCBBufMax = 1000
-
-// reportDispatchDelay defers the first report after a quiet period so
-// that the Write response that triggered it reaches the client first;
-// libiec61850 discards a report received while it waits for that
-// response. Reports keep their order regardless (one sender per RCB).
-var reportDispatchDelay = 100 * time.Millisecond
 
 // connReapInterval is how often the engine checks for owners whose
 // association has ended (besides the check after every Server.Serve).
@@ -184,6 +174,9 @@ func (s *Server) EnableReports() *ReportEngine {
 		clock:  s.clock,
 		rcbs:   make(map[string]*rcbRuntime),
 		stopCh: make(chan struct{}),
+		clk:    systemClock{},
+
+		newBuffer: s.newReportBuffer,
 	}
 	if engine.maxPDU <= 0 {
 		engine.maxPDU = defaultReportMaxPDU
@@ -286,12 +279,18 @@ func (re *ReportEngine) registerRCBRuntime(ldName, lnName string, rpt *servermod
 		lnName:    lnName,
 		rcbItemID: rcbItemID,
 		buffered:  rpt.Buffered,
-		bufMax:    defaultRCBBufMax,
 		wake:      make(chan struct{}, 1),
+	}
+	if rt.buffered && re.newBuffer != nil {
+		rt.buf = re.newBuffer(ldName, rcbItemID)
+	}
+	if rt.buf == nil {
+		rt.buf = NewMemoryReportBuffer(defaultRCBBufMax, 0)
 	}
 
 	rt.mu.Lock()
 	re.loadConfigLocked(rt)
+	re.adoptBufferLocked(rt)
 	if rt.buffered {
 		// IEC 61850-7-2 §17.2.2.5 (Figure 24): upon power-up buffering
 		// starts if DatSet references an existing data set.
@@ -351,21 +350,75 @@ func (re *ReportEngine) loadConfigLocked(rt *rcbRuntime) {
 	}
 }
 
-// SetRCBBufMax sets the maximum buffer capacity for the named BRCB. Returns
-// false if the RCB is not found. Intended for testing; use with caution in
-// production code.
+// adoptBufferLocked continues the entries a buffer already holds (one
+// that persists them): new EntryIDs follow the newest one and GI entries
+// are not sent again. Caller holds rt.mu.
+func (re *ReportEngine) adoptBufferLocked(rt *rcbRuntime) {
+	if n, ok := rt.buf.Newest(); ok {
+		rt.entryID = max(rt.entryID, n.ID)
+	}
+	for e, ok := rt.buf.After(0); ok; e, ok = rt.buf.After(e.ID) {
+		if e.GI {
+			rt.markGISentLocked(e.ID)
+		}
+	}
+	rt.lastSentID = rt.entryID
+	if rt.buffered && rt.buf.Len() > 0 {
+		re.publishNewestEntryLocked(rt)
+	}
+}
+
+// SetRCBBufMax sets the entry capacity of the named RCB's buffer, keeping
+// its byte limit. It returns false if the RCB is not found or its buffer
+// is not a [MemoryReportBuffer]. A lower capacity discards the oldest
+// entries with the next entry.
 func (re *ReportEngine) SetRCBBufMax(ldName, rcbItemID string, max int) bool {
-	key := ldName + "/" + rcbItemID
-	re.mu.RLock()
-	rt, ok := re.rcbs[key]
-	re.mu.RUnlock()
-	if !ok {
+	rt := re.lookup(ldName, rcbItemID)
+	if rt == nil {
 		return false
 	}
 	rt.mu.Lock()
-	rt.bufMax = max
-	rt.mu.Unlock()
+	defer rt.mu.Unlock()
+	mb, ok := rt.buf.(*MemoryReportBuffer)
+	if !ok {
+		return false
+	}
+	_, maxBytes := mb.Limits()
+	mb.SetLimits(max, maxBytes)
 	return true
+}
+
+// lookup returns the runtime of the named RCB, or nil.
+func (re *ReportEngine) lookup(ldName, rcbItemID string) *rcbRuntime {
+	re.mu.RLock()
+	defer re.mu.RUnlock()
+	return re.rcbs[ldName+"/"+rcbItemID]
+}
+
+// markGISentLocked records that GI entry id was sent.
+func (rt *rcbRuntime) markGISentLocked(id uint64) {
+	if rt.giSent == nil {
+		rt.giSent = make(map[uint64]struct{})
+	}
+	rt.giSent[id] = struct{}{}
+	if rt.giPending == id {
+		rt.giPending = 0
+	}
+}
+
+// giWasSentLocked reports whether GI entry id was sent.
+func (rt *rcbRuntime) giWasSentLocked(id uint64) bool {
+	_, ok := rt.giSent[id]
+	return ok
+}
+
+// dropPendingGILocked deletes the GI entry that is queued and not yet sent
+// (§17.2.2.13 Figure 28 "Delete pending GI information").
+func (rt *rcbRuntime) dropPendingGILocked() {
+	if rt.giPending != 0 {
+		rt.buf.Remove(rt.giPending)
+		rt.giPending = 0
+	}
 }
 
 // resolveDataset maps the DatSet string to ValueStore keys and MMS
@@ -475,11 +528,13 @@ func (re *ReportEngine) disableLocked(rt *rcbRuntime) {
 		close(rt.sendStop)
 		rt.sendStop = nil
 	}
+	rt.sendGate = nil
 	if rt.buffered {
-		rt.bufQueue = slices.DeleteFunc(rt.bufQueue, func(e *bufferedEntry) bool { return e.gi && !e.sent })
+		rt.dropPendingGILocked()
 		re.publishNewestEntryLocked(rt)
 	} else {
-		rt.bufQueue = nil
+		rt.buf.Purge()
+		rt.giPending, rt.giSent = 0, nil
 		rt.stopIntegrityLocked()
 		rt.stopAggLocked()
 	}

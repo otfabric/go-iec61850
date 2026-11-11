@@ -62,20 +62,21 @@ func enableFCDReport(t *testing.T) (*Server, *ReportEngine, *rcbRuntime) {
 	return srv, engine, engine.rcbs["LD1/LLN0$BR$brcbFCD"]
 }
 
-func lastEntry(t *testing.T, rt *rcbRuntime) *bufferedEntry {
+func lastEntry(t *testing.T, rt *rcbRuntime) ReportEntry {
 	t.Helper()
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	if len(rt.bufQueue) == 0 {
+	e, ok := rt.buf.Newest()
+	if !ok {
 		t.Fatal("no buffered report")
 	}
-	return rt.bufQueue[len(rt.bufQueue)-1]
+	return e
 }
 
 func queueLen(rt *rcbRuntime) int {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	return len(rt.bufQueue)
+	return rt.buf.Len()
 }
 
 // A data-object member is reported as the structure of its attributes
@@ -89,12 +90,12 @@ func TestReportEngine_FCDMemberGI(t *testing.T) {
 		t.Fatalf("GI: %v", err)
 	}
 	e := lastEntry(t, rt)
-	if !e.inclusion[0] || !e.inclusion[1] || e.reasons[0] != ReasonGI {
-		t.Fatalf("GI entry: inclusion %v reasons %v", e.inclusion, e.reasons)
+	if !e.Inclusion[0] || !e.Inclusion[1] || e.Reasons[0] != ReasonGI {
+		t.Fatalf("GI entry: inclusion %v reasons %v", e.Inclusion, e.Reasons)
 	}
-	fields, ok := e.values[0].Structure()
+	fields, ok := e.Values[0].Structure()
 	if !ok || len(fields) != 3 {
-		t.Fatalf("Mod[ST] = %v, want a structure of stVal, q, t", e.values[0])
+		t.Fatalf("Mod[ST] = %v, want a structure of stVal, q, t", e.Values[0])
 	}
 	if v, _ := fields[0].Int64(); v != 3 {
 		t.Errorf("Mod[ST].stVal = %v, want 3", fields[0])
@@ -102,8 +103,8 @@ func TestReportEngine_FCDMemberGI(t *testing.T) {
 	if fields[1].Type() != mms.ValueTypeBitString {
 		t.Errorf("Mod[ST].q type = %v, want a bit string", fields[1].Type())
 	}
-	if v, _ := e.values[1].Int64(); v != 3 {
-		t.Errorf("Mod.stVal[ST] = %v, want 3", e.values[1])
+	if v, _ := e.Values[1].Int64(); v != 3 {
+		t.Errorf("Mod.stVal[ST] = %v, want 3", e.Values[1])
 	}
 }
 
@@ -114,15 +115,15 @@ func TestReportEngine_FCDMemberDataChange(t *testing.T) {
 	srv.SetValue(context.Background(), servermodel.StoreKey("LD1", "LLN0$ST$Mod$stVal"), mms.NewInteger(5))
 
 	e := lastEntry(t, rt)
-	if !e.inclusion[0] || !e.inclusion[1] {
-		t.Fatalf("inclusion = %v, want both members", e.inclusion)
+	if !e.Inclusion[0] || !e.Inclusion[1] {
+		t.Fatalf("inclusion = %v, want both members", e.Inclusion)
 	}
-	if e.reasons[0]&ReasonDataChanged == 0 || e.reasons[1]&ReasonDataChanged == 0 {
-		t.Errorf("reasons = %v, want data change for both", e.reasons)
+	if e.Reasons[0]&ReasonDataChanged == 0 || e.Reasons[1]&ReasonDataChanged == 0 {
+		t.Errorf("reasons = %v, want data change for both", e.Reasons)
 	}
-	fields, _ := e.values[0].Structure()
+	fields, _ := e.Values[0].Structure()
 	if len(fields) != 3 {
-		t.Fatalf("Mod[ST] = %v", e.values[0])
+		t.Fatalf("Mod[ST] = %v", e.Values[0])
 	}
 	if v, _ := fields[0].Int64(); v != 5 {
 		t.Errorf("Mod[ST].stVal = %v, want 5", fields[0])
@@ -136,11 +137,11 @@ func TestReportEngine_FCDMemberQualityChange(t *testing.T) {
 	srv.SetValue(context.Background(), servermodel.StoreKey("LD1", "LLN0$ST$Mod$q"), q)
 
 	e := lastEntry(t, rt)
-	if !e.inclusion[0] || e.inclusion[1] {
-		t.Fatalf("inclusion = %v, want only Mod[ST]", e.inclusion)
+	if !e.Inclusion[0] || e.Inclusion[1] {
+		t.Fatalf("inclusion = %v, want only Mod[ST]", e.Inclusion)
 	}
-	if e.reasons[0]&ReasonQualityChanged == 0 {
-		t.Errorf("reason = %v, want quality change", e.reasons[0])
+	if e.Reasons[0]&ReasonQualityChanged == 0 {
+		t.Errorf("reason = %v, want quality change", e.Reasons[0])
 	}
 }
 
@@ -172,11 +173,11 @@ func TestReportEngine_FCDMemberDataUpdate(t *testing.T) {
 	srv.SetValue(ctx, servermodel.StoreKey("LD1", "LLN0$ST$Mod$stVal"), mms.NewInteger(0))
 
 	e := lastEntry(t, rt)
-	if !e.inclusion[0] || !e.inclusion[1] {
-		t.Fatalf("inclusion = %v, want both members", e.inclusion)
+	if !e.Inclusion[0] || !e.Inclusion[1] {
+		t.Fatalf("inclusion = %v, want both members", e.Inclusion)
 	}
-	if e.reasons[0] != ReasonDataUpdate || e.reasons[1] != ReasonDataUpdate {
-		t.Errorf("reasons = %v, want data update only", e.reasons)
+	if e.Reasons[0] != ReasonDataUpdate || e.Reasons[1] != ReasonDataUpdate {
+		t.Errorf("reasons = %v, want data update only", e.Reasons)
 	}
 }
 
@@ -200,10 +201,10 @@ func TestReportEngine_UnresolvedMember(t *testing.T) {
 	key := servermodel.StoreKey("LD1", "LLN0$ST$Nope")
 	srv.SetValue(ctx, key, mms.NewInteger(9))
 	e := lastEntry(t, rt)
-	if !e.inclusion[2] {
-		t.Fatalf("inclusion = %v, want the unresolved member", e.inclusion)
+	if !e.Inclusion[2] {
+		t.Fatalf("inclusion = %v, want the unresolved member", e.Inclusion)
 	}
-	if v, _ := e.values[2].Int64(); v != 9 {
-		t.Errorf("value = %v, want 9", e.values[2])
+	if v, _ := e.Values[2].Int64(); v != 9 {
+		t.Errorf("value = %v, want 9", e.Values[2])
 	}
 }

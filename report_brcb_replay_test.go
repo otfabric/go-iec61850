@@ -168,7 +168,7 @@ func TestBRCB_ResumeAtLatestEntrySkipsReplay(t *testing.T) {
 
 	rt := engine.rcbs["LD1/LLN0$BR$brcb01"]
 	rt.mu.Lock()
-	enabled, qLen := rt.enabled, len(rt.bufQueue)
+	enabled, qLen := rt.enabled, rt.buf.Len()
 	rt.mu.Unlock()
 	if !enabled {
 		t.Error("BRCB should be enabled even when nothing needs replaying")

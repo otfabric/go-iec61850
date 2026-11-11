@@ -21,6 +21,7 @@ with raw MMS domain names, item IDs, BER or Ethernet frames.
 | MMS (ACSI over ISO/TCP) | IEC 61850-8-1, ISO 9506 | `iec61850.Client` | `iec61850.Server` |
 | GOOSE | IEC 61850-8-1 | `goose.Subscriber`, `Client.GetGoCB` | `goose.Publisher`, `Server.EnableGOOSE` |
 | Sampled Values | IEC 61850-9-2, IEC 61869-9, UCA 9-2LE | `sv.Subscriber`, `Client.GetMSVCB` | `sv.Publisher`, `Server.EnableSV` |
+| R-GOOSE, R-SV (UDP/IP, HMAC) | IEC TR 61850-90-5 session layer | `goose`/`sv` subscriber over `rsession.Transport` | `goose`/`sv` publisher over `rsession.Transport` |
 | SCL | IEC 61850-6 (1.7 – 2007C5) | `scl`, `scl/index`, `scl/validate` | `NewServerModelFromSCL`, `goose`/`sv` `ControlBlockFromSCL` |
 
 ---
@@ -90,7 +91,8 @@ with raw MMS domain names, item IDs, BER or Ethernet frames.
 **MMS server**
 
 - SCL-driven model; reports (URCB/BRCB), controls (SBO/SBOw state machine,
-  CommandTermination, LastApplError), setting groups, journals, file services, Identify
+  CommandTermination, LastApplError, interlocking and synchrocheck with
+  CILO and RSYN bindings), setting groups, journals, file services, Identify
   and Status; connection hooks, authentication hook, graceful `Shutdown`
 - One `SetValue` call drives reports, journals, GOOSE and SV
 
@@ -313,7 +315,8 @@ func subscribeGOOSE(ctx context.Context, tr goose.Transport, doc *scl.SCL) error
 
 `tr` is a raw Ethernet transport, `goose.Open("eth0",
 goose.TransportOptions{})` (Linux: `CAP_NET_RAW`; macOS: `/dev/bpf`
-access), or an in-memory `goose.NewHub().NewPort(goose.MAC{})` in tests.
+access), an in-memory `goose.NewHub().NewPort(goose.MAC{})` in tests,
+or `rsession.Open(...)` for authenticated R-GOOSE over UDP/IP.
 See [GOOSE.md](GOOSE.md) and the examples
 [goose-publisher](examples/goose-publisher),
 [goose-subscriber](examples/goose-subscriber),
@@ -488,7 +491,8 @@ func main() {
 | `Client.Cancel` | Cancel an active SBO reservation |
 | `Client.ReadCtlModel` | Read the `ctlModel` attribute |
 | `Server.RegisterControl` | Install a server-side control handler |
-| `ControlHandler` | Callbacks for `OnSelect`, `OnOperate`, `OnCancel` |
+| `ControlHandler` | Callbacks for `OnSelect`, `OnOperate`, `OnCancel`, `OnExecute`, `CheckInterlock`, `CheckSynchro`; CILO/RSYN bindings |
+| `ProcessResponse` | Opt-in process response of the default operate |
 | `CtlModelDirectNormal` / `CtlModelSBONormal` / `CtlModelSBOEnhanced` | Control model constants |
 
 ### GOOSE and SV control blocks (client)
