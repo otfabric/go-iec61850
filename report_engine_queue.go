@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/otfabric/go-mms"
+
+	"github.com/otfabric/go-iec61850/internal/servermodel"
 )
 
 // NotifyValueChanged is called when a data attribute value is changed
@@ -67,18 +69,55 @@ func (re *ReportEngine) detectChangeLocked(rt *rcbRuntime, storeKey string, now 
 // memberReason returns the reason for inclusion of member idx after a
 // write of storeKey, or 0.
 func (re *ReportEngine) memberReason(rt *rcbRuntime, idx int, storeKey string, prevVal, newVal *mms.Value) ReasonCode {
+	return triggerReason(rt.trgOps, rt.memberNodes[idx], storeKey, prevVal, newVal)
+}
+
+// triggerReason evaluates the trigger options trg of a report or log
+// control block for a write of storeKey that changed a data set member
+// (layout n, may be nil) from prevVal to newVal.
+//
+// "dchg, qchg, dupd ... refer to the TrgOp of the DataAttribute" in the
+// CDC (IEC 61850-7-2 §17.2.2.11, §17.2.3.2.3.2): when the model carries
+// the attribute trigger options (from SCL DA dchg/qchg/dupd), the reason
+// is that of the written attribute: data-change when a dchg attribute
+// changed, quality-change when a qchg attribute changed, data-update
+// when a dupd attribute was written. A change of an attribute without a
+// TrgOp (such as t) is no internal notification (7-2 Figure 32).
+//
+// A model without attribute trigger options (built in Go without them)
+// falls back to comparing the member value: any change is
+// data-change, a change of a Quality is quality-change, and every write
+// is data-update.
+func triggerReason(trg TrgOps, n *servermodel.MemberNode, storeKey string, prevVal, newVal *mms.Value) ReasonCode {
+	if n != nil && n.HasTrgOps() {
+		leaf, newLeaf, ok := n.Leaf(newVal, storeKey)
+		if !ok {
+			return 0
+		}
+		_, prevLeaf, _ := n.Leaf(prevVal, storeKey)
+		changed := !valuesEqual(prevLeaf, newLeaf)
+		var reason ReasonCode
+		if leaf.Dchg && changed && trg.Has(TrgOpDataChanged) {
+			reason |= ReasonDataChanged
+		}
+		if leaf.Qchg && changed && trg.Has(TrgOpQualityChanged) {
+			reason |= ReasonQualityChanged
+		}
+		if leaf.Dupd && trg.Has(TrgOpDataUpdate) {
+			reason |= ReasonDataUpdate
+		}
+		return reason
+	}
 	var reason ReasonCode
-	if rt.trgOps.Has(TrgOpDataChanged) && !valuesEqual(prevVal, newVal) {
+	if trg.Has(TrgOpDataChanged) && !valuesEqual(prevVal, newVal) {
 		reason |= ReasonDataChanged
 	}
-	if rt.trgOps.Has(TrgOpQualityChanged) && qualityChanged(prevVal, newVal) {
+	if trg.Has(TrgOpQualityChanged) && qualityChanged(prevVal, newVal) {
 		reason |= ReasonQualityChanged
 	}
-	if rt.trgOps.Has(TrgOpDataUpdate) {
+	if trg.Has(TrgOpDataUpdate) {
 		reason |= ReasonDataUpdate
 	}
-	_ = idx
-	_ = storeKey
 	return reason
 }
 

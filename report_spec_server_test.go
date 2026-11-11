@@ -909,3 +909,79 @@ func dropAssociation(c *Client) {
 	_ = c.Close(context.Background())
 	_ = c.mmsClient.Close(context.Background())
 }
+
+// trgOpModel has the DO Mod with CDC trigger options (stVal dchg, q
+// qchg, t none) and a URCB over the FCD member Mod[ST].
+func trgOpModel(trg servermodel.TrgOpsDef) *servermodel.Model {
+	return &servermodel.Model{LogicalDevices: []servermodel.LogicalDevice{{
+		Name: "LD1",
+		LogicalNodes: []servermodel.LogicalNode{{
+			Name: "LLN0", LNClass: "LLN0",
+			DataObjects: []servermodel.DataObject{{Name: "Mod", Attributes: []servermodel.DataAttribute{
+				{Name: "stVal", FC: "ST", BType: "INT32", Dchg: true},
+				{Name: "q", FC: "ST", BType: "Quality", Qchg: true},
+				{Name: "t", FC: "ST", BType: "Timestamp"},
+			}}},
+			DataSets: []servermodel.DataSetDef{{Name: "dsMod", Members: []servermodel.DataSetMemberDef{
+				{LNName: "LLN0", DOPath: "Mod", FC: "ST"},
+			}}},
+			Reports: []servermodel.ReportDef{{Name: "urcb01", RptID: "rpt", DatSet: "dsMod", ConfRev: 1, TrgOps: trg,
+				OptFlds: servermodel.OptFieldsDef{SeqNum: true, ReasonCode: true}}},
+		}},
+	}}}
+}
+
+// TestSpec_7_2_17_2_2_11_TimestampOnlyChangeNoDchg: dchg/qchg/dupd
+// "refer to the TrgOp of the DataAttribute"; in Figure 32 "stVal and t
+// changed, only stVal change produces internal notification" (RPT-16).
+func TestSpec_7_2_17_2_2_11_TimestampOnlyChangeNoDchg(t *testing.T) {
+	srv, err := NewServer(trgOpModel(servermodel.TrgOpsDef{Dchg: true}), ServerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.EnableReports()
+	defer srv.Close()
+	ctx := context.Background()
+	c := dialLoopback(t, ctx, srv)
+	sub := subscribeRCB(t, c, "rpt", specURCB, true)
+	srv.SetValue(ctx, servermodel.StoreKey("LD1", "LLN0$ST$Mod$t"), mms.NewUTCTime(time.Now()))
+	srv.SetValue(ctx, servermodel.StoreKey("LD1", "LLN0$ST$Mod$q"), mms.NewBitStringWithLength([]byte{0x40, 0}, 13))
+	expectNoReport(t, sub, 400*time.Millisecond)
+	srv.SetValue(ctx, specModKey, mms.NewInteger(2))
+	if r := recvReport(t, sub); r.ReasonCodes[0] != ReasonDataChanged {
+		t.Errorf("reason = %v, want data-change only", r.ReasonCodes[0])
+	}
+}
+
+// TestSpec_7_2_17_2_2_11_QualityOnlyChange: a change of q (TrgOp qchg)
+// is reported as quality-change only (RPT-16).
+func TestSpec_7_2_17_2_2_11_QualityOnlyChange(t *testing.T) {
+	srv, err := NewServer(trgOpModel(servermodel.TrgOpsDef{Dchg: true, Qchg: true, Dupd: true}), ServerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.EnableReports()
+	defer srv.Close()
+	ctx := context.Background()
+	c := dialLoopback(t, ctx, srv)
+	sub := subscribeRCB(t, c, "rpt", specURCB, true)
+	srv.SetValue(ctx, servermodel.StoreKey("LD1", "LLN0$ST$Mod$q"), mms.NewBitStringWithLength([]byte{0x40, 0}, 13))
+	if r := recvReport(t, sub); r.ReasonCodes[0] != ReasonQualityChanged {
+		t.Errorf("reason = %v, want quality-change only", r.ReasonCodes[0])
+	}
+	// Rewriting the same q is no change, and q has no dupd TrgOp.
+	srv.SetValue(ctx, servermodel.StoreKey("LD1", "LLN0$ST$Mod$q"), mms.NewBitStringWithLength([]byte{0x40, 0}, 13))
+	expectNoReport(t, sub, 400*time.Millisecond)
+}
+
+// TestTriggerReason_LeafNotInMember: a write outside the member layout
+// is no notification when the member carries trigger options.
+func TestTriggerReason_LeafNotInMember(t *testing.T) {
+	n := &servermodel.MemberNode{Name: "Mod", Children: []*servermodel.MemberNode{{Name: "stVal", Key: "k1", Dchg: true}}}
+	if r := triggerReason(TrgOpDataChanged, n, "other", nil, nil); r != 0 {
+		t.Errorf("reason = %v", r)
+	}
+	if r := triggerReason(TrgOpDataChanged|TrgOpDataUpdate, nil, "k", mms.NewInteger(1), mms.NewInteger(1)); r != ReasonDataUpdate {
+		t.Errorf("fallback reason = %v", r)
+	}
+}
