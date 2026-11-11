@@ -138,10 +138,15 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   `SubFunction`, `PowerTransformer`, `GeneralEquipment`, `ConnectivityNode`.
   These are accessible only via raw XML unmarshalling.
 - **No XSD schema validation** — the parser performs structural XML parsing
-  and comprehensive semantic validation (type templates, IED structure,
-  communication linkage, dataset references, control block references,
-  topology LNode resolution), but does not validate against the official
-  IEC XSD schema files.
+  and the semantic checks listed under Validation in scl/README.md
+  (selected XSD keys and keyrefs, required attributes, type references,
+  FCDA resolution, control block and address checks); it does not validate
+  against the official IEC XSD schema files. Not checked: DOI/DAI
+  uniqueness (the model does not keep `ix`), LogControl `datSet`
+  references, ExtRef/Inputs (not in the model), most XSD patterns and
+  enumerations (only the address P patterns), the IEC 61850-7-4/7-3
+  mandatory-content rules for LN classes and CDCs, and array `count`
+  (flattened as one element).
 - **Round-trip fidelity** — `scl.Generate` preserves the model structure but
   may not reproduce the exact formatting, namespace prefixes, or ordering of
   the original XML file. GSE and SMV control blocks are not serialized by
