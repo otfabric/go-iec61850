@@ -14,19 +14,48 @@
 //     and only receives entries produced after that point.
 //   - TestGoServer_BRCB_EntryID_ZeroResume: when EntryID is all-zeros the
 //     server replays the full buffer (no filtering).
-//   - TestGoServer_BRCB_EntryID_ResumeFromFuture: when the written EntryID is
-//     beyond any buffered entry, no replay is delivered.
+//   - TestGoServer_BRCB_EntryID_ResumeFromFuture: an EntryID that is not in
+//     the buffer is refused (IEC 61850-7-2 §17.2.2.15, Figure 24).
+//
+// The buffered entries are data changes: a BRCB buffers dchg, qchg, dupd
+// and integrity entries, not general-interrogation reports
+// (IEC 61850-7-2 §17.2.3.2.3.6).
 package interop
 
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	iec61850 "github.com/otfabric/go-iec61850"
+	mms "github.com/otfabric/go-mms"
 )
+
+// toggleSPS1 inverts GGIO1.SPS1.stVal n times: n data-change entries in
+// the fixture's BRCB.
+func toggleSPS1(h *goIEDServer, n int) {
+	key := goLD + "/GGIO1$ST$SPS1$stVal"
+	for range n {
+		cur, _ := h.srv.ValueStore().Get(key).Bool()
+		h.srv.SetValue(context.Background(), key, mms.NewBoolean(!cur))
+	}
+}
+
+// recvReportT waits for one report.
+func recvReportT(t *testing.T, sub *iec61850.ReportSubscription, what string) *iec61850.ReportIndication {
+	t.Helper()
+	select {
+	case rpt := <-sub.Reports():
+		t.Logf("%s: seqNum=%d entryID=%x bufOvfl=%v", what, rpt.SeqNum, rpt.EntryID, rpt.BufOvfl)
+		return rpt
+	case <-time.After(5 * time.Second):
+		t.Fatalf("%s not received", what)
+		return nil
+	}
+}
 
 // drainAll drains all buffered reports from sub with a short deadline.
 // It is used to flush stale entries before the primary assertion.
@@ -63,45 +92,18 @@ func TestGoServer_BRCB_EntryID_Resume(t *testing.T) {
 	c := dialIED(t, ctx, fmt.Sprintf("127.0.0.1:%d", h.port))
 	defer c.Close(ctx) //nolint:errcheck
 
-	// ── Phase 1: enable BRCB and buffer two entries ──────────────────────────
-
-	// First entry: GI
+	// ── Phase 1: enable BRCB and receive two data-change entries ─────────────
 	sub1, err := c.SubscribeReport(ctx, brcbRptID, iec61850.SubscribeReportOptions{
-		LD:            brcbLD,
-		RCBItemID:     brcbItemID,
-		AutoEnable:    true,
-		GIOnSubscribe: true,
+		LD:         brcbLD,
+		RCBItemID:  brcbItemID,
+		AutoEnable: true,
 	})
 	if err != nil {
 		t.Fatalf("SubscribeReport 1: %v", err)
 	}
-
-	var entry1ID []byte
-	select {
-	case rpt := <-sub1.Reports():
-		t.Logf("entry1: seqNum=%d entryID=%x", rpt.SeqNum, rpt.EntryID)
-		entry1ID = append([]byte(nil), rpt.EntryID...)
-	case <-time.After(5 * time.Second):
-		t.Fatal("entry 1 not received")
-	}
-
-	// Second entry: GI again.
-	if err := c.SetReportControlBlock(ctx, brcbLD, brcbItemID, iec61850.RCBUpdate{
-		Fields: iec61850.RCBFieldGI,
-		GI:     true,
-	}); err != nil {
-		t.Fatalf("GI write: %v", err)
-	}
-
-	var entry2ID []byte
-	select {
-	case rpt := <-sub1.Reports():
-		t.Logf("entry2: seqNum=%d entryID=%x", rpt.SeqNum, rpt.EntryID)
-		entry2ID = append([]byte(nil), rpt.EntryID...)
-	case <-time.After(5 * time.Second):
-		t.Fatal("entry 2 not received")
-	}
-
+	toggleSPS1(h, 2)
+	entry1ID := append([]byte(nil), recvReportT(t, sub1, "entry1").EntryID...)
+	entry2ID := append([]byte(nil), recvReportT(t, sub1, "entry2").EntryID...)
 	if bytes.Equal(entry1ID, entry2ID) {
 		t.Errorf("expected different EntryIDs for two distinct entries; both are %x", entry1ID)
 	}
@@ -131,12 +133,8 @@ func TestGoServer_BRCB_EntryID_Resume(t *testing.T) {
 	defer sub2.Close()
 
 	replayed := drainAll(sub2, 3*time.Second)
-	if len(replayed) == 0 {
-		t.Fatal("expected at least one replayed entry after resume, got none")
-	}
-	// The only replayed entry should be entry2.
 	if len(replayed) != 1 {
-		t.Errorf("expected exactly 1 replayed entry, got %d", len(replayed))
+		t.Fatalf("expected exactly 1 replayed entry, got %d", len(replayed))
 	}
 	if got := replayed[0].EntryID; !bytes.Equal(got, entry2ID) {
 		t.Errorf("replayed EntryID = %x, want %x", got, entry2ID)
@@ -153,26 +151,10 @@ func TestGoServer_BRCB_EntryID_ZeroResume(t *testing.T) {
 	c := dialIED(t, ctx, fmt.Sprintf("127.0.0.1:%d", h.port))
 	defer c.Close(ctx) //nolint:errcheck
 
-	// Buffer one entry.
-	sub1, err := c.SubscribeReport(ctx, brcbRptID, iec61850.SubscribeReportOptions{
-		LD:            brcbLD,
-		RCBItemID:     brcbItemID,
-		AutoEnable:    true,
-		GIOnSubscribe: true,
-	})
-	if err != nil {
-		t.Fatalf("SubscribeReport: %v", err)
-	}
-	select {
-	case <-sub1.Reports():
-	case <-time.After(5 * time.Second):
-		t.Fatal("initial GI not received")
-	}
-	if err := sub1.Close(); err != nil {
-		t.Fatalf("sub1.Close: %v", err)
-	}
+	// Buffer one entry while the BRCB is disabled (7-2 §17.2.3.2.3.6).
+	toggleSPS1(h, 1)
 
-	// Write zero EntryID (no filtering) and re-enable.
+	// Write zero EntryID (no resync) and enable.
 	if err := c.SetReportControlBlock(ctx, brcbLD, brcbItemID, iec61850.RCBUpdate{
 		Fields:  iec61850.RCBFieldEntryID,
 		EntryID: make([]byte, 8),
@@ -180,24 +162,26 @@ func TestGoServer_BRCB_EntryID_ZeroResume(t *testing.T) {
 		t.Fatalf("SetReportControlBlock EntryID=0: %v", err)
 	}
 
-	sub2, err := c.SubscribeReport(ctx, brcbRptID, iec61850.SubscribeReportOptions{
+	sub, err := c.SubscribeReport(ctx, brcbRptID, iec61850.SubscribeReportOptions{
 		LD:         brcbLD,
 		RCBItemID:  brcbItemID,
 		AutoEnable: true,
 	})
 	if err != nil {
-		t.Fatalf("SubscribeReport 2: %v", err)
+		t.Fatalf("SubscribeReport: %v", err)
 	}
-	defer sub2.Close()
+	defer sub.Close()
 
-	replayed := drainAll(sub2, 3*time.Second)
-	if len(replayed) == 0 {
-		t.Fatal("expected full replay with zero EntryID, got none")
+	replayed := drainAll(sub, 3*time.Second)
+	if len(replayed) != 1 {
+		t.Fatalf("expected the buffered entry with zero EntryID, got %d", len(replayed))
 	}
 }
 
-// TestGoServer_BRCB_EntryID_ResumeFromFuture verifies that when the written
-// EntryID is beyond any buffered entry, no replay is delivered.
+// TestGoServer_BRCB_EntryID_ResumeFromFuture verifies that an EntryID that
+// is not in the buffer is refused: the resync needs an entry the BRCB holds
+// (IEC 61850-7-2 §17.2.2.15, Figure 24; 8-1 parameter-value-inappropriate →
+// object-value-invalid).
 func TestGoServer_BRCB_EntryID_ResumeFromFuture(t *testing.T) {
 	h := startGoIEDServerWithReports(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -206,50 +190,15 @@ func TestGoServer_BRCB_EntryID_ResumeFromFuture(t *testing.T) {
 	c := dialIED(t, ctx, fmt.Sprintf("127.0.0.1:%d", h.port))
 	defer c.Close(ctx) //nolint:errcheck
 
-	// Buffer one entry.
-	sub1, err := c.SubscribeReport(ctx, brcbRptID, iec61850.SubscribeReportOptions{
-		LD:            brcbLD,
-		RCBItemID:     brcbItemID,
-		AutoEnable:    true,
-		GIOnSubscribe: true,
-	})
-	if err != nil {
-		t.Fatalf("SubscribeReport: %v", err)
-	}
-	select {
-	case rpt := <-sub1.Reports():
-		t.Logf("buffered entry: entryID=%x", rpt.EntryID)
-	case <-time.After(5 * time.Second):
-		t.Fatal("initial GI not received")
-	}
-	if err := sub1.Close(); err != nil {
-		t.Fatalf("sub1.Close: %v", err)
-	}
+	toggleSPS1(h, 1)
 
-	// Write a very large EntryID (far in the future).
 	futureID := []byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
-	if err := c.SetReportControlBlock(ctx, brcbLD, brcbItemID, iec61850.RCBUpdate{
+	err := c.SetReportControlBlock(ctx, brcbLD, brcbItemID, iec61850.RCBUpdate{
 		Fields:  iec61850.RCBFieldEntryID,
 		EntryID: futureID,
-	}); err != nil {
-		t.Fatalf("SetReportControlBlock EntryID=max: %v", err)
-	}
-
-	sub2, err := c.SubscribeReport(ctx, brcbRptID, iec61850.SubscribeReportOptions{
-		LD:         brcbLD,
-		RCBItemID:  brcbItemID,
-		AutoEnable: true,
 	})
-	if err != nil {
-		t.Fatalf("SubscribeReport 2: %v", err)
-	}
-	defer sub2.Close()
-
-	// Nothing should arrive.
-	select {
-	case rpt := <-sub2.Reports():
-		t.Errorf("expected no replay with future EntryID, got report entryID=%x", rpt.EntryID)
-	case <-time.After(2 * time.Second):
-		// Expected: no replay.
+	var dae *mms.DataAccessError
+	if !errors.As(err, &dae) || dae.Code != mms.DataAccessErrorObjectValueInvalid {
+		t.Fatalf("SetReportControlBlock EntryID=max: %v, want object-value-invalid", err)
 	}
 }

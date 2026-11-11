@@ -64,9 +64,8 @@ func TestBeanServer_URCB_DataChange(t *testing.T) {
 	if rpt.RptID != "interop_urcb01" {
 		t.Errorf("receive-report rptID: want %q, got %q", "interop_urcb01", rpt.RptID)
 	}
-	if rpt.SeqNum == 0 {
-		t.Error("receive-report seqNum: expected non-zero")
-	}
+	// SqNum is 0 in the first report after RptEna FALSE→TRUE
+	// (IEC 61850-7-2 §17.2.2.10), so any value is valid here.
 
 	// Inclusion: [true, false] — SPS1.stVal changed, Mod.stVal did not.
 	if len(rpt.Inclusion) < 2 {

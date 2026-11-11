@@ -7,8 +7,9 @@
 // These tests verify the trigger-option semantics of the go-iec61850 server's
 // URCB report engine:
 //
-//   - TrgOpDataUpdate fires on every write regardless of value change.
-//   - TrgOpQualityChanged fires when quality bits within a structure member change.
+//   - The trigger options refer to the TrgOp of the data attribute in its CDC
+//     (IEC 61850-7-2 §17.2.2.11): the fixture's SPS.stVal has dchg only, so
+//     TrgOpDataUpdate and TrgOpQualityChanged produce no report for it.
 //   - TrgOpDataChanged does NOT fire when the written value equals the previous one.
 //   - Multiple dchg writes in quick succession arrive in one or more reports (not zero).
 //
@@ -25,14 +26,10 @@ import (
 	mms "github.com/otfabric/go-mms"
 )
 
-// TestGoServer_URCB_TrgOp_DataUpdate verifies that TrgOpDataUpdate fires on
-// every write even when the value does not change.
-//
-// Strategy:
-//  1. Enable URCB with TrgOps = TrgOpDataUpdate only.
-//  2. Write SPS1.stVal with its current value (no state change).
-//  3. A report must arrive because dupd triggers on every accepted write.
-//  4. The report's ReasonCode must include ReasonDataUpdate.
+// TestGoServer_URCB_TrgOp_DataUpdate verifies that TrgOpDataUpdate does not
+// report a write of SPS1.stVal: "dchg, qchg, dupd ... refer to the TrgOp of
+// the DataAttribute" (IEC 61850-7-2 §17.2.2.11), and SPS.stVal has the
+// TrgOp dchg, not dupd (IEC 61850-7-3; fixture DOType SPS_Type).
 func TestGoServer_URCB_TrgOp_DataUpdate(t *testing.T) {
 	h := startGoIEDServerWithReports(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -61,45 +58,22 @@ func TestGoServer_URCB_TrgOp_DataUpdate(t *testing.T) {
 	}
 	defer sub.Close() //nolint:errcheck
 
-	// Write the SAME value that is already stored — no data change, but dupd fires.
 	ref, _ := iec61850.ParseRef("InteropLD/GGIO1.SPS1.stVal[ST]")
-	if err := c.Write(ctx, ref, mms.NewBoolean(fixVal.SPS1StVal)); err != nil {
-		t.Fatalf("Write SPS1.stVal (same value): %v", err)
+	if err := c.Write(ctx, ref, mms.NewBoolean(!fixVal.SPS1StVal)); err != nil {
+		t.Fatalf("Write SPS1.stVal: %v", err)
 	}
 
 	select {
-	case rpt, ok := <-sub.Reports():
-		if !ok {
-			t.Fatal("subscription channel closed before dupd report")
-		}
-		t.Logf("dupd report: SeqNum=%d Inclusion=%v ReasonCodes=%v",
-			rpt.SeqNum, rpt.Inclusion, rpt.ReasonCodes)
-		// At least one member must carry ReasonDataUpdate.
-		found := false
-		for _, rc := range rpt.ReasonCodes {
-			if rc&iec61850.ReasonDataUpdate != 0 {
-				found = true
-				break
-			}
-		}
-		if !found && len(rpt.ReasonCodes) > 0 {
-			t.Errorf("dupd report: no member has ReasonDataUpdate, got %v", rpt.ReasonCodes)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timeout: no dupd report after same-value write with TrgOpDataUpdate")
+	case rpt := <-sub.Reports():
+		t.Errorf("unexpected report for an attribute without TrgOp dupd: SeqNum=%d ReasonCodes=%v", rpt.SeqNum, rpt.ReasonCodes)
+	case <-time.After(1 * time.Second):
 	}
 }
 
 // TestGoServer_URCB_TrgOp_QualityChange verifies that TrgOpQualityChanged
-// fires when the quality bits of a dataset member change.
-//
-// The report engine's qualityChanged heuristic inspects the MMS value stored
-// at a member's store key.  It detects quality changes when the stored value
-// is a structure whose element at index 1 is a bit string (the IEC 61850
-// {stVal, q, t} layout).
-//
-// Setup: pre-load SPS1.stVal as a {stVal, q} structure with ValidityGood,
-// then trigger a quality change via Server.SetValue with QualityOldData set.
+// does not report a data change of SPS1.stVal: its TrgOp is dchg
+// (IEC 61850-7-2 §17.2.2.11); the quality q is a separate attribute and
+// not a member of dsInterop.
 func TestGoServer_URCB_TrgOp_QualityChange(t *testing.T) {
 	h := startGoIEDServerWithReports(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -107,16 +81,6 @@ func TestGoServer_URCB_TrgOp_QualityChange(t *testing.T) {
 
 	c := dialIED(t, ctx, fmt.Sprintf("127.0.0.1:%d", h.port))
 	defer c.Close(ctx)
-
-	// Pre-load the dataset member as {stVal, q} so qualityChanged can compare
-	// the quality bit string at structure index 1.  Use ValidityGood (q=0) as
-	// the baseline.  This bypasses the write interceptor (no report fired).
-	const memberKey = goLD + "/GGIO1$ST$SPS1$stVal"
-	goodQual := iec61850.EncodeQuality(0)
-	h.srv.ValueStore().Set(memberKey, mms.NewStructure([]*mms.Value{
-		mms.NewBoolean(fixVal.SPS1StVal),
-		goodQual,
-	}))
 
 	if err := c.ReserveURCB(ctx, urcbLD, goServerURCBID); err != nil {
 		t.Fatalf("ReserveURCB: %v", err)
@@ -138,34 +102,13 @@ func TestGoServer_URCB_TrgOp_QualityChange(t *testing.T) {
 	}
 	defer sub.Close() //nolint:errcheck
 
-	// Trigger quality change: keep stVal the same, set QualityOldData flag.
-	dirtyQual := iec61850.EncodeQuality(iec61850.QualityOldData)
-	h.srv.SetValue(context.Background(), memberKey, mms.NewStructure([]*mms.Value{
-		mms.NewBoolean(fixVal.SPS1StVal),
-		dirtyQual,
-	}))
+	h.srv.SetValue(context.Background(), goLD+"/GGIO1$ST$SPS1$stVal", mms.NewBoolean(!fixVal.SPS1StVal))
+	h.srv.SetValue(context.Background(), goLD+"/GGIO1$ST$SPS1$q", iec61850.EncodeQuality(iec61850.QualityOldData))
 
 	select {
-	case rpt, ok := <-sub.Reports():
-		if !ok {
-			t.Fatal("subscription channel closed before qchg report")
-		}
-		t.Logf("qchg report: SeqNum=%d Inclusion=%v ReasonCodes=%v",
-			rpt.SeqNum, rpt.Inclusion, rpt.ReasonCodes)
-		if len(rpt.ReasonCodes) > 0 {
-			found := false
-			for _, rc := range rpt.ReasonCodes {
-				if rc&iec61850.ReasonQualityChanged != 0 {
-					found = true
-					break
-				}
-			}
-			if !found {
-				t.Errorf("qchg report: no member has ReasonQualityChanged, got %v", rpt.ReasonCodes)
-			}
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timeout: no quality-change report after SetValue with changed quality bits")
+	case rpt := <-sub.Reports():
+		t.Errorf("unexpected report: SeqNum=%d ReasonCodes=%v", rpt.SeqNum, rpt.ReasonCodes)
+	case <-time.After(1 * time.Second):
 	}
 }
 
