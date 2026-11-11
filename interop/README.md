@@ -46,8 +46,8 @@ IEC61850BEAN_IMAGE=iec61850-interop-iec61850bean:local \
 make interop
 
 # Or using published images
-LIBIEC61850_IMAGE=ghcr.io/otfabric/iec61850-interop-libiec61850:v1.4.0 \
-IEC61850BEAN_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850bean:v1.4.0 \
+LIBIEC61850_IMAGE=ghcr.io/otfabric/iec61850-interop-libiec61850:v1.5.0 \
+IEC61850BEAN_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850bean:v1.5.0 \
 make interop
 ```
 
@@ -122,8 +122,8 @@ iec61850-rust:
 protocol over UDP, HMAC-SHA256) against every stack whose image lists
 `"transports":["ethernet","udp"]` in `--capabilities` (iec61850-interop
 contract 1.4, `docs/routable.md`); it skips when none does. Today that is
-the dscsystems adapter, from
-[iec61850-interop#24](https://github.com/otfabric/iec61850-interop/pull/24).
+the dscsystems adapter (iec61850-interop v1.5.0, pinned in
+`.github/workflows/interop.yml`).
 
 UDP needs no shared layer-2 segment and no `CAP_NET_RAW`: an adapter
 subscriber publishes its port 102/udp on 127.0.0.1, and an adapter

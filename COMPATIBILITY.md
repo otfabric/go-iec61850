@@ -98,7 +98,7 @@ error) and the test is skipped with that reason.
 
 ### Per-stack matrix
 
-Results with the iec61850-interop v1.4.0 images pinned in
+Results with the iec61850-interop v1.5.0 images pinned in
 `.github/workflows/interop.yml`.
 
 | Area | libiec61850 | iec61850bean | dscsystems | iec61850-rust | cbsigma |
@@ -121,7 +121,7 @@ Results with the iec61850-interop v1.4.0 images pinned in
 | SV: stack publisher → Go subscriber (SCL-validated) | ✓ | n/a⁷ | ✓ | ✓ | n/a⁸ |
 | SV: Go IED server MSVCB → stack subscriber | ✓ | n/a⁷ | ✓ | ✓ | n/a⁸ |
 | MSVCB over MMS (Go client → stack server) | ✓ | n/a⁷ | ✓ | unsupported⁵ | n/a⁸ |
-| R-GOOSE / R-SV (UDP, HMAC-SHA256) | n/a⁹ | n/a | pending⁹ | n/a | n/a |
+| R-GOOSE / R-SV (UDP, HMAC-SHA256) | n/a⁹ | n/a | ✓⁹ | n/a | n/a |
 
 ¹ The iec61850bean server does not support URCB reservation (`Resv`);
 that negative test is skipped.
@@ -150,10 +150,10 @@ neither affects the suites here.
 
 ⁹ `interop/rsession_test.go` (`TestRGOOSE_*`, `TestRSV_*`) runs against
 every stack whose image takes `--transport udp` (iec61850-interop contract
-1.4). Only the dscsystems adapter does, from
-[iec61850-interop#24](https://github.com/otfabric/iec61850-interop/pull/24):
-the suite passes against an image built from it, and becomes a ✓ once a
-released image is pinned in `.github/workflows/interop.yml`. libiec61850
+1.4). Only the dscsystems adapter does (iec61850-interop v1.5.0, pinned in
+`.github/workflows/interop.yml`): R-GOOSE and R-SV in both directions,
+session version 1 with HMAC-SHA256-80 and version 2 with -128 and -256,
+and the peer's refusal of forged, unsecured and replayed SPDUs. libiec61850
 has R-GOOSE but, at the pinned revision, writes an APDU length its own
 decoder refuses; its adapter does not expose it.
 

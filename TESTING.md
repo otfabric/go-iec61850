@@ -116,9 +116,9 @@ Do not lower a gate.
 
 ## Fuzzing
 
-`make fuzz` runs a fixed list of targets for `FUZZTIME` (default 15s). It does
-not list the two `sv` targets, `FuzzDecode` and `FuzzSubscriber`. `fuzz.yml`
-discovers every target nightly, so run these two directly:
+`make fuzz` runs every target for `FUZZTIME` (default 15s) each, discovered
+with `go test -list '^Fuzz'` as `fuzz.yml` and the CI fuzz smoke do, so a new
+target needs no Makefile change. One target:
 
 ```bash
 go test -run '^$' -fuzz '^FuzzSubscriber$' -fuzztime 30s ./sv
