@@ -78,7 +78,7 @@ func (fx *fixedLength) encodeAllData(values []*mms.Value) ([]byte, error) {
 // octet and the 32-bit big-endian value.
 func fixedUint32(v uint64) []byte {
 	c := make([]byte, 5)
-	binary.BigEndian.PutUint32(c[1:], uint32(v))
+	binary.BigEndian.PutUint32(c[1:], uint32(v&math.MaxUint32)) // callers pass INT32U fields
 	return c
 }
 
@@ -114,7 +114,7 @@ func appendDataFixed(b []byte, v *mms.Value, ts *mms.TypeSpec, depth int) ([]byt
 		}
 		c := make([]byte, n)
 		for i, y := n-1, x; i >= 0; i-- {
-			c[i] = byte(y)
+			c[i] = byte(y & 0xff)
 			y >>= 8 // arithmetic shift: the leading octets sign-extend
 		}
 		return appendTLV(b, tagInteger, c), nil

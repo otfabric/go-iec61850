@@ -1,5 +1,18 @@
 # go-iec61850 Releases
 
+## v1.19.1
+
+**Date:** 2026-11-11
+**Previous release:** v1.19.0
+
+Fixes, tests, CI and documentation; no API change.
+
+### Fixed
+
+- **Checked integer conversions** in the R-GOOSE/R-SV session codec (`rsession`), the GOOSE fixed-length encoder and the SV publisher: each length and two's-complement field is range-checked where it is converted, so a value that does not fit panics as a bug instead of going out truncated. The wire output is unchanged (exhaustive 16-bit and 32-bit serial-number edge test). A multicast interface index or TTL outside its socket option's range is an error.
+
+---
+
 ## v1.19.0
 
 **Date:** 2026-11-11

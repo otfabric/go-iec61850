@@ -58,7 +58,7 @@ func (g *replayGuard) accept(k streamKey, n uint32, now time.Time) bool {
 		g.windows[k] = &window{top: n, bitmap: 1, last: now}
 		return true
 	}
-	diff := int64(int32(n - w.top))
+	diff := serialDiff(n, w.top)
 	switch {
 	case diff > 0:
 		if diff >= ReplayWindow {

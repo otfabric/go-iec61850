@@ -563,7 +563,7 @@ func (p *Publisher) encodeAt(dst []byte, cnt uint16, t0 time.Time, k uint64, syn
 	tq := p.cfg.TimeQuality
 	if p.cfg.RefrTm && p.cfg.Clock != nil {
 		wall, tq = p.cfg.Clock()
-		last = p.at(t0, k+uint64(n-1))
+		last = p.at(t0, k+p.noASDU-1)
 	}
 	for i := range n {
 		ti := p.at(t0, k+uint64(i))

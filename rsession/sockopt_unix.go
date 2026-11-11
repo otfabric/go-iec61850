@@ -6,6 +6,7 @@ package rsession
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"net/netip"
 	"runtime"
@@ -57,6 +58,9 @@ func joinGroup(conn *net.UDPConn, group netip.Addr, ifi *net.Interface) error {
 		}
 		mreq := &unix.IPv6Mreq{Multiaddr: group.As16()}
 		if ifi != nil {
+			if ifi.Index < 0 || int64(ifi.Index) > math.MaxUint32 {
+				return fmt.Errorf("interface %s: index %d out of range", ifi.Name, ifi.Index)
+			}
 			mreq.Interface = uint32(ifi.Index)
 		}
 		return unix.SetsockoptIPv6Mreq(fd, unix.IPPROTO_IPV6, unix.IPV6_JOIN_GROUP, mreq)
@@ -87,6 +91,9 @@ func setMulticastTTL(conn *net.UDPConn, ttl int, v6 bool) error {
 			return unix.SetsockoptInt(fd, unix.IPPROTO_IP, unix.IP_MULTICAST_TTL, ttl)
 		}
 		// The BSDs and macOS take an unsigned char.
+		if ttl < 0 || ttl > math.MaxUint8 {
+			return fmt.Errorf("multicast TTL %d out of range 0..255", ttl)
+		}
 		return unix.SetsockoptByte(fd, unix.IPPROTO_IP, unix.IP_MULTICAST_TTL, byte(ttl))
 	})
 }
