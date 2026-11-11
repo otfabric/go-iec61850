@@ -293,7 +293,16 @@ sub, _ := goose.NewSubscriber(rx, goose.SubscriberConfig{})
 The wire layout, the references it follows where no specification text
 was available, and the scope are in
 [docs/adr/0001-routable-goose-sv.md](docs/adr/0001-routable-goose-sv.md).
-No independent R-GOOSE/R-SV implementation has been tested against it.
+An independent implementation is tested against it:
+`interop/rsession_test.go` exchanges R-GOOSE and R-SV with the
+dscsystems adapter of iec61850-interop (dscsystems/go-iec61850
+`rsession`, contract 1.4, `--transport udp`) in both directions, for
+version 1 with HMAC-SHA256-80 and version 2 with HMAC-SHA256-128 and
+-256, and checks that the peer refuses forged, unsecured and replayed
+SPDUs. It passes against an adapter image built from
+[iec61850-interop#24](https://github.com/otfabric/iec61850-interop/pull/24);
+it is not interop evidence until a released image is pinned in CI (until
+then the tests skip). See [interop/README.md](interop/README.md#r-goose-and-r-sv).
 
 ## SCL binding
 
@@ -455,8 +464,10 @@ Embed `goose.NopMetrics` to implement only some methods. See
 - No layer-2 GOOSE security (IEC 62351-6 extension in Reserved 1/2): the
   `security` field and the reserved fields are carried opaquely, not
   generated or verified. Authenticated GOOSE is available over UDP
-  ([R-GOOSE](#r-goose-and-r-sv-over-udp)); R-GOOSE is not verified
-  against another implementation.
+  ([R-GOOSE](#r-goose-and-r-sv-over-udp)); R-GOOSE interop with
+  dscsystems awaits a pinned iec61850-interop image. Layer-2 IEC 62351-6
+  is **open, to do**: it needs the IEC 62351-6 specification
+  (preferably the 2020 edition) before it can be implemented.
 - Fixed-length encoding deviates from Table A.2 for FLOAT32 (5 octets)
   and limits OCTET/VISIBLE STRING members to 20/35 octets; it is not
   verified against an independent fixed-length implementation.

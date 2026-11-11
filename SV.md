@@ -406,8 +406,10 @@ to zero allocations.
 - No layer-2 SV security (IEC 62351-6 extension in Reserved 1/2):
   `security` and the reserved fields are carried opaquely. Authenticated
   SV is available over UDP as R-SV with package `rsession`
-  ([GOOSE.md](GOOSE.md#r-goose-and-r-sv-over-udp)); it is not verified
-  against another implementation. No IEC 62351-9 key management.
+  ([GOOSE.md](GOOSE.md#r-goose-and-r-sv-over-udp)); interop with
+  dscsystems awaits a pinned iec61850-interop image. Layer-2 IEC 62351-6
+  is **open, to do** (needs the specification). No IEC 62351-9 key
+  management.
 - No unicast SV (USVCB) on the server; no SCL `multicast="false"`
   handling (the SCL parser cannot tell an absent attribute from false).
 - `SmvOpts sampleSynchronized` is reported but has no effect: `smpSynch`
