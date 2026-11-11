@@ -36,8 +36,9 @@ with raw MMS domain names, item IDs, BER or Ethernet frames.
   iec61850bean and cbsigma) on a Docker bridge included ([per-stack matrix](COMPATIBILITY.md#per-stack-matrix),
   [INTEROP.md](INTEROP.md)).
 - **Quality gates** — ≥ 90 % statement coverage per package, race
-  detector on Go 1.26–1.27, fuzz targets for the MMS value, GOOSE, SV and
-  SCL decoders, chaos tests, golangci-lint.
+  detector on Go 1.26–1.27, fuzz targets for the MMS value, report,
+  control, setting group, GOOSE, SV, R-GOOSE/R-SV session and SCL decoders,
+  chaos tests, golangci-lint.
 - **Not certified** — no UCA conformance certification and no formal
   validation against physical IEDs yet; see
   [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) and

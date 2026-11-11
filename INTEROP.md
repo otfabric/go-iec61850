@@ -65,15 +65,15 @@ IEC61850BEAN_IMAGE=iec61850-interop-iec61850bean:local \
 make interop
 
 # Run against published images (version tags)
-LIBIEC61850_IMAGE=ghcr.io/otfabric/iec61850-interop-libiec61850:v1.0.1 \
-IEC61850BEAN_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850bean:v1.0.1 \
+LIBIEC61850_IMAGE=ghcr.io/otfabric/iec61850-interop-libiec61850:v1.4.0 \
+IEC61850BEAN_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850bean:v1.4.0 \
 make interop
 
 # The same suites against another stack
 IEC61850_PEER_STACK=dscsystems \
-DSCSYSTEMS_IMAGE=ghcr.io/otfabric/iec61850-interop-dscsystems:v1.0.1 make interop
+DSCSYSTEMS_IMAGE=ghcr.io/otfabric/iec61850-interop-dscsystems:v1.4.0 make interop
 IEC61850_PEER_STACK=iec61850-rust \
-IEC61850RUST_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850-rust:v1.0.1 make interop
+IEC61850RUST_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850-rust:v1.4.0 make interop
 IEC61850_PEER_STACK=cbsigma \
 CBSIGMA_IMAGE=ghcr.io/otfabric/iec61850-interop-cbsigma:v1.4.0 make interop
 ```
