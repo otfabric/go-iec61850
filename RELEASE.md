@@ -1,5 +1,34 @@
 # go-iec61850 Releases
 
+## v1.21.0
+
+**Date:** 2026-11-11
+**Previous release:** v1.20.0
+
+Server control: the check conditions of IEC 61850-7-2 §20 (interlocking and synchrocheck), CILO and RSYN bindings (IEC 61850-7-4), and an opt-in process response for the default operate. The API is additive.
+
+### Added
+
+- **Interlocking check** (IEC 61850-7-2 §20.2.1, §20.5.2.7): `ControlHandler.CheckInterlock` and the CILO binding `ControlHandler.Interlocking` ("CILO1" or "LD/CILO1"). It is an operative test: it runs at SelectWithValue and at Operate when the request's Check has interlock-check. With a CILO, a close (ctlVal TRUE) needs `EnaCls.stVal` TRUE and an open `EnaOpn.stVal` TRUE (7-4 CILO). A refusal carries AddCause blocked-by-interlocking (10) in the LastApplError and gets object-access-denied.
+- **Synchrocheck** (§20.2.1 dynamic test, Table 54): `ControlHandler.CheckSynchro`, the RSYN binding `ControlHandler.Synchrocheck` and `ControlHandler.SynchroTimeout`. It runs at Operate only, after the operative tests, when Check has synchrocheck. The RSYN binding waits up to SynchroTimeout for `Rel.stVal` TRUE (7-4 RSYN); otherwise the Operate is refused with AddCause blocked-by-synchrocheck (11).
+- A check refusal keeps another AddCause the callback gives in a `*ControlError`. A time activated operate runs its checks at operTm; a failed check ends it with a negative termination (LastApplError, then the Oper). The owner's Cancel while its synchrocheck waits is accepted, and the operate ends with abortion-by-cancel (15). During the tests, Oper and SBOw get command-already-in-execution and another client's Cancel locked-by-other-client (Table 47). A check whose Check bit is clear, or that the registration does not supply, is not run (§20.5.2.7).
+- **`ProcessResponse`** (`ControlHandler.Process`, opt-in, default operate only):
+  - `TravelTime`: a DPC's stVal shows intermediate-state (00) until the end position. With enhanced security the CommandTermination is positive when the end position is reached and negative (time-limit-over) when CF operTimeout comes first (§20.3.3 d); with normal security the Operate response does not wait.
+  - `OpCnt`: an INS operation counter.
+  - `PositionReached`: refuses an operate to the current position with AddCause position-reached (Table 54).
+- `RegisterControl` refuses a CILO, RSYN or operation counter the model does not have, with `ErrInvalidArgument`.
+
+### Changed
+
+- A control leaves execution before its CommandTermination is sent, so a client that acts on the termination finds the control free. Before, a select sent straight after `OperateWait` could get command-already-in-execution.
+
+### Known limitations
+
+- No pinned iec61850-interop adapter sends Check bits, so the checks are verified in-process only (`TestSpec_*` in `control_checks_test.go`, `TestChaos_ControlChecks`).
+
+---
+
+
 ## v1.20.0
 
 **Date:** 2026-11-11
@@ -13,7 +42,6 @@ Buffer time and a pluggable BRCB buffer for the server report engine (IEC 61850-
 - **Clients must register their report handler before they enable an RCB.** A BRCB now sends its buffered entries right after the RptEna response. `Client.SubscribeReport` with `AutoEnable` now registers the subscription before it writes RptEna. Before, a replayed report could be lost when it arrived before the subscription was registered; the 100 ms delay usually hid this.
 - `Server.ListenAndServe` serves every connection through `Server.Serve`, also without `OnConnect`/`OnDisconnect` hooks, and retries temporary accept errors as go-mms does. RCBs and control selections of a lost association are therefore released at once.
 - BufTm (IEC 61850-7-2 §17.2.2.9) runs as the standard describes. The first internal notification starts the buffer time, and changes of other members within it join one report. A second change of a member already in the pending report sends that report at once and starts the next. BufTm 0 sends one report per notification. Integrity and GI reports are not delayed; the pending report is queued before them. TimeOfEntry is the time of the first notification (§17.2.2.16). This replaces the v1.17 aggregation, which ran on the wall clock only.
-- A control leaves execution before its CommandTermination is sent, so a client that operates again as soon as the termination arrives no longer gets command-already-in-execution. This fixes an intermittent failure of `TestSpec_7_2_Table47_SBOwTwoClients`. Open PR #67 has the same change.
 - `SetRCBBufMax` keeps the byte limit of the buffer and returns false for an RCB whose buffer is not a `MemoryReportBuffer`.
 
 ### Added

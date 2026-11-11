@@ -1264,6 +1264,20 @@ type ControlHandler struct {
     OnOperate func(ctx context.Context, req ControlRequest) error
     OnCancel  func(ctx context.Context, req ControlRequest) error
     OnExecute func(ctx context.Context, req ControlRequest) error // enhanced security: after operate, before the CommandTermination; error = negative
+
+    // Check conditions (IEC 61850-7-2 20.2.1, 20.5.2.7): run only when the request's Check asks.
+    CheckInterlock func(ctx context.Context, req ControlRequest) error // operative test at SBOw and Operate; error = blocked-by-interlocking
+    CheckSynchro   func(ctx context.Context, req ControlRequest) error // dynamic test at Operate; error = blocked-by-synchrocheck
+    SynchroTimeout time.Duration    // synchrocheck time limit; zero checks the RSYN release once
+    Interlocking   string           // CILO LN ("CILO1" or "LD/CILO1"): EnaCls gates close, EnaOpn open
+    Synchrocheck   string           // RSYN LN: the Operate waits for Rel.stVal TRUE
+    Process        *ProcessResponse // opt-in process response of the default operate
+}
+
+type ProcessResponse struct {
+    TravelTime      time.Duration // DPC: stVal intermediate-state (00) until the end position
+    OpCnt           string        // "LN.DO" or "LD/LN.DO" of an INS operation counter
+    PositionReached bool          // refuse an operate to the current position (AddCause position-reached)
 }
 
 type ControlRequest struct {
@@ -1296,6 +1310,34 @@ follows the selection. A callback refuses with an error: its
 and 27 give temporarily-unavailable and the others object-access-denied.
 Control writes to objects without a registration get object-access-denied.
 `ControlRequest.Operation` is `"select"`, `"operate"` or `"cancel"`.
+
+Check conditions (IEC 61850-7-2 20.2.1, 20.5.2.7; 7-4 CILO, RSYN). The
+interlocking check is an operative test: it runs at SelectWithValue and at
+Operate when the request's Check has interlock-check, first the CILO
+binding (`Interlocking`: a close needs `EnaCls.stVal` TRUE, an open
+`EnaOpn.stVal` TRUE; a ctlVal that is not BOOLEAN is not gated), then
+`CheckInterlock`. The synchrocheck is a dynamic test: it runs at Operate
+only, after the operative tests, when Check has synchrocheck: the RSYN
+binding (`Synchrocheck`) waits up to `SynchroTimeout` for `Rel.stVal`
+TRUE, then `CheckSynchro` runs with that deadline. A check whose Check bit
+is clear, or that the registration does not supply, is not run. A failed
+check refuses with AddCause blocked-by-interlocking (10) or
+blocked-by-synchrocheck (11), unless the callback returns a
+`*ControlError` with another AddCause: the LastApplError comes first and
+the write gets object-access-denied; a time activated operate runs its
+checks at operTm and ends with a negative termination. The owner's
+Cancel while a time activated operate's synchrocheck waits is accepted
+and the operate ends with a negative termination, abortion-by-cancel (15).
+RegisterControl refuses a binding the model has not.
+
+`ProcessResponse` (opt-in, default operate only) models what the standard
+gives: a DPC with `TravelTime` shows intermediate-state until the end
+position, with enhanced security the CommandTermination follows the end
+position (CF operTimeout first: negative, time-limit-over, stVal stays
+intermediate-state); with normal security the Operate response does not
+wait and the control stays in execution until the end position. `OpCnt`
+counts operations that reach their end position; `PositionReached`
+refuses an operate to the current position (AddCause 5).
 
 ### GOOSE engine
 
