@@ -209,7 +209,7 @@ func TestSpec_8_1_A3_FixedOffsPublisher(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 	var lens []int
 	for _, v := range []int64{1, 0x7fffffff} {
 		if err := p.Publish([]*mms.Value{mms.NewBoolean(true), mms.NewInteger(v)}); err != nil {

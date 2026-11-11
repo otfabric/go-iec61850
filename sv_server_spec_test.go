@@ -77,7 +77,7 @@ func TestSpec_9_2_Table14_ReservedSmpSynch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 	p.SetSmpSynch(3)
 	if got := p.State().SmpSynch; got != 2 {
 		t.Errorf("reserved SetSmpSynch applied: %d", got)
