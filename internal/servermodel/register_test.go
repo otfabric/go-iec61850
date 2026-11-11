@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/otfabric/go-mms"
@@ -436,33 +437,66 @@ func TestValueStore_WriteInterceptor_Replace(t *testing.T) {
 	}
 }
 
+// chanTransport is an in-process MMS transport. Like a TCP connection,
+// a Send to a peer that has closed fails, and a blocked Send or Receive
+// returns when its context ends.
 type chanTransport struct {
-	send chan []byte
-	recv chan []byte
+	send, recv     chan []byte
+	gone, peerGone chan struct{}
+	once           sync.Once
 }
 
-func (t *chanTransport) Send(_ context.Context, data []byte) error {
+func (t *chanTransport) Send(ctx context.Context, data []byte) error {
 	cp := make([]byte, len(data))
 	copy(cp, data)
-	t.send <- cp
-	return nil
+	select {
+	case <-t.gone:
+		return errors.New("transport closed")
+	case <-t.peerGone:
+		return errors.New("transport: peer closed")
+	default:
+	}
+	select {
+	case t.send <- cp:
+		return nil
+	case <-t.gone:
+		return errors.New("transport closed")
+	case <-t.peerGone:
+		return errors.New("transport: peer closed")
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (t *chanTransport) Receive(ctx context.Context) ([]byte, error) {
 	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
 	case b := <-t.recv:
 		return b, nil
+	case <-t.gone:
+		return nil, errors.New("transport closed")
+	case <-t.peerGone:
+		select {
+		case b := <-t.recv:
+			return b, nil
+		default:
+			return nil, errors.New("transport closed")
+		}
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
 }
 
-func (t *chanTransport) Close() error { return nil }
+func (t *chanTransport) Close() error {
+	t.once.Do(func() { close(t.gone) })
+	return nil
+}
 
 func loopbackPair() (mms.Transport, mms.Transport) {
 	c2s := make(chan []byte, 16)
 	s2c := make(chan []byte, 16)
-	return &chanTransport{send: c2s, recv: s2c}, &chanTransport{send: s2c, recv: c2s}
+	cGone, sGone := make(chan struct{}), make(chan struct{})
+	return &chanTransport{send: c2s, recv: s2c, gone: cGone, peerGone: sGone},
+		&chanTransport{send: s2c, recv: c2s, gone: sGone, peerGone: cGone}
 }
 
 func TestRegisterModel_SGCB(t *testing.T) {
