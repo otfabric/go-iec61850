@@ -18,7 +18,7 @@ jobs:
       docsync-version: v0.3.1
       # No policy.yml in this repository: the Policy job runs here, so
       # Markdown-only changes (skipped by ci.yml) are still checked.
-      policy-version: v1.4.2
+      policy-version: v1.5.0
     secrets: inherit
 
   docs-sclparse:
@@ -27,7 +27,7 @@ jobs:
     with:
       module-dir: scl/cmd/sclparse
       docsync-version: v0.3.1
-      policy-version: v1.4.2
+      policy-version: v1.5.0
       run-policy: false
     secrets: inherit
 
@@ -37,6 +37,6 @@ jobs:
     with:
       module-dir: scl/cmd/sclgen
       docsync-version: v0.3.1
-      policy-version: v1.4.2
+      policy-version: v1.5.0
       run-policy: false
     secrets: inherit
