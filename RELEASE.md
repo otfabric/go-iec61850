@@ -9,6 +9,8 @@ Spec review against IEC 61850-7-2:2010, 7-3:2010, 8-1:2011, 9-2:2011 and 6 Ed2 (
 
 ### Changed
 
+- **Built on go-mms v1.8.0** (was v1.7.2): the MMS spec review. It covers association refusal, negotiation and orderly release; Reject for unsupported or malformed requests; full BER on receive; and single-precision `NewFloat`. See the go-mms v1.8.0 notes.
+
 **Reporting (IEC 61850-7-2 §17.2, 8-1 §17.2)**
 
 - Report control blocks are owned per association: an RCB enabled or reserved by one client is temporarily-unavailable to the others and released when that association ends. Reports go only to the owner, in order, through a per-association queue (§17.2.4.4/5).
