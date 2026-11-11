@@ -1899,7 +1899,7 @@ func TestReportEngineIsConnActive(t *testing.T) {
 
 // TestSetRCBBufMax exercises the found and not-found code paths.
 func TestSetRCBBufMax(t *testing.T) {
-	rt := &rcbRuntime{rcbItemID: "LLN0$BR$brcb01", bufMax: 1000}
+	rt := &rcbRuntime{rcbItemID: "LLN0$BR$brcb01", buf: NewMemoryReportBuffer(1000, 64)}
 	re := &ReportEngine{
 		rcbs: map[string]*rcbRuntime{
 			"LD1/LLN0$BR$brcb01": rt,
@@ -1911,10 +1911,16 @@ func TestSetRCBBufMax(t *testing.T) {
 		t.Error("SetRCBBufMax returned false for existing key")
 	}
 	rt.mu.Lock()
-	got := rt.bufMax
+	got, gotBytes := rt.buf.(*MemoryReportBuffer).Limits()
 	rt.mu.Unlock()
-	if got != 5 {
-		t.Errorf("bufMax = %d, want 5", got)
+	if got != 5 || gotBytes != 64 {
+		t.Errorf("limits = %d, %d, want 5, 64", got, gotBytes)
+	}
+
+	// A buffer that is not a MemoryReportBuffer has no entry capacity to set.
+	rt.buf = &countingBuffer{ReportBuffer: NewMemoryReportBuffer(0, 0)}
+	if re.SetRCBBufMax("LD1", "LLN0$BR$brcb01", 5) {
+		t.Error("SetRCBBufMax returned true for a custom buffer")
 	}
 
 	// Non-existing key — should return false.
@@ -1928,7 +1934,7 @@ func TestSetRCBBufMax(t *testing.T) {
 func TestSenderLoop_NothingToSend(t *testing.T) {
 	re := &ReportEngine{logger: discardLogger(), stopCh: make(chan struct{})}
 	var sc mms.ServerConn
-	rt := &rcbRuntime{rcbItemID: "LLN0$BR$brcb01", buffered: true}
+	rt := &rcbRuntime{rcbItemID: "LLN0$BR$brcb01", buffered: true, buf: NewMemoryReportBuffer(0, 0)}
 	stop, wake := make(chan struct{}), make(chan struct{}, 1)
 	rt.sendStop = stop
 	rt.enabled = true
@@ -1938,13 +1944,24 @@ func TestSenderLoop_NothingToSend(t *testing.T) {
 	re.wg.Add(1)
 	go func() {
 		defer close(done)
-		re.senderLoop(rt, &sc, stop, wake)
+		re.senderLoop(rt, &sc, nil, stop, wake)
 	}()
-	time.Sleep(2 * reportDispatchDelay)
+	time.Sleep(50 * time.Millisecond)
 	close(stop)
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("senderLoop did not end after its session stopped")
 	}
+}
+
+// countingBuffer is a ReportBuffer that is not a MemoryReportBuffer.
+type countingBuffer struct {
+	ReportBuffer
+	appends int
+}
+
+func (b *countingBuffer) Append(e ReportEntry) []ReportEntry {
+	b.appends++
+	return b.ReportBuffer.Append(e)
 }

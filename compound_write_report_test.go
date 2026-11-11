@@ -14,7 +14,7 @@ import (
 // A client write of a constructed FC=SP attribute that is a data set
 // member reports the new value: the write sets the leaves and the report
 // engine is told of each (IEC 61850-7-2 §17.2.3.2.3.2, dchg). Before
-// v1.19.1 the value stayed under the compound key and nothing reported.
+// v1.21.1 the value stayed under the compound key and nothing reported.
 // Each leaf is stored and notified in turn, as by Server.SetValue, so a
 // leaf without a trigger option does not hide the change of the next.
 func TestServer_CompoundWriteReports(t *testing.T) {

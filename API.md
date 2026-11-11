@@ -1144,6 +1144,9 @@ type ServerOptions struct {
     // set (SCL datSet absent or empty); enabling one is refused until a
     // client writes DatSet. Default: the model is refused.
     AllowEmptyReportDatSet bool
+    // NewReportBuffer returns the buffer of each BRCB ("LLN0$BR$brcb01");
+    // nil (or a nil result): NewMemoryReportBuffer(1000, 0).
+    NewReportBuffer func(ldName, rcbItemID string) ReportBuffer
     MMS          mms.ServerOptions // incl. AssociationTimeout
 }
 
@@ -1196,16 +1199,55 @@ type ReportEngine struct { /* unexported */ }
 func (re *ReportEngine) Stop()
 func (re *ReportEngine) HandleRCBWrite(ctx context.Context, ldName, rcbItemID, subfield string, val *mms.Value, conn ...*mms.ServerConn) error
 func (re *ReportEngine) NotifyValueChanged(ctx context.Context, storeKey string)
-func (re *ReportEngine) SetRCBBufMax(ldName, rcbItemID string, max int) bool // BRCB buffer capacity; false if not found
+func (re *ReportEngine) SetRCBBufMax(ldName, rcbItemID string, max int) bool // entry capacity of a MemoryReportBuffer; false if not found or another buffer
 ```
+
+#### Report buffer
+
+```go
+type ReportEntry struct {
+    ID          uint64    // EntryID; the wire EntryID is its 8-octet big-endian form
+    TimeOfEntry time.Time // first internal notification of the entry
+    Values      []*mms.Value
+    Reasons     []ReasonCode
+    Inclusion   []bool
+    GI          bool // general interrogation: sent once, not replayed
+}
+
+func (e ReportEntry) EncodedSize() int // octets counted against a byte limit
+
+type ReportBuffer interface {
+    Append(e ReportEntry) (discarded []ReportEntry) // discards the oldest entries to make room
+    After(id uint64) (ReportEntry, bool)            // oldest entry with an ID above id
+    Get(id uint64) (ReportEntry, bool)
+    Oldest() (ReportEntry, bool)
+    Newest() (ReportEntry, bool)
+    Remove(id uint64)
+    Purge()
+    Len() int
+}
+
+type MemoryReportBuffer struct { /* unexported */ }
+
+func NewMemoryReportBuffer(maxEntries, maxBytes int) *MemoryReportBuffer // maxEntries ≤ 0: 1000; maxBytes ≤ 0: no byte limit
+func (b *MemoryReportBuffer) SetLimits(maxEntries, maxBytes int)
+func (b *MemoryReportBuffer) Limits() (maxEntries, maxBytes int)
+func (b *MemoryReportBuffer) Bytes() int
+func (b *MemoryReportBuffer) Entries() []ReportEntry // copy, oldest first
+// plus the ReportBuffer methods
+```
+
+Each BRCB has one `ReportBuffer`, called with the RCB's lock held. The engine assigns entry IDs, tracks what was sent and sets BufOvfl from the entries `Append` returns as discarded: an entry that was never sent and is discarded gives BufOvfl=TRUE in the next report (IEC 61850-7-2 §17.2.3.2.2.8). A buffer that cannot keep an entry returns that entry as discarded. A buffer that already holds entries when `EnableReports` runs is continued: EntryID reads its newest entry, new IDs follow it, and its GI entries are not sent again. URCBs keep their queue in memory.
 
 The report engine follows IEC 61850-7-2 §17.2 per association:
 
-- An RCB is owned by the association that enabled it (and for a URCB, the one that reserved it, explicitly with Resv or implicitly with RptEna). Reports go to the owner only. Writes from other associations fail with temporarily-unavailable. When the owner's association ends, the RCB is disabled and released: at once when the connection is served by `Server.Serve` (or `ListenAndServe` with connection hooks), otherwise within one second.
+- An RCB is owned by the association that enabled it (and for a URCB, the one that reserved it, explicitly with Resv or implicitly with RptEna). Reports go to the owner only. Writes from other associations fail with temporarily-unavailable. When the owner's association ends, the RCB is disabled and released: at once when the connection is served by `Server.Serve` or `ListenAndServe`, otherwise within one second.
 - Attributes that may not be written while RptEna=TRUE fail with temporarily-unavailable; ConfRev, SqNum, TimeOfEntry and a write of the whole RCB structure with object-access-denied; a wrong type with type-inconsistent; a DatSet or EntryID naming nothing with object-value-invalid; an unknown attribute with object-non-existent.
 - SqNum starts at 0 on every enable and wraps at 2^8 (URCB) or 2^16 (BRCB). Reports leave in the order their entries were created.
 - A BRCB buffers in every state from `EnableReports` on. While disabled its EntryID reads the newest entry. An enable without a resync point sends all buffered entries; after a write of a buffered EntryID, the entries after it. BufOvfl is TRUE in the first report after entries that were not sent were discarded.
-- BufTm aggregates notifications into one report; a second notification of a member flushes the pending report first. GI on a disabled RCB fails; with TrgOps.GI off it succeeds without a report.
+- BufTm (IEC 61850-7-2 §17.2.2.9): the first notification starts the buffer time and notifications of other members within it join the same report, which is queued when it expires. A second notification of a member already in the pending report queues that report at once, restarts the buffer time and starts the next report (for every FC; the standard requires it for ST and allows it for MX). BufTm 0: one report per notification, at once. Integrity and GI reports are not delayed by BufTm; the pending report is queued before them. A change of BufTm, DatSet, TrgOps, IntgPd or RptID drops it with the buffer.
+- GI on a disabled RCB fails; with TrgOps.GI off it succeeds without a report.
+- Reports go out as soon as their entry is queued, except that a report to an association with a request in progress waits until that request's response is sent (at most 5 s), so the response to RptEna=TRUE or GI=TRUE comes first. That holds for connections served by `Server.Serve` and `Server.ListenAndServe`; a connection given to `mms.Server` directly has no such ordering. Clients must register their report handler before they enable an RCB: a BRCB sends its buffered entries right after the RptEna response. `Client.SubscribeReport` does.
 - A report larger than the MMS `MaxPDUSize` of the server is sent in segments (SubSeqNum, MoreSegmentsFollow); a member that does not fit in one PDU is not sent.
 - With attribute trigger options in the model (SCL DA `dchg`, `qchg`, `dupd`), the reason for inclusion is that of the written attribute; without them the member value is compared.
 
@@ -1222,6 +1264,20 @@ type ControlHandler struct {
     OnOperate func(ctx context.Context, req ControlRequest) error
     OnCancel  func(ctx context.Context, req ControlRequest) error
     OnExecute func(ctx context.Context, req ControlRequest) error // enhanced security: after operate, before the CommandTermination; error = negative
+
+    // Check conditions (IEC 61850-7-2 20.2.1, 20.5.2.7): run only when the request's Check asks.
+    CheckInterlock func(ctx context.Context, req ControlRequest) error // operative test at SBOw and Operate; error = blocked-by-interlocking
+    CheckSynchro   func(ctx context.Context, req ControlRequest) error // dynamic test at Operate; error = blocked-by-synchrocheck
+    SynchroTimeout time.Duration    // synchrocheck time limit; zero checks the RSYN release once
+    Interlocking   string           // CILO LN ("CILO1" or "LD/CILO1"): EnaCls gates close, EnaOpn open
+    Synchrocheck   string           // RSYN LN: the Operate waits for Rel.stVal TRUE
+    Process        *ProcessResponse // opt-in process response of the default operate
+}
+
+type ProcessResponse struct {
+    TravelTime      time.Duration // DPC: stVal intermediate-state (00) until the end position
+    OpCnt           string        // "LN.DO" or "LD/LN.DO" of an INS operation counter
+    PositionReached bool          // refuse an operate to the current position (AddCause position-reached)
 }
 
 type ControlRequest struct {
@@ -1254,6 +1310,34 @@ follows the selection. A callback refuses with an error: its
 and 27 give temporarily-unavailable and the others object-access-denied.
 Control writes to objects without a registration get object-access-denied.
 `ControlRequest.Operation` is `"select"`, `"operate"` or `"cancel"`.
+
+Check conditions (IEC 61850-7-2 20.2.1, 20.5.2.7; 7-4 CILO, RSYN). The
+interlocking check is an operative test: it runs at SelectWithValue and at
+Operate when the request's Check has interlock-check, first the CILO
+binding (`Interlocking`: a close needs `EnaCls.stVal` TRUE, an open
+`EnaOpn.stVal` TRUE; a ctlVal that is not BOOLEAN is not gated), then
+`CheckInterlock`. The synchrocheck is a dynamic test: it runs at Operate
+only, after the operative tests, when Check has synchrocheck: the RSYN
+binding (`Synchrocheck`) waits up to `SynchroTimeout` for `Rel.stVal`
+TRUE, then `CheckSynchro` runs with that deadline. A check whose Check bit
+is clear, or that the registration does not supply, is not run. A failed
+check refuses with AddCause blocked-by-interlocking (10) or
+blocked-by-synchrocheck (11), unless the callback returns a
+`*ControlError` with another AddCause: the LastApplError comes first and
+the write gets object-access-denied; a time activated operate runs its
+checks at operTm and ends with a negative termination. The owner's
+Cancel while a time activated operate's synchrocheck waits is accepted
+and the operate ends with a negative termination, abortion-by-cancel (15).
+RegisterControl refuses a binding the model has not.
+
+`ProcessResponse` (opt-in, default operate only) models what the standard
+gives: a DPC with `TravelTime` shows intermediate-state until the end
+position, with enhanced security the CommandTermination follows the end
+position (CF operTimeout first: negative, time-limit-over, stVal stays
+intermediate-state); with normal security the Operate response does not
+wait and the control stays in execution until the end position. `OpCnt`
+counts operations that reach their end position; `PositionReached`
+refuses an operate to the current position (AddCause 5).
 
 ### GOOSE engine
 

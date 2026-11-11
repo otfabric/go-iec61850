@@ -1,16 +1,75 @@
 # go-iec61850 Releases
 
-## v1.19.1
+## v1.21.1
+
+**Date:** 2026-11-11
+**Previous release:** v1.21.0
+
+### Fixed
+
+- A client write of a constructed data attribute of a writable FC (CF, DC, SP, SV, BL and the others clients may write; for example `LN$CF$DO$cmp`) sets its leaves. Before, only FC=SE did (since v1.19.0): the other FCs stored the structure under its own key, while reads of the structure and of its leaves come from the leaves, so the write was lost. CO control services (Oper, SBOw, Cancel) are unchanged.
+- Such a write is checked leaf by leaf before anything is stored, as a leaf write is: an enumeration value outside its EnumType answers object-value-invalid, and the write guard (for example the `ctlModel` of a registered control) applies to every leaf. A refused leaf refuses the whole write.
+- Each leaf is stored and then notified under its own key, so data change reports, GOOSE, SV and logs follow a constructed write. Before, the notification carried the compound key, which no data set member matches. A write that changes several leaves of one data set member gives one report per changed leaf, also within BufTm (see KNOWN_LIMITATIONS.md).
+- FC=SE constructed writes now also run the enumeration check, the write guard and the post-write notification, like FC=SE leaf writes.
+
+---
+
+## v1.21.0
+
+**Date:** 2026-11-11
+**Previous release:** v1.20.0
+
+Server control: the check conditions of IEC 61850-7-2 §20 (interlocking and synchrocheck), CILO and RSYN bindings (IEC 61850-7-4), and an opt-in process response for the default operate. The API is additive.
+
+### Added
+
+- **Interlocking check** (IEC 61850-7-2 §20.2.1, §20.5.2.7): `ControlHandler.CheckInterlock` and the CILO binding `ControlHandler.Interlocking` ("CILO1" or "LD/CILO1"). It is an operative test: it runs at SelectWithValue and at Operate when the request's Check has interlock-check. With a CILO, a close (ctlVal TRUE) needs `EnaCls.stVal` TRUE and an open `EnaOpn.stVal` TRUE (7-4 CILO). A refusal carries AddCause blocked-by-interlocking (10) in the LastApplError and gets object-access-denied.
+- **Synchrocheck** (§20.2.1 dynamic test, Table 54): `ControlHandler.CheckSynchro`, the RSYN binding `ControlHandler.Synchrocheck` and `ControlHandler.SynchroTimeout`. It runs at Operate only, after the operative tests, when Check has synchrocheck. The RSYN binding waits up to SynchroTimeout for `Rel.stVal` TRUE (7-4 RSYN); otherwise the Operate is refused with AddCause blocked-by-synchrocheck (11).
+- A check refusal keeps another AddCause the callback gives in a `*ControlError`. A time activated operate runs its checks at operTm; a failed check ends it with a negative termination (LastApplError, then the Oper). The owner's Cancel while its synchrocheck waits is accepted, and the operate ends with abortion-by-cancel (15). During the tests, Oper and SBOw get command-already-in-execution and another client's Cancel locked-by-other-client (Table 47). A check whose Check bit is clear, or that the registration does not supply, is not run (§20.5.2.7).
+- **`ProcessResponse`** (`ControlHandler.Process`, opt-in, default operate only):
+  - `TravelTime`: a DPC's stVal shows intermediate-state (00) until the end position. With enhanced security the CommandTermination is positive when the end position is reached and negative (time-limit-over) when CF operTimeout comes first (§20.3.3 d); with normal security the Operate response does not wait.
+  - `OpCnt`: an INS operation counter.
+  - `PositionReached`: refuses an operate to the current position with AddCause position-reached (Table 54).
+- `RegisterControl` refuses a CILO, RSYN or operation counter the model does not have, with `ErrInvalidArgument`.
+
+### Changed
+
+- A control leaves execution before its CommandTermination is sent, so a client that acts on the termination finds the control free. Before, a select sent straight after `OperateWait` could get command-already-in-execution.
+
+### Known limitations
+
+- No pinned iec61850-interop adapter sends Check bits, so the checks are verified in-process only (`TestSpec_*` in `control_checks_test.go`, `TestChaos_ControlChecks`).
+
+---
+
+
+## v1.20.0
 
 **Date:** 2026-11-11
 **Previous release:** v1.19.0
 
-### Fixed
+Buffer time and a pluggable BRCB buffer for the server report engine (IEC 61850-7-2 §17.2.2.9, §17.2.3.2.2.8). The API is additive.
 
-- A client write of a constructed data attribute of a writable FC (CF, DC, SP, SV, BL and the others clients may write; for example `LN$CF$DO$cmp`) sets its leaves. Before, only FC=SE did (v1.19.0): the other FCs stored the structure under its own key, while reads of the structure and of its leaves come from the leaves, so the write was lost. CO control services (Oper, SBOw, Cancel) are unchanged.
-- Such a write is checked leaf by leaf before anything is stored, as a leaf write is: an enumeration value outside its EnumType answers object-value-invalid, and the write guard (for example the `ctlModel` of a registered control) applies to every leaf. A refused leaf refuses the whole write.
-- Each leaf is stored and then notified under its own key, so data change reports, GOOSE, SV and logs follow a constructed write. Before, the notification carried the compound key, which no data set member matches. With BufTm 0 a write that changes several leaves of a member gives one report per changed leaf (see KNOWN_LIMITATIONS.md).
-- FC=SE constructed writes now also run the enumeration check, the write guard and the post-write notification, like FC=SE leaf writes.
+### Changed
+
+- **Reports leave without a fixed delay.** The server no longer waits about 100 ms before the first report after a quiet period. A report to an association that has a request in progress waits until that request's response is sent (at most 5 s), so the response to RptEna=TRUE or GI=TRUE still comes first. This holds for connections served by `Server.Serve` and `Server.ListenAndServe`. The standard does not require this order; libiec61850 and the other peers drop a report that arrives before the response.
+- **Clients must register their report handler before they enable an RCB.** A BRCB now sends its buffered entries right after the RptEna response. `Client.SubscribeReport` with `AutoEnable` now registers the subscription before it writes RptEna. Before, a replayed report could be lost when it arrived before the subscription was registered; the 100 ms delay usually hid this.
+- `Server.ListenAndServe` serves every connection through `Server.Serve`, also without `OnConnect`/`OnDisconnect` hooks, and retries temporary accept errors as go-mms does. RCBs and control selections of a lost association are therefore released at once.
+- BufTm (IEC 61850-7-2 §17.2.2.9) runs as the standard describes. The first internal notification starts the buffer time, and changes of other members within it join one report. A second change of a member already in the pending report sends that report at once and starts the next. BufTm 0 sends one report per notification. Integrity and GI reports are not delayed; the pending report is queued before them. TimeOfEntry is the time of the first notification (§17.2.2.16). This replaces the v1.17 aggregation, which ran on the wall clock only.
+- `SetRCBBufMax` keeps the byte limit of the buffer and returns false for an RCB whose buffer is not a `MemoryReportBuffer`.
+
+### Added
+
+- `ReportBuffer`, the interface of a BRCB buffer: append with discard of the oldest entries, the entries after an EntryID, get, oldest, newest, remove, purge. `ReportEntry` is one entry; `ReportEntry.EncodedSize` gives its size.
+- `MemoryReportBuffer`, the default buffer (`NewMemoryReportBuffer(maxEntries, maxBytes)`, `SetLimits`, `Limits`, `Bytes`, `Entries`). It is bounded by entries (default 1000) and, optionally, by encoded size. When unsent entries are discarded, BufOvfl=TRUE is set in the next report (§17.2.3.2.2.8).
+- `ServerOptions.NewReportBuffer` installs a buffer per BRCB. A buffer that already holds entries at `EnableReports` is continued: EntryIDs follow its newest entry, resync to its entries works, and its GI entries are not replayed. No persistent implementation ships (KNOWN_LIMITATIONS.md).
+
+### Tests
+
+- `TestSpec_7_2_17_2_2_9_*`, `TestSpec_7_2_17_2_2_12_IntegrityNotDelayedByBufTm`, `TestSpec_7_2_17_2_2_13_GIAfterPendingEvents`, `TestSpec_8_1_17_1_2_BufTmChangeDropsPendingReport` and `TestSpec_7_2_17_2_3_2_2_5_BufTmReportSegmented` run the BufTm rules on an injected clock.
+- `TestSpec_7_2_17_2_3_2_2_8_ByteLimitSetsBufOvfl`, buffer unit tests, adoption of a pre-filled buffer, and a buffer that cannot store an entry.
+- Chaos and race tests with goroutine-leak checks: concurrent changes, GI and enable/disable against a short BufTm and a bounded buffer; an association dropping while a report waits for a response.
+- Interop with the pinned iec61850-interop images passes (libiec61850, iec61850bean, dscsystems, iec61850-rust, cB-Sigma). The go-to-go BRCB replay tests in `interop/` failed intermittently without the client fix above.
 
 ---
 

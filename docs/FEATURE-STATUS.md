@@ -36,10 +36,14 @@ independent evidence: the feature must not be described as interoperable.
 | CDC reads: DPS, BCR | ✅ | ✅ | in-memory | all five, both directions |
 | URCB reporting | ✅ | ✅ | TCP, in-memory | all five, both directions; iec61850bean has no `Resv`, iec61850-rust refuses TrgOps/IntgPd writes |
 | BRCB reporting, EntryID resume, overflow | ✅ | ✅ | in-memory, go-to-go in `interop/` | none |
+| BufTm (buffer time) on the server | n/a | ✅ | in-memory, fake clock (`TestSpec_7_2_17_2_2_9_*`) | none |
+| Pluggable BRCB buffer (`ReportBuffer`), entry and byte limits | n/a | ✅ in-memory; no persistent implementation | in-memory | n/a |
 | Direct and SBO control | ✅ | ✅ | in-memory | all five, both directions |
 | SBOw (enhanced security) | ✅ | ✅ | in-memory | libiec61850, dscsystems, iec61850-rust, cbsigma; not iec61850bean |
 | CommandTermination | ✅ `OperateWait` | ✅ positive; negative via `OnExecute` | in-memory | positive: libiec61850, dscsystems, iec61850-rust, cbsigma (client); dscsystems's controller waits for ours; negative: none |
 | LastApplError on refused controls | ✅ in `ControlError` | ✅ | in-memory | libiec61850, dscsystems, cbsigma (client); iec61850-rust sends none |
+| Check conditions: interlocking (hook, CILO EnaOpn/EnaCls) and synchrocheck (hook, RSYN Rel) | ✅ sends Check | ✅ | in-memory, chaos | none: no pinned adapter sends Check bits |
+| Process response of the default operate (DPC travel, OpCnt, position-reached) | n/a | ◐ opt-in model | in-memory | none |
 | Quality and timestamps | ✅ | ✅ | in-memory, go-to-go in `interop/` | none as a dedicated scenario |
 | Several clients at once | ✅ | ✅ | TCP, go-to-go in `interop/` | none |
 | Setting groups (value bank per group, SCL `sGroup`) | ✅ | ✅ in memory | in-memory, TCP, chaos | none: no adapter in the pinned images covers SGCB |

@@ -48,11 +48,19 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
 
 ## Server limitations
 
-- **Reports: in-memory BRCB buffer, no ResvTms/Owner** — the report engine
-  implements the IEC 61850-7-2 §17.2 URCB and BRCB state machines per
-  association (see API.md "Report engine"), with these limits:
-  - The BRCB buffer is in memory (default 1000 entries, `SetRCBBufMax`)
-    and does not survive a server restart; EntryIDs restart at 1.
+- **Reports: no persistent BRCB buffer, no ResvTms/Owner** — the report
+  engine implements the IEC 61850-7-2 §17.2 URCB and BRCB state machines
+  per association, including BufTm (see API.md "Report engine"), with
+  these limits:
+  - The default BRCB buffer is in memory (`NewMemoryReportBuffer`: 1000
+    entries, optionally a byte limit) and does not survive a server
+    restart; EntryIDs restart at 1. No persistent `ReportBuffer` ships;
+    one supplied through `ServerOptions.NewReportBuffer` is continued
+    after a restart.
+  - BufTm treats FC=MX members like FC=ST: a second change of a member
+    within BufTm sends the pending report. The alternative the standard
+    allows for MX, replacing the value in the pending report, is not
+    offered.
   - The optional BRCB attributes ResvTms and Owner (IEC 61850-7-2
     Table 37 c3/c4) are not modelled: a BRCB is reserved only by the
     association that enables it, and released when it disables it or the
@@ -72,22 +80,36 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
     member value.
   - A client write of a constructed attribute (for example
     `LN$CF$DO$cmp`) stores and notifies its leaves one by one, as
-    `SetValue` would: with BufTm 0 each changed leaf of a data set member
-    is a report and a GOOSE state change of its own, and a concurrent
-    reader can see the structure partly written.
-- **Controls: no interlocking, demo-grade default operate** — control
+    `SetValue` would: each changed leaf of a data set member is a GOOSE
+    state change and a report of its own, also with BufTm above 0 (a
+    second change of a member sends the pending report), and a
+    concurrent reader can see the structure partly written.
+- **Controls: process response is a model, not supervision** — control
   handlers (`RegisterControl`) follow the states of IEC 61850-7-2 Table 47
-  (select, time-activated wait, execution until the CommandTermination),
-  with CF sboTimeout, sboClass and operTimeout; interlocking and
-  synchrocheck are application-responsibility via callbacks. A refused
-  control write is preceded by a LastApplError. Without `OnOperate` the
-  server only mirrors ctlVal into `stVal` (BOOLEAN to Dbpos for a DPC)
-  when it fits stVal's type, with `t`, `ctlNum` and `origin`; APC, BSC
-  and other CDCs need an `OnOperate`. A selection held by an association
-  that ended is released when its `Server.Serve` returns; with
-  `ListenAndServe` without connection hooks (go-mms serves the
-  connection), it is released at the next control service on that object,
-  and `stSeld` stays TRUE until then. Choices where the standard is
+  (select, tests, time-activated wait, execution until the
+  CommandTermination), with CF sboTimeout, sboClass and operTimeout. The
+  Check conditions run when the request asks for them and the
+  registration supplies them (`CheckInterlock`, a CILO via
+  `Interlocking`, `CheckSynchro`, an RSYN via `Synchrocheck`): the
+  interlocking algorithm itself (which positions a CILO depends on) is
+  the application's, and the CILO and RSYN values are read from the
+  value store, which the application or a GOOSE subscription keeps
+  current; a waiting synchrocheck reads the RSYN release every 10 ms.
+  The Select of SBO with normal security (a Read of SBO) carries no
+  Check, so no check runs at it. Other operative tests of 7-2 20.2.1
+  (Beh, blocking, local/remote) are not evaluated; use `OnSelect` and
+  `OnOperate`. Without `OnOperate` the server mirrors ctlVal into
+  `stVal` (BOOLEAN to Dbpos for a DPC) when it fits stVal's type, with
+  `t`, `ctlNum` and `origin`; the opt-in `ProcessResponse` adds a DPC's
+  travel through intermediate-state, an operation counter and
+  position-reached, nothing else (no Beh mirror, pulse output or
+  OpOpn/OpCls). APC, BSC and other CDCs need an `OnOperate`. A Cancel of
+  a time activated operate before operTm sends no
+  TimeActivatedOperate termination. A selection held by an association
+  that ended is released when its `Server.Serve` returns (also for
+  `ListenAndServe`, which serves every connection through it); for a
+  connection given to `mms.Server` directly, it is released at the next
+  control service on that object, and `stSeld` stays TRUE until then. Choices where the standard is
   ambiguous follow libiec61850; see [INTEROP.md](INTEROP.md#control-model-choices).
 - **Setting groups: value banks in memory** — the server keeps one value
   bank per setting group (IEC 61850-7-2 §16, built from SCL `Val sGroup`)

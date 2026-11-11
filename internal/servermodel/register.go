@@ -832,7 +832,7 @@ func registerDAWithFC(srv *mms.Server, vs *ValueStore, ldName, lnName string, pa
 		// it and of its leaves are built from them; SetEditSGValue of an
 		// FC=SE attribute (IEC 61850-7-2 16.3.4.2.1, an FCDA such as
 		// StrVal.setMag) confirms the edit buffer leaf by leaf. Before
-		// v1.19.1 only FC=SE did this: the other FCs kept the value under
+		// v1.21.1 only FC=SE did this: the other FCs kept the value under
 		// the compound key, where no read found it.
 		fc := attr.FC
 		write = func(ctx context.Context, val *mms.Value) error {
