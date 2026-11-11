@@ -569,6 +569,22 @@ func registerLNHierarchy(srv *mms.Server, vs *ValueStore, ldName string, ln *Log
 		lnReads = append(lnReads, read)
 	}
 
+	// IEC 61850-8-1 Figure 4: the FC components of the LN in the
+	// recommended order (SRV-07); unknown FCs keep their order after them.
+	order := make([]int, len(lnElems))
+	for i := range order {
+		order[i] = i
+	}
+	slices.SortStableFunc(order, func(a, b int) int {
+		return fcComponentRank(lnElems[a].Name) - fcComponentRank(lnElems[b].Name)
+	})
+	sortedElems := make([]mms.TypeSpecElement, len(order))
+	sortedReads := make([]func(context.Context) (*mms.Value, error), len(order))
+	for i, j := range order {
+		sortedElems[i], sortedReads[i] = lnElems[j], lnReads[j]
+	}
+	lnElems, lnReads = sortedElems, sortedReads
+
 	// Register LN variable (bare name)
 	lnTS := mms.TypeSpec{Type: mms.ValueTypeStructure, Elements: lnElems}
 	lnRead := makeStructRead(lnReads)
@@ -585,6 +601,17 @@ func registerLNHierarchy(srv *mms.Server, vs *ValueStore, ldName string, ln *Log
 	}
 
 	return nil
+}
+
+// fcComponentOrder is the recommended order of the FC components of a
+// logical node (IEC 61850-8-1 Figure 4).
+var fcComponentOrder = []string{"MX", "ST", "CO", "CF", "DC", "SP", "SG", "RP", "LG", "BR", "GO", "GS", "SV", "SE", "MS", "US", "EX", "SR", "OR", "BL"}
+
+func fcComponentRank(fc string) int {
+	if i := slices.Index(fcComponentOrder, fc); i >= 0 {
+		return i
+	}
+	return len(fcComponentOrder)
 }
 
 // makeStructRead returns a read function that reads all child values and
