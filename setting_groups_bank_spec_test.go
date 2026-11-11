@@ -561,7 +561,7 @@ func TestSettingGroupEngine_SettingValueAPI(t *testing.T) {
 	}
 }
 
-// Applications that kept the group values themselves before v1.19.0 set
+// Applications that kept the group values themselves before v1.18.0 set
 // FC=SG in OnActiveSGChanged and FC=SE in OnEditSGSelected: those values
 // win and are kept in the banks.
 func TestSettingGroupEngine_HandlerValuesWin(t *testing.T) {

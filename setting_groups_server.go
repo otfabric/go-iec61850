@@ -327,7 +327,7 @@ func (e *SettingGroupEngine) handleActSGWrite(ctx context.Context, rt *sgcbRunti
 // new group's bank is loaded into the FC=SG attributes. before is the
 // snapshot of the FC=SG attributes before the OnActiveSGChanged callback,
 // or nil: a value the callback set is the new group's value (how
-// applications kept their own groups before v1.19.0). Must be called
+// applications kept their own groups before v1.18.0). Must be called
 // with rt.mu held.
 func (e *SettingGroupEngine) activateLocked(ctx context.Context, rt *sgcbRuntime, newSG uint8, before []*mms.Value) {
 	old := rt.actSG

@@ -1073,8 +1073,8 @@ func TestRegister_AllowReadOnlyFCWrites(t *testing.T) {
 // A client write of a constructed DA of a writable FC sets its leaves:
 // reads of the compound and of each leaf are built from the leaves, and
 // the post-write interceptor is told of every leaf, so reports, GOOSE and
-// the journal see the change. Before v1.21.1 only FC=SE did this; for the
-// other FCs the value went under the compound key and was never read.
+// the journal see the change. Before v1.18.0 the value went under the
+// compound key and was never read.
 func TestRegister_CompoundWriteSetsLeaves(t *testing.T) {
 	fcs := []string{"CF", "DC", "SP", "SV", "BL"}
 	var attrs []DataAttribute
