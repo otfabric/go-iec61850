@@ -5,7 +5,6 @@ package iec61850
 import (
 	"context"
 	"fmt"
-	"slices"
 	"time"
 
 	"github.com/otfabric/go-mms"
@@ -56,7 +55,7 @@ var binaryTimeEpoch1984 = time.Date(1984, 1, 1, 0, 0, 0, 0, time.UTC)
 // conn is a local (server application) action: it is not subject to the
 // reservation of another client, and an RCB enabled that way buffers or
 // discards its reports but delivers none.
-func (re *ReportEngine) HandleRCBWrite(_ context.Context, ldName, rcbItemID, subfield string, val *mms.Value, conn ...*mms.ServerConn) error {
+func (re *ReportEngine) HandleRCBWrite(ctx context.Context, ldName, rcbItemID, subfield string, val *mms.Value, conn ...*mms.ServerConn) error {
 	key := ldName + "/" + rcbItemID
 
 	re.mu.RLock()
@@ -95,7 +94,7 @@ func (re *ReportEngine) HandleRCBWrite(_ context.Context, ldName, rcbItemID, sub
 			return rcbError(rcbErrType, rcbItemID, "RptEna: expected boolean")
 		}
 		if b {
-			return re.enableLocked(rt, sc)
+			return re.enableLocked(rt, sc, respGateFrom(ctx))
 		}
 		re.disableLocked(rt)
 		// The reservation made implicitly by RptEna=TRUE ends with it
@@ -171,8 +170,9 @@ func (re *ReportEngine) HandleRCBWrite(_ context.Context, ldName, rcbItemID, sub
 	}
 }
 
-// enableLocked handles RptEna=TRUE. Caller holds rt.mu.
-func (re *ReportEngine) enableLocked(rt *rcbRuntime, sc *mms.ServerConn) error {
+// enableLocked handles RptEna=TRUE; gate is the respGate of sc, if any.
+// Caller holds rt.mu.
+func (re *ReportEngine) enableLocked(rt *rcbRuntime, sc *mms.ServerConn, gate *respGate) error {
 	// §17.2.2.10: a write of RptEna=TRUE that is not a FALSE→TRUE
 	// transition changes nothing (SqNum is not reset).
 	if rt.enabled {
@@ -213,11 +213,11 @@ func (re *ReportEngine) enableLocked(rt *rcbRuntime, sc *mms.ServerConn) error {
 		// §17.2.2.15: from disabled, reporting starts with the oldest
 		// entry; from resync, after the entry the client set.
 		oldestPred := rt.entryID
-		if len(rt.bufQueue) > 0 {
-			oldestPred = rt.bufQueue[0].id - 1
+		if o, ok := rt.buf.Oldest(); ok {
+			oldestPred = o.ID - 1
 		}
 		switch {
-		case rt.resync && rt.findEntryLocked(rt.resyncID) >= 0:
+		case rt.resync && rt.hasEntryLocked(rt.resyncID):
 			rt.lastSentID = rt.resyncID
 			rt.pendingOvfl = false
 		case rt.resync:
@@ -234,7 +234,8 @@ func (re *ReportEngine) enableLocked(rt *rcbRuntime, sc *mms.ServerConn) error {
 		rt.resync = false
 	} else {
 		rt.prevValues = re.readMemberValues(rt)
-		rt.bufQueue = nil
+		rt.buf.Purge()
+		rt.giPending, rt.giSent = 0, nil
 		rt.lastSentID = rt.entryID
 		re.restartIntegrityLocked(rt)
 	}
@@ -245,6 +246,7 @@ func (re *ReportEngine) enableLocked(rt *rcbRuntime, sc *mms.ServerConn) error {
 	re.store.Set(rt.sk("RptEna"), mms.NewBoolean(true))
 
 	if sc != nil {
+		rt.sendGate = gate
 		re.startSenderLocked(rt, sc)
 	}
 
@@ -303,7 +305,7 @@ func (re *ReportEngine) writeEntryIDLocked(rt *rcbRuntime, val *mms.Value) error
 		re.store.Set(rt.sk("EntryID"), mms.NewOctetString(append([]byte(nil), bs...)))
 		return nil
 	}
-	if rt.findEntryLocked(id) < 0 {
+	if !rt.hasEntryLocked(id) {
 		// An unknown EntryID is answered with parameter-value-
 		// inappropriate and the state becomes (stays) disabled.
 		rt.resync = false
@@ -413,7 +415,8 @@ func maskRCBOptFlds(o OptFlds, buffered bool) OptFlds {
 // sent (IEC 61850-7-2 §17.2.2.14). EntryIDs keep counting, so an EntryID
 // from before the purge is unknown afterwards. Caller holds rt.mu.
 func (re *ReportEngine) purgeLocked(rt *rcbRuntime) {
-	rt.bufQueue = nil
+	rt.buf.Purge()
+	rt.giPending, rt.giSent = 0, nil
 	rt.lastSentID = rt.entryID
 	rt.pendingOvfl = false
 	rt.discarded = false
@@ -423,24 +426,25 @@ func (re *ReportEngine) purgeLocked(rt *rcbRuntime) {
 	re.store.Set(rt.sk("TimeOfEntry"), binaryTimeZero())
 }
 
-// findEntryLocked returns the queue index of the entry with the given
-// id, or -1.
-func (rt *rcbRuntime) findEntryLocked(id uint64) int {
-	return slices.IndexFunc(rt.bufQueue, func(e *bufferedEntry) bool { return e.id == id })
+// hasEntryLocked reports whether the entry with the given id is in the
+// buffer.
+func (rt *rcbRuntime) hasEntryLocked(id uint64) bool {
+	_, ok := rt.buf.Get(id)
+	return ok
 }
 
 // publishNewestEntryLocked exposes the newest buffered entry in EntryID
 // and TimeOfEntry, which a disabled BRCB reads back (§17.2.2.15,
 // §17.2.2.16).
 func (re *ReportEngine) publishNewestEntryLocked(rt *rcbRuntime) {
-	if len(rt.bufQueue) == 0 {
+	e, ok := rt.buf.Newest()
+	if !ok {
 		re.store.Set(rt.sk("EntryID"), mms.NewOctetString(make([]byte, 8)))
 		re.store.Set(rt.sk("TimeOfEntry"), binaryTimeZero())
 		return
 	}
-	e := rt.bufQueue[len(rt.bufQueue)-1]
-	re.store.Set(rt.sk("EntryID"), mms.NewOctetString(append([]byte(nil), e.entryID...)))
-	re.store.Set(rt.sk("TimeOfEntry"), mms.NewBinaryTime(e.timeOfEntry.UnixMilli()))
+	re.store.Set(rt.sk("EntryID"), mms.NewOctetString(encodeEntryID(e.ID)))
+	re.store.Set(rt.sk("TimeOfEntry"), mms.NewBinaryTime(e.TimeOfEntry.UnixMilli()))
 }
 
 // storedString returns the visible-string content of v, "" otherwise.

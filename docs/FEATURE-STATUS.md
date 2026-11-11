@@ -36,6 +36,8 @@ independent evidence: the feature must not be described as interoperable.
 | CDC reads: DPS, BCR | ✅ | ✅ | in-memory | all five, both directions |
 | URCB reporting | ✅ | ✅ | TCP, in-memory | all five, both directions; iec61850bean has no `Resv`, iec61850-rust refuses TrgOps/IntgPd writes |
 | BRCB reporting, EntryID resume, overflow | ✅ | ✅ | in-memory, go-to-go in `interop/` | none |
+| BufTm (buffer time) on the server | n/a | ✅ | in-memory, fake clock (`TestSpec_7_2_17_2_2_9_*`) | none |
+| Pluggable BRCB buffer (`ReportBuffer`), entry and byte limits | n/a | ✅ in-memory; no persistent implementation | in-memory | n/a |
 | Direct and SBO control | ✅ | ✅ | in-memory | all five, both directions |
 | SBOw (enhanced security) | ✅ | ✅ | in-memory | libiec61850, dscsystems, iec61850-rust, cbsigma; not iec61850bean |
 | CommandTermination | ✅ `OperateWait` | ✅ positive; negative via `OnExecute` | in-memory | positive: libiec61850, dscsystems, iec61850-rust, cbsigma (client); dscsystems's controller waits for ours; negative: none |

@@ -214,7 +214,7 @@ func TestReportEngine_BufferOverflow_Concurrent(t *testing.T) {
 
 	ctx := context.Background()
 	rt := engine.rcbs["LD1/LLN0$BR$brcb01"]
-	rt.bufMax = 5
+	rt.buf.(*MemoryReportBuffer).SetLimits(5, 0)
 
 	if err := engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "RptEna", mms.NewBoolean(true)); err != nil {
 		t.Fatalf("enable: %v", err)
@@ -233,7 +233,7 @@ func TestReportEngine_BufferOverflow_Concurrent(t *testing.T) {
 	wg.Wait()
 
 	rt.mu.Lock()
-	qLen := len(rt.bufQueue)
+	qLen := rt.buf.Len()
 	rt.mu.Unlock()
 
 	if qLen > 5 {

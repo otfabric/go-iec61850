@@ -58,10 +58,10 @@ notifies the report, journal, GOOSE and SV engines.
 | Goroutine | Started by | Stops when |
 |---|---|---|
 | Accept loop | `ListenAndServe`, in the caller's goroutine | context ends, or `Shutdown` closes the listener |
-| Connection | accept loop, when connection hooks are set; otherwise go-mms | the connection closes |
-| Integrity timer, one per enabled RCB | enabling the RCB | RCB disabled or engine stopped |
-| BRCB replay | enabling a BRCB with buffered entries | replay ends |
-| Report send, one per report and connection | report engine | sent or failed |
+| Connection | accept loop (`Server.Serve`) | the connection closes |
+| Integrity timer, one per RCB with integrity | enabling the RCB (a BRCB: its valid DatSet) | RCB disabled or engine stopped |
+| BufTm timer, one per pending report | first notification of a buffer time | expiry, purge, GI, integrity or engine stop |
+| Report delivery, one per enabled RCB with a client | RptEna=TRUE | RCB disabled, association lost or engine stopped |
 | GOOSE publisher, one per enabled GoCB | `GoEna` | GoCB disabled or engine stopped |
 | SV publisher, one per enabled MSVCB | `SvEna` | MSVCB disabled or engine stopped |
 | CommandTermination send | operate under enhanced security | sent or failed; not joined by `Close` |

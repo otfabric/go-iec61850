@@ -778,7 +778,8 @@ func TestSpec_7_2_17_2_3_2_3_3_IntegrityBufferedWhileDisabled(t *testing.T) {
 	waitUntil(t, "integrity entry", func() bool {
 		rt.mu.Lock()
 		defer rt.mu.Unlock()
-		return len(rt.bufQueue) > 0 && rt.bufQueue[0].reasons[0] == ReasonIntegrity
+		e, ok := rt.buf.Oldest()
+		return ok && e.Reasons[0] == ReasonIntegrity
 	})
 }
 

@@ -1348,7 +1348,10 @@ func (s *ReportSubscription) remoteCleanup() {
 		logLevel = slog.LevelDebug
 	}
 
-	if s.didEnable {
+	s.mu.Lock()
+	didEnable := s.didEnable
+	s.mu.Unlock()
+	if didEnable {
 		if err := s.client.SetReportControlBlock(ctx, s.lifecycleLD, s.lifecycleID, RCBUpdate{
 			Fields: RCBFieldRptEna,
 			RptEna: false,
@@ -1471,7 +1474,7 @@ func (c *Client) SubscribeReport(ctx context.Context, rptID string, opts Subscri
 		return nil, fmt.Errorf("iec61850: subscribe report: %w", err)
 	}
 
-	var reserved, enabled bool
+	var reserved bool
 
 	// Lifecycle: reserve URCB if requested
 	if opts.ReserveURCB {
@@ -1485,31 +1488,14 @@ func (c *Client) SubscribeReport(ctx context.Context, rptID string, opts Subscri
 	}
 
 	rollback := func() {
-		if enabled {
-			_ = c.SetReportControlBlock(ctx, opts.LD, opts.RCBItemID, RCBUpdate{
-				Fields: RCBFieldRptEna,
-				RptEna: false,
-			})
-		}
 		if reserved {
 			_ = c.ReleaseURCB(ctx, opts.LD, opts.RCBItemID)
 		}
 	}
 
-	// Lifecycle: enable RCB if requested
-	if opts.AutoEnable {
-		if opts.LD == "" || opts.RCBItemID == "" {
-			rollback()
-			return nil, fmt.Errorf("iec61850: subscribe report: AutoEnable requires LD and RCBItemID")
-		}
-		if err := c.SetReportControlBlock(ctx, opts.LD, opts.RCBItemID, RCBUpdate{
-			Fields: RCBFieldRptEna,
-			RptEna: true,
-		}); err != nil {
-			rollback()
-			return nil, fmt.Errorf("iec61850: subscribe report: auto-enable: %w", err)
-		}
-		enabled = true
+	if opts.AutoEnable && (opts.LD == "" || opts.RCBItemID == "") {
+		rollback()
+		return nil, fmt.Errorf("iec61850: subscribe report: AutoEnable requires LD and RCBItemID")
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -1525,7 +1511,6 @@ func (c *Client) SubscribeReport(ctx context.Context, rptID string, opts Subscri
 		onOverflow:   opts.OnOverflow,
 		cloneReports: opts.CloneReports,
 		didReserve:   reserved,
-		didEnable:    enabled,
 		lifecycleLD:  opts.LD,
 		lifecycleID:  opts.RCBItemID,
 	}
@@ -1536,6 +1521,22 @@ func (c *Client) SubscribeReport(ctx context.Context, rptID string, opts Subscri
 		close(sub.ch)
 		rollback()
 		return nil, ErrClosed
+	}
+
+	// Lifecycle: enable RCB if requested. The subscription is registered
+	// first: the server may send a report (a BRCB replaying its buffer)
+	// as soon as it has answered the write, before this call returns.
+	if opts.AutoEnable {
+		if err := c.SetReportControlBlock(ctx, opts.LD, opts.RCBItemID, RCBUpdate{
+			Fields: RCBFieldRptEna,
+			RptEna: true,
+		}); err != nil {
+			_ = sub.Close()
+			return nil, fmt.Errorf("iec61850: subscribe report: auto-enable: %w", err)
+		}
+		sub.mu.Lock()
+		sub.didEnable = true
+		sub.mu.Unlock()
 	}
 
 	// Lifecycle: trigger GI if requested.

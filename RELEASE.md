@@ -1,5 +1,35 @@
 # go-iec61850 Releases
 
+## v1.18.0
+
+**Date:** 2026-11-11
+**Previous release:** v1.17.1
+
+Buffer time and a pluggable BRCB buffer for the server report engine (IEC 61850-7-2 §17.2.2.9, §17.2.3.2.2.8). The API is additive.
+
+### Changed
+
+- **Reports leave without a fixed delay.** The server no longer waits about 100 ms before the first report after a quiet period. A report to an association that has a request in progress waits until that request's response is sent (at most 5 s), so the response to RptEna=TRUE or GI=TRUE still comes first. This holds for connections served by `Server.Serve` and `Server.ListenAndServe`. The standard does not require this order; libiec61850 and the other peers drop a report that arrives before the response.
+- **Clients must register their report handler before they enable an RCB.** A BRCB now sends its buffered entries right after the RptEna response. `Client.SubscribeReport` with `AutoEnable` now registers the subscription before it writes RptEna. Before, a replayed report could be lost when it arrived before the subscription was registered; the 100 ms delay usually hid this.
+- `Server.ListenAndServe` serves every connection through `Server.Serve`, also without `OnConnect`/`OnDisconnect` hooks, and retries temporary accept errors as go-mms does. RCBs and control selections of a lost association are therefore released at once.
+- BufTm (IEC 61850-7-2 §17.2.2.9) runs as the standard describes. The first internal notification starts the buffer time, and changes of other members within it join one report. A second change of a member already in the pending report sends that report at once and starts the next. BufTm 0 sends one report per notification. Integrity and GI reports are not delayed; the pending report is queued before them. TimeOfEntry is the time of the first notification (§17.2.2.16). This replaces the v1.17 aggregation, which ran on the wall clock only.
+- `SetRCBBufMax` keeps the byte limit of the buffer and returns false for an RCB whose buffer is not a `MemoryReportBuffer`.
+
+### Added
+
+- `ReportBuffer`, the interface of a BRCB buffer: append with discard of the oldest entries, the entries after an EntryID, get, oldest, newest, remove, purge. `ReportEntry` is one entry; `ReportEntry.EncodedSize` gives its size.
+- `MemoryReportBuffer`, the default buffer (`NewMemoryReportBuffer(maxEntries, maxBytes)`, `SetLimits`, `Limits`, `Bytes`, `Entries`). It is bounded by entries (default 1000) and, optionally, by encoded size. When unsent entries are discarded, BufOvfl=TRUE is set in the next report (§17.2.3.2.2.8).
+- `ServerOptions.NewReportBuffer` installs a buffer per BRCB. A buffer that already holds entries at `EnableReports` is continued: EntryIDs follow its newest entry, resync to its entries works, and its GI entries are not replayed. No persistent implementation ships (KNOWN_LIMITATIONS.md).
+
+### Tests
+
+- `TestSpec_7_2_17_2_2_9_*`, `TestSpec_7_2_17_2_2_12_IntegrityNotDelayedByBufTm`, `TestSpec_7_2_17_2_2_13_GIAfterPendingEvents`, `TestSpec_8_1_17_1_2_BufTmChangeDropsPendingReport` and `TestSpec_7_2_17_2_3_2_2_5_BufTmReportSegmented` run the BufTm rules on an injected clock.
+- `TestSpec_7_2_17_2_3_2_2_8_ByteLimitSetsBufOvfl`, buffer unit tests, adoption of a pre-filled buffer, and a buffer that cannot store an entry.
+- Chaos and race tests with goroutine-leak checks: concurrent changes, GI and enable/disable against a short BufTm and a bounded buffer; an association dropping while a report waits for a response.
+- Interop with the pinned iec61850-interop images passes (libiec61850, iec61850bean, dscsystems, iec61850-rust, cB-Sigma). The go-to-go BRCB replay tests in `interop/` failed intermittently without the client fix above.
+
+---
+
 ## v1.17.1
 
 **Date:** 2026-11-11
