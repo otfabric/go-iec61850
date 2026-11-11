@@ -240,6 +240,7 @@ read, not an interop run). The client side tests above still pass.
 | SBOw on a model without enhanced SBO | access-denied, AddCause 1 | 7-2 Table 47 |
 | Malformed Oper/SBOw/Cancel | type-inconsistent, no LastApplError | 8-1 8.1.3.4.4.2 |
 | Control write without `RegisterControl` | access-denied | 8-1 Table 87 |
+| Interlocking or synchrocheck check failed | access-denied, AddCause 10 or 11; negative termination for a time activated operate | 7-2 20.2.1, Table 54 |
 | Ownership | the MMS association, not the origin | 7-2 20.2 |
 
 The client discovers whether the Oper type has operTm and reuses the

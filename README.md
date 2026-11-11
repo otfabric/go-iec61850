@@ -91,7 +91,8 @@ with raw MMS domain names, item IDs, BER or Ethernet frames.
 **MMS server**
 
 - SCL-driven model; reports (URCB/BRCB), controls (SBO/SBOw state machine,
-  CommandTermination, LastApplError), setting groups, journals, file services, Identify
+  CommandTermination, LastApplError, interlocking and synchrocheck with
+  CILO and RSYN bindings), setting groups, journals, file services, Identify
   and Status; connection hooks, authentication hook, graceful `Shutdown`
 - One `SetValue` call drives reports, journals, GOOSE and SV
 
@@ -490,7 +491,8 @@ func main() {
 | `Client.Cancel` | Cancel an active SBO reservation |
 | `Client.ReadCtlModel` | Read the `ctlModel` attribute |
 | `Server.RegisterControl` | Install a server-side control handler |
-| `ControlHandler` | Callbacks for `OnSelect`, `OnOperate`, `OnCancel` |
+| `ControlHandler` | Callbacks for `OnSelect`, `OnOperate`, `OnCancel`, `OnExecute`, `CheckInterlock`, `CheckSynchro`; CILO/RSYN bindings |
+| `ProcessResponse` | Opt-in process response of the default operate |
 | `CtlModelDirectNormal` / `CtlModelSBONormal` / `CtlModelSBOEnhanced` | Control model constants |
 
 ### GOOSE and SV control blocks (client)

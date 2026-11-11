@@ -82,7 +82,9 @@ type ControlHandler struct {
 	// If nil, operates are accepted and the server applies a default
 	// for simple status controls: ctlVal is written to $ST$..$stVal when
 	// it fits stVal's type (BOOLEAN to Dbpos for a DPC: on 10, off 01),
-	// with t, and origin and ctlNum when the DO has them.
+	// with t, and origin and ctlNum when the DO has them; Process adds
+	// the process response (travel through intermediate-state, operation
+	// counter, position-reached).
 	OnOperate func(ctx context.Context, req ControlRequest) error
 
 	// OnCancel is called when a client issues a Cancel request that
@@ -102,9 +104,57 @@ type ControlHandler struct {
 	// operTimeout (milliseconds) is set, at that timeout: an error once
 	// the timeout passed gives AddCause time-limit-over. Nil means the
 	// operate completes with OnOperate. The control stays in execution
-	// until the termination is sent: another Oper, SBOw or Cancel gets
+	// until OnExecute returns, and leaves it before the termination is
+	// sent: meanwhile another Oper, SBOw or Cancel gets
 	// command-already-in-execution (IEC 61850-7-2 20.3.3, Table 47).
 	OnExecute func(ctx context.Context, req ControlRequest) error
+
+	// CheckInterlock is the interlocking check, an operative test (IEC
+	// 61850-7-2 20.2.1, 20.5.2.7): called at SelectWithValue and at
+	// Operate (for a time activated operate when operTm is reached) when
+	// the request's Check has interlock-check, after the CILO binding of
+	// Interlocking passed. Return nil to allow the command; an error
+	// refuses it with AddCause blocked-by-interlocking (Table 54) unless
+	// it is a [*ControlError] with another AddCause. An Operate refused
+	// by a test gets a negative response and, for a time activated
+	// operate, a negative termination; nil ignores the Check bit (20.5.2.7).
+	CheckInterlock func(ctx context.Context, req ControlRequest) error
+
+	// CheckSynchro is the synchrocheck, a dynamic test (IEC 61850-7-2
+	// 20.2.1): called at Operate, after the operative tests, when the
+	// request's Check has synchrocheck and the RSYN binding of
+	// Synchrocheck released. It may block until synchronism; its context
+	// ends at SynchroTimeout and at a Cancel. An error refuses with
+	// AddCause blocked-by-synchrocheck (Table 54) unless it is a
+	// [*ControlError] with another AddCause; a Cancel gives
+	// abortion-by-cancel. Nil ignores the Check bit (20.5.2.7).
+	CheckSynchro func(ctx context.Context, req ControlRequest) error
+
+	// SynchroTimeout is the time limit of the synchrocheck: how long the
+	// RSYN binding waits for Rel.stVal TRUE, and the deadline of
+	// CheckSynchro's context. Zero checks the RSYN release once.
+	SynchroTimeout time.Duration
+
+	// Interlocking names the CILO logical node of this control: "CILO1"
+	// in the control's logical device, or "LD/CILO1". When the request's
+	// Check has interlock-check, a close (ctlVal TRUE) needs
+	// EnaCls.stVal TRUE and an open (FALSE) EnaOpn.stVal TRUE (IEC
+	// 61850-7-4 CILO), else blocked-by-interlocking. A ctlVal that is not
+	// BOOLEAN is not gated. RegisterControl refuses a CILO the model has
+	// not.
+	Interlocking string
+
+	// Synchrocheck names the RSYN logical node of this control ("RSYN1"
+	// or "LD/RSYN1"). When the request's Check has synchrocheck, the
+	// Operate waits up to SynchroTimeout for Rel.stVal TRUE (IEC
+	// 61850-7-4 RSYN), else blocked-by-synchrocheck. RegisterControl
+	// refuses an RSYN the model has not.
+	Synchrocheck string
+
+	// Process, when set, models the process response of the default
+	// operate (no OnOperate): see [ProcessResponse]. Nil mirrors ctlVal
+	// into stVal.
+	Process *ProcessResponse
 }
 
 // ControlRequest contains the decoded parameters from a client
@@ -145,6 +195,7 @@ const (
 	ctlSelecting                   // a select is being checked by OnSelect
 	ctlReady                       // selected (SBO models)
 	ctlWaitActivation              // a time activated operate waits for operTm
+	ctlTesting                     // an operate's tests run (PerformTest, WaitForExecution)
 	ctlExecuting                   // an operate runs, until its termination
 )
 
@@ -170,6 +221,7 @@ type controlRegistration struct {
 	selectTimeout time.Duration // handler override; 0 = model or default
 
 	ld, ln, doPath string // MMS names: domain, LN, DO path joined with $
+	checks         controlChecks
 
 	mu      sync.Mutex
 	state   controlState
@@ -216,8 +268,13 @@ func (s *Server) RegisterControl(ldName, doRef string, ctlModel CtlModel, handle
 		return fmt.Errorf("iec61850: register control: %w: already registered: %s", ErrInvalidArgument, key)
 	}
 
+	checks, err := s.resolveChecks(ldName, handler)
+	if err != nil {
+		return fmt.Errorf("iec61850: register control %s/%s: %w", ldName, doRef, err)
+	}
 	ln, do, _ := strings.Cut(doRef, ".")
 	reg := &controlRegistration{
+		checks:        checks,
 		handler:       handler,
 		ctlModel:      ctlModel,
 		selectTimeout: handler.SelectTimeout,
@@ -570,7 +627,7 @@ func (s *Server) syncStSeld(ctx context.Context, reg *controlRegistration) {
 	reg.stMu.Lock()
 	defer reg.stMu.Unlock()
 	reg.mu.Lock()
-	selected := reg.state == ctlReady || reg.state == ctlExecuting && reg.sel.conn != nil || reg.state == ctlWaitActivation && reg.sel.conn != nil
+	selected := reg.state == ctlReady || (reg.state == ctlExecuting || reg.state == ctlWaitActivation || reg.state == ctlTesting) && reg.sel.conn != nil
 	if !reg.ctlModel.IsSBO() {
 		selected = false
 	}
@@ -614,7 +671,7 @@ func (s *Server) doSelect(ctx context.Context, reg *controlRegistration, req Con
 	reg.mu.Lock()
 	released := s.expireLocked(reg, now)
 	switch reg.state {
-	case ctlWaitActivation, ctlExecuting:
+	case ctlWaitActivation, ctlExecuting, ctlTesting:
 		reg.mu.Unlock()
 		s.afterRelease(ctx, reg, released)
 		return newControlRefusal(req, "select", AddCauseCommandAlreadyExec, ErrSelectFailed)
@@ -632,14 +689,23 @@ func (s *Server) doSelect(ctx context.Context, reg *controlRegistration, req Con
 	gen := reg.gen
 	reg.mu.Unlock()
 
+	release := func(err error) error {
+		reg.mu.Lock()
+		if reg.state == ctlSelecting && reg.gen == gen {
+			s.unselectLocked(reg)
+		}
+		reg.mu.Unlock()
+		return err
+	}
+	if withValue {
+		// PerformTest of SelectWithValue (IEC 61850-7-2 Figure 42).
+		if err := s.performTests(ctx, reg, req, nil); err != nil {
+			return release(err)
+		}
+	}
 	if reg.handler.OnSelect != nil {
 		if err := callControlHandler(reg.handler.OnSelect, ctx, req); err != nil {
-			reg.mu.Lock()
-			if reg.state == ctlSelecting && reg.gen == gen {
-				s.unselectLocked(reg)
-			}
-			reg.mu.Unlock()
-			return err
+			return release(err)
 		}
 	}
 
@@ -697,7 +763,7 @@ func (s *Server) operate(ctx context.Context, reg *controlRegistration, req Cont
 	reg.mu.Lock()
 	released := s.expireLocked(reg, now)
 	switch {
-	case reg.state == ctlWaitActivation || reg.state == ctlExecuting:
+	case reg.state == ctlWaitActivation || reg.state == ctlExecuting || reg.state == ctlTesting:
 		reg.mu.Unlock()
 		return newControlRefusal(req, "operate", AddCauseCommandAlreadyExec, ErrOperateFailed)
 	case reg.ctlModel.IsSBO() && reg.state == ctlSelecting && reg.sel.conn != sc,
@@ -728,10 +794,10 @@ func (s *Server) operate(ctx context.Context, reg *controlRegistration, req Cont
 	timeActivated := !req.OperTm.IsZero() && req.OperTm.After(now)
 	if timeActivated {
 		reg.state = ctlWaitActivation
-		reg.abort = make(chan struct{})
 	} else {
-		reg.state = ctlExecuting
+		reg.state = ctlTesting
 	}
+	reg.abort = make(chan struct{})
 	abort := reg.abort
 	reg.mu.Unlock()
 
@@ -740,6 +806,15 @@ func (s *Server) operate(ctx context.Context, reg *controlRegistration, req Cont
 		return nil
 	}
 
+	// PerformTest and WaitForExecution (IEC 61850-7-2 Figures 38 to 42):
+	// a failed test is a negative Operate response.
+	if err := s.performTests(ctx, reg, req, abort); err != nil {
+		s.finishOperation(ctx, reg, false)
+		return err
+	}
+	if !s.enterExecuting(reg, abort) {
+		return newControlRefusal(req, "operate", AddCauseAbortionByCancel, fmt.Errorf("%w: %w", ErrOperateFailed, errCancelledInTest))
+	}
 	if err := s.runOperate(ctx, reg, req); err != nil {
 		s.finishOperation(ctx, reg, false)
 		return err
@@ -748,8 +823,41 @@ func (s *Server) operate(ctx context.Context, reg *controlRegistration, req Cont
 		s.sendCommandTermination(ctx, reg, item, zeroOperTm(oper), req, false)
 		return nil
 	}
+	if s.travels(reg, req) {
+		s.startTravel(ctx, reg, req)
+		return nil
+	}
 	s.finishOperation(ctx, reg, true)
 	return nil
+}
+
+// enterExecuting moves an operate whose tests passed to execution; false
+// when a Cancel ended it meanwhile.
+func (s *Server) enterExecuting(reg *controlRegistration, abort chan struct{}) bool {
+	reg.mu.Lock()
+	defer reg.mu.Unlock()
+	if reg.state != ctlTesting || reg.abort != abort {
+		return false
+	}
+	reg.state = ctlExecuting
+	return true
+}
+
+// startTravel completes the travel of an operate with normal security in
+// the background (the Operate response does not wait for it, IEC
+// 61850-7-2 20.2); the control stays in execution until the end
+// position.
+func (s *Server) startTravel(ctx context.Context, reg *controlRegistration, req ControlRequest) {
+	reqCtx := context.WithoutCancel(ctx)
+	if !s.bg.start(func(life context.Context) {
+		tctx, stop := context.WithCancel(reqCtx)
+		defer context.AfterFunc(life, stop)()
+		err := s.completeTravel(tctx, reg, req)
+		stop()
+		s.finishOperation(reqCtx, reg, err == nil)
+	}) {
+		s.finishOperation(ctx, reg, false)
+	}
 }
 
 // runOperate calls OnOperate, or applies the default operate.
@@ -766,7 +874,7 @@ func (s *Server) runOperate(ctx context.Context, reg *controlRegistration, req C
 // successful operation; otherwise the control is unselected.
 func (s *Server) finishOperation(ctx context.Context, reg *controlRegistration, ok bool) {
 	reg.mu.Lock()
-	if reg.state != ctlExecuting && reg.state != ctlWaitActivation {
+	if reg.state != ctlExecuting && reg.state != ctlWaitActivation && reg.state != ctlTesting {
 		reg.mu.Unlock()
 		return
 	}
@@ -804,11 +912,27 @@ func (s *Server) startTimeActivated(ctx context.Context, reg *controlRegistratio
 			reg.mu.Unlock()
 			return
 		}
-		reg.state = ctlExecuting
+		reg.state = ctlTesting
 		reg.mu.Unlock()
-		if err := s.runOperate(reqCtx, reg, req); err != nil {
-			s.sendTermination(reqCtx, life, reg, item, operVal, req, err, true)
+		// PerformTest and WaitForExecution after operTm (IEC 61850-7-2
+		// Figures 38 to 42): a failed test is a negative
+		// TimeActivatedOperate termination.
+		tctx, stop := context.WithCancel(reqCtx)
+		stopAfter := context.AfterFunc(life, stop)
+		err := s.performTests(tctx, reg, req, abort)
+		stopAfter()
+		stop()
+		if err == nil && !s.enterExecuting(reg, abort) {
+			err = newControlRefusal(req, "operate", AddCauseAbortionByCancel, errCancelledInTest)
+		}
+		if err != nil {
 			s.finishOperation(reqCtx, reg, false)
+			s.sendTermination(reqCtx, life, reg, item, operVal, req, err, true)
+			return
+		}
+		if err := s.runOperate(reqCtx, reg, req); err != nil {
+			s.finishOperation(reqCtx, reg, false)
+			s.sendTermination(reqCtx, life, reg, item, operVal, req, err, true)
 			return
 		}
 		s.runExecuteAndTerminate(reqCtx, life, reg, item, operVal, req, true)
@@ -842,7 +966,7 @@ func zeroOperTm(oper *mms.Value) *mms.Value {
 // operated an enhanced-security control: an InformationReport of the
 // Oper attribute with the operated value, preceded by a LastApplError
 // when execute fails (negative). The control stays in execution until
-// then.
+// execute returns.
 //
 // The send runs after the Write response, so it must not inherit the
 // request's cancellation; it keeps the request's values, ends when the
@@ -870,7 +994,7 @@ func (s *Server) sendCommandTermination(ctx context.Context, reg *controlRegistr
 // the termination, then ends the execution.
 func (s *Server) runExecuteAndTerminate(reqCtx, life context.Context, reg *controlRegistration, operItem string, oper *mms.Value, creq ControlRequest, timeActivated bool) {
 	var err error
-	if execute := reg.handler.OnExecute; execute != nil {
+	if execute := s.executeFn(reg, creq); execute != nil {
 		execCtx, stop := context.WithCancel(reqCtx)
 		if d := s.cfMillis(reg, "operTimeout"); d > 0 {
 			execCtx, stop = context.WithTimeout(reqCtx, d)
@@ -885,10 +1009,12 @@ func (s *Server) runExecuteAndTerminate(reqCtx, life context.Context, reg *contr
 		stopAfter()
 		stop()
 	}
+	// Leave execution first, so a client acting on the termination finds
+	// the control free.
+	s.finishOperation(reqCtx, reg, err == nil)
 	if reg.ctlModel.IsEnhanced() || timeActivated {
 		s.sendTermination(reqCtx, life, reg, operItem, oper, creq, err, timeActivated)
 	}
-	s.finishOperation(reqCtx, reg, err == nil)
 }
 
 // sendTermination sends a CommandTermination: positive (the Oper alone)
@@ -930,7 +1056,7 @@ func (s *Server) cancel(ctx context.Context, reg *controlRegistration, req Contr
 		// IEC 61850-7-2 Table 47 (WaitForChange, Cancel).
 		reg.mu.Unlock()
 		return newControlRefusal(req, "cancel", AddCauseCommandAlreadyExec, ErrCancelFailed)
-	case ctlWaitActivation, ctlReady, ctlSelecting:
+	case ctlWaitActivation, ctlTesting, ctlReady, ctlSelecting:
 		if reg.sel.conn != sc {
 			reg.mu.Unlock()
 			s.logger.Warn("iec61850: cancel denied: held by another client", "ref", req.Ref)
@@ -956,6 +1082,12 @@ func (s *Server) cancel(ctx context.Context, reg *controlRegistration, req Contr
 	}
 
 	reg.mu.Lock()
+	if state != ctlUnselected && reg.state == ctlExecuting && reg.gen == gen {
+		// The operation left its tests or its wait for operTm while
+		// OnCancel ran: too late to cancel (Table 47, Operate).
+		reg.mu.Unlock()
+		return newControlRefusal(req, "cancel", AddCauseCommandAlreadyExec, ErrCancelFailed)
+	}
 	if state != ctlUnselected && reg.state == state && reg.gen == gen {
 		if reg.abort != nil {
 			close(reg.abort)
@@ -972,22 +1104,28 @@ func (s *Server) cancel(ctx context.Context, reg *controlRegistration, req Contr
 
 // findDO returns the data object of a control in the model.
 func (s *Server) findDO(reg *controlRegistration) *servermodel.DataObject {
+	return s.modelDO(reg.ld, reg.ln, reg.doPath)
+}
+
+// modelDO returns the data object doPath ($-separated) of LN lnName in
+// LD ldName; nil when the model has none.
+func (s *Server) modelDO(ldName, lnName, doPath string) *servermodel.DataObject {
 	if s.model == nil {
 		return nil
 	}
 	for i := range s.model.LogicalDevices {
 		ld := &s.model.LogicalDevices[i]
-		if ld.Name != reg.ld {
+		if ld.Name != ldName {
 			continue
 		}
 		for j := range ld.LogicalNodes {
 			ln := &ld.LogicalNodes[j]
-			if ln.Name != reg.ln {
+			if ln.Name != lnName {
 				continue
 			}
 			dos := ln.DataObjects
 			var found *servermodel.DataObject
-			for _, name := range strings.Split(reg.doPath, "$") {
+			for _, name := range strings.Split(doPath, "$") {
 				found = nil
 				for k := range dos {
 					if dos[k].Name == name {
@@ -1025,11 +1163,14 @@ func (s *Server) hasST(reg *controlRegistration, name string) bool {
 	return s.findAttr(reg, "ST", name) != nil
 }
 
-// defaultOperate is the operate without OnOperate (demo grade): ctlVal
-// into $ST$..$stVal when it fits stVal's type (IEC 61850-7-3: for a DPC,
+// defaultOperate is the operate without OnOperate: ctlVal into
+// $ST$..$stVal when it fits stVal's type (IEC 61850-7-3: for a DPC,
 // ctlVal BOOLEAN maps to stVal Dbpos on 10 / off 01), with t, and origin
 // and ctlNum when the DO has them (7-3 status mirrors of the control).
-// A ctlVal of another type (APC, BSC, INC with a different stVal) is not
+// With a ProcessResponse TravelTime a DPC's stVal is intermediate-state
+// (00) until completeTravel writes the end position; the operation
+// counter counts the operation when the end position is written. A
+// ctlVal of another type (APC, BSC, INC with a different stVal) is not
 // written; such controls need an OnOperate.
 func (s *Server) defaultOperate(ctx context.Context, reg *controlRegistration, req ControlRequest) {
 	if req.CtlVal == nil || s.store == nil {
@@ -1037,13 +1178,14 @@ func (s *Server) defaultOperate(ctx context.Context, reg *controlRegistration, r
 	}
 	stKey := func(name string) string { return servermodel.StoreKey(reg.ld, reg.ln+"$ST$"+reg.doPath+"$"+name) }
 	val := req.CtlVal
+	travel := s.travels(reg, req)
 	st := s.findAttr(reg, "ST", "stVal")
 	if st != nil {
 		ts, ok := servermodel.BTypeSpec(st.BType)
 		if b, isBool := val.Bool(); isBool && st.BType == "Dbpos" {
-			bits := byte(0x40)
-			if b {
-				bits = 0x80
+			bits := dbposBits(b)
+			if travel {
+				bits = 0x00 // intermediate-state while the device moves
 			}
 			val = mms.NewBitStringWithLength([]byte{bits}, 2)
 		} else if !ok || servermodel.CheckWriteValue(val, ts) != nil {
@@ -1064,6 +1206,9 @@ func (s *Server) defaultOperate(ctx context.Context, reg *controlRegistration, r
 	if s.hasST(reg, "origin") {
 		s.controlSetValue(ctx, stKey("origin$orCat"), mms.NewInteger(int64(req.Origin.OrCat)))
 		s.controlSetValue(ctx, stKey("origin$orIdent"), mms.NewOctetString(req.Origin.OrIdent))
+	}
+	if !travel {
+		s.countOperation(ctx, reg)
 	}
 }
 
