@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/otfabric/go-mms"
 
@@ -68,6 +69,10 @@ type Server struct {
 	controlLife   sync.RWMutex
 	controlClosed bool
 	controls      map[string]*controlRegistration
+
+	// enginesClosed is set by Close: JournalEngine and SettingGroupEngine
+	// return nil from then on.
+	enginesClosed atomic.Bool
 
 	reportEngine       *ReportEngine
 	reportMaxPDU       int // MMS MaxPDUSize bounding one InformationReport
@@ -469,14 +474,14 @@ func parseSGCBStoreKey(itemID string) (subfield string, ok bool) {
 // Close performs an orderly shutdown of the server's runtime engines.
 // It stops pending CommandTermination sends, the report engine
 // (integrity timers, delivery goroutines), the GOOSE engine (publishers)
-// and clears references to the journal and setting group engines.
-// Close is idempotent and safe to call multiple times.
+// and the journal and setting group engines; [Server.JournalEngine] and
+// [Server.SettingGroupEngine] return nil afterwards. Close is idempotent,
+// safe to call multiple times and safe concurrently with requests of open
+// associations and with [Server.SetValue].
 //
 // Note: Close does not close the underlying MMS server or any active
 // connections. Use context cancellation to stop [Server.Serve] or
-// [Server.ListenAndServe]. The journal and setting group engines are
-// stateless (no background goroutines), so they only need reference
-// clearing for garbage collection.
+// [Server.ListenAndServe].
 func (s *Server) Close() {
 	s.bg.stop()
 	s.stopControls()
@@ -492,11 +497,13 @@ func (s *Server) Close() {
 	if s.journalEngine != nil {
 		s.journalEngine.stop()
 	}
-	s.journalEngine = nil
 	if s.sgEngine != nil {
 		s.sgEngine.stop()
 	}
-	s.sgEngine = nil
+	// The accessors report the journal and setting group engines as gone.
+	// The fields stay: requests of open associations still read them, and
+	// clearing them raced with those reads.
+	s.enginesClosed.Store(true)
 	s.logger.Info("iec61850: server closed")
 }
 
