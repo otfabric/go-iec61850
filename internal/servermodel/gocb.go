@@ -365,6 +365,46 @@ type MemberNode struct {
 	BType    string       // SCL basic type, leaves only
 	Type     mms.TypeSpec // full type of this node
 	Children []*MemberNode
+
+	// Dchg, Qchg and Dupd are the trigger options of a leaf's data
+	// attribute (IEC 61850-7-3 TrgOp).
+	Dchg, Qchg, Dupd bool
+}
+
+// HasTrgOps reports whether any leaf under n has a trigger option.
+func (n *MemberNode) HasTrgOps() bool {
+	if n.Key != "" {
+		return n.Dchg || n.Qchg || n.Dupd
+	}
+	for _, c := range n.Children {
+		if c.HasTrgOps() {
+			return true
+		}
+	}
+	return false
+}
+
+// Leaf returns the leaf with store key key under n and its value within
+// v, a value of n's layout (as ReadMember returns). The value is nil
+// when v does not have the layout.
+func (n *MemberNode) Leaf(v *mms.Value, key string) (*MemberNode, *mms.Value, bool) {
+	if n.Key != "" {
+		return n, v, n.Key == key
+	}
+	var elems []*mms.Value
+	if v != nil && v.Type() == mms.ValueTypeStructure {
+		elems, _ = v.Structure()
+	}
+	for i, c := range n.Children {
+		var cv *mms.Value
+		if i < len(elems) {
+			cv = elems[i]
+		}
+		if leaf, lv, ok := c.Leaf(cv, key); ok {
+			return leaf, lv, true
+		}
+	}
+	return nil, nil, false
 }
 
 // Leaves returns the leaves under n, in order.
@@ -551,7 +591,8 @@ func attrNode(a *DataAttribute, base string, parent []string) (*MemberNode, erro
 		if !ok {
 			return nil, fmt.Errorf("unsupported BType %q", a.BType)
 		}
-		return &MemberNode{Name: a.Name, Key: base + "$" + strings.Join(path, "$"), BType: a.BType, Type: ts}, nil
+		return &MemberNode{Name: a.Name, Key: base + "$" + strings.Join(path, "$"), BType: a.BType, Type: ts,
+			Dchg: a.Dchg, Qchg: a.Qchg, Dupd: a.Dupd}, nil
 	}
 	n := &MemberNode{Name: a.Name}
 	var elems []mms.TypeSpecElement

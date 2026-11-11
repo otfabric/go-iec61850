@@ -125,7 +125,7 @@ func convLN02007c5(r raw.LN0, diags *[]Diagnostic) LN {
 		})
 	}
 	for _, lc := range r.LogControl {
-		ln.Logs = append(ln.Logs, Log{Name: lc.Name, Desc: lc.Desc})
+		ln.Logs = append(ln.Logs, convLog2007c5(lc))
 	}
 	if r.SettingControl != nil {
 		ln.SettingControl = convSettingControl(r.SettingControl.NumOfSGs, r.SettingControl.ActSG, r.SettingControl.ResvTms, diags)
@@ -154,7 +154,7 @@ func convLN2007c5(r raw.LN, _ *[]Diagnostic) LN {
 		ln.Reports = append(ln.Reports, convRC2007c5(rc))
 	}
 	for _, lc := range r.LogControl {
-		ln.Logs = append(ln.Logs, Log{Name: lc.Name, Desc: lc.Desc})
+		ln.Logs = append(ln.Logs, convLog2007c5(lc))
 	}
 	for _, p := range r.Private {
 		ln.Private = append(ln.Private, Private{Type: p.Type, Source: p.Source, InnerXML: p.InnerXML})
@@ -242,6 +242,11 @@ func convRC2007c5(r raw.ReportControl) ReportControl {
 		ConfigRef:  r.OptFields.ConfigRef,
 		BufOvfl:    defaultTrue(r.OptFields.BufOvfl),
 	}
+	// IEC 61850-6 §9.3.8: indexed defaults to true; RptEnabled max to 1.
+	rc.Indexed, rc.MaxInstances = defaultTrue(r.Indexed), 1
+	if r.RptEnabled != nil && r.RptEnabled.Max > 0 {
+		rc.MaxInstances = r.RptEnabled.Max
+	}
 	return rc
 }
 
@@ -264,6 +269,7 @@ func convDTT2007c5(r *raw.DataTypeTemplates, diags *[]Diagnostic) DataTypeTempla
 				Type:  d.Type,
 				Desc:  d.Desc,
 			}
+			da.Dchg, da.Qchg, da.Dupd = d.Dchg, d.Qchg, d.Dupd
 			if d.Count != "" {
 				v, err := strconv.Atoi(d.Count)
 				if err != nil {
@@ -465,4 +471,19 @@ func convServices2007c5(r *raw.Services) *Services {
 		}
 	}
 	return svc
+}
+
+// convLog2007c5 converts an SCL LogControl (IEC 61850-6 §9.3.9 Table 26):
+// logEna and reasonCode default to true.
+func convLog2007c5(lc raw.LogControl) Log {
+	l := Log{
+		Name: lc.Name, Desc: lc.Desc, LogName: lc.LogName,
+		LDInst: lc.LdInst, Prefix: lc.Prefix, LNClass: lc.LnClass, LNInst: lc.LnInst,
+		DatSet: lc.DatSet, IntgPd: lc.IntgPd,
+		LogEna: defaultTrue(lc.LogEna), ReasonCode: defaultTrue(lc.ReasonCode),
+	}
+	if lc.TrgOps != nil {
+		l.TrgOps = TrgOps{Dchg: lc.TrgOps.Dchg, Qchg: lc.TrgOps.Qchg, Dupd: lc.TrgOps.Dupd, Period: lc.TrgOps.Period, GI: defaultTrue(lc.TrgOps.Gi)}
+	}
+	return l
 }
