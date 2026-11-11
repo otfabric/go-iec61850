@@ -11,6 +11,11 @@ Fixes, tests, CI and documentation; no API change.
 
 - **Checked integer conversions** in the R-GOOSE/R-SV session codec (`rsession`), the GOOSE fixed-length encoder and the SV publisher: each length and two's-complement field is range-checked where it is converted, so a value that does not fit panics as a bug instead of going out truncated. The wire output is unchanged (exhaustive 16-bit and 32-bit serial-number edge test). A multicast interface index or TTL outside its socket option's range is an error.
 
+### Changed
+
+- **CI**: the shared go-ci and docs-check workflows at otfabric/.github v3.6.0 (were v3.3.1 and v3.5.0), the tag the Release workflow already uses; their inputs are unchanged. `make fuzz` discovers every fuzz target, as the fuzz workflow does; it used to miss the `sv` targets.
+- **sclparse and sclgen** build on go-iec61850 v1.19.0 and go-mms v1.9.0 (were v1.17.0 and v1.8.0).
+
 ---
 
 ## v1.19.0

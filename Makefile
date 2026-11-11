@@ -121,31 +121,13 @@ coverage-clean: ## Remove coverage artifacts
 	@echo "Removing coverage artifacts"
 	rm -f coverage.out coverage.txt coverage.html
 
-fuzz: ## Run all fuzz targets for FUZZTIME each (default 15s)
-	@echo "=== Fuzzing iec61850 ==="
-	@go test -fuzz=^FuzzParseRef$$                   -fuzztime=$(FUZZTIME) .
-	@go test -fuzz=^FuzzParseFC$$                    -fuzztime=$(FUZZTIME) .
-	@go test -fuzz=^FuzzDecodeQuality$$              -fuzztime=$(FUZZTIME) .
-	@go test -fuzz=^FuzzNewValue$$                   -fuzztime=$(FUZZTIME) .
-	@go test -fuzz=^FuzzDecodeReportIndication$$     -fuzztime=$(FUZZTIME) .
-	@go test -fuzz=^FuzzDecodeReport$$               -fuzztime=$(FUZZTIME) .
-	@go test -fuzz=^FuzzDecodeOptFlds$$              -fuzztime=$(FUZZTIME) .
-	@go test -fuzz=^FuzzDecodeTrgOps$$               -fuzztime=$(FUZZTIME) .
-	@go test -fuzz=^FuzzDecodeReportIndication_NilValues$$ -fuzztime=$(FUZZTIME) .
-	@go test -fuzz=^FuzzDecodeControlRequest$$       -fuzztime=$(FUZZTIME) .
-	@go test -fuzz=^FuzzAssembleSegments$$           -fuzztime=$(FUZZTIME) .
-	@go test -fuzz=^FuzzDecodeRCB$$                  -fuzztime=$(FUZZTIME) .
-	@echo "=== Fuzzing scl ==="
-	@go test -fuzz=^FuzzParse$$                      -fuzztime=$(FUZZTIME) ./scl
-	@go test -fuzz=^FuzzDecodeGoCB$$                 -fuzztime=$(FUZZTIME) .
-	@go test -fuzz=^FuzzDecode$$                  -fuzztime=$(FUZZTIME) ./goose
-	@go test -fuzz=^FuzzDecodeData$$                 -fuzztime=$(FUZZTIME) ./goose
-	@go test -fuzz=^FuzzDecodePDU$$                  -fuzztime=$(FUZZTIME) ./goose
-	@go test -fuzz=^FuzzEncodeFixedLength$$          -fuzztime=$(FUZZTIME) ./goose
-	@go test -fuzz=^FuzzParseGSEAddress$$            -fuzztime=$(FUZZTIME) ./internal/servermodel
-	@echo "=== Fuzzing rsession ==="
-	@go test -fuzz=^FuzzDecode$$                     -fuzztime=$(FUZZTIME) ./rsession
-	@go test -fuzz=^FuzzVerify$$                     -fuzztime=$(FUZZTIME) ./rsession
+fuzz: ## Run every fuzz target (discovered, as the fuzz workflow does) for FUZZTIME each (default 15s)
+	@for pkg in $$(go list ./...); do \
+		for target in $$(go test -list '^Fuzz' $$pkg | grep '^Fuzz'); do \
+			echo "=== $$pkg $$target"; \
+			go test -run '^$$' -fuzz "^$$target\$$" -fuzztime=$(FUZZTIME) $$pkg || exit 1; \
+		done; \
+	done
 
 bench: ## Run all benchmarks
 	@echo "Running benchmarks"
