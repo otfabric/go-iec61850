@@ -5,7 +5,7 @@
 **Date:** 2026-11-11
 **Previous release:** v1.16.2
 
-Spec review against IEC 61850-7-2:2010, 7-3:2010, 8-1:2011, 9-2:2011 and 6 Ed2 (and the 2003 Edition 1 texts where they differ). The API is additive; many server and client behaviours change to what the standard requires, and each is listed under **Changed** with its clause. Interop with the pinned iec61850-interop images (libiec61850, iec61850bean, dscsystems, iec61850-rust, cB-Sigma) passes except `TestTSAPGate_ConfiguredSelector`, which fails on v1.16.2 as well.
+Spec review against IEC 61850-7-2:2010, 7-3:2010, 8-1:2011, 9-2:2011 and 6 Ed2 (and the 2003 Edition 1 texts where they differ). The API is additive; many server and client behaviours change to what the standard requires, and each is listed under **Changed** with its clause. Interop with the pinned iec61850-interop images (libiec61850, iec61850bean, dscsystems, iec61850-rust, cB-Sigma) passes; `TestTSAPGate_ConfiguredSelector` now retries its upstream dial instead of failing on a Docker port-forward race.
 
 ### Changed
 
