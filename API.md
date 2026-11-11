@@ -430,6 +430,12 @@ type RCBUpdate struct {
 }
 ```
 
+`SetReportControlBlock` writes the selected attributes one by one in this order: RptEna=FALSE (when `RptEna` is selected and false), Resv, ResvTms, RptID, DatSet, OptFlds, BufTm, TrgOps, IntgPd, PurgeBuf, EntryID, RptEna=TRUE, GI. The configuration attributes, Resv, PurgeBuf and EntryID "may not be written when RptEna=TRUE" (IEC 61850-8-1 Tables 61 and 63), so changing them on an enabled RCB needs an update with `RCBFieldRptEna` and `RptEna: false` first. A GI is only accepted on an enabled RCB (IEC 61850-7-2 §17.2.2.13). The first error stops the sequence; a refused write is a `*mms.DataAccessError` with the server's code.
+
+`ResvTms` is in seconds (IEC 61850-7-2 §17.2.2.17) and exists on BRCBs only; `GetReportControlBlock` reads it as signed or unsigned and reads Owner whether or not ResvTms precedes it.
+
+`ReportIndication` of a segmented report is the reassembled report: the inclusion bit strings of the segments are OR-ed (each segment carries the full-width bit string with the bits of its own members, IEC 61850-8-1 §17.2.1) and the values, data references and reasons are put back in member order. Segments with different inclusion widths or overlapping members are rejected.
+
 ### OptFlds
 
 ```go
@@ -550,10 +556,13 @@ const (
     ReasonDataUpdate
     ReasonIntegrity
     ReasonGI
+    ReasonApplicationTrigger
 )
 
 func (r ReasonCode) String() string
 ```
+
+The bits follow IEC 61850-8-1 §8.1.3.10 (ExtendedTriggerConditions); `ReasonApplicationTrigger` is bit 6, application-trigger.
 
 ---
 
@@ -745,6 +754,10 @@ func (c *Client) ReadJournalAfter(ctx context.Context, ld, journal string, after
 func (c *Client) ReadJournalAll(ctx context.Context, ld, journal string, start, stop time.Time) ([]JournalEntry, error)
 func (c *Client) ReadJournalAfterAll(ctx context.Context, ld, journal string, afterTime time.Time, afterID []byte) ([]JournalEntry, error)
 ```
+
+The range bounds of QueryLogByTime are optional (IEC 61850-7-2 §17.3.5.2): a zero `start` reads from the first entry and a zero `stop` up to the last. MMS ReadJournal always carries both, so they are sent as 1984-01-01 and 2163-06-05 23:59:59.999 UTC, the range of BinaryTime. A journal the server does not have is an error (object-non-existent).
+
+A journal entry written by an IEC 61850 log control block holds, per logged member, a variable tagged with the member's ObjectReference (`LD/LN$FC$DO$DA`) followed by a variable tagged `ReasonCode` with a 7-bit reason bit string (IEC 61850-8-1 §17.3.3.4.4). Read the LCB itself (`LLN0$LG$<name>`, components LogEna, LogRef, DatSet, OldEntrTm, NewEntrTm, OldEnt, NewEnt, TrgOps, IntgPd) with the ordinary read and write calls.
 
 ### JournalEntry
 
@@ -1151,6 +1164,16 @@ func (re *ReportEngine) NotifyValueChanged(ctx context.Context, storeKey string)
 func (re *ReportEngine) SetRCBBufMax(ldName, rcbItemID string, max int) bool // BRCB buffer capacity; false if not found
 ```
 
+The report engine follows IEC 61850-7-2 §17.2 per association:
+
+- An RCB is owned by the association that enabled it (and for a URCB, the one that reserved it, explicitly with Resv or implicitly with RptEna). Reports go to the owner only. Writes from other associations fail with temporarily-unavailable. When the owner's association ends, the RCB is disabled and released: at once when the connection is served by `Server.Serve` (or `ListenAndServe` with connection hooks), otherwise within one second.
+- Attributes that may not be written while RptEna=TRUE fail with temporarily-unavailable; ConfRev, SqNum, TimeOfEntry and a write of the whole RCB structure with object-access-denied; a wrong type with type-inconsistent; a DatSet or EntryID naming nothing with object-value-invalid; an unknown attribute with object-non-existent.
+- SqNum starts at 0 on every enable and wraps at 2^8 (URCB) or 2^16 (BRCB). Reports leave in the order their entries were created.
+- A BRCB buffers in every state from `EnableReports` on. While disabled its EntryID reads the newest entry. An enable without a resync point sends all buffered entries; after a write of a buffered EntryID, the entries after it. BufOvfl is TRUE in the first report after entries that were not sent were discarded.
+- BufTm aggregates notifications into one report; a second notification of a member flushes the pending report first. GI on a disabled RCB fails; with TrgOps.GI off it succeeds without a report.
+- A report larger than the MMS `MaxPDUSize` of the server is sent in segments (SubSeqNum, MoreSegmentsFollow); a member that does not fit in one PDU is not sent.
+- With attribute trigger options in the model (SCL DA `dchg`, `qchg`, `dupd`), the reason for inclusion is that of the written attribute; without them the member value is compared.
+
 ### Control registration
 
 ```go
@@ -1261,7 +1284,10 @@ type JournalEngine struct { /* unexported */ }
 func (e *JournalEngine) Provider() *MemoryJournalProvider
 func (e *JournalEngine) LogEvent(domain, journal string, occTime time.Time, vars []mms.JournalVariable) []byte
 func (e *JournalEngine) LogValueWrite(ctx context.Context, storeKey string, occTime time.Time)
+func (e *JournalEngine) HandleLCBWrite(ctx context.Context, ldName, lcbItem, attr string, val *mms.Value) error
 ```
+
+Every `servermodel.LogDef` is a log control block `<LN>$LG$<Name>` (IEC 61850-8-1 §17.3.3.2) writing to the journal `<LN>$<LogName>` (`LogName` empty: `Name`; SCL LogControl `logName`, default `GeneralLog`). `LogValueWrite`, called by `Server.SetValue` and for every client write of a data attribute, journals the members of the enabled LCBs whose data set contains the attribute and whose trigger options the write meets, followed by their reason code; writes outside an LCB data set are not journaled. With TrgOps integrity and IntgPd > 0 all members are journaled every IntgPd. LogRef, DatSet, TrgOps and IntgPd cannot be written while LogEna is TRUE (temporarily-unavailable). OldEntrTm, NewEntrTm, OldEnt and NewEnt follow the journal; entries a program adds with `MemoryJournalProvider.AddEntry` directly are not reflected until the next entry the engine adds (`LogEvent` updates them).
 
 ### MemoryJournalProvider
 
@@ -1278,6 +1304,8 @@ func (p *MemoryJournalProvider) ListJournals(ctx context.Context, domain string)
 func (p *MemoryJournalProvider) ReadTimeRange(ctx context.Context, domain, journal string, start, stop time.Time, maxEntries int) (*mms.JournalResult, error)
 func (p *MemoryJournalProvider) ReadStartAfter(ctx context.Context, domain, journal string, afterID []byte, afterTime time.Time, maxEntries int) (*mms.JournalResult, error)
 ```
+
+`ReadTimeRange` and `ReadStartAfter` of a journal that was neither registered nor written return an error wrapping `fs.ErrNotExist`, which go-mms answers with object-non-existent (IEC 61850-7-2 §17.3.5.2.4).
 
 ---
 

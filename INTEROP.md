@@ -330,9 +330,10 @@ in iec61850-interop.
 | SetSGValues | ✓ | ✓ | |
 | ConfirmEditSGValues | ✓ | ✓ | |
 | GetEditSGValues | ✓ | ✓ | |
-| QueryLogByTime | ✓ | ✓ | |
+| GetLCBValues / SetLCBValues | ✓ | ✓ | MMS Read/Write of `LN$LG$<lcb>` (8-1 Table 68); own tests only |
+| QueryLogByTime | ✓ | ✓ | open-ended range: zero start/stop on the client |
 | QueryLogAfter | ✓ | ✓ | |
-| GetLogStatusValues | ✓ | — | |
+| GetLogStatusValues | ✓ | ✓ | OldEntrTm, NewEntrTm, OldEnt, NewEnt of the LCB; own tests only |
 | GetFile | ✓ | ✓ | |
 | SetFile | — | ✓ | |
 | DeleteFile | ✓ | ✓ | |
@@ -385,11 +386,35 @@ in iec61850-interop.
 | OptFlds: ConfRev | ✓ | ✓ | |
 | OptFlds: BufOvfl | n/a | ✓ | |
 | EntryID-based resume | n/a | ✓ | client writes EntryID before enable |
-| Purge buffer | n/a | ✓ | |
+| Purge buffer | n/a | ✓ | PurgeBuf, and implicitly on a configuration change |
+| Buffering while disabled | n/a | ✓ | from `EnableReports` on (7-2 §17.2.3.2.3.6) |
 | Replay on re-enable | n/a | ✓ | |
+| BufTm aggregation | ✓ | ✓ | |
 | Overflow policy (DropNewest) | ✓ | ✓ | configurable |
-| Connection-scoped reservation | ✓ | n/a | disconnect releases Resv |
-| Multi-segment reports | ✓ | ✓ | reassembled automatically |
+| Association-scoped ownership | ✓ | ✓ | owner-only delivery; association loss disables and releases; own tests only |
+| Multi-segment reports | ✓ | ✓ | server segments at its MaxPDUSize, client reassembles; own tests only |
+| Indexed RCB instances | ✓ | ✓ | SCL `indexed` / `RptEnabled max` → `<name>01..` |
+
+The rows marked "own tests only" are covered by go-iec61850's spec tests
+(`TestSpec_*` in `report_spec_server_test.go`, `journal_lcb_spec_test.go`)
+and not yet by a run against the iec61850-interop images.
+
+### Reporting and logging: implementation choices
+
+Where IEC 61850-7-2 and -8-1 leave a choice, or where the two readings of a
+clause differ, the server does the following:
+
+| Topic | Behaviour | Basis |
+|-------|-----------|-------|
+| BufOvfl after re-enable | TRUE in the first report after a disabled→enabled transition only when entries that were never sent were discarded (since start-up or the last purge), and in the first report after such a discard while enabled. Discarding an entry already sent does not set it. | 7-2 §17.2.3.2.2.8 and Figure 30: BufOvfl signals a possible loss |
+| Enable without EntryID resync | Sends all buffered entries from the oldest. | 7-2 Figure 24 |
+| GI entries | Get an EntryID and keep the time order, are sent once in the enabling session, are not replayed and are dropped when unsent at disable. | 7-2 §17.2.2.13 Figure 28 (no GI outside the enabled state) |
+| Segment size | The server's MMS `MaxPDUSize`, minus the InformationReport framing. | go-mms does not expose the negotiated size per connection |
+| SqNum on a segmented report | Same SqNum for all segments, SubSqNum 0..k−1, MoreSegmentsFollow on all but the last; each segment carries the full-width inclusion bit string. | 7-2 §17.2.3.2.2.5, 8-1 §17.2.1 |
+| URCB OptFlds | BufOvfl, EntryID and segmentation are cleared when written and never reported. | 8-1 Table 63, 7-2 §17.2.5.2 |
+| Indexed RCB naming | `indexed` absent or true: `<name>01..<name>NN` (NN = RptEnabled max, default 1), as libiec61850 does; `indexed="false"`: `<name>`. Edition 1 files are always indexed. | 8-1 §17.1.2/§17.1.3.2, IEC 61850-6 §9.3.8 |
+| Journal variable tags | Per member: the ObjectReference `LD/LN$FC$DO$DA`, then `ReasonCode` (7-bit). One journal entry holds all members of one notification. | 8-1 §17.3.3.4.3/4 (libiec61850 uses the same `ReasonCode` tag; the `…$V|reasonCode` form in the 8-1 example is not used) |
+| LCB write errors | LogRef/DatSet/TrgOps/IntgPd while LogEna=TRUE: temporarily-unavailable; LogRef or DatSet naming nothing: object-value-invalid. | 8-1 §17.3.4.3, §8.1.3.4.4.2 |
 
 ### Known limitations / deferred features
 
@@ -407,39 +432,39 @@ in iec61850-interop.
 
 ## BRCB EntryID resume — implementation contract
 
-This section documents the precise semantics of EntryID-based resume as implemented. Users relying on this feature should treat this as the authoritative specification rather than assuming universal IEC 61850 behavior.
+This section documents EntryID-based resume as implemented, following
+IEC 61850-7-2 §17.2.2.15 and Figure 24.
 
 ### What EntryID is
 
-- An EntryID is an 8-byte big-endian `OctetString` that uniquely identifies a buffered report entry on the server.
-- The server assigns monotonically increasing 64-bit counters, starting at 1 for the first entry after `EnableReports()` is called.
-- ID 0 (`0x0000000000000000`) is reserved as the neutral sentinel meaning "no resume point."
+- An EntryID is an 8-byte big-endian `OctetString` that identifies a buffered report entry on the server (IEC 61850-8-1 §8.1.3.5).
+- The server assigns increasing 64-bit counters, starting at 1 for the first entry after `EnableReports()`. IDs continue after a purge; they are never reused while the server runs.
+- ID 0 (`0x0000000000000000`) is never assigned: writing it ends a pending resynchronisation.
+- While the BRCB is disabled, EntryID reads the newest buffered entry; while it is enabled, the entry of the last report sent.
 
-### Exclusive boundary
+### Resynchronisation
 
-The supplied EntryID is treated as **exclusive**. A client that writes EntryID `N` before enabling the BRCB receives only entries with ID **strictly greater than** `N` — i.e., entries produced *after* the entry the client last received.
+The client writes the EntryID of the last entry it received while the BRCB is disabled, then enables it. The server sends the entries **after** that entry, then the live ones, with SqNum continuing without a gap.
 
-This matches the IEC 61850-7-2 description where the client stores the EntryID of the last received entry.
-
-### Special cases
-
-| Client writes | Server behavior |
+| Client writes (RptEna=FALSE) | Server behavior |
 |--------------|----------------|
-| All-zero bytes (`0x00…00`) | Full buffer replay — no filtering |
-| Valid EntryID present in buffer | Replay of entries after that ID |
-| EntryID beyond the highest buffered ID | Empty replay — client has already seen everything |
-| EntryID from before a `PurgeBuf` | Empty replay — IDs are invalidated by purge |
-| Partial write (< 8 bytes) | Treated as zero (no filtering) |
+| All-zero bytes (`0x00…00`) | No resync: the next enable sends the whole buffer |
+| EntryID of a buffered entry | Accepted; the next enable sends the entries after it |
+| EntryID not (or no longer) in the buffer | Refused with object-value-invalid (parameter-value-inappropriate) |
+| Not 8 octets | Refused with type-inconsistent |
+| Any EntryID while RptEna=TRUE | Refused with temporarily-unavailable |
+
+If the resync entry is discarded between the write and the enable, the enable sends the whole buffer and the first report has `BufOvfl=true`.
 
 ### Buffer overflow interaction
 
-When the server-side BRCB buffer (`bufMax`, default 1000 entries) overflows, the oldest entry is dropped. If a client's resume point was before the dropped entries, the client will miss those intermediate entries. The first replayed or newly delivered report will have `BufOvfl=true` to signal the gap.
+When the server-side BRCB buffer (`bufMax`, default 1000 entries) overflows, the oldest entry is dropped. If that entry had not been sent, the first report sent afterwards (after the next enable, when disabled) has `BufOvfl=true`; the following reports have `BufOvfl=false`.
 
 ### Stability
 
-- EntryIDs are **not persistent** across server process restarts. They reset to 1 on each `EnableReports()` call.
-- Clients must not cache EntryIDs across reconnects to a different server process or after a server restart.
-- `PurgeBuf=true` invalidates all previously issued EntryIDs. A subsequent enable with any non-zero EntryID will find nothing to replay.
+- EntryIDs are **not persistent** across server process restarts. They restart at 1 on each `EnableReports()` call.
+- Clients must not cache EntryIDs across reconnects to a different server process or after a server restart; a stale EntryID is refused, not silently ignored.
+- `PurgeBuf=true` (only while disabled) and a change of RptID, DatSet, BufTm, TrgOps or IntgPd empty the buffer (IEC 61850-8-1 §17.1.2). An EntryID from before the purge is refused.
 
 ### Byte format
 
@@ -478,9 +503,8 @@ URCB provides best-effort delivery. Application queue overflow silently discards
 The server-side BRCB buffer (default: 1000 entries, configurable via `SetRCBBufMax`) is separate from the client-side application queue. When the server buffer fills:
 
 1. The oldest entry is dropped (drop-oldest policy).
-2. `bufOvfl` is set to `true`.
-3. The next delivered report will have `BufOvfl=true` set (when `OptFldBufOvfl` is enabled).
-4. The client can detect the gap from `BufOvfl` and decide whether to re-read the dataset via GI.
+2. If it had not been sent, the next delivered report has `BufOvfl=true` (when `OptFldBufOvfl` is enabled); later reports have `BufOvfl=false`. Dropping an entry that was already sent sets nothing.
+3. The client can detect the gap from `BufOvfl` and decide whether to re-read the dataset via GI.
 
 ### Confirmed services vs. report delivery
 
