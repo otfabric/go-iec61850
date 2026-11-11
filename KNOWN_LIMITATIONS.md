@@ -92,13 +92,20 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   connection given to `mms.Server` directly, it is released at the next
   control service on that object, and `stSeld` stays TRUE until then. Choices where the standard is
   ambiguous follow libiec61850; see [INTEROP.md](INTEROP.md#control-model-choices).
-- **Setting groups: no per-group value banks** — the server supports SGCB
-  registration, active/edit group selection, confirmation, handler
-  callbacks, automatic dispatch from MMS client writes, the edit
-  reservation per association (ResvTms, release on association loss) and
-  the FC=SE guard. Persistent multi-bank SE/SG value storage is not
-  implemented: there are no per-group value banks to store separate
-  FC=SE/FC=SG attribute sets.
+- **Setting groups: value banks in memory** — the server keeps one value
+  bank per setting group (IEC 61850-7-2 §16, built from SCL `Val sGroup`)
+  with the SGCB services and the edit reservation per association. Limits:
+  - The banks are in memory. IEC 61850-8-1 §16.1 wants the groups
+    non-volatile; an application persists them in `OnConfirmEdit` and
+    restores them with `SettingGroupEngine.SetSettingGroupValue`.
+  - A group switch changes each setting with its own `SetValue`: with
+    BufTm 0 every changed setting is a report and a GOOSE state change
+    of its own, not one per switch.
+  - SetEditSGValue of a whole data object (an FCD, `LN$SE$DO`) is refused
+    (object-access-denied); FCDA writes, leaf or constructed, work.
+  - `Val sGroup` is read on DAI elements, not on DA/BDA template values.
+  - No independent stack in the pinned iec61850-interop images exercises
+    the SGCB services, so the banks have own tests only.
 - **Journals: in memory, no EVENT-DATA entries** — log control blocks
   (FC LG, IEC 61850-8-1 §17.3) select what is journaled; the journal
   itself has these limits:

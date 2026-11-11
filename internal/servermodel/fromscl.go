@@ -215,6 +215,7 @@ func convertLD(s *scl.SCL, sclLD *scl.LDevice, dotIdx map[string]*scl.DOType, da
 		}
 		ld.LogicalNodes = append(ld.LogicalNodes, *ln)
 	}
+	setGroupInitialValues(ld, warnings)
 
 	return ld, nil
 }
@@ -335,6 +336,7 @@ func expandDO(do scl.DO, dotIdx map[string]*scl.DOType, datIdx map[string]*scl.D
 		setTrgOps(&attr, da.Dchg, da.Qchg, da.Dupd)
 		obj.Attributes = append(obj.Attributes, attr)
 	}
+	addImpliedSG(&obj)
 
 	return obj, nil
 }
@@ -411,7 +413,7 @@ func applyDAIOverrides(obj *DataObject, dois []scl.DOI, prefix string, warnings 
 			continue
 		}
 		for _, dai := range doi.DAIs {
-			if !setDAIValue(obj, dai.Name, dai.Val) && warnings != nil {
+			if !setDAIValue(obj, dai.Name, dai) && warnings != nil {
 				*warnings = append(*warnings, fmt.Sprintf(
 					"%s: DAI %q does not match any attribute", prefix, dai.Name))
 			}
@@ -427,7 +429,7 @@ func applySDIOverrides(obj *DataObject, sdi *scl.SDI, prefix string, warnings *[
 		if obj.Children[i].Name == sdi.Name {
 			childPrefix := prefix + "." + sdi.Name
 			for _, dai := range sdi.DAIs {
-				if !setDAIValue(&obj.Children[i], dai.Name, dai.Val) && warnings != nil {
+				if !setDAIValue(&obj.Children[i], dai.Name, dai) && warnings != nil {
 					*warnings = append(*warnings, fmt.Sprintf(
 						"%s: DAI %q does not match any attribute", childPrefix, dai.Name))
 				}
@@ -442,7 +444,7 @@ func applySDIOverrides(obj *DataObject, sdi *scl.SDI, prefix string, warnings *[
 		if obj.Attributes[i].Name == sdi.Name {
 			attrPrefix := prefix + "." + sdi.Name
 			for _, dai := range sdi.DAIs {
-				if !setDAIValueOnAttr(&obj.Attributes[i], dai.Name, dai.Val) && warnings != nil {
+				if !setDAIValueOnAttr(&obj.Attributes[i], dai.Name, dai) && warnings != nil {
 					*warnings = append(*warnings, fmt.Sprintf(
 						"%s: DAI %q does not match any child", attrPrefix, dai.Name))
 				}
@@ -464,7 +466,7 @@ func applySDIOnAttr(attr *DataAttribute, sdi *scl.SDI, prefix string, warnings *
 		if attr.Children[i].Name == sdi.Name {
 			childPrefix := prefix + "." + sdi.Name
 			for _, dai := range sdi.DAIs {
-				if !setDAIValueOnAttr(&attr.Children[i], dai.Name, dai.Val) && warnings != nil {
+				if !setDAIValueOnAttr(&attr.Children[i], dai.Name, dai) && warnings != nil {
 					*warnings = append(*warnings, fmt.Sprintf(
 						"%s: DAI %q does not match any child", childPrefix, dai.Name))
 				}
@@ -481,15 +483,34 @@ func applySDIOnAttr(attr *DataAttribute, sdi *scl.SDI, prefix string, warnings *
 	}
 }
 
-func setDAIValue(obj *DataObject, attrName, val string) bool {
+// setDAIValue sets the value of DAI attrName on the attributes of obj
+// with that name. A DAI has no FC, so a setting declared under both SG
+// and SE (IEC 61850-6 Table 47) gets the value in both.
+func setDAIValue(obj *DataObject, attrName string, dai scl.DAI) bool {
 	parts := strings.SplitN(attrName, ".", 2)
+	found := false
 	for i := range obj.Attributes {
-		if obj.Attributes[i].Name == parts[0] {
+		if obj.Attributes[i].Name != parts[0] {
+			continue
+		}
+		if len(parts) == 1 {
+			applyDAIVals(&obj.Attributes[i], dai)
+			found = true
+		} else if setDAIValueOnAttr(&obj.Attributes[i], parts[1], dai) {
+			found = true
+		}
+	}
+	return found
+}
+
+func setDAIValueOnAttr(attr *DataAttribute, path string, dai scl.DAI) bool {
+	parts := strings.SplitN(path, ".", 2)
+	for i := range attr.Children {
+		if attr.Children[i].Name == parts[0] {
 			if len(parts) == 1 {
-				obj.Attributes[i].InitialValue = val
-				obj.Attributes[i].Overridden = true
+				applyDAIVals(&attr.Children[i], dai)
 			} else {
-				return setDAIValueOnAttr(&obj.Attributes[i], parts[1], val)
+				return setDAIValueOnAttr(&attr.Children[i], parts[1], dai)
 			}
 			return true
 		}
@@ -497,20 +518,135 @@ func setDAIValue(obj *DataObject, attrName, val string) bool {
 	return false
 }
 
-func setDAIValueOnAttr(attr *DataAttribute, path, val string) bool {
-	parts := strings.SplitN(path, ".", 2)
-	for i := range attr.Children {
-		if attr.Children[i].Name == parts[0] {
-			if len(parts) == 1 {
-				attr.Children[i].InitialValue = val
-				attr.Children[i].Overridden = true
-			} else {
-				return setDAIValueOnAttr(&attr.Children[i], parts[1], val)
+// applyDAIVals sets the value of a DAI on attr. A Val with sGroup is the
+// value of a setting in that setting group (IEC 61850-6 9.5.4.4); a Val
+// without sGroup applies to every group. The first Val stays the
+// InitialValue, as before setting groups had value banks, until
+// setGroupInitialValues picks the active group's.
+func applyDAIVals(attr *DataAttribute, dai scl.DAI) {
+	var groups map[uint8]string
+	plain, hasPlain := "", false
+	for _, v := range dai.Vals {
+		switch {
+		case v.SGroup == 0:
+			if !hasPlain {
+				plain, hasPlain = v.Value, true
 			}
-			return true
+		case v.SGroup <= 255:
+			if groups == nil {
+				groups = map[uint8]string{}
+			}
+			if _, dup := groups[uint8(v.SGroup)]; !dup {
+				groups[uint8(v.SGroup)] = v.Value
+			}
 		}
 	}
-	return false
+	if groups != nil {
+		if hasPlain {
+			groups[0] = plain
+		} else {
+			// No Val for all groups: the others keep the type's value.
+			groups[0] = attr.InitialValue
+		}
+		attr.GroupValues = groups
+	}
+	attr.InitialValue = dai.Val
+	if hasPlain {
+		attr.InitialValue = plain
+	}
+	attr.Overridden = true
+}
+
+// addImpliedSG adds the FC=SG attribute that an FC=SE attribute implies
+// (IEC 61850-6 Table 47: "fc=SE always also implies fc=SG"), so the
+// active group's value can be read when the SCL declares only SE.
+func addImpliedSG(obj *DataObject) {
+	has := map[string]bool{}
+	for _, a := range obj.Attributes {
+		if a.FC == "SG" {
+			has[a.Name] = true
+		}
+	}
+	for i := range len(obj.Attributes) {
+		a := obj.Attributes[i]
+		if a.FC != "SE" || has[a.Name] {
+			continue
+		}
+		sg := cloneAttr(a)
+		setFC(&sg, "SG")
+		obj.Attributes = append(obj.Attributes, sg)
+		has[a.Name] = true
+	}
+}
+
+func cloneAttr(a DataAttribute) DataAttribute {
+	if a.Children != nil {
+		ch := make([]DataAttribute, len(a.Children))
+		for i := range a.Children {
+			ch[i] = cloneAttr(a.Children[i])
+		}
+		a.Children = ch
+	}
+	return a
+}
+
+func setFC(a *DataAttribute, fc string) {
+	a.FC = fc
+	for i := range a.Children {
+		setFC(&a.Children[i], fc)
+	}
+}
+
+// setGroupInitialValues makes the active group's value (SettingControl
+// actSG) the InitialValue of every setting of the LD that has values per
+// group, and reports sGroup values beyond numOfSGs (IEC 61850-6 9.5.4.4:
+// the sGroup should be checked against numOfSGs).
+func setGroupInitialValues(ld *LogicalDevice, warnings *[]string) {
+	var sg *SettingGroupDef
+	for i := range ld.LogicalNodes {
+		if ld.LogicalNodes[i].SettingGroup != nil {
+			sg = ld.LogicalNodes[i].SettingGroup
+		}
+	}
+	if sg == nil {
+		return
+	}
+	var walk func(prefix string, a *DataAttribute)
+	walk = func(prefix string, a *DataAttribute) {
+		name := prefix + "." + a.Name
+		for i := range a.Children {
+			walk(name, &a.Children[i])
+		}
+		if a.GroupValues == nil {
+			return
+		}
+		for g := range a.GroupValues {
+			if g > sg.NumOfSGs && warnings != nil {
+				*warnings = append(*warnings, fmt.Sprintf("%s: Val sGroup=%d exceeds numOfSGs %d: ignored", name, g, sg.NumOfSGs))
+			}
+		}
+		if v, ok := a.GroupValues[sg.ActSG]; ok {
+			a.InitialValue = v
+		} else {
+			a.InitialValue = a.GroupValues[0]
+		}
+	}
+	var walkDO func(prefix string, o *DataObject)
+	walkDO = func(prefix string, o *DataObject) {
+		name := prefix + "." + o.Name
+		for i := range o.Children {
+			walkDO(name, &o.Children[i])
+		}
+		for i := range o.Attributes {
+			walk(name, &o.Attributes[i])
+		}
+	}
+	for i := range ld.LogicalNodes {
+		ln := &ld.LogicalNodes[i]
+		for j := range ln.DataObjects {
+			walkDO(ld.Inst+"/"+ln.Name, &ln.DataObjects[j])
+		}
+	}
 }
 
 func convertDataSet(ds *scl.DataSet) DataSetDef {

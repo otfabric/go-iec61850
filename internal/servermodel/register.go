@@ -841,20 +841,25 @@ func registerDAWithFC(srv *mms.Server, vs *ValueStore, ldName, lnName string, pa
 		}
 	}
 	if attr.FC == "SE" {
-		baseRead, baseWrite, fc := read, write, attr.FC
+		baseRead, fc := read, attr.FC
 		read = func(ctx context.Context) (*mms.Value, error) {
 			if err := vs.checkEdit(ctx, fc, storeKey, false); err != nil {
 				return nil, err
 			}
 			return baseRead(ctx)
 		}
-		if baseWrite != nil {
-			write = func(ctx context.Context, val *mms.Value) error {
-				if err := vs.checkEdit(ctx, fc, storeKey, true); err != nil {
-					return err
-				}
-				return baseWrite(ctx, val)
+		// SetEditSGValue of a constructed attribute (IEC 61850-7-2
+		// 16.3.4.2.1, an FCDA such as StrVal.setMag) sets its leaves: the
+		// edit buffer is read and confirmed leaf by leaf.
+		write = func(ctx context.Context, val *mms.Value) error {
+			if err := vs.checkEdit(ctx, fc, storeKey, true); err != nil {
+				return err
 			}
+			if err := CheckWriteValue(val, compoundTS); err != nil {
+				return fmt.Errorf("write %s: %w", storeKey, err)
+			}
+			setLeaves(vs, storeKey, compoundTS, val)
+			return nil
 		}
 	}
 	if err := srv.RegisterVariable(mms.Variable{
