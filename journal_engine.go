@@ -37,6 +37,10 @@ type JournalEngine struct {
 	stopCh   chan struct{}
 	stopOnce sync.Once
 	wg       sync.WaitGroup
+
+	// clock stamps integrity entries (the server's Clock); nil is
+	// SystemClock. The IntgPd ticker never uses it.
+	clock Clock
 }
 
 type journalDef struct {
@@ -175,6 +179,7 @@ func (s *Server) EnableJournals(opts ...JournalEngineOption) *JournalEngine {
 	}
 
 	engine := newJournalEngine(s.logger, s.store, s.model, opts)
+	engine.clock = s.clock
 	count := engine.registerJournalsFromModel()
 
 	s.journalEngine = engine

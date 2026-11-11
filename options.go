@@ -73,6 +73,10 @@ type DialOptions struct {
 	// closed by the client. An error it returns is wrapped by [Dial] and
 	// can be matched with [errors.Is]. Nil keeps the default dialer.
 	Dialer func(ctx context.Context, network, addr string) (net.Conn, error)
+
+	// Clock stamps the T member of control commands (see
+	// [ClientOptions.Clock]). Nil is [SystemClock].
+	Clock Clock
 }
 
 // ClientOptions configures an IEC 61850 client created via [NewClient]
@@ -93,6 +97,13 @@ type ClientOptions struct {
 	// IEDName, when non-empty, is the IED identifier prefix used by
 	// the target server to form MMS domain names. See [DialOptions.IEDName].
 	IEDName string
+
+	// Clock stamps the T member (time and TimeQuality) of Operate,
+	// SelectWithValue and Cancel (IEC 61850-7-2 20.5.2.5). Nil is
+	// [SystemClock]: the host time, "clock not synchronised". A
+	// per-call OperateParams.TQuality or CancelParams.TQuality
+	// overrides the clock's quality.
+	Clock Clock
 }
 
 // CacheStrategy controls client-side caching of IEC 61850 model

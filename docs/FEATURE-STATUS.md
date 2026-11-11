@@ -41,6 +41,7 @@ independent evidence: the feature must not be described as interoperable.
 | CommandTermination | ✅ `OperateWait` | ✅ positive; negative via `OnExecute` | in-memory | positive: libiec61850, dscsystems, iec61850-rust, cbsigma (client); dscsystems's controller waits for ours; negative: none |
 | LastApplError on refused controls | ✅ in `ControlError` | ✅ | in-memory | libiec61850, dscsystems, cbsigma (client); iec61850-rust sends none |
 | Quality and timestamps | ✅ | ✅ | in-memory, go-to-go in `interop/` | none as a dedicated scenario |
+| Injectable `Clock` with TimeQuality for stamped values (control T and `t`, report TimeStamp/TimeOfEntry, journal, LActTm, GOOSE T, SV refrTm) | ✅ | ✅ | in-memory, fake clock | n/a |
 | Several clients at once | ✅ | ✅ | TCP, go-to-go in `interop/` | none |
 | Setting groups | ✅ | ◐ no value banks | in-memory, TCP | none |
 | Journals | ✅ | ◐ in-memory | in-memory | none here; go-mms's interop covers the MMS journal services |

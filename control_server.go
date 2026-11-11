@@ -510,6 +510,10 @@ func (b *backgroundTasks) stop() {
 // expireLocked releases a selection whose select timeout passed or whose
 // client's association is gone (IEC 61850-7-2 20.2.2 a, Table 47). It
 // reports whether it released one. Must be called with reg.mu held.
+//
+// now is time.Now, never the server's Clock: sboTimeout is a timer on
+// the monotonic clock, so a wall-clock step neither expires nor extends
+// a selection.
 func (s *Server) expireLocked(reg *controlRegistration, now time.Time) bool {
 	if reg.state != ctlReady {
 		return false
@@ -1056,7 +1060,7 @@ func (s *Server) defaultOperate(ctx context.Context, reg *controlRegistration, r
 	}
 	s.controlSetValue(ctx, stKey("stVal"), val)
 	if s.hasST(reg, "t") {
-		s.controlSetValue(ctx, stKey("t"), mms.NewUTCTime(time.Now()))
+		s.controlSetValue(ctx, stKey("t"), stampUTC(s.clock))
 	}
 	if s.hasST(reg, "ctlNum") {
 		s.controlSetValue(ctx, stKey("ctlNum"), mms.NewUnsigned(uint64(req.CtlNum)))

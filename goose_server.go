@@ -40,9 +40,11 @@ type GOOSEOptions struct {
 	// Metrics receives publisher counters. Nil disables metrics.
 	Metrics goose.Metrics
 
-	// TimeQuality is the TimeQuality octet of T in every GOOSE message
-	// (see goose.PublisherConfig.TimeQuality). Zero uses
-	// goose.DefaultTimeQuality (clock not synchronised).
+	// TimeQuality, when non-zero, is the TimeQuality octet of T in
+	// every GOOSE message, overriding the quality of
+	// [ServerOptions.Clock]. Zero uses the clock's quality; the
+	// default [SystemClock] gives goose.DefaultTimeQuality (clock not
+	// synchronised). T itself always comes from the server's Clock.
 	TimeQuality uint8
 }
 
@@ -317,8 +319,8 @@ func (rt *gocbRuntime) setEnabled(on bool) error {
 		Logger:  rt.e.logger,
 		Metrics: rt.e.metrics,
 
-		TimeQuality: rt.e.tq,
-		FixedOffs:   rt.def.FixedOffs,
+		Clock:     goosePublisherClock(rt.e.s.clock, rt.e.tq),
+		FixedOffs: rt.def.FixedOffs,
 	}
 	if cfg.FixedOffs {
 		cfg.MemberTypes = make([]mms.TypeSpec, len(rt.members))
@@ -440,4 +442,17 @@ func (e *GOOSEEngine) handleWrite(storeKey string, val *mms.Value) (bool, error)
 		return true, nil
 	}
 	return false, nil
+}
+
+// goosePublisherClock stamps T from clk with clk's quality, or with tq
+// when it is non-zero (GOOSEOptions.TimeQuality).
+func goosePublisherClock(clk Clock, tq uint8) func() (time.Time, uint8) {
+	stamp := stampFunc(clk)
+	if tq == 0 {
+		return stamp
+	}
+	return func() (time.Time, uint8) {
+		t, _ := stamp()
+		return t, tq
+	}
 }

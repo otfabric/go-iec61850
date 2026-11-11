@@ -208,6 +208,13 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
 - **Timestamp precision** — timestamps are decoded to Go `time.Time` which
   has nanosecond precision. Sub-nanosecond IEC 61850 time accuracy bits are
   preserved in `TimeQuality.TimeAccuracy` but not reflected in the `Time` field.
+- **No time-synchronisation integration** — protocol timestamps come from
+  the `Clock` in `ServerOptions` / `ClientOptions` / `DialOptions`. The
+  default `SystemClock` is the host time flagged "clock not synchronised"
+  (TimeQuality 0x2a), since the library does not read chrony, ptp4l or
+  the kernel NTP state; an application that knows its sync state supplies
+  a `Clock` (`ClockWithQuality`). Timers use the monotonic clock, not the
+  `Clock`.
 
 ## Concurrency
 

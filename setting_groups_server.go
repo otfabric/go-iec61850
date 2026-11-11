@@ -73,6 +73,9 @@ type SettingGroupEngine struct {
 	// connActive reports whether an MMS association is still open; nil
 	// treats every owner as connected.
 	connActive func(*mms.ServerConn) bool
+
+	// clock stamps LActTm (the server's Clock); nil is SystemClock.
+	clock Clock
 }
 
 // newSettingGroupEngine creates a new engine backed by the given store.
@@ -384,7 +387,7 @@ func (e *SettingGroupEngine) syncSGCBToStore(rt *sgcbRuntime, updateLActTm bool)
 	e.store.Set(prefix+"$EditSG", mms.NewUnsigned(uint64(rt.editSG)))
 	e.store.Set(prefix+"$CnfEdit", mms.NewBoolean(false))
 	if updateLActTm {
-		e.store.Set(prefix+"$LActTm", mms.NewUTCTime(time.Now()))
+		e.store.Set(prefix+"$LActTm", stampUTC(e.clock))
 	}
 }
 
@@ -424,6 +427,7 @@ func (e *SettingGroupEngine) GetEditSettingGroup(ldName string) uint8 {
 // connections.
 func (s *Server) EnableSettingGroups(handler SettingGroupHandler) {
 	engine := newSettingGroupEngine(s.store, s.logger)
+	engine.clock = s.clock
 
 	for i := range s.model.LogicalDevices {
 		ld := &s.model.LogicalDevices[i]

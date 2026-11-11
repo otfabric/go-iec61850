@@ -128,6 +128,7 @@ func Dial(ctx context.Context, addr string, opts DialOptions) (*Client, error) {
 		Strictness: opts.Strictness,
 		Cache:      opts.Cache,
 		IEDName:    opts.IEDName,
+		Clock:      opts.Clock,
 	}
 	var cache *modelCache
 	if copts.Cache != CacheNone {

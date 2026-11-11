@@ -71,7 +71,7 @@ func (c *Client) Operate(ctx context.Context, ref Ref, params OperateParams) err
 
 	operRef := controlSubRef(ref, "Oper")
 	params.CtlNum = c.sequenceCtlNum(ref, params.CtlNum, params.CtlNumSet)
-	operVal := encodeOper(params, c.controlHasOperTm(ctx, operRef, !params.OperTm.IsZero()))
+	operVal := encodeOperClock(params, c.controlHasOperTm(ctx, operRef, !params.OperTm.IsZero()), c.opts.Clock)
 
 	if lae, err := c.writeControlValue(ctx, operRef, operVal, params.CtlNum); err != nil {
 		return controlError(ref, "operate", lae, err)
@@ -176,7 +176,7 @@ func (c *Client) SelectWithValue(ctx context.Context, ref Ref, params OperatePar
 	}
 
 	sbowRef := controlSubRef(ref, "SBOw")
-	operVal := encodeOper(params, c.controlHasOperTm(ctx, sbowRef, !params.OperTm.IsZero()))
+	operVal := encodeOperClock(params, c.controlHasOperTm(ctx, sbowRef, !params.OperTm.IsZero()), c.opts.Clock)
 
 	if lae, err := c.writeControlValue(ctx, sbowRef, operVal, params.CtlNum); err != nil {
 		return controlError(ref, "select", lae, err)
@@ -211,7 +211,7 @@ func (c *Client) Cancel(ctx context.Context, ref Ref, params CancelParams) error
 			params.CtlNum = n
 		}
 	}
-	cancelVal := encodeCancel(params, c.controlHasOperTm(ctx, cancelRef, !params.OperTm.IsZero()))
+	cancelVal := encodeCancelClock(params, c.controlHasOperTm(ctx, cancelRef, !params.OperTm.IsZero()), c.opts.Clock)
 	if c.controlCancelHasCheck(cancelRef) {
 		// The server models Cancel with the Oper type: send Check last,
 		// as in Oper (IEC 61850-8-1 Table 83 member order).

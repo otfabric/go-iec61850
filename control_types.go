@@ -214,8 +214,10 @@ type OperateParams struct {
 
 	// TQuality, when set, is the TimeQuality of the T member (the time
 	// the command was sent, IEC 61850-7-2 20.5.2.5; IEC 61850-8-1 Table
-	// 32). Nil sends go-mms's default: synchronized, 10 bits of
-	// accuracy (0x0a).
+	// 32), overriding the quality of the client's Clock. Nil sends
+	// the quality of [ClientOptions.Clock] ([DialOptions.Clock]); the
+	// default [SystemClock] sends "clock not synchronised", 10 bits of
+	// accuracy (0x2a). Before v1.18.0 nil sent 0x0a (synchronised).
 	TQuality *TimeQuality
 }
 
@@ -390,12 +392,14 @@ func DbposValue(on bool) *mms.Value {
 	return mms.NewBitStringWithLength([]byte{0x40}, 2) // 01
 }
 
-// controlTime is the T member of a control command: now, with the
-// TimeQuality given or go-mms's default.
-func controlTime(q *TimeQuality) *mms.Value {
-	now := time.Now().UTC()
+// controlTime is the T member of a control command (IEC 61850-7-2
+// 20.5.2.5): clk's time, with the TimeQuality q when set (the per-call
+// override) or else clk's quality. A nil clk is [SystemClock].
+func controlTime(clk Clock, q *TimeQuality) *mms.Value {
+	clk = clockOrSystem(clk)
+	now := clk.Now().UTC()
 	if q == nil {
-		return mms.NewUTCTime(now)
+		return mms.NewUTCTimeWithQuality(now, encodeTimeQuality(clk.Quality()))
 	}
 	return mms.NewUTCTimeWithQuality(now, encodeTimeQuality(*q))
 }
@@ -427,6 +431,11 @@ func buildOper(p OperateParams) *mms.Value { return encodeOper(p, !p.OperTm.IsZe
 // has no operTm (libiec61850, iec61850bean without time activation)
 // refuse a 7-member structure with type-inconsistent.
 func encodeOper(p OperateParams, withOperTm bool) *mms.Value {
+	return encodeOperClock(p, withOperTm, nil)
+}
+
+// encodeOperClock is [encodeOper] with T from clk (nil is [SystemClock]).
+func encodeOperClock(p OperateParams, withOperTm bool, clk Clock) *mms.Value {
 	origin := p.Origin
 	if origin == nil {
 		origin = &Origin{OrCat: OrCatRemoteControl}
@@ -439,7 +448,7 @@ func encodeOper(p OperateParams, withOperTm bool) *mms.Value {
 	return mms.NewStructure(append(m,
 		origin.toMMS(),
 		mms.NewUnsigned(uint64(p.CtlNum)),
-		controlTime(p.TQuality),
+		controlTime(clk, p.TQuality),
 		mms.NewBoolean(p.Test),
 		p.Check.toMMS(),
 	))
@@ -467,6 +476,12 @@ func buildCancel(p CancelParams) *mms.Value { return encodeCancel(p, !p.OperTm.I
 //	    Test       BOOLEAN
 //	}
 func encodeCancel(p CancelParams, withOperTm bool) *mms.Value {
+	return encodeCancelClock(p, withOperTm, nil)
+}
+
+// encodeCancelClock is [encodeCancel] with T from clk (nil is
+// [SystemClock]).
+func encodeCancelClock(p CancelParams, withOperTm bool, clk Clock) *mms.Value {
 	origin := p.Origin
 	if origin == nil {
 		origin = &Origin{OrCat: OrCatRemoteControl}
@@ -479,7 +494,7 @@ func encodeCancel(p CancelParams, withOperTm bool) *mms.Value {
 	return mms.NewStructure(append(m,
 		origin.toMMS(),
 		mms.NewUnsigned(uint64(p.CtlNum)),
-		controlTime(p.TQuality),
+		controlTime(clk, p.TQuality),
 		mms.NewBoolean(p.Test),
 	))
 }

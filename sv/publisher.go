@@ -22,6 +22,14 @@ const DefaultNominalFrequency = 50.0
 // back-to-back to catch up with its schedule before it skips samples.
 const DefaultMaxBurst = 16
 
+// DefaultTimeQuality is the TimeQuality octet of refrTm when
+// PublisherConfig.TimeQuality is zero: ClockNotSynchronized (0x20) with
+// 10 bits of sub-second accuracy (IEC 61850-8-1 Table 32), as GOOSE's
+// default. The publisher cannot know whether the host clock is
+// synchronised, so it does not claim it. Before v1.18.0 refrTm was sent
+// with the octet 0x00.
+const DefaultTimeQuality uint8 = 0x2a
+
 // PublisherConfig configures a [Publisher].
 type PublisherConfig struct {
 	// Dst is the destination address (usually in 01-0C-CD-04-00-00 to
@@ -101,8 +109,21 @@ type PublisherConfig struct {
 	// [DefaultMaxBurst] frames); samples beyond it are skipped.
 	MaxBurst int
 
-	// Now is the clock (default time.Now). Tests may substitute it.
+	// Now is the clock (default time.Now) that paces the samples and,
+	// without Clock, stamps refrTm. Tests may substitute it.
 	Now func() time.Time
+
+	// TimeQuality is the TimeQuality octet of refrTm without Clock.
+	// Zero uses [DefaultTimeQuality] (clock not synchronised).
+	TimeQuality uint8
+
+	// Clock, when non-nil, stamps refrTm: it is called once per frame
+	// and returns the time of the frame's last sample and its
+	// TimeQuality octet; earlier samples of the frame are stamped one
+	// sample period apart before it. The sample schedule keeps using
+	// Now, so a step of Clock does not change the sample rate. The
+	// server's SV engine sets it from ServerOptions.Clock.
+	Clock func() (t time.Time, quality uint8)
 
 	// Logger receives diagnostics; nil disables logging.
 	Logger *slog.Logger
@@ -222,6 +243,9 @@ func NewPublisher(t Transport, cfg PublisherConfig) (*Publisher, error) {
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
+	}
+	if cfg.TimeQuality == 0 {
+		cfg.TimeQuality = DefaultTimeQuality
 	}
 	if cfg.Src.IsZero() {
 		cfg.Src = t.HardwareAddr()
@@ -534,13 +558,23 @@ func (p *Publisher) encodeAt(dst []byte, cnt uint16, t0 time.Time, k uint64, syn
 	if p.cfg.Source != nil {
 		p.src = p.src[:0]
 	}
+	// refrTm: the schedule time, or Clock's time of the last sample.
+	var wall, last time.Time
+	tq := p.cfg.TimeQuality
+	if p.cfg.RefrTm && p.cfg.Clock != nil {
+		wall, tq = p.cfg.Clock()
+		last = p.at(t0, k+uint64(n-1))
+	}
 	for i := range n {
 		ti := p.at(t0, k+uint64(i))
 		c := nextSmpCnt(uint64(cnt)+uint64(i), p.wrap)
 		a := &f.PDU.ASDUs[i]
 		*a = ASDU{SvID: p.cfg.SvID, DatSet: p.cfg.DatSet, SmpCnt: c, ConfRev: p.cfg.ConfRev, SmpSynch: synch, Sample: p.cur}
 		if p.cfg.RefrTm {
-			a.RefrTm, a.HasRefrTm = ti, true
+			a.RefrTm, a.RefrTmQuality, a.HasRefrTm = ti, tq, true
+			if p.cfg.Clock != nil {
+				a.RefrTm = wall.Add(ti.Sub(last))
+			}
 		}
 		if p.cfg.SendSmpRate {
 			a.SmpRate, a.HasSmpRate = p.cfg.SmpRate, true
