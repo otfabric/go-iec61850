@@ -57,7 +57,7 @@ independent evidence: the feature must not be described as interoperable.
 | Server MSVCB published at `smpRate` | n/a | ✅ | in-memory hub | libiec61850, dscsystems, iec61850-rust |
 | MSVCB read over MMS | ✅ | ✅ | in-memory | libiec61850, dscsystems |
 | MSVCB write over MMS | ✅ | ✅ | in-memory | none |
-| R-GOOSE and R-SV over UDP (`rsession`, HMAC-SHA256) | ✅ subscriber | ✅ publisher | UDP loopback, multicast, hand-built SPDU vectors, tamper and replay, fuzz | dscsystems, both directions: suite in place, passes against an unreleased adapter image; pending a pinned iec61850-interop release |
+| R-GOOSE and R-SV over UDP (`rsession`, HMAC-SHA256) | ✅ subscriber | ✅ publisher | UDP loopback, multicast, hand-built SPDU vectors, tamper and replay, fuzz | dscsystems, both directions (iec61850-interop v1.5.0): versions 1 and 2, HMAC-SHA256-80/-128/-256, refusal of forged, unsecured and replayed SPDUs |
 | Layer-2 GOOSE/SV authentication (IEC 62351-6) | ⬜ open, to do | ⬜ open, to do | n/a | n/a — blocked on the IEC 62351-6 specification |
 | SCL parse, validate, flatten, generate | n/a | model from SCL | fixtures, specification examples, ABB CID files | peers load the same ICD fixture; no independent validator compares results |
 | TLS | ◐ through go-mms | ◐ through go-mms | none here | none; see [SECURITY.md](../SECURITY.md) |

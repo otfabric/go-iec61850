@@ -299,10 +299,7 @@ dscsystems adapter of iec61850-interop (dscsystems/go-iec61850
 `rsession`, contract 1.4, `--transport udp`) in both directions, for
 version 1 with HMAC-SHA256-80 and version 2 with HMAC-SHA256-128 and
 -256, and checks that the peer refuses forged, unsecured and replayed
-SPDUs. It passes against an adapter image built from
-[iec61850-interop#24](https://github.com/otfabric/iec61850-interop/pull/24);
-it is not interop evidence until a released image is pinned in CI (until
-then the tests skip). See [interop/README.md](interop/README.md#r-goose-and-r-sv).
+SPDUs, in CI against the pinned iec61850-interop v1.5.0 image. See [interop/README.md](interop/README.md#r-goose-and-r-sv).
 
 ## SCL binding
 

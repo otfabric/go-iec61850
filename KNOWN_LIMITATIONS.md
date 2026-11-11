@@ -163,7 +163,7 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   reference implementation of the layer-2 extension exists to follow
   instead (libiec61850 and Wireshark do not parse it; dscsystems does not
   implement it).
-- **R-GOOSE / R-SV: authentication only, interop pending a pinned image** — package
+- **R-GOOSE / R-SV: authentication only** — package
   `rsession` signs and verifies SPDUs with HMAC-SHA256 (80, 128, 256 bits).
   Not implemented: AES-GMAC, AES-GCM encryption, tunnelled and management
   SPDUs, several APDUs per SPDU on send, IEC 62351-9 (GDOI) key
@@ -172,9 +172,8 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   61850-90-5 structure as libiec61850, Wireshark and dscsystems implement
   it, since 90-5 itself was not available. `interop/rsession_test.go`
   exchanges it with dscsystems/go-iec61850 (both directions, GOOSE and
-  SV, versions 1 and 2, the three HMACs) and passes against an adapter
-  image built from iec61850-interop#24; it becomes interop evidence once
-  a released image is pinned in CI. libiec61850 is no peer: at the pinned
+  SV, versions 1 and 2, the three HMACs) against the pinned
+  iec61850-interop v1.5.0 image in CI. libiec61850 is no peer: at the pinned
   revision it writes an APDU length its own decoder refuses. A restarted publisher's SPDUs are
   refused as replays until the key changes, unless `ReplayResetAfter` or
   `InitialSPDUNumber` is used. Multicast needs Linux, macOS or a BSD.

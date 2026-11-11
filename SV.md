@@ -407,7 +407,7 @@ to zero allocations.
   `security` and the reserved fields are carried opaquely. Authenticated
   SV is available over UDP as R-SV with package `rsession`
   ([GOOSE.md](GOOSE.md#r-goose-and-r-sv-over-udp)); interop with
-  dscsystems awaits a pinned iec61850-interop image. Layer-2 IEC 62351-6
+  dscsystems runs in CI (iec61850-interop v1.5.0). Layer-2 IEC 62351-6
   is **open, to do** (needs the specification). No IEC 62351-9 key
   management.
 - No unicast SV (USVCB) on the server; no SCL `multicast="false"`
