@@ -4,7 +4,6 @@ package iec61850
 
 import (
 	"context"
-	"encoding/binary"
 	"log/slog"
 	"testing"
 	"time"
@@ -243,8 +242,8 @@ func TestReportEngine_GI(t *testing.T) {
 	}
 
 	rt := engine.rcbs["LD1/LLN0$BR$brcb01"]
-	if e := lastEntry(t, rt); !e.gi || e.reasons[0] != ReasonGI {
-		t.Errorf("GI should queue a GI entry, got gi=%v reasons=%v", e.gi, e.reasons)
+	if e := lastEntry(t, rt); !e.GI || e.Reasons[0] != ReasonGI {
+		t.Errorf("GI should queue a GI entry, got gi=%v reasons=%v", e.GI, e.Reasons)
 	}
 
 	// GI flag should be reset.
@@ -330,7 +329,7 @@ func TestReportEngine_BufferedQueue(t *testing.T) {
 	}
 
 	rt.mu.Lock()
-	qLen := len(rt.bufQueue)
+	qLen := rt.buf.Len()
 	lastEntryID := rt.entryID
 	rt.mu.Unlock()
 
@@ -351,7 +350,7 @@ func TestReportEngine_BufferOverflow(t *testing.T) {
 	ctx := context.Background()
 
 	rt := engine.rcbs["LD1/LLN0$BR$brcb01"]
-	rt.bufMax = 3
+	rt.buf.(*MemoryReportBuffer).SetLimits(3, 0)
 
 	if err := engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "RptEna", mms.NewBoolean(true)); err != nil {
 		t.Fatalf("enable: %v", err)
@@ -365,7 +364,7 @@ func TestReportEngine_BufferOverflow(t *testing.T) {
 	}
 
 	rt.mu.Lock()
-	qLen := len(rt.bufQueue)
+	qLen := rt.buf.Len()
 	rt.mu.Unlock()
 
 	if qLen != 3 {
@@ -390,7 +389,7 @@ func TestReportEngine_PurgeBuf(t *testing.T) {
 
 	rt := engine.rcbs["LD1/LLN0$BR$brcb01"]
 	rt.mu.Lock()
-	if len(rt.bufQueue) == 0 {
+	if rt.buf.Len() == 0 {
 		t.Error("buffer should have entries before purge")
 	}
 	rt.mu.Unlock()
@@ -415,8 +414,8 @@ func TestReportEngine_PurgeBuf(t *testing.T) {
 	}
 
 	rt.mu.Lock()
-	if len(rt.bufQueue) != 0 {
-		t.Errorf("buffer should be empty after purge, got %d entries", len(rt.bufQueue))
+	if rt.buf.Len() != 0 {
+		t.Errorf("buffer should be empty after purge, got %d entries", rt.buf.Len())
 	}
 	rt.mu.Unlock()
 }
@@ -640,7 +639,7 @@ func TestReportEngine_SequenceNumbering(t *testing.T) {
 	// assigned when an entry is formatted for a client (see
 	// TestSpec_7_2_17_2_2_10_SqNumStartsAtZeroAndWraps).
 	rt.mu.Lock()
-	n, last := len(rt.bufQueue), rt.entryID
+	n, last := rt.buf.Len(), rt.entryID
 	rt.mu.Unlock()
 
 	if n != 10 || last != 10 {
@@ -665,14 +664,14 @@ func TestReportEngine_EntryIDEncoding(t *testing.T) {
 
 	rt := engine.rcbs["LD1/LLN0$BR$brcb01"]
 	rt.mu.Lock()
-	if len(rt.bufQueue) == 0 {
+	if rt.buf.Len() == 0 {
 		rt.mu.Unlock()
 		t.Fatal("expected buffered entry")
 	}
-	entry := rt.bufQueue[0]
+	entry, _ := rt.buf.Oldest()
 	rt.mu.Unlock()
 
-	eid := binary.BigEndian.Uint64(entry.entryID)
+	eid := entry.ID
 	if eid != 1 {
 		t.Errorf("first entryID = %d, want 1", eid)
 	}
@@ -813,7 +812,7 @@ func TestReportEngine_BRCB_ResumeID_FiltersBuf(t *testing.T) {
 	}
 
 	rcb.mu.Lock()
-	qLen := len(rcb.bufQueue)
+	qLen := rcb.buf.Len()
 	rcb.mu.Unlock()
 	if qLen != 3 {
 		t.Fatalf("want 3 buffered entries, got %d", qLen)
@@ -838,7 +837,7 @@ func TestReportEngine_BRCB_ResumeID_FiltersBuf(t *testing.T) {
 
 	// The buffer itself is untouched; only the replay set is filtered.
 	rcb.mu.Lock()
-	qLen = len(rcb.bufQueue)
+	qLen = rcb.buf.Len()
 	rcb.mu.Unlock()
 	if qLen != 3 {
 		t.Errorf("bufQueue should still hold 3 entries, got %d", qLen)

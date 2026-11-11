@@ -48,11 +48,19 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
 
 ## Server limitations
 
-- **Reports: in-memory BRCB buffer, no ResvTms/Owner** — the report engine
-  implements the IEC 61850-7-2 §17.2 URCB and BRCB state machines per
-  association (see API.md "Report engine"), with these limits:
-  - The BRCB buffer is in memory (default 1000 entries, `SetRCBBufMax`)
-    and does not survive a server restart; EntryIDs restart at 1.
+- **Reports: no persistent BRCB buffer, no ResvTms/Owner** — the report
+  engine implements the IEC 61850-7-2 §17.2 URCB and BRCB state machines
+  per association, including BufTm (see API.md "Report engine"), with
+  these limits:
+  - The default BRCB buffer is in memory (`NewMemoryReportBuffer`: 1000
+    entries, optionally a byte limit) and does not survive a server
+    restart; EntryIDs restart at 1. No persistent `ReportBuffer` ships;
+    one supplied through `ServerOptions.NewReportBuffer` is continued
+    after a restart.
+  - BufTm treats FC=MX members like FC=ST: a second change of a member
+    within BufTm sends the pending report. The alternative the standard
+    allows for MX, replacing the value in the pending report, is not
+    offered.
   - The optional BRCB attributes ResvTms and Owner (IEC 61850-7-2
     Table 37 c3/c4) are not modelled: a BRCB is reserved only by the
     association that enables it, and released when it disables it or the
@@ -92,10 +100,10 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   OpOpn/OpCls). APC, BSC and other CDCs need an `OnOperate`. A Cancel of
   a time activated operate before operTm sends no
   TimeActivatedOperate termination. A selection held by an association
-  that ended is released when its `Server.Serve` returns; with
-  `ListenAndServe` without connection hooks (go-mms serves the
-  connection), it is released at the next control service on that object,
-  and `stSeld` stays TRUE until then. Choices where the standard is
+  that ended is released when its `Server.Serve` returns (also for
+  `ListenAndServe`, which serves every connection through it); for a
+  connection given to `mms.Server` directly, it is released at the next
+  control service on that object, and `stSeld` stays TRUE until then. Choices where the standard is
   ambiguous follow libiec61850; see [INTEROP.md](INTEROP.md#control-model-choices).
 - **Setting groups: value banks in memory** — the server keeps one value
   bank per setting group (IEC 61850-7-2 §16, built from SCL `Val sGroup`)

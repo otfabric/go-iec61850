@@ -5,7 +5,6 @@ package iec61850
 import (
 	"context"
 	"errors"
-	"slices"
 	"time"
 
 	"github.com/otfabric/go-mms"
@@ -21,7 +20,7 @@ func (re *ReportEngine) NotifyValueChanged(_ context.Context, storeKey string) {
 	if re.stopped() {
 		return
 	}
-	now := time.Now()
+	now := re.clk.Now()
 
 	re.mu.RLock()
 	defer re.mu.RUnlock()
@@ -121,26 +120,36 @@ func triggerReason(trg TrgOps, n *servermodel.MemberNode, storeKey string, prevV
 	return reason
 }
 
-// recordEventLocked records a dchg/qchg/dupd notification, aggregating
-// notifications for BufTm (IEC 61850-7-2 §17.2.2.9). Caller holds rt.mu.
+// recordEventLocked records a dchg/qchg/dupd notification, combining
+// the notifications of one buffer time into one entry
+// (IEC 61850-7-2 §17.2.2.9, Figure 26). Caller holds rt.mu.
+//
+//   - BufTm = 0: every internal notification is its own entry.
+//   - The first notification starts the BufTm timer; notifications of
+//     other members before it expires join the pending entry, which is
+//     queued when the timer expires.
+//   - A second notification of a member already in the pending entry
+//     queues the pending entry at once, restarts the timer and starts the
+//     next entry with the new notification. The standard requires this
+//     for FC=ST and allows it for FC=MX (the alternative, replacing the
+//     value in the pending entry, is not used), so it applies to every
+//     member.
+//
+// The entry's TimeOfEntry is the time of its first notification
+// (§17.2.2.16).
 func (re *ReportEngine) recordEventLocked(rt *rcbRuntime, inclusion []bool, reasons []ReasonCode, values []*mms.Value, now time.Time) {
 	if rt.bufTm == 0 {
-		// BufTm 0: every internal notification becomes its own report.
-		re.appendEntryLocked(rt, &bufferedEntry{
-			timeOfEntry: now,
-			values:      values,
-			reasons:     reasons,
-			inclusion:   inclusion,
+		re.appendEntryLocked(rt, ReportEntry{
+			TimeOfEntry: now,
+			Values:      values,
+			Reasons:     reasons,
+			Inclusion:   inclusion,
 		})
 		return
 	}
-	// A second notification for a member that is already pending before
-	// BufTm expires ends the buffer period early (mandatory for ST,
-	// optional for MX): the pending report goes out now, the timer
-	// restarts and the new notification starts the next report.
 	if rt.agg != nil {
 		for i, in := range inclusion {
-			if in && rt.agg.inclusion[i] {
+			if in && rt.agg.Inclusion[i] {
 				re.flushAggLocked(rt)
 				break
 			}
@@ -148,16 +157,15 @@ func (re *ReportEngine) recordEventLocked(rt *rcbRuntime, inclusion []bool, reas
 	}
 	if rt.agg == nil {
 		n := len(inclusion)
-		rt.agg = &bufferedEntry{
-			timeOfEntry: now,
-			values:      make([]*mms.Value, n),
-			reasons:     make([]ReasonCode, n),
-			inclusion:   make([]bool, n),
+		rt.agg = &ReportEntry{
+			TimeOfEntry: now,
+			Values:      make([]*mms.Value, n),
+			Reasons:     make([]ReasonCode, n),
+			Inclusion:   make([]bool, n),
 		}
 		rt.aggGen++
 		gen := rt.aggGen
-		// The first notification of a buffer period starts a BufTm timer.
-		rt.aggTimer = time.AfterFunc(time.Duration(rt.bufTm)*time.Millisecond, func() {
+		rt.aggTimer = re.clk.AfterFunc(time.Duration(rt.bufTm)*time.Millisecond, func() {
 			rt.mu.Lock()
 			defer rt.mu.Unlock()
 			if rt.aggGen == gen && rt.agg != nil && !re.stopped() {
@@ -169,22 +177,23 @@ func (re *ReportEngine) recordEventLocked(rt *rcbRuntime, inclusion []bool, reas
 		if !in {
 			continue
 		}
-		rt.agg.inclusion[i] = true
-		rt.agg.values[i] = values[i]
-		rt.agg.reasons[i] |= reasons[i]
+		rt.agg.Inclusion[i] = true
+		rt.agg.Values[i] = values[i]
+		rt.agg.Reasons[i] |= reasons[i]
 	}
 }
 
-// flushAggLocked turns the pending BufTm aggregate into an entry.
+// flushAggLocked queues the pending BufTm entry, if any, as if BufTm had
+// expired.
 func (re *ReportEngine) flushAggLocked(rt *rcbRuntime) {
 	e := rt.agg
 	rt.stopAggLocked()
 	if e != nil {
-		re.appendEntryLocked(rt, e)
+		re.appendEntryLocked(rt, *e)
 	}
 }
 
-// stopAggLocked discards the pending BufTm aggregate and its timer.
+// stopAggLocked discards the pending BufTm entry and its timer.
 func (rt *rcbRuntime) stopAggLocked() {
 	if rt.aggTimer != nil {
 		rt.aggTimer.Stop()
@@ -200,12 +209,14 @@ func (rt *rcbRuntime) stopAggLocked() {
 // events are queued before it ("Prior events reported").
 func (re *ReportEngine) queueGILocked(rt *rcbRuntime) {
 	re.flushAggLocked(rt)
-	rt.bufQueue = slices.DeleteFunc(rt.bufQueue, func(e *bufferedEntry) bool { return e.gi && !e.sent })
-	re.appendEntryLocked(rt, re.snapshotEntryLocked(rt, ReasonGI, true))
+	rt.dropPendingGILocked()
+	if id := re.appendEntryLocked(rt, re.snapshotEntryLocked(rt, ReasonGI, true)); id != 0 {
+		rt.giPending = id
+	}
 }
 
 // snapshotEntryLocked builds an entry with every member included.
-func (re *ReportEngine) snapshotEntryLocked(rt *rcbRuntime, reason ReasonCode, gi bool) *bufferedEntry {
+func (re *ReportEngine) snapshotEntryLocked(rt *rcbRuntime, reason ReasonCode, gi bool) ReportEntry {
 	n := len(rt.memberKeys)
 	inclusion := make([]bool, n)
 	reasons := make([]ReasonCode, n)
@@ -213,39 +224,29 @@ func (re *ReportEngine) snapshotEntryLocked(rt *rcbRuntime, reason ReasonCode, g
 		inclusion[i] = true
 		reasons[i] = reason
 	}
-	return &bufferedEntry{
-		timeOfEntry: time.Now(),
-		values:      re.readMemberValues(rt),
-		reasons:     reasons,
-		inclusion:   inclusion,
-		gi:          gi,
+	return ReportEntry{
+		TimeOfEntry: re.clk.Now(),
+		Values:      re.readMemberValues(rt),
+		Reasons:     reasons,
+		Inclusion:   inclusion,
+		GI:          gi,
 	}
 }
 
 // appendEntryLocked assigns the next EntryID to e and appends it to the
-// queue, discarding the oldest entry when the buffer is full
-// (IEC 61850-7-2 §17.2.3.2.2.8). Caller holds rt.mu.
-func (re *ReportEngine) appendEntryLocked(rt *rcbRuntime, e *bufferedEntry) {
+// buffer, which discards its oldest entries when it is full
+// (IEC 61850-7-2 §17.2.3.2.2.8). It returns the EntryID, or 0 when the
+// buffer could not keep e. Caller holds rt.mu.
+func (re *ReportEngine) appendEntryLocked(rt *rcbRuntime, e ReportEntry) uint64 {
 	rt.entryID++
-	e.id = rt.entryID
-	e.entryID = encodeEntryID(e.id)
-
-	limit := max(rt.bufMax, 1)
-	for len(rt.bufQueue) >= limit {
-		d := rt.bufQueue[0]
-		rt.bufQueue = rt.bufQueue[1:]
-		rt.discarded = true
-		// Discarding an entry that was still waiting to be sent moves the
-		// send pointer, so only the next transmitted entry carries
-		// BufOvfl=TRUE. Discarding an entry already transmitted does not
-		// (Figure 30).
-		if rt.enabled && d.id > rt.lastSentID && !d.sent {
-			rt.pendingOvfl = true
+	e.ID = rt.entryID
+	kept := true
+	for _, d := range rt.buf.Append(e) {
+		if d.ID == e.ID {
+			kept = false
 		}
-		re.logger.Debug("iec61850: report buffer full, oldest entry discarded",
-			"rcb", rt.rcbItemID, "entry", d.id)
+		re.discardedLocked(rt, d)
 	}
-	rt.bufQueue = append(rt.bufQueue, e)
 
 	if rt.buffered && !rt.enabled && !rt.resync {
 		re.publishNewestEntryLocked(rt)
@@ -256,6 +257,28 @@ func (re *ReportEngine) appendEntryLocked(rt *rcbRuntime, e *bufferedEntry) {
 		default:
 		}
 	}
+	if !kept {
+		return 0
+	}
+	return e.ID
+}
+
+// discardedLocked accounts for an entry the buffer discarded.
+func (re *ReportEngine) discardedLocked(rt *rcbRuntime, d ReportEntry) {
+	rt.discarded = true
+	// Discarding an entry that was still waiting to be sent moves the
+	// send pointer, so only the next transmitted entry carries
+	// BufOvfl=TRUE. Discarding an entry already transmitted does not
+	// (Figure 30).
+	if rt.enabled && d.ID > rt.lastSentID && (!d.GI || !rt.giWasSentLocked(d.ID)) {
+		rt.pendingOvfl = true
+	}
+	delete(rt.giSent, d.ID)
+	if rt.giPending == d.ID {
+		rt.giPending = 0
+	}
+	re.logger.Debug("iec61850: report buffer full, oldest entry discarded",
+		"rcb", rt.rcbItemID, "entry", d.ID)
 }
 
 // restartIntegrityLocked (re)starts the integrity timer for the current
@@ -295,12 +318,7 @@ func (re *ReportEngine) integrityLoop(rt *rcbRuntime, period time.Duration, stop
 				rt.mu.Unlock()
 				return
 			}
-			if rt.monitoringLocked() {
-				// BufTm does not delay an integrity report: pending
-				// events go first, then the integrity.
-				re.flushAggLocked(rt)
-				re.appendEntryLocked(rt, re.snapshotEntryLocked(rt, ReasonIntegrity, false))
-			}
+			re.integrityLocked(rt)
 			rt.mu.Unlock()
 		case <-stop:
 			return
@@ -308,6 +326,18 @@ func (re *ReportEngine) integrityLoop(rt *rcbRuntime, period time.Duration, stop
 			return
 		}
 	}
+}
+
+// integrityLocked handles the expiry of the integrity period: an entry
+// with all members (§17.2.3.2.3.3). BufTm has no effect on it
+// (§17.2.2.12); the pending BufTm entry is queued first, so the events
+// keep their time order (§17.2.3.2.3.5).
+func (re *ReportEngine) integrityLocked(rt *rcbRuntime) {
+	if !rt.monitoringLocked() {
+		return
+	}
+	re.flushAggLocked(rt)
+	re.appendEntryLocked(rt, re.snapshotEntryLocked(rt, ReasonIntegrity, false))
 }
 
 // startSenderLocked starts the delivery goroutine of a new enable
@@ -319,18 +349,24 @@ func (re *ReportEngine) startSenderLocked(rt *rcbRuntime, conn *mms.ServerConn) 
 	rt.wake = wake
 	wake <- struct{}{} // deliver what is already buffered
 	re.wg.Add(1)
-	go re.senderLoop(rt, conn, stop, wake)
+	go re.senderLoop(rt, conn, rt.sendGate, stop, wake)
 }
 
-// pauseUntil waits for d and reports true, or false as soon as stop is
-// closed or the engine stops.
-func (re *ReportEngine) pauseUntil(d time.Duration, stop <-chan struct{}) bool {
-	if d <= 0 {
+// awaitGate waits until the receiving association has no response
+// pending (see respGate), at most gateTimeout. It reports false as soon as
+// stop is closed or the engine stops.
+func (re *ReportEngine) awaitGate(g *respGate, stop <-chan struct{}) bool {
+	idle := g.idleCh()
+	select {
+	case <-idle:
 		return true
+	default:
 	}
-	t := time.NewTimer(d)
+	t := time.NewTimer(gateTimeout)
 	defer t.Stop()
 	select {
+	case <-idle:
+		return true
 	case <-t.C:
 		return true
 	case <-stop:
@@ -345,7 +381,11 @@ func (re *ReportEngine) pauseUntil(d time.Duration, stop <-chan struct{}) bool {
 // the time sequence order of their entries (IEC 61850-7-2
 // §17.2.3.2.3.5) and buffered entries are sent before newer ones
 // (§17.2.3.2.3.6).
-func (re *ReportEngine) senderLoop(rt *rcbRuntime, conn *mms.ServerConn, stop, wake chan struct{}) {
+//
+// A report triggered by a request of the receiving association waits
+// until that request's response is sent (respGate); other reports are
+// sent at once.
+func (re *ReportEngine) senderLoop(rt *rcbRuntime, conn *mms.ServerConn, gate *respGate, stop, wake chan struct{}) {
 	defer re.wg.Done()
 	for {
 		select {
@@ -355,10 +395,10 @@ func (re *ReportEngine) senderLoop(rt *rcbRuntime, conn *mms.ServerConn, stop, w
 			return
 		case <-wake:
 		}
-		if !re.pauseUntil(reportDispatchDelay, stop) {
-			return
-		}
 		for {
+			if !re.awaitGate(gate, stop) {
+				return
+			}
 			segments, ok := re.nextReport(rt, stop)
 			if !ok {
 				break
@@ -393,21 +433,23 @@ func (re *ReportEngine) nextReport(rt *rcbRuntime, stop chan struct{}) ([][]*mms
 		if rt.sendStop != stop || !rt.enabled {
 			return nil, false
 		}
-		i := slices.IndexFunc(rt.bufQueue, func(e *bufferedEntry) bool {
-			return e.id > rt.lastSentID && (!e.gi || !e.sent)
-		})
-		if i < 0 {
+		e, ok := rt.buf.After(rt.lastSentID)
+		for ok && e.GI && rt.giWasSentLocked(e.ID) {
+			e, ok = rt.buf.After(e.ID)
+		}
+		if !ok {
 			return nil, false
 		}
-		e := rt.bufQueue[i]
-		rt.lastSentID = e.id
-		if e.gi {
-			e.sent = true
+		rt.lastSentID = e.ID
+		if e.GI {
+			rt.markGISentLocked(e.ID)
 		}
 		if !rt.buffered {
 			// A URCB has no buffer: once formatted the entry is gone.
-			rt.bufQueue = rt.bufQueue[i+1:]
+			rt.buf.Remove(e.ID)
+			delete(rt.giSent, e.ID)
 		}
+		entryID := encodeEntryID(e.ID)
 
 		bufOvfl := false
 		if rt.buffered && rt.pendingOvfl {
@@ -422,14 +464,14 @@ func (re *ReportEngine) nextReport(rt *rcbRuntime, stop chan struct{}) ([][]*mms
 			confRev:     rt.confRev,
 			datSet:      rt.datSet,
 			bufOvfl:     bufOvfl,
-			timeOfEntry: e.timeOfEntry,
-			inclusion:   e.inclusion,
+			timeOfEntry: e.TimeOfEntry,
+			inclusion:   e.Inclusion,
 			dataRefs:    rt.memberKeys,
-			reasons:     e.reasons,
-			values:      e.values,
+			reasons:     e.Reasons,
+			values:      e.Values,
 		}
 		if rt.buffered {
-			p.entryID = e.entryID
+			p.entryID = entryID
 		}
 		segments := formatReport(p, re.maxPDU)
 
@@ -445,8 +487,8 @@ func (re *ReportEngine) nextReport(rt *rcbRuntime, stop chan struct{}) ([][]*mms
 		if rt.buffered {
 			// §17.2.2.15: while enabled EntryID is the last one formatted
 			// and queued for transmission; §17.2.2.16 its TimeOfEntry.
-			re.store.Set(rt.sk("EntryID"), mms.NewOctetString(append([]byte(nil), e.entryID...)))
-			re.store.Set(rt.sk("TimeOfEntry"), mms.NewBinaryTime(e.timeOfEntry.UnixMilli()))
+			re.store.Set(rt.sk("EntryID"), mms.NewOctetString(entryID))
+			re.store.Set(rt.sk("TimeOfEntry"), mms.NewBinaryTime(e.TimeOfEntry.UnixMilli()))
 		}
 		if segments == nil {
 			re.logger.Warn("iec61850: report member exceeds the PDU size, report dropped",

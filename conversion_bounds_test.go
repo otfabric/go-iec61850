@@ -223,15 +223,17 @@ func TestReportEngineStopCancelsSends(t *testing.T) {
 	}
 
 	paused := make(chan bool, 1)
-	re.wg.Go(func() { paused <- re.pauseUntil(time.Hour, nil) })
+	busy := newRespGate()
+	busy.setBusy()
+	re.wg.Go(func() { paused <- re.awaitGate(busy, nil) })
 	replayed := make(chan struct{})
 	var sc mms.ServerConn
-	rt := &rcbRuntime{rcbItemID: "LLN0$BR$brcb01", buffered: true}
+	rt := &rcbRuntime{rcbItemID: "LLN0$BR$brcb01", buffered: true, buf: NewMemoryReportBuffer(0, 0)}
 	stop, wake := make(chan struct{}), make(chan struct{}, 1)
 	wake <- struct{}{}
 	re.wg.Add(1)
 	go func() {
-		re.senderLoop(rt, &sc, stop, wake)
+		re.senderLoop(rt, &sc, nil, stop, wake)
 		close(replayed)
 	}()
 
@@ -256,7 +258,7 @@ func TestReportEngineStopCancelsSends(t *testing.T) {
 	if _, ok := ctx.Deadline(); !ok {
 		t.Error("bare engine send has no deadline")
 	}
-	if !bare.pauseUntil(time.Millisecond, nil) {
-		t.Error("bare engine pause")
+	if !bare.awaitGate(nil, nil) {
+		t.Error("bare engine gate")
 	}
 }
