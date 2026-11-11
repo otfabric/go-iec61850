@@ -1,9 +1,9 @@
 # go-iec61850 Releases
 
-## v1.18.0
+## v1.19.0
 
 **Date:** 2026-11-11
-**Previous release:** v1.17.1
+**Previous release:** v1.18.0
 
 Buffer time and a pluggable BRCB buffer for the server report engine (IEC 61850-7-2 §17.2.2.9, §17.2.3.2.2.8). The API is additive.
 
@@ -27,6 +27,45 @@ Buffer time and a pluggable BRCB buffer for the server report engine (IEC 61850-
 - `TestSpec_7_2_17_2_3_2_2_8_ByteLimitSetsBufOvfl`, buffer unit tests, adoption of a pre-filled buffer, and a buffer that cannot store an entry.
 - Chaos and race tests with goroutine-leak checks: concurrent changes, GI and enable/disable against a short BufTm and a bounded buffer; an association dropping while a report waits for a response.
 - Interop with the pinned iec61850-interop images passes (libiec61850, iec61850bean, dscsystems, iec61850-rust, cB-Sigma). The go-to-go BRCB replay tests in `interop/` failed intermittently without the client fix above.
+
+---
+
+## v1.18.0
+
+**Date:** 2026-11-11
+**Previous release:** v1.17.1
+
+R-GOOSE and R-SV: GOOSE and Sampled Values over UDP/IP with authenticated
+SPDUs. The API is additive; packages `goose` and `sv` are unchanged.
+
+### Added
+
+- **Package `rsession`**: the session protocol of IEC TR 61850-90-5 for
+  routable GOOSE and SV (R-GOOSE, R-SV), unicast and multicast, UDP port
+  102 by default. `rsession.Transport` implements the layer-2 `Transport`
+  of `goose` and `sv`, so their publishers and subscribers run over UDP
+  unchanged. Protocol versions 1 and 2 are received; 2 is sent by default.
+- **Authentication**: HMAC-SHA256 truncated to 80, 128 or 256 bits over
+  every SPDU, with keys from a `KeyProvider` interface (`KeyRing` is a
+  static provider that supports key changes). Secured by default:
+  `Open` needs a key provider unless `Insecure` is set, and a receiver
+  refuses unsecured, unknown-key, tampered and replayed SPDUs (64-entry
+  window per sender and key), counting them in `Stats` and reporting them
+  to `OnReject`.
+- `rsession.Encode`, `Decode` and `Verify` for single SPDUs; fuzz targets
+  `FuzzDecode` and `FuzzVerify`.
+- [ADR 0001](docs/adr/0001-routable-goose-sv.md): the wire layout, the
+  references it follows (IEC TR 61850-90-5 and IEC 62351-6 were not
+  available; the layout follows libiec61850, Wireshark and dscsystems where
+  they agree) and the scope.
+
+### Not included
+
+- Layer-2 IEC 62351-6 authentication (Reserved 1/2 and the extension
+  field) is deferred until IEC 62351-6 is available; see
+  KNOWN_LIMITATIONS.md.
+- AES-GMAC, AES-GCM encryption and IEC 62351-9 key distribution.
+- Interop: no independent R-GOOSE/R-SV peer has been tested yet.
 
 ---
 

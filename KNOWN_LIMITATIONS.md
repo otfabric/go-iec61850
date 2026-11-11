@@ -9,8 +9,9 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
 
 - **MMS, GOOSE and Sampled Values** — this library implements IEC 61850
   over MMS (ISO 9506), GOOSE (IEC 61850-8-1, see [GOOSE.md](GOOSE.md)) and
-  Sampled Values (IEC 61850-9-2, see [SV.md](SV.md)). R-GOOSE/R-SV
-  (IEC 61850-90-5) are out of scope.
+  Sampled Values (IEC 61850-9-2, see [SV.md](SV.md)), and both over
+  UDP/IP as R-GOOSE/R-SV (IEC TR 61850-90-5 session protocol, package
+  `rsession`, see [GOOSE.md](GOOSE.md#r-goose-and-r-sv-over-udp)).
 - **No ACSI mapping completeness guarantee** — not every ACSI service defined
   in IEC 61850-7-2 is mapped. The library focuses on the services needed for
   practical client/server use cases.
@@ -124,11 +125,26 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
 
 ## GOOSE and Sampled Values
 
-- **No IEC 62351-6 security** — GOOSE and SV frames are neither signed nor
-  encrypted; the SV `security` field is carried opaquely. Protect the
-  process bus at the network layer (VLANs, port security, separate
-  switches).
-- **No R-GOOSE / R-SV** (IEC 61850-90-5, routable over UDP/IP).
+- **No layer-2 IEC 62351-6 security** — layer-2 GOOSE and SV frames are
+  neither signed nor encrypted: the 62351-6 extension (the security bits
+  of Reserved 1, Reserved 2 and the extension after the APDU) is not
+  implemented, because IEC 62351-6 was not available to implement it from
+  ([ADR 0001](docs/adr/0001-routable-goose-sv.md#layer-2-iec-62351-6-extension-in-reserved-12));
+  the reserved fields and the SV `security` field are carried opaquely.
+  Protect the process bus at the network layer (VLANs, port security,
+  separate switches), or use R-GOOSE/R-SV.
+- **R-GOOSE / R-SV: authentication only, unverified layout** — package
+  `rsession` signs and verifies SPDUs with HMAC-SHA256 (80, 128, 256 bits).
+  Not implemented: AES-GMAC, AES-GCM encryption, tunnelled and management
+  SPDUs, several APDUs per SPDU on send, IEC 62351-9 (GDOI) key
+  distribution (keys come from a `KeyProvider`), and SCL `IP` addresses of
+  R-GOOSE/R-SV control blocks. The wire layout follows the IEC TR
+  61850-90-5 structure as libiec61850, Wireshark and dscsystems implement
+  it, since 90-5 itself was not available; it has not been exchanged with
+  another implementation (libiec61850 at the pinned revision writes an
+  APDU length its own decoder refuses). A restarted publisher's SPDUs are
+  refused as replays until the key changes, unless `ReplayResetAfter` or
+  `InitialSPDUNumber` is used. Multicast needs Linux, macOS or a BSD.
 - **Raw Ethernet only on Linux, macOS and the BSDs** — Linux uses
   `AF_PACKET` and needs `CAP_NET_RAW` (or root); macOS/BSD use BPF and need
   read/write access to `/dev/bpf*`. Other platforms (Windows) return
