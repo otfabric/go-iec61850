@@ -498,7 +498,7 @@ func validateDataSetName(itemID string) error {
 		if i == 0 && !alpha {
 			return fmt.Errorf("data set name %q: must begin with a letter", name)
 		}
-		if !alpha && !(ch >= '0' && ch <= '9') && ch != '_' {
+		if !alpha && (ch < '0' || ch > '9') && ch != '_' {
 			return fmt.Errorf("data set name %q: character %q not in A-Za-z0-9_", name, ch)
 		}
 	}

@@ -76,17 +76,17 @@ func run(ctx context.Context, addr, do string, value bool, out io.Writer) error 
 	switch {
 	case ctlModel.IsSBO() && ctlModel.IsEnhanced():
 		if err := client.SelectWithValue(ctx, ref, params); err != nil {
-			return report(ctx, client, ref, "select-with-value", err, out)
+			return report(ref, "select-with-value", err, out)
 		}
 		fmt.Fprintln(out, "selected (SBOw)")
 	case ctlModel.IsSBO():
 		if _, err := client.Select(ctx, ref); err != nil {
-			return report(ctx, client, ref, "select", err, out)
+			return report(ref, "select", err, out)
 		}
 		fmt.Fprintln(out, "selected (SBO)")
 	}
 	if err := client.Operate(ctx, ref, params); err != nil {
-		return report(ctx, client, ref, "operate", err, out)
+		return report(ref, "operate", err, out)
 	}
 	fmt.Fprintf(out, "operated: ctlVal=%v\n", value)
 	return nil
@@ -94,7 +94,7 @@ func run(ctx context.Context, addr, do string, value bool, out io.Writer) error 
 
 // report explains a failed control service: the error class, and the
 // server's LastApplError when it sent one.
-func report(ctx context.Context, client *iec61850.Client, ref iec61850.Ref, op string, err error, out io.Writer) error {
+func report(ref iec61850.Ref, op string, err error, out io.Writer) error {
 	if ce, ok := errors.AsType[*iec61850.ControlError](err); ok {
 		fmt.Fprintf(out, "%s refused: AddCause %s\n", op, ce.AddCause)
 		if lae := ce.LastApplError; lae != nil {

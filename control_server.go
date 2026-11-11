@@ -334,8 +334,9 @@ func controlRefusalCode(err error) mms.DataAccessErrorCode {
 	switch addCauseOf(err) {
 	case AddCauseObjectAlreadySelected, AddCauseCommandAlreadyExec, AddCauseLockedByOtherClient:
 		return mms.DataAccessErrorTemporarilyUnavailable
+	default:
+		return mms.DataAccessErrorObjectAccessDenied
 	}
-	return mms.DataAccessErrorObjectAccessDenied
 }
 
 // handleControlWrite is the server-side dispatch for control writes.
@@ -563,7 +564,7 @@ func (s *Server) readyLocked(reg *controlRegistration, now time.Time) {
 // syncStSeld writes the stSeld status of the control (IEC 61850-7-3:
 // TRUE while selected) when the data object has one.
 func (s *Server) syncStSeld(ctx context.Context, reg *controlRegistration) {
-	if s.store == nil || !s.hasAttr(reg, "ST", "stSeld") {
+	if s.store == nil || !s.hasST(reg, "stSeld") {
 		return
 	}
 	reg.stMu.Lock()
@@ -624,6 +625,7 @@ func (s *Server) doSelect(ctx context.Context, reg *controlRegistration, req Con
 		s.afterRelease(ctx, reg, released)
 		s.logger.Warn("iec61850: select denied: already selected", "ref", req.Ref)
 		return newControlRefusal(req, "select", AddCauseObjectAlreadySelected, ErrSelectFailed)
+	case ctlUnselected:
 	}
 	reg.state = ctlSelecting
 	reg.sel = controlSelection{conn: sc}
@@ -939,6 +941,9 @@ func (s *Server) cancel(ctx context.Context, reg *controlRegistration, req Contr
 			s.logger.Warn("iec61850: cancel denied: parameters differ from SelectWithValue", "ref", req.Ref)
 			return newControlRefusal(req, "cancel", AddCauseInconsistentParameters, ErrCancelFailed)
 		}
+	case ctlUnselected:
+		// IEC 61850-7-2 Table 47: a Cancel without a selection is
+		// answered positively (OnCancel decides).
 	}
 	state, gen := reg.state, reg.gen
 	reg.mu.Unlock()
@@ -1015,8 +1020,9 @@ func (s *Server) findAttr(reg *controlRegistration, fc, name string) *servermode
 	return nil
 }
 
-func (s *Server) hasAttr(reg *controlRegistration, fc, name string) bool {
-	return s.findAttr(reg, fc, name) != nil
+// hasST reports whether a control's DO has the ST attribute name.
+func (s *Server) hasST(reg *controlRegistration, name string) bool {
+	return s.findAttr(reg, "ST", name) != nil
 }
 
 // defaultOperate is the operate without OnOperate (demo grade): ctlVal
@@ -1049,13 +1055,13 @@ func (s *Server) defaultOperate(ctx context.Context, reg *controlRegistration, r
 		return
 	}
 	s.controlSetValue(ctx, stKey("stVal"), val)
-	if s.hasAttr(reg, "ST", "t") {
+	if s.hasST(reg, "t") {
 		s.controlSetValue(ctx, stKey("t"), mms.NewUTCTime(time.Now()))
 	}
-	if s.hasAttr(reg, "ST", "ctlNum") {
+	if s.hasST(reg, "ctlNum") {
 		s.controlSetValue(ctx, stKey("ctlNum"), mms.NewUnsigned(uint64(req.CtlNum)))
 	}
-	if s.hasAttr(reg, "ST", "origin") {
+	if s.hasST(reg, "origin") {
 		s.controlSetValue(ctx, stKey("origin$orCat"), mms.NewInteger(int64(req.Origin.OrCat)))
 		s.controlSetValue(ctx, stKey("origin$orIdent"), mms.NewOctetString(req.Origin.OrIdent))
 	}

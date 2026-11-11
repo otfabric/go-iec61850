@@ -102,8 +102,9 @@ func (c *Client) controlHasOperTm(ctx context.Context, sub Ref, fallback bool) b
 		return true
 	case operTmAbsent:
 		return false
+	default:
+		return fallback
 	}
-	return fallback
 }
 
 // operTmLayoutOf finds operTm in an Oper/SBOw/Cancel type: by name, or,

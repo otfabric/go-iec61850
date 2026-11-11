@@ -178,7 +178,8 @@ func (r Ref) ValidateStrict() error {
 	for _, n := range names {
 		for i := 0; i < len(n); i++ {
 			ch := n[i]
-			if !(ch >= 'A' && ch <= 'Z' || ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9' || ch == '_') {
+			legal := ch >= 'A' && ch <= 'Z' || ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9' || ch == '_'
+			if !legal {
 				return &ReferenceError{Input: r.String(), Reason: fmt.Sprintf("name %q: character %q not in A-Za-z0-9_", n, ch)}
 			}
 		}
