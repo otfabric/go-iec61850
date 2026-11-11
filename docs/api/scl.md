@@ -203,6 +203,13 @@ type DA struct {
 	Count int
 	Val   string // the first Val element; Vals has all of them
 	Vals  []Value
+
+	// Dchg, Qchg and Dupd are the trigger options of the attribute
+	// (IEC 61850-7-3 TrgOp, IEC 61850-6 tDA): which changes of it are
+	// reported or logged as data-change, quality-change or data-update.
+	Dchg bool
+	Qchg bool
+	Dupd bool
 }
 ```
 
@@ -718,12 +725,34 @@ LNodeType defines the structure of a logical node type.
 
 ```go
 type Log struct {
+	// Name is the name of the log control block.
 	Name string
 	Desc string
+
+	// LogName is the name of the log (journal) the LCB writes to, in the
+	// LN named by LDInst, Prefix, LNClass and LNInst.
+	LogName string
+	// LDInst, Prefix, LNClass and LNInst locate the LN that holds the
+	// log; an empty LDInst means the LD of the control block and an
+	// empty LNClass means LLN0.
+	LDInst  string
+	Prefix  string
+	LNClass string
+	LNInst  string
+
+	// DatSet is the LN-relative name of the data set whose values are
+	// logged.
+	DatSet string
+	IntgPd uint32
+	TrgOps TrgOps
+	// LogEna is the initial LogEna (SCL default true).
+	LogEna bool
+	// ReasonCode is the SCL reasonCode attribute (default true).
+	ReasonCode bool
 }
 ```
 
-Log represents a log control block definition.
+Log represents a log control block definition (SCL LogControl, IEC 61850-6 §9.3.9 Table 26).
 
 ### type OptFields
 
@@ -816,6 +845,15 @@ type ReportControl struct {
 
 	TrgOps    TrgOps
 	OptFields OptFields
+
+	// Indexed is the SCL indexed attribute (default true in Edition 2;
+	// Edition 1 files always index): the control block instances are
+	// named Name01..NameNN (IEC 61850-6 §9.3.8, IEC 61850-8-1 §17.1.2).
+	// A ReportControl built in Go is not indexed unless this is set.
+	Indexed bool
+	// MaxInstances is RptEnabled max, the number of instances (default 1
+	// when the RptEnabled element or its max attribute is absent).
+	MaxInstances uint32
 }
 ```
 
