@@ -1,5 +1,30 @@
 # go-iec61850 Releases
 
+## v1.19.0
+
+**Date:** 2026-11-11
+**Previous release:** v1.18.0
+
+Setting groups get value banks (IEC 61850-7-2 §16, 8-1 §16). This closes the "no per-group value banks" limitation of v1.17.
+
+### Added
+
+- **One value bank per setting group.** The server keeps a value for every FC=SG and FC=SE leaf of the logical device in each group. FC=SG reads give the active group. SelectActiveSG loads the selected group into FC=SG (and sets ActSG and LActTm). SelectEditSG copies the group into the edit buffer, FC=SE, which SetEditSGValue writes. ConfirmEditSGValues copies FC=SE into the group, and into FC=SG when that group is active. SelectEditSG 0, ResvTms expiry and loss of the association discard the edit. The edit reservation per association is as in v1.17.
+- **Banks from SCL.** `SettingControl numOfSGs` gives the number of groups. Each DAI `Val sGroup="n"` is that group's value (IEC 61850-6 9.5.4.4). A group without one takes the `Val` without `sGroup`, else the DA's value. An `sGroup` above `numOfSGs` is a model warning. The active group's value becomes the attribute's initial value.
+- `SettingGroupEngine.SettingKeys`, `SettingGroupValue` and `SetSettingGroupValue` read and seed the banks, for example to restore persisted groups at startup. Seeding the active group changes FC=SG.
+- When the active group's values change (SelectActiveSG, or ConfirmEditSGValues of the active group), the change goes through `Server.SetValue`: data change reports, logs and GOOSE follow.
+- Tests: `TestSpec_*` per SGCB service on an authored fixture (`testdata/setting-groups.cid`, MIT), a chaos test of concurrent select, edit, confirm and cancel, and unit tests of the SCL value handling.
+
+### Changed
+
+- A DA with `fc="SE"` and no `fc="SG"` twin gets one in the server model, since `fc="SE"` implies `fc="SG"` (IEC 61850-6 Table 47). Before, such a setting (common in ABB CID files) had no FC=SG attribute to read its active value.
+- A DAI without an FC sets the attributes of that name under every FC, so both SG and SE twins get it. Before, only the first one did.
+- SetEditSGValue of a constructed attribute (an FCDA such as `StrVal.setMag`) sets its leaves. Before, the structure was stored apart from the leaves that reads and the edit buffer use, so the write was lost.
+- A `SettingGroupHandler` callback runs before the bank operation. Values that `OnActiveSGChanged` sets on FC=SG, or `OnEditSGSelected` sets on FC=SE, win over the bank and are kept in it. Applications that kept their own group values (as the v1.17 demo IED did) keep working. They can drop that code and give the values in SCL or through `SetSettingGroupValue`.
+- The demo IED (`examples/internal/demoied`) takes its two PTOC1.StrVal groups from `Val sGroup` in `demo.icd`, with no handler code.
+
+---
+
 ## v1.18.0
 
 **Date:** 2026-11-11

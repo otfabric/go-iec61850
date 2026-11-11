@@ -11,7 +11,6 @@ import (
 	_ "embed"
 	"errors"
 	"net"
-	"sync"
 	"testing"
 	"time"
 
@@ -65,52 +64,9 @@ func NewServer(opts iec61850.ServerOptions) (*iec61850.Server, error) {
 	srv.ValueStore().Set(Domain+"/MMXU1$MX$PhV$phsA$cVal$mag$f", mms.NewFloat(0))
 	srv.EnableReports()
 	srv.EnableJournals()
-	enableSettingGroups(srv)
+	// The setting groups' values come from demo.icd (Val sGroup).
+	srv.EnableSettingGroups(iec61850.SettingGroupHandler{})
 	return srv, nil
-}
-
-// Setting store keys of PTOC1.StrVal.setMag.f: the active group's
-// value (FC SG) and the edit buffer (FC SE).
-const (
-	keySG = Domain + "/PTOC1$SG$StrVal$setMag$f"
-	keySE = Domain + "/PTOC1$SE$StrVal$setMag$f"
-)
-
-// enableSettingGroups keeps the values of the two setting groups in the
-// application, as IEC 61850-7-2 leaves their storage to the server:
-// activating a group loads its values into FC SG, selecting a group for
-// editing loads them into FC SE, and confirming stores the edit buffer
-// (and reloads SG when the edited group is the active one).
-func enableSettingGroups(srv *iec61850.Server) {
-	var mu sync.Mutex
-	groups := map[uint8]*mms.Value{1: mms.NewFloat(100), 2: mms.NewFloat(150)}
-	active := uint8(1)
-	srv.ValueStore().Set(keySG, groups[active])
-	srv.ValueStore().Set(keySE, groups[active])
-	srv.EnableSettingGroups(iec61850.SettingGroupHandler{
-		OnActiveSGChanged: func(ctx context.Context, _ string, sg uint8) error {
-			mu.Lock()
-			defer mu.Unlock()
-			active = sg
-			srv.SetValue(ctx, keySG, groups[sg])
-			return nil
-		},
-		OnEditSGSelected: func(ctx context.Context, _ string, sg uint8) error {
-			mu.Lock()
-			defer mu.Unlock()
-			srv.SetValue(ctx, keySE, groups[sg])
-			return nil
-		},
-		OnConfirmEdit: func(ctx context.Context, _ string, sg uint8) error {
-			mu.Lock()
-			defer mu.Unlock()
-			groups[sg] = srv.ValueStore().Get(keySE)
-			if sg == active {
-				srv.SetValue(ctx, keySG, groups[sg])
-			}
-			return nil
-		},
-	})
 }
 
 // Serve starts srv on a loopback port and returns its address. The

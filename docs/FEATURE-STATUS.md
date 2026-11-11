@@ -42,7 +42,7 @@ independent evidence: the feature must not be described as interoperable.
 | LastApplError on refused controls | ✅ in `ControlError` | ✅ | in-memory | libiec61850, dscsystems, cbsigma (client); iec61850-rust sends none |
 | Quality and timestamps | ✅ | ✅ | in-memory, go-to-go in `interop/` | none as a dedicated scenario |
 | Several clients at once | ✅ | ✅ | TCP, go-to-go in `interop/` | none |
-| Setting groups | ✅ | ◐ no value banks | in-memory, TCP | none |
+| Setting groups (value bank per group, SCL `sGroup`) | ✅ | ✅ in memory | in-memory, TCP, chaos | none: no adapter in the pinned images covers SGCB |
 | Journals | ✅ | ◐ in-memory | in-memory | none here; go-mms's interop covers the MMS journal services |
 | Files | ✅ | ◐ needs a `FileProvider` | in-memory | none here; go-mms's interop covers the MMS file services |
 | GOOSE publisher and subscriber | ✅ subscriber | ✅ publisher | in-memory hub, chaos, raw socket | libiec61850, dscsystems, iec61850-rust, cbsigma, both directions |

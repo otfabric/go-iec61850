@@ -1311,6 +1311,12 @@ type SettingGroupHandler struct {
     OnConfirmEdit     func(ctx context.Context, ld string, editSG uint8) error
 }
 
+// Value banks (IEC 61850-7-2 §16): key is the store key of a setting's
+// FC=SG or FC=SE attribute, group is 1..NumOfSG.
+func (e *SettingGroupEngine) SettingKeys(ld string) []string
+func (e *SettingGroupEngine) SettingGroupValue(key string, group uint8) (*mms.Value, error)
+func (e *SettingGroupEngine) SetSettingGroupValue(ctx context.Context, key string, group uint8, val *mms.Value) error
+
 type SettingGroupEngine struct { /* unexported */ }
 
 // Write refusals (IEC 61850-8-1 Table 23) a server callback can return or wrap:
@@ -1321,6 +1327,20 @@ func (e *SettingGroupEngine) HandleSGCBWrite(ctx context.Context, ldName, subfie
 func (e *SettingGroupEngine) GetActiveSettingGroup(ldName string) uint8
 func (e *SettingGroupEngine) GetEditSettingGroup(ldName string) uint8
 ```
+
+The engine keeps one value bank per setting group for every FC=SG and
+FC=SE leaf of the logical device. FC=SG holds the active group's values;
+SelectActiveSG (ActSG) loads the selected bank into it, SelectEditSG
+(EditSG) copies a group into FC=SE, SetEditSGValue writes FC=SE, and
+ConfirmEditSGValues (CnfEdit) copies FC=SE into the group's bank, and
+into FC=SG when that group is active; SelectEditSG 0 discards the edit.
+The banks start from the SCL `Val sGroup="n"` values (IEC 61850-6
+9.5.4.4); a group without a value of its own takes the `Val` without
+`sGroup`, else the DA's value. A DA with `fc="SE"` implies the `fc="SG"`
+one (IEC 61850-6 Table 47), which the model adds. Active settings change
+through `Server.SetValue`, so reports, logs and GOOSE follow them. A
+value a handler callback sets on FC=SG (OnActiveSGChanged) or FC=SE
+(OnEditSGSelected) wins over the bank and is kept in it.
 
 ### Journal engine
 
