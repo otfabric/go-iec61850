@@ -60,9 +60,10 @@ func controlKeyOf(cntrlObj string) string {
 // lastApplErrorWatch collects the LastApplError the server reports for
 // one control write in flight.
 type lastApplErrorWatch struct {
-	key string
-	lae *LastApplError // guarded by Client.ctlMu
-	c   *Client
+	key    string
+	ctlNum uint8          // ctlNum of the write
+	lae    *LastApplError // guarded by Client.ctlMu
+	c      *Client
 }
 
 func (w *lastApplErrorWatch) result() *LastApplError {
@@ -71,8 +72,8 @@ func (w *lastApplErrorWatch) result() *LastApplError {
 	return w.lae
 }
 
-func (c *Client) watchLastApplError(key string) *lastApplErrorWatch {
-	w := &lastApplErrorWatch{key: key, c: c}
+func (c *Client) watchLastApplError(key string, ctlNum uint8) *lastApplErrorWatch {
+	w := &lastApplErrorWatch{key: key, ctlNum: ctlNum, c: c}
 	c.ctlMu.Lock()
 	defer c.ctlMu.Unlock()
 	if c.ctlWrites == nil {
@@ -147,7 +148,7 @@ func (c *Client) handleControlReport(report *mms.InformationReportIndication) bo
 		return false
 	}
 	var lae *LastApplError
-	sawLAE, operIdx := false, -1
+	sawLAE, laeHasCtlNum, operIdx := false, false, -1
 	for i, v := range report.Variables {
 		switch {
 		case v.Scope == mms.ObjectScopeVMD && v.ItemID == "LastApplError":
@@ -158,6 +159,8 @@ func (c *Client) handleControlReport(report *mms.InformationReportIndication) bo
 				continue
 			}
 			lae = decoded
+			members, _ := report.Values[i].Structure()
+			laeHasCtlNum = len(members) >= 5
 		case v.Scope == mms.ObjectScopeDomain && strings.HasSuffix(string(v.ItemID), "$Oper"):
 			operIdx = i
 		}
@@ -170,8 +173,12 @@ func (c *Client) handleControlReport(report *mms.InformationReportIndication) bo
 	defer c.ctlMu.Unlock()
 	if operIdx < 0 {
 		key := controlKeyOf(cntrlObjOf(lae))
+		c.recordLastApplErrorLocked(key, lae)
 		for w := range c.ctlWrites {
-			if w.key == key {
+			// IEC 61850-8-1 20.11 NOTE: the ctlNum lets the client match the
+			// report with its write; the four-member layout has none, the
+			// control then decides alone.
+			if w.key == key && (!laeHasCtlNum || lae.CtlNum == w.ctlNum) {
 				w.lae = lae
 			}
 		}
@@ -194,6 +201,9 @@ func (c *Client) handleControlReport(report *mms.InformationReportIndication) bo
 	if sawLAE && lae == nil {
 		// Negative, but the LastApplError could not be decoded.
 		lae = &LastApplError{CntrlObj: key}
+	}
+	if lae != nil {
+		c.recordLastApplErrorLocked(key, lae)
 	}
 	w.ch <- &CommandTermination{Ref: w.ref, Oper: report.Values[operIdx], LastApplError: lae}
 	return true

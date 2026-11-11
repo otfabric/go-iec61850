@@ -97,9 +97,9 @@ func run(ctx context.Context, addr, do string, value bool, out io.Writer) error 
 func report(ctx context.Context, client *iec61850.Client, ref iec61850.Ref, op string, err error, out io.Writer) error {
 	if ce, ok := errors.AsType[*iec61850.ControlError](err); ok {
 		fmt.Fprintf(out, "%s refused: AddCause %s\n", op, ce.AddCause)
-	}
-	if lae, lerr := client.ReadLastApplError(ctx, ref); lerr == nil {
-		fmt.Fprintf(out, "LastApplError: error=%d AddCause=%s\n", lae.Error, lae.AddCause)
+		if lae := ce.LastApplError; lae != nil {
+			fmt.Fprintf(out, "LastApplError: error=%d AddCause=%s\n", lae.Error, lae.AddCause)
+		}
 	}
 	return fmt.Errorf("%s %s: %w", op, ref, err)
 }
