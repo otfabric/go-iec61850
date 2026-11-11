@@ -55,6 +55,13 @@ func Templates(s *scl.SCL, idx *index.Index) []scl.Diagnostic {
 
 func checkTypeRef(idx *index.Index, path, bType, typRef string) []scl.Diagnostic {
 	if typRef == "" {
+		if bType == "Struct" || bType == "Enum" {
+			// 6 Ed2 9.5.4: type is required for bType Struct and Enum.
+			return []scl.Diagnostic{{
+				Severity: scl.DiagError, Code: "missing-type",
+				Path: path, Message: fmt.Sprintf("bType %s without type", bType),
+			}}
+		}
 		return nil
 	}
 	switch bType {

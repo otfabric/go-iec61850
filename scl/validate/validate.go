@@ -18,6 +18,7 @@ type Options struct {
 	SkipTemplates     bool
 	SkipIEDs          bool
 	SkipCommunication bool
+	SkipAddresses     bool
 	SkipDatasets      bool
 	SkipControls      bool
 	SkipTopology      bool
@@ -30,8 +31,8 @@ type Options struct {
 
 // All runs every validation pass and returns the combined diagnostics.
 // The index build diagnostics (duplicates) are included first, followed
-// by template, IED, communication, dataset, control, topology and
-// required-attribute checks.
+// by template, IED, communication, address, dataset, control, topology
+// and required-attribute checks.
 func All(s *scl.SCL, idx *index.Index, indexDiags []scl.Diagnostic) []scl.Diagnostic {
 	return WithOptions(s, idx, indexDiags, Options{})
 }
@@ -48,6 +49,9 @@ func WithOptions(s *scl.SCL, idx *index.Index, indexDiags []scl.Diagnostic, opts
 	}
 	if !opts.SkipCommunication {
 		diags = append(diags, Communication(s, idx)...)
+	}
+	if !opts.SkipAddresses {
+		diags = append(diags, Addresses(s, idx)...)
 	}
 	if !opts.SkipDatasets {
 		diags = append(diags, Datasets(s, idx)...)
