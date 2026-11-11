@@ -40,8 +40,12 @@ type FlatRow struct {
 
 	// Status indicates the resolution status of this row.
 	// Empty means fully resolved. Non-empty values indicate
-	// incomplete flattening (e.g., "unresolved-lntype",
-	// "unresolved-dotype").
+	// incomplete flattening: "unresolved-lntype", "unresolved-dotype"
+	// (DO or SDO type not found), "unresolved-datype" (Struct DA or BDA
+	// whose DAType is missing) and "type-cycle" (an SDO or BDA that
+	// refers back to a type being expanded). Such a row is the stub of
+	// the branch that could not be expanded. Arrays (count attribute)
+	// are flattened as a single element; the count is not expanded.
 	Status string
 }
 
@@ -132,7 +136,7 @@ func flattenLN(rows *[]FlatRow, iedName, apName, ldInst string, ln LN,
 func flattenDOType(rows *[]FlatRow, iedName, apName, ldInst, lnName, prefix string,
 	dot *DOType, dotIndex map[string]*DOType, datIndex map[string]*DAType) {
 
-	visited := make(map[string]bool)
+	visited := map[string]bool{dot.ID: true}
 	flattenDOTypeRec(rows, iedName, apName, ldInst, lnName, prefix, dot, dotIndex, datIndex, visited)
 }
 
@@ -144,11 +148,20 @@ func flattenDOTypeRec(rows *[]FlatRow, iedName, apName, ldInst, lnName, prefix s
 	}
 
 	for _, sdo := range dot.SDOs {
+		row := FlatRow{
+			IED: iedName, AccessPoint: apName,
+			LD: ldInst, LN: lnName,
+			Path: prefix + "." + sdo.Name, Desc: sdo.Desc,
+		}
 		if visitedDO[sdo.Type] {
+			row.Status = "type-cycle"
+			*rows = append(*rows, row)
 			continue
 		}
 		subDOT, ok := dotIndex[sdo.Type]
 		if !ok {
+			row.Status = "unresolved-dotype"
+			*rows = append(*rows, row)
 			continue
 		}
 		visitedDO[sdo.Type] = true
@@ -162,7 +175,8 @@ func flattenDA(rows *[]FlatRow, iedName, apName, ldInst, lnName, prefix string,
 
 	path := prefix + "." + da.Name
 
-	if da.BType == "Struct" && da.Type != "" {
+	status := ""
+	if da.BType == "Struct" {
 		dat, ok := datIndex[da.Type]
 		if ok {
 			visited := make(map[string]bool)
@@ -170,6 +184,7 @@ func flattenDA(rows *[]FlatRow, iedName, apName, ldInst, lnName, prefix string,
 			flattenDATypeRec(rows, iedName, apName, ldInst, lnName, path, da.FC, cdc, dat, datIndex, visited)
 			return
 		}
+		status = "unresolved-datype"
 	}
 
 	*rows = append(*rows, FlatRow{
@@ -177,7 +192,7 @@ func flattenDA(rows *[]FlatRow, iedName, apName, ldInst, lnName, prefix string,
 		LD: ldInst, LN: lnName,
 		Path: path, FC: da.FC,
 		BType: da.BType, CDC: cdc,
-		Desc: da.Desc,
+		Desc: da.Desc, Status: status,
 	})
 }
 
@@ -187,16 +202,19 @@ func flattenDATypeRec(rows *[]FlatRow, iedName, apName, ldInst, lnName, prefix, 
 	for _, bda := range dat.BDAs {
 		path := prefix + "." + bda.Name
 
-		if bda.BType == "Struct" && bda.Type != "" {
-			if visitedDA[bda.Type] {
-				continue
-			}
+		status := ""
+		if bda.BType == "Struct" {
 			subDAT, ok := datIndex[bda.Type]
-			if ok {
+			switch {
+			case visitedDA[bda.Type]:
+				status = "type-cycle"
+			case ok:
 				visitedDA[bda.Type] = true
 				flattenDATypeRec(rows, iedName, apName, ldInst, lnName, path, fc, cdc, subDAT, datIndex, visitedDA)
 				delete(visitedDA, bda.Type)
 				continue
+			default:
+				status = "unresolved-datype"
 			}
 		}
 
@@ -205,7 +223,7 @@ func flattenDATypeRec(rows *[]FlatRow, iedName, apName, ldInst, lnName, prefix, 
 			LD: ldInst, LN: lnName,
 			Path: path, FC: fc,
 			BType: bda.BType, CDC: cdc,
-			Desc: bda.Desc,
+			Desc: bda.Desc, Status: status,
 		})
 	}
 }
