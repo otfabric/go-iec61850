@@ -26,6 +26,7 @@ no code derived from other GOOSE implementations.
 - [Publisher](#publisher)
 - [Subscriber](#subscriber)
 - [Transports](#transports)
+- [R-GOOSE and R-SV over UDP](#r-goose-and-r-sv-over-udp)
 - [SCL binding](#scl-binding)
 - [Server GoCBs](#server-gocbs)
 - [Client GoCB access](#client-gocb-access)
@@ -228,6 +229,69 @@ empty the interface is put in promiscuous mode, or with `Promiscuous`),
 `Transport`, and `hub.SetFaults(goose.Faults{Loss, Duplicate, Reorder,
 Delay, Seed, Mutate})` injects faults for chaos tests.
 
+## R-GOOSE and R-SV over UDP
+
+Package `rsession` carries GOOSE and SV over UDP/IP (unicast or
+multicast, port 102 by default) with the session protocol of IEC TR
+61850-90-5 and an HMAC-SHA256 signature on every SPDU. Its `Transport`
+implements the `Transport` interface above, so the publisher, subscriber,
+retransmission and supervision of this package (and of `sv`) run over it
+unchanged:
+
+```go
+keys, _ := rsession.NewKeyRing(rsession.Key{ID: 1, Material: secret, MAC: rsession.MACHMACSHA256_128})
+
+// Publisher side: send to a group (or a unicast address).
+tx, _ := rsession.Open(rsession.Config{
+    SI:           rsession.SIGOOSE,
+    RemoteAddr:   netip.MustParseAddrPort("239.192.0.1:102"),
+    MulticastTTL: 16,
+    Keys:         keys,
+})
+pub, _ := goose.NewPublisher(tx, cfg)
+
+// Subscriber side: join the group.
+rx, _ := rsession.Open(rsession.Config{
+    SI:     rsession.SIGOOSE,
+    Groups: []netip.Addr{netip.MustParseAddr("239.192.0.1")},
+    Keys:   keys,
+})
+sub, _ := goose.NewSubscriber(rx, goose.SubscriberConfig{})
+```
+
+- `Send` takes the layer-2 frame the publisher builds and sends its
+  APPID, simulation bit and APDU; the Ethernet addresses and VLAN tag are
+  not carried. `Recv` rebuilds a layer-2 frame for every APDU of a
+  verified SPDU, with destination `Config.FrameDst` (broadcast by
+  default) and source `rsession.SourceMAC(sender IP)`, so subscriptions
+  can filter on the sender.
+- **Secured by default.** `Open` refuses a configuration without a
+  `KeyProvider` unless `Insecure` is set. A receiver refuses unsecured
+  SPDUs (unless `Insecure`), SPDUs under unknown keys, SPDUs whose
+  signature does not verify, and replays: per sender and key, an SPDU
+  number already accepted or more than 64 below the highest. A restarted
+  publisher is refused until the key changes, unless the receiver sets
+  `ReplayResetAfter` or the publisher continues from a persisted
+  `NextSPDUNumber` (`InitialSPDUNumber`). Refusals are counted in
+  `Transport.Stats` and reported to `Config.OnReject`.
+- **Keys** come from a `KeyProvider` (`CurrentKey` to send, `LookupKey` to
+  verify); `KeyRing` is a static one that can hold the old and the new
+  key during a change. Key distribution (IEC 62351-9 GDOI) is the
+  application's.
+- Protocol versions 1 and 2 are received; 2 is sent unless
+  `Config.Version` is 1. HMAC-SHA256-80, -128 and -256 are implemented;
+  AES-GMAC and encryption are refused as `ErrUnsupported`.
+- `rsession.Encode`, `Decode` and `Verify` work on single SPDUs (captures,
+  tests).
+- Multicast group membership, the outgoing interface and the TTL use
+  socket options on Linux, macOS and the BSDs; elsewhere only unicast
+  works. Binding port 102 needs privileges on most systems.
+
+The wire layout, the references it follows where no specification text
+was available, and the scope are in
+[docs/adr/0001-routable-goose-sv.md](docs/adr/0001-routable-goose-sv.md).
+No independent R-GOOSE/R-SV implementation has been tested against it.
+
 ## SCL binding
 
 ```go
@@ -383,8 +447,11 @@ Embed `goose.NopMetrics` to implement only some methods. See
 
 ## Limitations
 
-- No GOOSE security (IEC 62351-6): the `security` field is carried
-  opaquely, not generated or verified.
+- No layer-2 GOOSE security (IEC 62351-6 extension in Reserved 1/2): the
+  `security` field and the reserved fields are carried opaquely, not
+  generated or verified. Authenticated GOOSE is available over UDP
+  ([R-GOOSE](#r-goose-and-r-sv-over-udp)); R-GOOSE is not verified
+  against another implementation.
 - Fixed-length encoding deviates from Table A.2 for FLOAT32 (5 octets)
   and limits OCTET/VISIBLE STRING members to 20/35 octets; it is not
   verified against an independent fixed-length implementation.
