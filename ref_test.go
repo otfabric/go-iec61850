@@ -4,6 +4,7 @@ package iec61850
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/otfabric/go-mms"
@@ -495,5 +496,31 @@ func TestRef_ToMMS_FromMMS_Roundtrip(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TYP-05: IEC 61850-7-2 22.2 (A-Za-z0-9_), Table 4 (64 characters for
+// the LD and below "/"), IEC 61850-8-1 8.1.3.2.2 (MMS item 64).
+func TestSpec_7_2_Table4_ParseRefStrict(t *testing.T) {
+	path61 := strings.Repeat("a", 61) // LLN0$ST$<61> = 69 > 64
+	for s, ok := range map[string]bool{
+		"LD1/LLN0.Mod.stVal[ST]":                      true,
+		"LD 1/LLN0.Mod":                               false,
+		"LD1/LLN0.Mod-x":                              false,
+		"LD1/LLN0." + strings.Repeat("a", 60):         false, // item ID 4+3+61
+		"LD1/LLN0." + strings.Repeat("a", 55):         true,
+		"LD1/LLN0." + path61[:30] + "." + path61[:30]: false,
+		"LD1/LLN0": true,
+	} {
+		_, err := ParseRefStrict(s)
+		if (err == nil) != ok {
+			t.Errorf("ParseRefStrict(%q) = %v, want ok %v", s, err, ok)
+		}
+	}
+	if _, err := ParseRef("LD 1/LLN0.Mod"); err != nil {
+		t.Errorf("ParseRef stays lenient: %v", err)
+	}
+	if err := (Ref{LD: strings.Repeat("L", 65), LN: "LLN0"}).ValidateStrict(); err == nil {
+		t.Error("LD of 65 characters accepted")
 	}
 }

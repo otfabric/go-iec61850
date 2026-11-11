@@ -24,7 +24,7 @@ import (
 // The SGCB is mapped to MMS as "LLN0$SP$SGCB" with the following
 // structure members in order:
 //
-//	[0] NumOfSGs   (Unsigned8)  — total number of setting groups
+//	[0] NumOfSG    (Unsigned8)  — total number of setting groups
 //	[1] ActSG      (Unsigned8)  — currently active setting group
 //	[2] EditSG     (Unsigned8)  — currently selected edit group (0 = none)
 //	[3] CnfEdit    (BOOLEAN)    — confirm-edit flag
@@ -42,6 +42,11 @@ type SettingGroupInfo struct {
 
 	// CnfEdit is true when the server has confirmed the edit.
 	CnfEdit bool
+
+	// LActTm is the time of the last SelectActiveSG (IEC 61850-7-2
+	// 16.2.2.7), with its TimeQuality. Zero when the server sent a value
+	// that is not a UtcTime.
+	LActTm Timestamp
 
 	// ResvTms is the reservation timeout in seconds (0 = no timeout).
 	// This field is optional; not all servers expose it.
@@ -106,7 +111,10 @@ func decodeSGCB(v *mms.Value) (*SettingGroupInfo, error) {
 	} else {
 		return nil, fmt.Errorf("iec61850: SGCB decode: CnfEdit: expected boolean, got %s", members[3].Type())
 	}
-	// members[4] is LActTm (UTCTime) — informational, not stored in info.
+	// members[4] is LActTm (UtcTime, IEC 61850-8-1 Table 60).
+	if ts, err := DecodeTimestamp(members[4]); err == nil {
+		info.LActTm = ts
+	}
 	if len(members) > 5 {
 		if u, ok := members[5].Uint32(); ok {
 			if u > math.MaxUint16 {
@@ -140,6 +148,19 @@ func sgcbObjectName(domain mms.DomainID) mms.ObjectName {
 	}
 }
 
+// writeSGCB writes one SGCB member as its own named variable,
+// LLN0$SP$SGCB$<member> (IEC 61850-8-1 8.1.3.4.4.2, as libiec61850
+// clients do). Before v1.17.0 the client wrote the SGCB with alternate
+// access, which a server sees as a write of the whole structure.
+func (c *Client) writeSGCB(ctx context.Context, ld, member string, v *mms.Value) error {
+	_, err := c.mmsClient.Write(ctx, mms.WriteRequest{
+		DomainID: c.ldDomain(ld),
+		ItemID:   mms.ItemID(sgcbItemID + "$" + member),
+		Value:    v,
+	})
+	return err
+}
+
 // SelectActiveSG writes a new active setting group number to the
 // SGCB. The server activates the specified group, making its SE
 // values available via FC=SG reads.
@@ -157,7 +178,7 @@ func (c *Client) SelectActiveSG(ctx context.Context, ld string, sg uint8) error 
 		return fmt.Errorf("iec61850: select active SG: %w: setting group must be >= 1", ErrInvalidArgument)
 	}
 
-	err := c.mmsClient.WriteComponent(ctx, sgcbObjectName(c.ldDomain(ld)), "ActSG", mms.NewUnsigned(uint64(sg)))
+	err := c.writeSGCB(ctx, ld, "ActSG", mms.NewUnsigned(uint64(sg)))
 	if err != nil {
 		return fmt.Errorf("iec61850: select active SG %s group %d: %w", ld, sg, err)
 	}
@@ -175,7 +196,9 @@ func (c *Client) SelectActiveSG(ctx context.Context, ld string, sg uint8) error 
 // [Client.SetEditSGValue] to read/write SE-constrained values for
 // the edit group. Call [Client.ConfirmEditSG] to commit changes.
 //
-// The sg parameter must be in [1, NumOfSGs].
+// The sg parameter is in [1, NumOfSGs], or 0 to cancel the edit and
+// release the reservation (IEC 61850-7-2 16.3.3.1); see
+// [Client.CancelEditSG]. Before v1.17.0, 0 was refused.
 func (c *Client) SelectEditSG(ctx context.Context, ld string, sg uint8) error {
 	if err := c.checkOpen(); err != nil {
 		return err
@@ -183,17 +206,20 @@ func (c *Client) SelectEditSG(ctx context.Context, ld string, sg uint8) error {
 	if ld == "" {
 		return fmt.Errorf("iec61850: select edit SG: %w: empty logical device name", ErrInvalidArgument)
 	}
-	if sg == 0 {
-		return fmt.Errorf("iec61850: select edit SG: %w: setting group must be >= 1", ErrInvalidArgument)
-	}
 
-	err := c.mmsClient.WriteComponent(ctx, sgcbObjectName(c.ldDomain(ld)), "EditSG", mms.NewUnsigned(uint64(sg)))
+	err := c.writeSGCB(ctx, ld, "EditSG", mms.NewUnsigned(uint64(sg)))
 	if err != nil {
 		return fmt.Errorf("iec61850: select edit SG %s group %d: %w", ld, sg, err)
 	}
 
 	c.logger.Debug("iec61850: select edit SG", "ld", ld, "sg", sg)
 	return nil
+}
+
+// CancelEditSG cancels the edit session this client holds: SelectEditSG
+// with SettingGroupNumber 0 (IEC 61850-7-2 16.3.3.1).
+func (c *Client) CancelEditSG(ctx context.Context, ld string) error {
+	return c.SelectEditSG(ctx, ld, 0)
 }
 
 // ConfirmEditSG confirms the current edit session by writing
@@ -210,7 +236,7 @@ func (c *Client) ConfirmEditSG(ctx context.Context, ld string) error {
 		return fmt.Errorf("iec61850: confirm edit SG: %w: empty logical device name", ErrInvalidArgument)
 	}
 
-	err := c.mmsClient.WriteComponent(ctx, sgcbObjectName(c.ldDomain(ld)), "CnfEdit", mms.NewBoolean(true))
+	err := c.writeSGCB(ctx, ld, "CnfEdit", mms.NewBoolean(true))
 	if err != nil {
 		return fmt.Errorf("iec61850: confirm edit SG %s: %w", ld, err)
 	}

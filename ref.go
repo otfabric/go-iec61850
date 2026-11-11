@@ -148,12 +148,59 @@ func ParseRef(s string) (Ref, error) {
 
 // ParseRefStrict is like [ParseRef] but enforces a maximum reference
 // length of 129 characters, inspired by the IEC 61850-7-2 MMS
-// VisibleString129 type for ObjectReference attributes.
+// VisibleString129 type for ObjectReference attributes, and the rules
+// of [Ref.ValidateStrict] (since v1.17.0).
 func ParseRefStrict(s string) (Ref, error) {
 	if len(s) > 129 {
 		return Ref{}, &ReferenceError{Input: s, Reason: "exceeds maximum length (129)"}
 	}
-	return ParseRef(s)
+	r, err := ParseRef(s)
+	if err != nil {
+		return Ref{}, err
+	}
+	if err := r.ValidateStrict(); err != nil {
+		return Ref{}, err
+	}
+	return r, nil
+}
+
+// ValidateStrict checks r against the name rules of the standard on top
+// of [Ref.Validate]: every name uses A-Z, a-z, 0-9 and _ (IEC 61850-7-2
+// 22.2), the LD name and the part after "/" (without FC) have at most 64
+// characters (IEC 61850-7-2 Table 4), and the MMS item ID
+// (LN$FC$DO$DA, with an FC of two characters when r has none) at most 64
+// (IEC 61850-8-1 8.1.3.2.2).
+func (r Ref) ValidateStrict() error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
+	names := append([]string{r.LD, r.LN}, r.Path...)
+	for _, n := range names {
+		for i := 0; i < len(n); i++ {
+			ch := n[i]
+			legal := ch >= 'A' && ch <= 'Z' || ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9' || ch == '_'
+			if !legal {
+				return &ReferenceError{Input: r.String(), Reason: fmt.Sprintf("name %q: character %q not in A-Za-z0-9_", n, ch)}
+			}
+		}
+	}
+	if len(r.LD) > 64 {
+		return &ReferenceError{Input: r.String(), Reason: "logical device name exceeds 64 characters"}
+	}
+	if r.LN == "" {
+		return nil
+	}
+	below := len(r.LN)
+	for _, p := range r.Path {
+		below += 1 + len(p)
+	}
+	if below > 64 {
+		return &ReferenceError{Input: r.String(), Reason: "reference after '/' exceeds 64 characters"}
+	}
+	if item := below + 3; len(r.Path) > 0 && item > maxMMSIdentifier {
+		return &ReferenceError{Input: r.String(), Reason: fmt.Sprintf("MMS item ID of %d characters exceeds %d", item, maxMMSIdentifier)}
+	}
+	return nil
 }
 
 // Validate checks the structural invariants of the Ref.

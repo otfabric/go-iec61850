@@ -221,6 +221,30 @@ Sub-topics are appended after a second underscore: `TestLibIECClient_URCB_DataCh
   (object-not-selected); iec61850-rust refuses the write without a
   LastApplError (skipped).
 
+### Control model choices
+
+Where IEC 61850-7-2/-8-1 leave a choice, the server follows libiec61850
+(sources at the pinned revision, `src/iec61850/server/mms_mapping/control.c`;
+read, not an interop run). The client side tests above still pass.
+
+| Situation | Response | Spec |
+|-----------|----------|------|
+| Select (Read of SBO) granted | `LD/LN$CO$DO` (libiec61850; Table 84 writes `…$SBO`) | 8-1 20.5.4 |
+| Select refused | `""` | 8-1 20.5.5 |
+| Oper while not selected (SBO) | access-denied, AddCause 18 | 7-2 Table 47, 8-1 Table 87 |
+| Oper/Cancel while another client holds the selection | temporarily-unavailable, AddCause 27 | 7-2 Table 47 |
+| Select/SBOw while selected (also by the holder) | temporarily-unavailable, AddCause 19 | 7-2 Table 47 |
+| Any service during execution or before operTm | temporarily-unavailable, AddCause 12 (Cancel by the holder before operTm succeeds) | 7-2 Table 47 |
+| Oper/Cancel parameters differ from SBOw (ctlVal, ctlNum, origin, Test, Check) | access-denied, AddCause 26; the selection is released | 7-2 20.5.2 |
+| Invalid origin (orCat outside 0..8) | access-denied, AddCause 26 (Oper) or 3 (SBOw) | 7-3 orCat |
+| SBOw on a model without enhanced SBO | access-denied, AddCause 1 | 7-2 Table 47 |
+| Malformed Oper/SBOw/Cancel | type-inconsistent, no LastApplError | 8-1 8.1.3.4.4.2 |
+| Control write without `RegisterControl` | access-denied | 8-1 Table 87 |
+| Ownership | the MMS association, not the origin | 7-2 20.2 |
+
+The client discovers whether the Oper type has operTm and reuses the
+SelectWithValue ctlNum for the Operate, as libiec61850's client does.
+
 ### GOOSE
 
 Fixture `goose-v1` (iec61850-interop `fixtures/goose/`, copied to
@@ -322,8 +346,9 @@ in iec61850-interop.
 | SetDataValues | ✓ | ✓ | single + multi-variable |
 | GetDataSetValues | ✓ | ✓ | |
 | GetDataSetDirectory | ✓ | ✓ | |
-| CreateDataSet | ✓ | — | server dynamic dataset creation deferred |
-| DeleteDataSet | ✓ | — | server dynamic dataset deletion deferred |
+| CreateDataSet | ✓ | ✓ | persistent and `@name` (association); server: go-mms, in memory |
+| DeleteDataSet | ✓ | ✓ | |
+| SetDataSetValues | ✓ | ✓ | client: `WriteDataSet`; own tests only |
 | GetRCBValues | ✓ | ✓ | URCB and BRCB |
 | SetRCBValues | ✓ | ✓ | URCB and BRCB |
 | GetSGCBValues | ✓ | ✓ | |
@@ -349,7 +374,7 @@ in iec61850-interop.
 | Operate | ✓ | ✓ | direct and SBO/SBOw |
 | CommandTermination | ✓ | ✓ | client: `OperateWait`; server: positive, negative via `ControlHandler.OnExecute` |
 | LastApplError | ✓ | ✓ | client: in `ControlError`; server: sent before a refused control write |
-| TimeActivatedOperate | — | — | |
+| TimeActivatedOperate | ✓ | ✓ | operTm from the Oper type; own tests only |
 
 ### Common Data Classes (IEC 61850-7-3)
 
@@ -397,9 +422,8 @@ in iec61850-interop.
 |---------|--------|-------|
 | GOOSE security (IEC 62351-6), fixed-offset encoding | not implemented | see [GOOSE.md](GOOSE.md#limitations) |
 | SV security (IEC 62351), unicast SV (USVCB) | not implemented | see [SV.md](SV.md#limitations) |
-| Dynamic dataset creation | not implemented | deferred |
 | CommandTermination− (negative) | own tests only | no peer in the matrix sends one on demand |
-| TimeActivatedOperate | not implemented | deferred |
+| TimeActivatedOperate | own tests only | no peer in the matrix exercises it |
 | iec61850bean SBOw | known gap (upstream) | iec61850bean does not expose `SBOw[CO]` |
 | Edition 2.1 extensions | partial | not all 2007B4 features validated |
 

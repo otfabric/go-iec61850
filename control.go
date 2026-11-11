@@ -46,9 +46,18 @@ func nextCtlNum() uint8 {
 // For SBO control models, use [Client.Select] or
 // [Client.SelectWithValue] before calling Operate.
 //
-// If params.CtlNum is zero, an auto-incrementing sequence number
-// is used. If params.Origin is nil, a default Origin with
-// [OrCatRemoteControl] is used.
+// The ctlNum is params.CtlNum when it is not zero or params.CtlNumSet
+// is true. Otherwise it is the ctlNum of the last [Client.SelectWithValue]
+// of this control on this client, so that Select and Operate of one
+// control sequence carry the same ctlNum (IEC 61850-7-2 20.5.2.4), or,
+// without one, the next value of an auto-incrementing counter. If
+// params.Origin is nil, a default Origin with [OrCatRemoteControl] is
+// used.
+//
+// The Oper carries operTm when the server's Oper type has it (learned
+// once per control with GetVariableAccessAttributes), all zero for an
+// immediate operate (IEC 61850-8-1 20.10.2.2); a non-zero
+// params.OperTm requests a TimeActivatedOperate.
 func (c *Client) Operate(ctx context.Context, ref Ref, params OperateParams) error {
 	if err := c.checkOpen(); err != nil {
 		return err
@@ -59,14 +68,12 @@ func (c *Client) Operate(ctx context.Context, ref Ref, params OperateParams) err
 	if params.CtlVal == nil {
 		return fmt.Errorf("iec61850: operate %s: %w: nil CtlVal", ref.String(), ErrInvalidArgument)
 	}
-	if params.CtlNum == 0 {
-		params.CtlNum = nextCtlNum()
-	}
 
 	operRef := controlSubRef(ref, "Oper")
-	operVal := buildOper(params)
+	params.CtlNum = c.sequenceCtlNum(ref, params.CtlNum, params.CtlNumSet)
+	operVal := encodeOper(params, c.controlHasOperTm(ctx, operRef, !params.OperTm.IsZero()))
 
-	if lae, err := c.writeControlValue(ctx, operRef, operVal); err != nil {
+	if lae, err := c.writeControlValue(ctx, operRef, operVal, params.CtlNum); err != nil {
 		return controlError(ref, "operate", lae, err)
 	}
 
@@ -148,6 +155,12 @@ func (c *Client) Select(ctx context.Context, ref Ref) (string, error) {
 // This is used with [CtlModelSBOEnhanced]. On success the select
 // is held by the server; the client must then call [Client.Operate]
 // with the same parameters within the server's select timeout.
+//
+// The ctlNum is params.CtlNum when it is not zero or params.CtlNumSet
+// is true, else the next value of an auto-incrementing counter. It is
+// remembered for the control: an Operate or Cancel of it on this client
+// without a ctlNum of its own reuses it (IEC 61850-7-2 20.5.2.4: one
+// control sequence, one ctlNum).
 func (c *Client) SelectWithValue(ctx context.Context, ref Ref, params OperateParams) error {
 	if err := c.checkOpen(); err != nil {
 		return err
@@ -158,16 +171,17 @@ func (c *Client) SelectWithValue(ctx context.Context, ref Ref, params OperatePar
 	if params.CtlVal == nil {
 		return fmt.Errorf("iec61850: select-with-value %s: %w: nil CtlVal", ref.String(), ErrInvalidArgument)
 	}
-	if params.CtlNum == 0 {
+	if params.CtlNum == 0 && !params.CtlNumSet {
 		params.CtlNum = nextCtlNum()
 	}
 
 	sbowRef := controlSubRef(ref, "SBOw")
-	operVal := buildOper(params)
+	operVal := encodeOper(params, c.controlHasOperTm(ctx, sbowRef, !params.OperTm.IsZero()))
 
-	if lae, err := c.writeControlValue(ctx, sbowRef, operVal); err != nil {
+	if lae, err := c.writeControlValue(ctx, sbowRef, operVal, params.CtlNum); err != nil {
 		return controlError(ref, "select", lae, err)
 	}
+	c.rememberCtlNum(ref, params.CtlNum)
 
 	c.logger.Debug("iec61850: select-with-value", "ref", ref.String(), "ctlNum", params.CtlNum)
 	return nil
@@ -175,8 +189,11 @@ func (c *Client) SelectWithValue(ctx context.Context, ref Ref, params OperatePar
 
 // Cancel sends a cancel command for a previously selected control.
 //
-// The CancelParams should match the CtlVal, Origin, and CtlNum of
-// the original Operate or SelectWithValue.
+// The CancelParams should match the CtlVal, Origin, CtlNum and Test of
+// the original Operate or SelectWithValue (IEC 61850-7-2 20.5.2: one
+// control sequence). Without a ctlNum (CtlNum zero and CtlNumSet false)
+// the ctlNum of the last SelectWithValue of the control on this client is
+// used, as for [Client.Operate].
 func (c *Client) Cancel(ctx context.Context, ref Ref, params CancelParams) error {
 	if err := c.checkOpen(); err != nil {
 		return err
@@ -189,11 +206,17 @@ func (c *Client) Cancel(ctx context.Context, ref Ref, params CancelParams) error
 	}
 
 	cancelRef := controlSubRef(ref, "Cancel")
-	cancelVal := buildCancel(params)
+	if params.CtlNum == 0 && !params.CtlNumSet {
+		if n, ok := c.selectCtlNum(ref); ok {
+			params.CtlNum = n
+		}
+	}
+	cancelVal := encodeCancel(params, c.controlHasOperTm(ctx, cancelRef, !params.OperTm.IsZero()))
 
-	if lae, err := c.writeControlValue(ctx, cancelRef, cancelVal); err != nil {
+	if lae, err := c.writeControlValue(ctx, cancelRef, cancelVal, params.CtlNum); err != nil {
 		return controlError(ref, "cancel", lae, err)
 	}
+	c.forgetCtlNum(ref)
 
 	c.logger.Debug("iec61850: cancel", "ref", ref.String(), "ctlNum", params.CtlNum)
 	return nil
@@ -233,16 +256,24 @@ func (c *Client) ReadCtlModel(ctx context.Context, ref Ref) (CtlModel, error) {
 	return CtlModel(i), nil
 }
 
-// ReadLastApplError reads and decodes the LastApplError from the
-// logical node containing the given control object.
+// ReadLastApplError returns the last LastApplError this client received
+// for the control object ref (or, for a ref without a data object, for
+// any control of that logical node).
 //
-// LastApplError is a structured attribute under the LN at FC=CO
-// that provides the reason for the most recent control failure.
-// Returns nil (no error value) if the attribute is not present
-// or cannot be decoded.
+// LastApplError is a VMD-specific MMS variable a server creates,
+// reports and deletes at once (IEC 61850-8-1 20.11); it cannot be read.
+// When none was received, ReadLastApplError reads the vendor extension
+// LD/LN$CO$LastApplError, which conforming servers do not have.
+//
+// Deprecated: use [ControlError.LastApplError] of the refused control
+// call, or [CommandTermination.LastApplError]; they carry the
+// LastApplError of that command.
 func (c *Client) ReadLastApplError(ctx context.Context, ref Ref) (*LastApplError, error) {
 	if err := c.checkOpen(); err != nil {
 		return nil, err
+	}
+	if lae := c.cachedLastApplError(ref); lae != nil {
+		return lae, nil
 	}
 
 	laeRef := Ref{
@@ -362,14 +393,14 @@ func controlSubRef(ref Ref, subAttr string) Ref {
 // writeControlValue writes an MMS structure to a control sub-attribute
 // and returns the LastApplError the server reported for a refused write
 // (sent as an InformationReport before the write response).
-func (c *Client) writeControlValue(ctx context.Context, ref Ref, value *mms.Value) (*LastApplError, error) {
+func (c *Client) writeControlValue(ctx context.Context, ref Ref, value *mms.Value, ctlNum uint8) (*LastApplError, error) {
 	domainID, itemID, err := c.refToMMS(ref)
 	if err != nil {
 		return nil, err
 	}
 
 	c.initReportDispatch()
-	w := c.watchLastApplError(controlKey(string(domainID), string(itemID)))
+	w := c.watchLastApplError(controlKey(string(domainID), string(itemID)), ctlNum)
 	defer c.unwatchLastApplError(w)
 
 	_, err = c.mmsClient.Write(ctx, mms.WriteRequest{

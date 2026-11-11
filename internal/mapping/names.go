@@ -69,10 +69,24 @@ func ParseItemID(itemID string) (ParsedVariable, bool) {
 	return ParsedVariable{LN: ln, FC: fc, Path: path}, true
 }
 
+// controlBlockFCs are the FC components that hold control blocks, not
+// data (IEC 61850-8-1 Figure 3/4: RP, BR URCB/BRCB, LG LCB, GO, GS GoCB
+// and GsCB, MS, US MSVCB/USVCB).
+var controlBlockFCs = map[string]bool{"RP": true, "BR": true, "LG": true, "GO": true, "GS": true, "MS": true, "US": true}
+
+// IsControlBlockItem reports whether a parsed item is (part of) a control
+// block rather than a data object: an item of a control block FC, or the
+// SGCB of LLN0 (FC SP, IEC 61850-8-1 Table 60).
+func IsControlBlockItem(pv ParsedVariable) bool {
+	return controlBlockFCs[pv.FC] || pv.FC == "SP" && pv.LN == "LLN0" && len(pv.Path) > 0 && pv.Path[0] == "SGCB"
+}
+
 // ExtractDataObjects returns the unique top-level data object names
 // for a given logical node from a list of MMS item IDs. Only items
 // matching the specified LN are considered. The DO name is the third
-// $-delimited segment (position after LN$FC$).
+// $-delimited segment (position after LN$FC$). Control blocks (see
+// [IsControlBlockItem]) are not data objects (IEC 61850-7-2
+// GetLogicalNodeDirectory per ACSI class) and are left out.
 //
 // The returned names are sorted alphabetically.
 func ExtractDataObjects(items []string, lnName string) []string {
@@ -83,7 +97,7 @@ func ExtractDataObjects(items []string, lnName string) []string {
 			continue
 		}
 		pv, ok := ParseItemID(item)
-		if !ok || len(pv.Path) == 0 {
+		if !ok || len(pv.Path) == 0 || IsControlBlockItem(pv) {
 			continue
 		}
 		seen[pv.Path[0]] = struct{}{}
@@ -100,7 +114,9 @@ func ExtractDataObjects(items []string, lnName string) []string {
 // ExtractChildren returns the unique direct child names at a given
 // path depth for a specific LN. The basePath identifies the parent
 // (e.g., ["Mod"] for children of LN$FC$Mod). Only items that extend
-// beyond basePath by exactly one segment are included.
+// beyond basePath by exactly one segment are included. At the LN level
+// (empty basePath) control blocks are left out, as in
+// [ExtractDataObjects]; below a name, its items are listed.
 //
 // The returned names are sorted alphabetically.
 func ExtractChildren(items []string, lnName string, basePath []string) []string {
@@ -113,7 +129,7 @@ func ExtractChildren(items []string, lnName string, basePath []string) []string 
 			continue
 		}
 		pv, ok := ParseItemID(item)
-		if !ok || len(pv.Path) < targetDepth {
+		if !ok || len(pv.Path) < targetDepth || len(basePath) == 0 && IsControlBlockItem(pv) {
 			continue
 		}
 		if !pathHasPrefix(pv.Path, basePath) {

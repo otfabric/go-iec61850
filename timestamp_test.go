@@ -167,3 +167,21 @@ func TestTimestamp_QualityAllBits(t *testing.T) {
 		t.Errorf("quality mismatch: got %+v", decoded.Quality)
 	}
 }
+
+// TYP-02, IEC 61850-8-1 Table 32: TimeAccuracy 0-24 bits, 25-30
+// invalid, 31 unspecified.
+func TestSpec_8_1_Table32_TimeAccuracy(t *testing.T) {
+	v := EncodeTimestamp(Timestamp{Time: time.Unix(1, 0), Quality: TimeQuality{TimeAccuracy: TimeAccuracyUnspecified}})
+	if q := v.UTCTimeQuality(); q&0x1f != 0x1f {
+		t.Errorf("unspecified accuracy quality byte = %#x", q)
+	}
+	for acc, want := range map[int]bool{0: true, 10: true, 24: true, 25: false, 30: false, 31: true, -1: false, 32: false} {
+		if got := (TimeQuality{TimeAccuracy: acc}).IsValid(); got != want {
+			t.Errorf("TimeAccuracy %d valid = %v, want %v", acc, got, want)
+		}
+	}
+	ts, err := DecodeTimestamp(mms.NewUTCTimeWithQuality(time.Unix(1, 0), 0x1b))
+	if err != nil || ts.Quality.IsValid() {
+		t.Errorf("decode 0x1b: %+v %v, want invalid accuracy", ts.Quality, err)
+	}
+}

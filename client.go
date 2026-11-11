@@ -59,6 +59,10 @@ type Client struct {
 	ctlClosed  bool
 	ctlWaiters map[string][]*terminationWaiter
 	ctlWrites  map[*lastApplErrorWatch]struct{}
+	ctlNums    map[string]uint8        // ctlNum of the last SelectWithValue per control
+	ctlLayouts map[string]operTmLayout // operTm in the Oper/SBOw/Cancel type
+	ctlLAE     map[string]laeEntry     // last LastApplError per control
+	ctlLAESeq  uint64
 
 	// Test hooks for intercepting fetch calls (unexported, test-only).
 	fetchLDsFn   func(ctx context.Context) ([]LogicalDevice, error)

@@ -39,7 +39,7 @@ func setupSGCBClientLoopback(t *testing.T) *Client {
 	sgcbTS := mms.TypeSpec{
 		Type: mms.ValueTypeStructure,
 		Elements: []mms.TypeSpecElement{
-			{Name: "NumOfSGs", Type: mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 8}},
+			{Name: "NumOfSG", Type: mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 8}},
 			{Name: "ActSG", Type: mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 8}},
 			{Name: "EditSG", Type: mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 8}},
 			{Name: "CnfEdit", Type: mms.TypeSpec{Type: mms.ValueTypeBoolean}},
@@ -70,6 +70,28 @@ func setupSGCBClientLoopback(t *testing.T) *Client {
 		},
 	}); err != nil {
 		t.Fatal(err)
+	}
+
+	// The members as named variables LLN0$SP$SGCB$<member>, which the
+	// client writes (IEC 61850-8-1 8.1.3.4.4.2).
+	for i, el := range sgcbTS.Elements {
+		if err := srv.RegisterVariable(mms.Variable{
+			Name:     mms.ObjectName{Scope: mms.ObjectScopeDomain, Domain: mms.DomainID(domain), ItemID: mms.ItemID(sgcbItemID + "$" + el.Name)},
+			TypeSpec: el.Type,
+			Read: func(context.Context) (*mms.Value, error) {
+				mu.Lock()
+				defer mu.Unlock()
+				return sgcb[i], nil
+			},
+			Write: func(_ context.Context, val *mms.Value) error {
+				mu.Lock()
+				sgcb[i] = val
+				mu.Unlock()
+				return nil
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// SE / SG leaf values for Get/Set helpers.
@@ -194,9 +216,8 @@ func TestSettingGroupClient_Validation(t *testing.T) {
 	if err := client.SelectEditSG(ctx, "", 1); err == nil {
 		t.Fatal("empty LD SelectEditSG")
 	}
-	if err := client.SelectEditSG(ctx, "LD1", 0); err == nil {
-		t.Fatal("sg=0 SelectEditSG")
-	}
+	// sg=0 cancels the edit (IEC 61850-7-2 16.3.3.1); see
+	// TestSpec_7_2_16_3_3_1_EditReservation.
 	if err := client.ConfirmEditSG(ctx, ""); err == nil {
 		t.Fatal("empty LD ConfirmEditSG")
 	}

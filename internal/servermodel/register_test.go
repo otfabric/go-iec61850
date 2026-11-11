@@ -494,13 +494,13 @@ func TestRegisterModel_SGCB(t *testing.T) {
 		t.Fatalf("RegisterModel: %v", err)
 	}
 
-	for _, sf := range []string{"NumOfSGs", "ActSG", "EditSG", "CnfEdit", "LActTm", "ResvTms"} {
+	for _, sf := range []string{"NumOfSG", "ActSG", "EditSG", "CnfEdit", "LActTm", "ResvTms"} {
 		if vs.Get(StoreKey("LD1", "LLN0$SP$SGCB$"+sf)) == nil {
 			t.Errorf("missing SGCB subfield %s", sf)
 		}
 	}
 
-	num := vs.Get(StoreKey("LD1", "LLN0$SP$SGCB$NumOfSGs"))
+	num := vs.Get(StoreKey("LD1", "LLN0$SP$SGCB$NumOfSG"))
 	u, ok := num.Uint32()
 	if !ok || u != 4 {
 		t.Errorf("NumOfSGs = %v, want 4", num)

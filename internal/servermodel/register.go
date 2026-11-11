@@ -32,20 +32,26 @@ func defaultMMSValue(ts mms.TypeSpec) *mms.Value {
 
 // btypeToMMS maps IEC 61850 basic types to MMS TypeSpec values.
 var btypeToMMS = map[string]mms.TypeSpec{
-	"BOOLEAN":      {Type: mms.ValueTypeBoolean},
-	"INT8":         {Type: mms.ValueTypeInteger, Size: 8},
-	"INT16":        {Type: mms.ValueTypeInteger, Size: 16},
-	"INT32":        {Type: mms.ValueTypeInteger, Size: 32},
-	"INT64":        {Type: mms.ValueTypeInteger, Size: 64},
-	"INT128":       {Type: mms.ValueTypeInteger, Size: 128},
-	"INT8U":        {Type: mms.ValueTypeUnsigned, Size: 8},
-	"INT16U":       {Type: mms.ValueTypeUnsigned, Size: 16},
-	"INT32U":       {Type: mms.ValueTypeUnsigned, Size: 32},
-	"FLOAT32":      {Type: mms.ValueTypeFloat, FormatWidth: 32, ExponentWidth: 8},
-	"FLOAT64":      {Type: mms.ValueTypeFloat, FormatWidth: 64, ExponentWidth: 11},
-	"Enum":         {Type: mms.ValueTypeInteger, Size: 8},
-	"Dbpos":        {Type: mms.ValueTypeBitString, Size: 2},
-	"Tcmd":         {Type: mms.ValueTypeInteger, Size: 8},
+	"BOOLEAN": {Type: mms.ValueTypeBoolean},
+	"INT8":    {Type: mms.ValueTypeInteger, Size: 8},
+	"INT16":   {Type: mms.ValueTypeInteger, Size: 16},
+	"INT24":   {Type: mms.ValueTypeInteger, Size: 24},
+	"INT32":   {Type: mms.ValueTypeInteger, Size: 32},
+	"INT64":   {Type: mms.ValueTypeInteger, Size: 64},
+	"INT128":  {Type: mms.ValueTypeInteger, Size: 128},
+	"INT8U":   {Type: mms.ValueTypeUnsigned, Size: 8},
+	"INT16U":  {Type: mms.ValueTypeUnsigned, Size: 16},
+	"INT24U":  {Type: mms.ValueTypeUnsigned, Size: 24},
+	"INT32U":  {Type: mms.ValueTypeUnsigned, Size: 32},
+	"FLOAT32": {Type: mms.ValueTypeFloat, FormatWidth: 32, ExponentWidth: 8},
+	"FLOAT64": {Type: mms.ValueTypeFloat, FormatWidth: 64, ExponentWidth: 11},
+	"Enum":    {Type: mms.ValueTypeInteger, Size: 8},
+	"Dbpos":   {Type: mms.ValueTypeBitString, Size: 2},
+	// Tcmd is a CODED ENUM (stop | lower | higher | reserved, IEC 61850-7-3
+	// BSC/BAC ctlVal); IEC 61850-8-1 8.1.2.3 maps a CODED ENUM to a
+	// bit-string sized for its largest value: BIT STRING(2). Before
+	// v1.17.0 it was served as INT8 Integer.
+	"Tcmd":         {Type: mms.ValueTypeBitString, Size: 2},
 	"Quality":      {Type: mms.ValueTypeBitString, Size: 13},
 	"Timestamp":    {Type: mms.ValueTypeUTCTime},
 	"VisString32":  {Type: mms.ValueTypeVisibleString, Size: 32},
@@ -63,6 +69,22 @@ var btypeToMMS = map[string]mms.TypeSpec{
 	"OptFlds":      {Type: mms.ValueTypeBitString, Size: 10},
 	"TrgOps":       {Type: mms.ValueTypeBitString, Size: 6},
 	"EntryTime":    {Type: mms.ValueTypeBinaryTime},
+	// The remaining basic types of IEC 61850-6 (tPredefinedBasicTypeEnum)
+	// that a model may use for service-tracking and control-block
+	// attributes. EntryID is an 8-octet OCTET STRING (IEC 61850-8-1
+	// 8.1.3.5); SvOptFlds is the 5-bit OptFlds of an MSVCB (IEC 61850-9-2);
+	// Currency is the ISO 4217 three-character code (IEC 61850-7-3);
+	// PhyComAddr is {Addr, PRIORITY, VID, APPID} (IEC 61850-8-1, GoCB and
+	// MSVCB DstAddress).
+	"EntryID":   {Type: mms.ValueTypeOctetString, Size: 8},
+	"SvOptFlds": {Type: mms.ValueTypeBitString, Size: 5},
+	"Currency":  {Type: mms.ValueTypeVisibleString, Size: 3},
+	"PhyComAddr": {Type: mms.ValueTypeStructure, Elements: []mms.TypeSpecElement{
+		{Name: "Addr", Type: mms.TypeSpec{Type: mms.ValueTypeOctetString, Size: 6}},
+		{Name: "PRIORITY", Type: mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 8}},
+		{Name: "VID", Type: mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 16}},
+		{Name: "APPID", Type: mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 16}},
+	}},
 }
 
 // StoreKey builds a domain-qualified key for the [ValueStore].
@@ -103,7 +125,18 @@ type ValueStore struct {
 
 	interceptorMu sync.RWMutex
 	interceptor   WriteInterceptor
+	editGuard     EditGuard
+	writeGuard    WriteGuard
 }
+
+// WriteGuard decides whether a client may write the data attribute under
+// storeKey; a non-nil error refuses the write before the store changes.
+type WriteGuard func(ctx context.Context, storeKey string) error
+
+// EditGuard decides whether a client may read (write=false) or write the
+// FC=SE (edit setting group) attribute under storeKey; a non-nil error
+// refuses the access before the store is read or changed.
+type EditGuard func(ctx context.Context, storeKey string, write bool) error
 
 // ValueStoreOptions configures [ValueStore] behavior.
 type ValueStoreOptions struct {
@@ -205,6 +238,48 @@ func (vs *ValueStore) SetWriteInterceptor(fn WriteInterceptor) {
 	vs.interceptorMu.Lock()
 	vs.interceptor = fn
 	vs.interceptorMu.Unlock()
+}
+
+// SetEditGuard installs the [EditGuard] consulted for every client read
+// and write of an FC=SE attribute (IEC 61850-7-2 16.2.2.5: with no edit
+// group selected, SetEditSGValue and GetEditSGValue get Response-).
+func (vs *ValueStore) SetEditGuard(fn EditGuard) {
+	vs.interceptorMu.Lock()
+	vs.editGuard = fn
+	vs.interceptorMu.Unlock()
+}
+
+// SetWriteGuard installs the [WriteGuard] consulted before every client
+// write of a leaf data attribute is stored.
+func (vs *ValueStore) SetWriteGuard(fn WriteGuard) {
+	vs.interceptorMu.Lock()
+	vs.writeGuard = fn
+	vs.interceptorMu.Unlock()
+}
+
+// checkWrite runs the write guard.
+func (vs *ValueStore) checkWrite(ctx context.Context, key string) error {
+	vs.interceptorMu.RLock()
+	fn := vs.writeGuard
+	vs.interceptorMu.RUnlock()
+	if fn == nil {
+		return nil
+	}
+	return fn(ctx, key)
+}
+
+// checkEdit runs the edit guard for an FC=SE access.
+func (vs *ValueStore) checkEdit(ctx context.Context, fc, key string, write bool) error {
+	if fc != "SE" {
+		return nil
+	}
+	vs.interceptorMu.RLock()
+	fn := vs.editGuard
+	vs.interceptorMu.RUnlock()
+	if fn == nil {
+		return nil
+	}
+	return fn(ctx, key, write)
 }
 
 func (vs *ValueStore) callInterceptor(ctx context.Context, key string, val *mms.Value) (bool, error) {
@@ -494,6 +569,22 @@ func registerLNHierarchy(srv *mms.Server, vs *ValueStore, ldName string, ln *Log
 		lnReads = append(lnReads, read)
 	}
 
+	// IEC 61850-8-1 Figure 4: the FC components of the LN in the
+	// recommended order (SRV-07); unknown FCs keep their order after them.
+	order := make([]int, len(lnElems))
+	for i := range order {
+		order[i] = i
+	}
+	slices.SortStableFunc(order, func(a, b int) int {
+		return fcComponentRank(lnElems[a].Name) - fcComponentRank(lnElems[b].Name)
+	})
+	sortedElems := make([]mms.TypeSpecElement, len(order))
+	sortedReads := make([]func(context.Context) (*mms.Value, error), len(order))
+	for i, j := range order {
+		sortedElems[i], sortedReads[i] = lnElems[j], lnReads[j]
+	}
+	lnElems, lnReads = sortedElems, sortedReads
+
 	// Register LN variable (bare name)
 	lnTS := mms.TypeSpec{Type: mms.ValueTypeStructure, Elements: lnElems}
 	lnRead := makeStructRead(lnReads)
@@ -510,6 +601,17 @@ func registerLNHierarchy(srv *mms.Server, vs *ValueStore, ldName string, ln *Log
 	}
 
 	return nil
+}
+
+// fcComponentOrder is the recommended order of the FC components of a
+// logical node (IEC 61850-8-1 Figure 4).
+var fcComponentOrder = []string{"MX", "ST", "CO", "CF", "DC", "SP", "SG", "RP", "LG", "BR", "GO", "GS", "SV", "SE", "MS", "US", "EX", "SR", "OR", "BL"}
+
+func fcComponentRank(fc string) int {
+	if i := slices.Index(fcComponentOrder, fc); i >= 0 {
+		return i
+	}
+	return len(fcComponentOrder)
 }
 
 // makeStructRead returns a read function that reads all child values and
@@ -689,14 +791,55 @@ func registerDAWithFC(srv *mms.Server, vs *ValueStore, ldName, lnName string, pa
 	itemID := lnName + "$" + attr.FC + "$" + strings.Join(fullPath, "$")
 	storeKey := StoreKey(ldName, itemID)
 	var write func(context.Context, *mms.Value) error
-	if vs.allowReadOnlyFCWrites || clientWritableFC(attr.FC) {
+	compoundTS := elem.Type
+	switch {
+	case attr.FC == "CO":
+		// Control services are writes of the whole Oper, SBOw or Cancel
+		// structure (IEC 61850-8-1 20.6.3, 20.7.3, 20.8.3); a component of
+		// them (Oper$origin) is not writable (SRV-03). The control model
+		// decides before the value is kept.
+		if isControlServiceAttr(attr.Name) {
+			write = func(ctx context.Context, val *mms.Value) error {
+				if err := CheckWriteValue(val, compoundTS); err != nil {
+					return fmt.Errorf("write %s: %w", storeKey, err)
+				}
+				if _, err := vs.callInterceptor(ctx, storeKey, val); err != nil {
+					return err
+				}
+				vs.Set(storeKey, val)
+				return nil
+			}
+		}
+	case vs.allowReadOnlyFCWrites || clientWritableFC(attr.FC):
 		write = func(ctx context.Context, val *mms.Value) error {
+			// The value must match the declared structure (IEC 61850-8-1
+			// 8.1.3.4.4.2): before v1.17.0 any value was stored.
+			if err := CheckWriteValue(val, compoundTS); err != nil {
+				return fmt.Errorf("write %s: %w", storeKey, err)
+			}
 			// Store the compound value so the interceptor can read it if needed.
 			vs.Set(storeKey, val)
 			if handled, err := vs.callInterceptor(ctx, storeKey, val); handled || err != nil {
 				return err
 			}
 			return nil
+		}
+	}
+	if attr.FC == "SE" {
+		baseRead, baseWrite, fc := read, write, attr.FC
+		read = func(ctx context.Context) (*mms.Value, error) {
+			if err := vs.checkEdit(ctx, fc, storeKey, false); err != nil {
+				return nil, err
+			}
+			return baseRead(ctx)
+		}
+		if baseWrite != nil {
+			write = func(ctx context.Context, val *mms.Value) error {
+				if err := vs.checkEdit(ctx, fc, storeKey, true); err != nil {
+					return err
+				}
+				return baseWrite(ctx, val)
+			}
 		}
 	}
 	if err := srv.RegisterVariable(mms.Variable{
@@ -774,7 +917,10 @@ func registerDA(srv *mms.Server, vs *ValueStore, ldName, lnName string, path []s
 			ItemID: mms.ItemID(itemID),
 		},
 		TypeSpec: typeSpec,
-		Read: func(_ context.Context) (*mms.Value, error) {
+		Read: func(ctx context.Context) (*mms.Value, error) {
+			if err := vs.checkEdit(ctx, attr.FC, storeKey, false); err != nil {
+				return nil, err
+			}
 			val := vs.Get(storeKey)
 			if val != nil {
 				return val, nil
@@ -782,15 +928,20 @@ func registerDA(srv *mms.Server, vs *ValueStore, ldName, lnName string, path []s
 			return defaultMMSValue(ts), nil
 		},
 		Write: func(ctx context.Context, val *mms.Value) error {
-			if val == nil {
-				return fmt.Errorf("nil value for %s", storeKey)
+			if err := vs.checkEdit(ctx, attr.FC, storeKey, true); err != nil {
+				return err
 			}
-			if val.Type() != ts.Type {
-				return fmt.Errorf("type mismatch for %s: got %v, want %v",
-					storeKey, val.Type(), ts.Type)
+			// A refused write carries the DataAccessError of IEC 61850-8-1
+			// Table 23 (type-inconsistent, object-value-invalid); before
+			// v1.17.0 every refusal became temporarily-unavailable.
+			if err := CheckWriteValue(val, ts); err != nil {
+				return fmt.Errorf("write %s: %w", storeKey, err)
 			}
-			if err := validateWriteSize(val, ts); err != nil {
-				return fmt.Errorf("write validation for %s: %w", storeKey, err)
+			if err := checkEnumValue(val, attr); err != nil {
+				return fmt.Errorf("write %s: %w", storeKey, err)
+			}
+			if err := vs.checkWrite(ctx, storeKey); err != nil {
+				return err
 			}
 			vs.Set(storeKey, val)
 			// Notify any installed interceptor (e.g. the ReportEngine) that
@@ -803,11 +954,20 @@ func registerDA(srv *mms.Server, vs *ValueStore, ldName, lnName string, path []s
 			return nil
 		},
 	}
-	if !vs.allowReadOnlyFCWrites && !clientWritableFC(attr.FC) {
-		v.Write = nil // go-mms answers object-access-denied
+	if !vs.allowReadOnlyFCWrites && !clientWritableFC(attr.FC) || attr.FC == "CO" {
+		// go-mms answers object-access-denied. A CO leaf is a component of
+		// Oper/SBOw/Cancel, or the read-only SBO (IEC 61850-8-1 20.5: Select
+		// is a Read of SBO); writing it bypassed the control model.
+		v.Write = nil
 	}
 
 	return srv.RegisterVariable(v)
+}
+
+// isControlServiceAttr reports whether name is a control service
+// attribute written as a whole (IEC 61850-8-1 20.6-20.8).
+func isControlServiceAttr(name string) bool {
+	return name == "Oper" || name == "SBOw" || name == "Cancel"
 }
 
 // clientWritableFC reports whether a client may write data attributes of
@@ -1025,6 +1185,22 @@ func registerRCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, rpt *Re
 	})
 }
 
+// sameSGCBMember compares a written SGCB member with the current one. A
+// UtcTime (LActTm) that went over the wire keeps only a 24-bit fraction
+// of a second (IEC 61850-8-1 8.1.3.7), so times within a millisecond, of
+// any TimeQuality, are the same.
+func sameSGCBMember(cur, written *mms.Value) bool {
+	if ct, ok := cur.UTCTime(); ok {
+		wt, ok := written.UTCTime()
+		if !ok {
+			return false
+		}
+		d := ct.Sub(wt)
+		return d > -time.Millisecond && d < time.Millisecond
+	}
+	return cur.Equal(written)
+}
+
 // sgcbWritable are the SGCB attributes a client may write.
 var sgcbWritable = map[string]bool{"ActSG": true, "EditSG": true, "CnfEdit": true}
 
@@ -1032,11 +1208,13 @@ func registerSGCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, sg *Se
 	sgcbItemID := lnName + "$SP$SGCB"
 
 	fields := []rcbField{
-		{"NumOfSGs", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 8}, mms.NewUnsigned(uint64(sg.NumOfSGs))},
+		// The component is NumOfSG (IEC 61850-8-1 Table 60, IEC 61850-7-2
+		// Table 36); before v1.17.0 it was served as NumOfSGs.
+		{"NumOfSG", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 8}, mms.NewUnsigned(uint64(sg.NumOfSGs))},
 		{"ActSG", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 8}, mms.NewUnsigned(uint64(sg.ActSG))},
 		{"EditSG", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 8}, mms.NewUnsigned(0)},
 		{"CnfEdit", mms.TypeSpec{Type: mms.ValueTypeBoolean}, mms.NewBoolean(false)},
-		{"LActTm", mms.TypeSpec{Type: mms.ValueTypeUTCTime}, mms.NewUTCTime(time.Time{})},
+		{"LActTm", mms.TypeSpec{Type: mms.ValueTypeUTCTime}, mms.NewUTCTime(time.Unix(0, 0).UTC())},
 		{"ResvTms", mms.TypeSpec{Type: mms.ValueTypeUnsigned, Size: 16}, mms.NewUnsigned(uint64(sg.ResvTms))},
 	}
 
@@ -1101,19 +1279,36 @@ func registerSGCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, sg *Se
 		// alternate access to one component arrives, goes through the
 		// interceptor for every changed writable subfield (ActSG,
 		// EditSG, CnfEdit), in the order of the structure, as a write
-		// of that subfield would. NumOfSGs, LActTm and ResvTms are
+		// of that subfield would. NumOfSG, LActTm and ResvTms are
 		// read-only (IEC 61850-7-2) and keep their values.
 		Write: func(ctx context.Context, val *mms.Value) error {
 			elems, ok := val.Structure()
 			if !ok || len(elems) != len(fields) {
-				return fmt.Errorf("SGCB write: expected structure with %d elements", len(fields))
+				return writeRefused(mms.DataAccessErrorTypeInconsistent, "SGCB write: expected structure with %d elements", len(fields))
+			}
+			// Changing a read-only member is object-access-denied (IEC
+			// 61850-8-1 8.1.3.4.4.2: a read-only sub-component).
+			changed := false
+			for i, f := range fields {
+				cur := vs.Get(StoreKey(ldName, sgcbItemID+"$"+f.suffix))
+				if cur == nil || sameSGCBMember(cur, elems[i]) {
+					continue
+				}
+				if !sgcbWritable[f.suffix] {
+					return writeRefused(mms.DataAccessErrorObjectAccessDenied, "SGCB write: %s is read-only", f.suffix)
+				}
+				changed = true
 			}
 			for i, f := range fields {
 				if !sgcbWritable[f.suffix] {
 					continue
 				}
 				subKey := StoreKey(ldName, sgcbItemID+"$"+f.suffix)
-				if cur := vs.Get(subKey); cur != nil && cur.Equal(elems[i]) {
+				// An unchanged EditSG still goes to the interceptor when
+				// nothing else changed: a SelectEditSG of the group already
+				// selected, which only the reservation holder may issue
+				// (IEC 61850-7-2 16.3.3.1).
+				if cur := vs.Get(subKey); cur != nil && cur.Equal(elems[i]) && (changed || f.suffix != "EditSG") {
 					continue
 				}
 				if handled, err := vs.callInterceptor(ctx, subKey, elems[i]); err != nil {
@@ -1176,7 +1371,7 @@ func parseInitialValue(btype, val string, enumNames map[string]int) (*mms.Value,
 			return nil, fmt.Errorf("invalid BOOLEAN value %q", val)
 		}
 
-	case "INT8", "INT16", "INT32", "INT64", "INT128", "Tcmd":
+	case "INT8", "INT16", "INT24", "INT32", "INT64", "INT128":
 		i, err := strconv.ParseInt(val, 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("invalid integer value %q for %s: %w", val, btype, err)
@@ -1197,7 +1392,7 @@ func parseInitialValue(btype, val string, enumNames map[string]int) (*mms.Value,
 		}
 		return nil, fmt.Errorf("invalid integer value %q for %s: not a valid ordinal or enum name", val, btype)
 
-	case "INT8U", "INT16U", "INT32U":
+	case "INT8U", "INT16U", "INT24U", "INT32U":
 		u, err := strconv.ParseUint(val, 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("invalid unsigned value %q for %s: %w", val, btype, err)
@@ -1211,7 +1406,7 @@ func parseInitialValue(btype, val string, enumNames map[string]int) (*mms.Value,
 		}
 		return mms.NewFloat(f), nil
 
-	case "VisString32", "VisString64", "VisString65", "VisString129", "VisString255", "ObjRef":
+	case "VisString32", "VisString64", "VisString65", "VisString129", "VisString255", "ObjRef", "Currency":
 		return mms.NewVisibleString(val), nil
 
 	case "Unicode255":
@@ -1223,11 +1418,30 @@ func parseInitialValue(btype, val string, enumNames map[string]int) (*mms.Value,
 	case "Dbpos":
 		// SCL gives a double point as its literal (IEC 61850-7-3 DPS
 		// stVal); on the wire it is BIT STRING(2), intermediate-state 00,
-		// off 01, on 10, bad-state 11 (IEC 61850-8-1), as DpCtlVal writes.
+		// off 01, on 10, bad-state 11 (IEC 61850-8-1), as DbposValue writes.
 		if b, ok := dbposLiterals[val]; ok {
 			return mms.NewBitStringWithLength([]byte{b}, 2), nil
 		}
 		return parseInitialBitString(val, 2)
+
+	case "Tcmd":
+		// CODED ENUM stop(0) | lower(1) | higher(2) | reserved(3) (IEC
+		// 61850-7-3 BSC), encoded as the unsigned value in BIT STRING(2),
+		// first bit in the high bit of the octet (IEC 61850-8-1 8.1.2.3).
+		if b, ok := tcmdLiterals[val]; ok {
+			return mms.NewBitStringWithLength([]byte{b}, 2), nil
+		}
+		u, err := strconv.ParseUint(val, 10, 8)
+		if err != nil || u > 3 {
+			return nil, fmt.Errorf("invalid Tcmd value %q", val)
+		}
+		return mms.NewBitStringWithLength([]byte{byte(u) << 6}, 2), nil
+
+	case "SvOptFlds":
+		return parseInitialBitString(val, 5)
+
+	case "EntryID":
+		return parseInitialOctetString(val, 8)
 
 	case "Check":
 		return parseInitialBitString(val, 2)
@@ -1261,9 +1475,15 @@ func parseInitialValue(btype, val string, enumNames map[string]int) (*mms.Value,
 	}
 }
 
-// parseInitialBitString parses an integer string into a bit string of
-// the specified bit length. The integer value populates the bits in
-// MSB-first order.
+// tcmdLiterals maps the Tcmd literals to their two-bit encoding, first
+// bit in the high bit of the octet.
+var tcmdLiterals = map[string]byte{
+	"stop":     0x00,
+	"lower":    0x40,
+	"higher":   0x80,
+	"reserved": 0xc0,
+}
+
 // dbposLiterals maps the Dbpos literals to their two-bit encoding,
 // first bit in the high bit of the octet.
 var dbposLiterals = map[string]byte{
@@ -1273,6 +1493,9 @@ var dbposLiterals = map[string]byte{
 	"bad-state":          0xc0,
 }
 
+// parseInitialBitString parses an integer string into a bit string of
+// the specified bit length. The integer value populates the bits in
+// MSB-first order.
 func parseInitialBitString(val string, bits int) (*mms.Value, error) {
 	u, err := strconv.ParseUint(val, 0, 64)
 	if err != nil {
