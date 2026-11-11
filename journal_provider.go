@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
+	"io/fs"
 	"sort"
 	"sync"
 	"time"
@@ -163,7 +165,7 @@ func (p *MemoryJournalProvider) ReadTimeRange(_ context.Context, domain, journal
 
 	jl, ok := p.logs[k]
 	if !ok {
-		return &mms.JournalResult{}, nil
+		return nil, errUnknownJournal(domain, journal)
 	}
 
 	var filtered []mms.JournalEntry
@@ -188,7 +190,7 @@ func (p *MemoryJournalProvider) ReadStartAfter(_ context.Context, domain, journa
 
 	jl, ok := p.logs[k]
 	if !ok {
-		return &mms.JournalResult{}, nil
+		return nil, errUnknownJournal(domain, journal)
 	}
 
 	// The entry ID locates the cursor; the time only when the entry is
@@ -236,4 +238,33 @@ func encodeEntryIDUint64(id uint64) []byte {
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, id)
 	return buf
+}
+
+// errUnknownJournal is the error of a read of a journal that does not
+// exist: ReadJournal answers Response– (IEC 61850-7-2 §17.3.5.2.4,
+// IEC 61850-8-1 §17.3.4.5), which go-mms maps from fs.ErrNotExist to
+// object-non-existent.
+func errUnknownJournal(domain, journal string) error {
+	return fmt.Errorf("iec61850: journal %s/%s: %w", domain, journal, fs.ErrNotExist)
+}
+
+// hasJournal reports whether the journal is registered.
+func (p *MemoryJournalProvider) hasJournal(domain, journal string) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	_, ok := p.logs[journalKey{domain, journal}]
+	return ok
+}
+
+// bounds returns the entry IDs and times of the oldest and newest entry
+// of a journal; nil IDs and zero times when it is empty or unknown.
+func (p *MemoryJournalProvider) bounds(domain, journal string) (oldID, newID []byte, oldT, newT time.Time) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	jl, ok := p.logs[journalKey{domain, journal}]
+	if !ok || len(jl.entries) == 0 {
+		return nil, nil, time.Time{}, time.Time{}
+	}
+	first, last := jl.entries[0], jl.entries[len(jl.entries)-1]
+	return bytes.Clone(first.EntryID), bytes.Clone(last.EntryID), first.OccurrenceTime, last.OccurrenceTime
 }

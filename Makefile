@@ -133,6 +133,8 @@ fuzz: ## Run all fuzz targets for FUZZTIME each (default 15s)
 	@go test -fuzz=^FuzzDecodeTrgOps$$               -fuzztime=$(FUZZTIME) .
 	@go test -fuzz=^FuzzDecodeReportIndication_NilValues$$ -fuzztime=$(FUZZTIME) .
 	@go test -fuzz=^FuzzDecodeControlRequest$$       -fuzztime=$(FUZZTIME) .
+	@go test -fuzz=^FuzzAssembleSegments$$           -fuzztime=$(FUZZTIME) .
+	@go test -fuzz=^FuzzDecodeRCB$$                  -fuzztime=$(FUZZTIME) .
 	@echo "=== Fuzzing scl ==="
 	@go test -fuzz=^FuzzParse$$                      -fuzztime=$(FUZZTIME) ./scl
 	@go test -fuzz=^FuzzDecodeGoCB$$                 -fuzztime=$(FUZZTIME) .

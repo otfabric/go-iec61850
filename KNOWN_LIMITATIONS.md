@@ -41,21 +41,34 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   go-mms `iso.Dial` (`iso.WithDialer`, `iso.WithTLSConfig`) and wrap the
   result with `NewClient`, or return a `tls.Conn` from the dialer. `Client` built with
   `NewClient` dials nothing, and the server ignores the dialer.
-- **Report subscription assumes single-client ownership** — the library does
-  not handle multi-client RCB arbitration beyond basic URCB reserve/release.
+- **One subscription per RptID** — the client routes InformationReports
+  to subscriptions by RptID. The server, not the client, arbitrates RCB
+  ownership between associations (see the report limitations below).
 
 ## Server limitations
 
-- **Reports: in-memory BRCB buffer, no segmentation** — the server generates
-  InformationReports for data-change, quality-change, data-update,
-  integrity, and GI triggers. RCB writes from MMS clients are
-  automatically dispatched to the report engine. BRCB buffering is
-  in-memory with configurable depth and no persistent storage; buffered
-  entries are replayed to a client that re-enables the BRCB (optionally
-  resuming after a given `EntryID`, see [INTEROP.md](INTEROP.md)), but the
-  buffer does not survive a server restart. Multi-client RCB
-  ownership arbitration and segmented report generation are not yet
-  implemented.
+- **Reports: in-memory BRCB buffer, no ResvTms/Owner** — the report engine
+  implements the IEC 61850-7-2 §17.2 URCB and BRCB state machines per
+  association (see API.md "Report engine"), with these limits:
+  - The BRCB buffer is in memory (default 1000 entries, `SetRCBBufMax`)
+    and does not survive a server restart; EntryIDs restart at 1.
+  - The optional BRCB attributes ResvTms and Owner (IEC 61850-7-2
+    Table 37 c3/c4) are not modelled: a BRCB is reserved only by the
+    association that enables it, and released when it disables it or the
+    association ends.
+  - Segmentation uses the server's configured MMS `MaxPDUSize` (default
+    65000), not the size negotiated with each client, which go-mms does
+    not expose per connection. A data set member whose value does not fit
+    one PDU is not reported.
+  - Association loss is detected when `Server.Serve` returns, when a
+    report cannot be sent, and by a one-second check of the go-mms
+    connection list; a connection served by `mms.Server` directly can keep
+    its RCBs up to one second.
+  - An indexed ReportControl with ClientLN entries creates the instances
+    `<name>01..<name>NN` but does not pre-assign them to those clients.
+  - Without attribute trigger options in the model (SCL DA
+    dchg/qchg/dupd), the reason for inclusion is derived by comparing the
+    member value.
 - **Controls: no interlocking, demo-grade default operate** — control
   handlers (`RegisterControl`) follow the states of IEC 61850-7-2 Table 47
   (select, time-activated wait, execution until the CommandTermination),
@@ -77,11 +90,22 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   the FC=SE guard. Persistent multi-bank SE/SG value storage is not
   implemented: there are no per-group value banks to store separate
   FC=SE/FC=SG attribute sets.
-- **Journals: in-memory, no LCB runtime configuration** — the server supports runtime journal
-  entry generation, in-memory storage via `MemoryJournalProvider`, and
-  MMS journal service integration. Persistent journal storage, log
-  control block (LCB) runtime configuration, and automatic event
-  logging from control operations are not yet implemented.
+- **Journals: in memory, no EVENT-DATA entries** — log control blocks
+  (FC LG, IEC 61850-8-1 §17.3) select what is journaled; the journal
+  itself has these limits:
+  - `MemoryJournalProvider` keeps entries in memory; "LogEntries shall be
+    non-volatile" (8-1 §17.3.3.4.1) is up to a persistent provider.
+  - LogEna transitions and power-up are not journaled as EVENT-DATA
+    Event Transition Records (8-1 §17.3.3.4.3): go-mms journal entries
+    carry DATA only.
+  - The SCL LogControl `reasonCode` attribute is kept in the model but
+    does not change the journal: IEC 61850-8-1 Table 65 does not map
+    OptFlds and "forces the reasonCodes to always appear in the Log".
+  - The LCB status attributes (OldEntrTm, NewEntrTm, OldEnt, NewEnt) are
+    updated when the journal engine adds an entry; entries added with
+    `MemoryJournalProvider.AddEntry` directly show up there with the next
+    one.
+  - Control operations are not journaled automatically.
 - **File serving requires external provider** — file MMS services are
   enabled by setting `ServerOptions.FileProvider` (or `MMS.FileProvider`).
   No built-in filesystem-backed provider is included; applications must

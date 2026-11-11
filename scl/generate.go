@@ -278,16 +278,22 @@ type genFCDA struct {
 }
 
 type genReportControl struct {
-	Name      string        `xml:"name,attr"`
-	Desc      string        `xml:"desc,attr"`
-	RptID     string        `xml:"rptID,attr"`
-	DatSet    string        `xml:"datSet,attr"`
-	ConfRev   string        `xml:"confRev,attr"`
-	Buffered  string        `xml:"buffered,attr"`
-	BufTime   string        `xml:"bufTime,attr"`
-	IntgPd    string        `xml:"intgPd,attr"`
-	TrgOps    *genTrgOps    `xml:"TrgOps"`
-	OptFields *genOptFields `xml:"OptFields"`
+	Name       string         `xml:"name,attr"`
+	Desc       string         `xml:"desc,attr"`
+	RptID      string         `xml:"rptID,attr"`
+	DatSet     string         `xml:"datSet,attr"`
+	ConfRev    string         `xml:"confRev,attr"`
+	Buffered   string         `xml:"buffered,attr"`
+	BufTime    string         `xml:"bufTime,attr"`
+	IntgPd     string         `xml:"intgPd,attr"`
+	Indexed    string         `xml:"indexed,attr,omitempty"`
+	TrgOps     *genTrgOps     `xml:"TrgOps"`
+	OptFields  *genOptFields  `xml:"OptFields"`
+	RptEnabled *genRptEnabled `xml:"RptEnabled,omitempty"`
+}
+
+type genRptEnabled struct {
+	Max string `xml:"max,attr"`
 }
 
 type genTrgOps struct {
@@ -310,8 +316,35 @@ type genOptFields struct {
 }
 
 type genLog struct {
-	Name string `xml:"name,attr"`
-	Desc string `xml:"desc,attr"`
+	Name       string     `xml:"name,attr"`
+	Desc       string     `xml:"desc,attr"`
+	DatSet     string     `xml:"datSet,attr,omitempty"`
+	IntgPd     string     `xml:"intgPd,attr,omitempty"`
+	LDInst     string     `xml:"ldInst,attr,omitempty"`
+	Prefix     string     `xml:"prefix,attr,omitempty"`
+	LNClass    string     `xml:"lnClass,attr,omitempty"`
+	LNInst     string     `xml:"lnInst,attr,omitempty"`
+	LogName    string     `xml:"logName,attr,omitempty"`
+	LogEna     string     `xml:"logEna,attr"`
+	ReasonCode string     `xml:"reasonCode,attr"`
+	TrgOps     *genTrgOps `xml:"TrgOps"`
+}
+
+func logToGenXML(lg Log) genLog {
+	raw := genLog{
+		Name: lg.Name, Desc: lg.Desc, DatSet: lg.DatSet,
+		LDInst: lg.LDInst, Prefix: lg.Prefix, LNClass: lg.LNClass, LNInst: lg.LNInst,
+		LogName: lg.LogName, LogEna: genBoolStr(lg.LogEna), ReasonCode: genBoolStr(lg.ReasonCode),
+		TrgOps: &genTrgOps{
+			Dchg: genBoolStr(lg.TrgOps.Dchg), Qchg: genBoolStr(lg.TrgOps.Qchg),
+			Dupd: genBoolStr(lg.TrgOps.Dupd), Period: genBoolStr(lg.TrgOps.Period),
+			GI: genBoolStr(lg.TrgOps.GI),
+		},
+	}
+	if lg.IntgPd > 0 {
+		raw.IntgPd = strconv.FormatUint(uint64(lg.IntgPd), 10)
+	}
+	return raw
 }
 
 type genDataTypeTemplates struct {
@@ -355,6 +388,9 @@ type genDA struct {
 	Type  string    `xml:"type,attr"`
 	Desc  string    `xml:"desc,attr"`
 	Count string    `xml:"count,attr"`
+	Dchg  string    `xml:"dchg,attr,omitempty"`
+	Qchg  string    `xml:"qchg,attr,omitempty"`
+	Dupd  string    `xml:"dupd,attr,omitempty"`
 	Vals  []genSVal `xml:"Val"`
 }
 
@@ -529,7 +565,7 @@ func lnToGenXML(ln LN) genLN {
 		raw.Reports = append(raw.Reports, rcToGenXML(rc))
 	}
 	for _, lg := range ln.Logs {
-		raw.Logs = append(raw.Logs, genLog(lg))
+		raw.Logs = append(raw.Logs, logToGenXML(lg))
 	}
 	return raw
 }
@@ -594,7 +630,21 @@ func rcToGenXML(rc ReportControl) genReportControl {
 		DataRef: genBoolStr(rc.OptFields.DataRef), EntryID: genBoolStr(rc.OptFields.EntryID),
 		ConfigRef: genBoolStr(rc.OptFields.ConfigRef), BufOvfl: genBoolStr(rc.OptFields.BufOvfl),
 	}
+	// indexed defaults to true in SCL (IEC 61850-6 §9.3.8): write it.
+	raw.Indexed = genBoolStr(rc.Indexed)
+	if rc.MaxInstances > 0 {
+		raw.RptEnabled = &genRptEnabled{Max: strconv.FormatUint(uint64(rc.MaxInstances), 10)}
+	}
 	return raw
+}
+
+// genTrueStr is "true" for b, else empty (the attribute is omitted and
+// takes its schema default false).
+func genTrueStr(b bool) string {
+	if b {
+		return "true"
+	}
+	return ""
 }
 
 func genBoolStr(b bool) string {
@@ -623,6 +673,7 @@ func dttToGenXML(dtt DataTypeTemplates) genDataTypeTemplates {
 			if da.Count > 0 {
 				rawDA.Count = strconv.Itoa(da.Count)
 			}
+			rawDA.Dchg, rawDA.Qchg, rawDA.Dupd = genTrueStr(da.Dchg), genTrueStr(da.Qchg), genTrueStr(da.Dupd)
 			rawDOT.DAs = append(rawDOT.DAs, rawDA)
 		}
 		for _, sdo := range dot.SDOs {

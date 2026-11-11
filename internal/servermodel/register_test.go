@@ -739,11 +739,16 @@ func TestRegisterRCB_URCBAndDefaultRptID(t *testing.T) {
 		t.Error("RptEna should restore previous true after rejection")
 	}
 
+	// IEC 61850-8-1 §8.1.3.4.4.2: the RCB structure has read-only
+	// components (ConfRev, SqNum), so a write of the whole structure is
+	// object-access-denied.
 	vs.SetWriteInterceptor(nil)
-	if _, err := client.Write(ctx, mms.WriteRequest{
+	res, err := client.Write(ctx, mms.WriteRequest{
 		DomainID: "LD1", ItemID: "LLN0$RP$urcb01", Value: parent.Value,
-	}); err != nil {
-		t.Fatalf("URCB parent write: %v", err)
+	})
+	var dae *mms.DataAccessError
+	if !errors.As(err, &dae) || dae.Code != mms.DataAccessErrorObjectAccessDenied {
+		t.Fatalf("URCB parent write: res=%v err=%v, want object-access-denied", res, err)
 	}
 }
 

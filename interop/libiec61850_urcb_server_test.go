@@ -24,7 +24,6 @@
 // Assertions:
 //   - receive-report is present and ok=true.
 //   - rptID matches "interop_urcb01".
-//   - seqNum is non-zero.
 //   - inclusion[0]=true (SPS1.stVal changed), inclusion[1]=false (Mod.stVal not changed).
 //   - values[0] equals !fixVal.SPS1StVal.
 //   - reasons[0] is "data-change".
@@ -86,9 +85,8 @@ func TestLibIECServer_URCB_DataChange(t *testing.T) {
 	if rpt.RptID != "interop_urcb01" {
 		t.Errorf("receive-report rptID: want %q, got %q", "interop_urcb01", rpt.RptID)
 	}
-	if rpt.SeqNum == 0 {
-		t.Error("receive-report seqNum: expected non-zero")
-	}
+	// SqNum is 0 in the first report after RptEna FALSE→TRUE
+	// (IEC 61850-7-2 §17.2.2.10), so any value is valid here.
 
 	// Inclusion: [true, false] — only SPS1.stVal changed.
 	if len(rpt.Inclusion) < 2 {
@@ -159,9 +157,9 @@ func TestLibIECServer_URCB_DataChange(t *testing.T) {
 // Additionally, no spurious report should be delivered after a rejected write,
 // and the client association must remain usable.
 func TestLibIECServer_URCB_RejectedWriteNoReport(t *testing.T) {
-	// The go-iec61850 server uses the SCL name directly ("urcb01"),
-	// unlike the libiec61850 server which appends an instance suffix ("urcb0101").
-	const serverUrcbID = "LLN0$RP$urcb01"
+	// The fixture's ReportControl urcb01 is indexed (the SCL default):
+	// its first instance is urcb0101 (IEC 61850-8-1 §17.1.3.2).
+	const serverUrcbID = "LLN0$RP$urcb0101"
 
 	h := startGoIEDServerWithReports(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

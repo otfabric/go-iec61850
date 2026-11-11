@@ -82,9 +82,11 @@ func TestEncodeReportValuesEx_AllOptionalFields(t *testing.T) {
 	after := time.Now().UTC().UnixMilli()
 
 	// RptID, OptFlds, SeqNum, TimeStamp, DatSet, BufOvfl, EntryID, ConfRev,
-	// SubSeqNum, MoreSegments, Inclusion, 2 values, 2 reasons.
-	if len(vals) != 15 {
-		t.Fatalf("len = %d, want 15", len(vals))
+	// SubSeqNum, MoreSegments, Inclusion, 1 value, 1 reason: the included
+	// member without a value is left out (IEC 61850-8-1 §17.2.1), it was
+	// sent as BOOLEAN FALSE before v1.17.
+	if len(vals) != 13 {
+		t.Fatalf("len = %d, want 13", len(vals))
 	}
 	if s, _ := vals[0].VisibleString(); s != "rpt" {
 		t.Errorf("RptID = %q", s)
@@ -116,21 +118,14 @@ func TestEncodeReportValuesEx_AllOptionalFields(t *testing.T) {
 	if b, _ := vals[9].Bool(); b {
 		t.Error("MoreSegments should be false")
 	}
-	if bits, _ := vals[10].BitString(); len(bits) != 1 || bits[0] != 0xA0 {
-		t.Errorf("Inclusion = %x, want a0", bits)
+	if bits, _ := vals[10].BitString(); len(bits) != 1 || bits[0] != 0x80 {
+		t.Errorf("Inclusion = %x, want 80", bits)
 	}
 	if n, _ := vals[11].Int64(); n != 7 {
 		t.Errorf("value[0] = %d", n)
 	}
-	// A nil included value is substituted with boolean false.
-	if vals[12].Type() != mms.ValueTypeBoolean {
-		t.Errorf("nil value substitute type = %v", vals[12].Type())
-	}
-	if bits, _ := vals[13].BitString(); len(bits) != 1 || bits[0] != 0x40 {
+	if bits, _ := vals[12].BitString(); len(bits) != 1 || bits[0] != 0x40 {
 		t.Errorf("reason[0] = %x, want 40 (dchg)", bits)
-	}
-	if bits, _ := vals[14].BitString(); len(bits) != 1 || bits[0] != 0x0C {
-		t.Errorf("reason[2] = %x, want 0c (integrity|gi)", bits)
 	}
 }
 

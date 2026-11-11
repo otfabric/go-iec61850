@@ -53,8 +53,11 @@ func TestServer_AllowEmptyReportDatSet(t *testing.T) {
 		t.Fatalf("ListReports = %v, %v", rcbs, err)
 	}
 	var item string
+	// The ReportControl "urcb" is indexed (the SCL default) with
+	// RptEnabled max=2: instances urcb01 and urcb02 (IEC 61850-8-1
+	// §17.1.3.2, IEC 61850-6 §9.3.8).
 	for _, r := range rcbs {
-		if strings.HasSuffix(r, "$urcb") {
+		if strings.HasSuffix(r, "$urcb01") {
 			item = r
 		}
 	}

@@ -107,7 +107,7 @@ func TestLibIECClient_URCB_GIReport(t *testing.T) {
 // TestLibIECServer_URCB_GIReport verifies that a go-iec61850 client can
 // trigger GI on the go-iec61850 server and receive a complete dataset report.
 func TestLibIECServer_URCB_GIReport(t *testing.T) {
-	const serverUrcbID = "LLN0$RP$urcb01"
+	const serverUrcbID = "LLN0$RP$urcb0101" // first instance of the indexed SCL urcb01
 
 	h := startGoIEDServerWithReports(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -232,7 +232,7 @@ func TestBeanServer_URCB_GIReport(t *testing.T) {
 // 0 is included in at least one report and member 1 is included in at least
 // one report, with the correct updated values.
 func TestLibIECServer_URCB_MultiMemberDchg(t *testing.T) {
-	const serverUrcbID = "LLN0$RP$urcb01"
+	const serverUrcbID = "LLN0$RP$urcb0101" // first instance of the indexed SCL urcb01
 
 	h := startGoIEDServerWithReports(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

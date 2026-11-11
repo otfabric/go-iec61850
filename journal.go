@@ -72,6 +72,12 @@ func (c *Client) ListJournals(ctx context.Context, ld string) ([]string, error) 
 // ReadJournal reads journal entries within the given time range
 // [start, stop] from the specified journal in the logical device.
 //
+// RangeStartTime and RangeStopTime are optional in QueryLogByTime
+// (IEC 61850-7-2 §17.3.5.2): a zero start reads from the first entry and
+// a zero stop up to the last. The MMS ReadJournal request always carries
+// both, so they are sent as the first and last instant a BinaryTime can
+// hold (1984-01-01 and 2163-06-05 23:59:59.999 UTC).
+//
 // The returned entries are in chronological order. When
 // [JournalReadResult.MoreFollows] is true, use [Client.ReadJournalAfter]
 // with the last entry's OccurrenceTime and EntryID to page through
@@ -87,6 +93,7 @@ func (c *Client) ReadJournal(ctx context.Context, ld, journal string, start, sto
 		return nil, fmt.Errorf("iec61850: read journal: %w: empty journal name", ErrInvalidArgument)
 	}
 
+	start, stop = openJournalRange(start, stop)
 	result, err := c.mmsClient.ReadJournalTimeRange(ctx, ld, journal, start, stop)
 	if err != nil {
 		return nil, fmt.Errorf("iec61850: read journal %s/%s: %w", ld, journal, err)
@@ -97,6 +104,26 @@ func (c *Client) ReadJournal(ctx context.Context, ld, journal string, start, sto
 		return nil, fmt.Errorf("iec61850: read journal %s/%s: %w", ld, journal, jErr)
 	}
 	return jr, nil
+}
+
+// journalRangeFirst and journalRangeLast are the first and last instant
+// of the dated BinaryTime form (ISO 9506-2 TimeOfDay: days since
+// 1984-01-01 in 16 bits; go-mms encodes up to 2163-06-05).
+var (
+	journalRangeFirst = time.Date(1984, 1, 1, 0, 0, 0, 0, time.UTC)
+	journalRangeLast  = time.Date(2163, 6, 5, 23, 59, 59, 999e6, time.UTC)
+)
+
+// openJournalRange replaces a zero start or stop by the first or last
+// BinaryTime instant (LOG-06).
+func openJournalRange(start, stop time.Time) (time.Time, time.Time) {
+	if start.IsZero() {
+		start = journalRangeFirst
+	}
+	if stop.IsZero() {
+		stop = journalRangeLast
+	}
+	return start, stop
 }
 
 // ReadJournalAfter reads journal entries starting after the given

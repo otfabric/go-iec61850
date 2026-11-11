@@ -112,7 +112,7 @@ func convLN017(r raw.LN0, diags *[]Diagnostic) LN {
 		})
 	}
 	for _, lc := range r.LogControl {
-		ln.Logs = append(ln.Logs, Log{Name: lc.Name, Desc: lc.Desc})
+		ln.Logs = append(ln.Logs, convLog17(lc))
 	}
 	if r.SettingControl != nil {
 		ln.SettingControl = convSettingControl(r.SettingControl.NumOfSGs, r.SettingControl.ActSG, 0, diags)
@@ -141,7 +141,7 @@ func convLN17(r raw.LN, _ *[]Diagnostic) LN {
 		ln.Reports = append(ln.Reports, convRC17(rc))
 	}
 	for _, lc := range r.LogControl {
-		ln.Logs = append(ln.Logs, Log{Name: lc.Name, Desc: lc.Desc})
+		ln.Logs = append(ln.Logs, convLog17(lc))
 	}
 	for _, p := range r.Private {
 		ln.Private = append(ln.Private, Private{Type: p.Type, Source: p.Source, InnerXML: p.InnerXML})
@@ -214,6 +214,13 @@ func convRC17(r raw.ReportControl) ReportControl {
 		DataRef: r.OptFields.DataRef, EntryID: r.OptFields.EntryID,
 		ConfigRef: r.OptFields.ConfigRef,
 	}
+	// IEC 61850-6:2004 §9.3.8: the RCB instance names are "built from the
+	// RCName attribute ... with a following two-digit number between 01 and
+	// Max"; the 2003 schema has no indexed attribute.
+	rc.Indexed, rc.MaxInstances = true, 1
+	if r.RptEnabled != nil && r.RptEnabled.Max > 0 {
+		rc.MaxInstances = r.RptEnabled.Max
+	}
 	return rc
 }
 
@@ -230,6 +237,7 @@ func convDTT17(r *raw.DataTypeTemplates, _ *[]Diagnostic) DataTypeTemplates {
 		t := DOType{ID: dot.Id, CDC: dot.Cdc, Desc: dot.Desc}
 		for _, d := range dot.DA {
 			da := DA{Name: d.Name, FC: string(d.Fc), BType: d.BType, Type: d.Type, Desc: d.Desc}
+			da.Dchg, da.Qchg, da.Dupd = d.Dchg, d.Qchg, d.Dupd
 			da.Count = int(d.Count)
 			if len(d.Val) > 0 {
 				da.Val = d.Val[0].Value
@@ -386,4 +394,18 @@ func convServices17(r *raw.Services) *Services {
 		svc.GOOSE = &GOOSEService{Max: int(r.GOOSE.Max)}
 	}
 	return svc
+}
+
+// convLog17 converts an SCL LogControl (IEC 61850-6:2004): the 2003
+// schema has no log location attributes, so the log is in LLN0 of the
+// same LD; logEna and reasonCode default to true.
+func convLog17(lc raw.LogControl) Log {
+	l := Log{
+		Name: lc.Name, Desc: lc.Desc, LogName: lc.LogName, DatSet: lc.DatSet, IntgPd: lc.IntgPd,
+		LogEna: defaultTrue(lc.LogEna), ReasonCode: defaultTrue(lc.ReasonCode),
+	}
+	if lc.TrgOps != nil {
+		l.TrgOps = TrgOps{Dchg: lc.TrgOps.Dchg, Qchg: lc.TrgOps.Qchg, Dupd: lc.TrgOps.Dupd, Period: lc.TrgOps.Period, GI: true}
+	}
+	return l
 }

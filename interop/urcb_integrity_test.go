@@ -25,9 +25,9 @@ import (
 )
 
 // goServerURCBID is the MMS named-variable ID for the URCB on the
-// go-iec61850 server.  The go server uses the bare SCL name without the
-// libiec61850 instance-number suffix ("01").
-const goServerURCBID = "LLN0$RP$urcb01"
+// go-iec61850 server: the first instance of the indexed SCL ReportControl
+// urcb01 (IEC 61850-8-1 §17.1.3.2), as on the other servers.
+const goServerURCBID = "LLN0$RP$urcb0101"
 
 // TestGoServer_URCB_IntegrityPeriod verifies that the go-iec61850 server
 // delivers periodic integrity reports when IntgPd=500ms and TrgOps includes

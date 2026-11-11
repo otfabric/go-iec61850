@@ -29,16 +29,11 @@ import (
 	iec61850 "github.com/otfabric/go-iec61850"
 )
 
-// urcbID is the item ID of the fixture's URCB on the peer's server. The
-// references append libiec61850's instance suffix ("urcb0101"); go-iec61850's
-// own server (stack otfabric) uses the SCL name ("urcb01", as
-// TestLibIECServer_URCB_RejectedWriteNoReport notes).
-var urcbID = func() string {
-	if peer().name == otfabricStack.name {
-		return "LLN0$RP$urcb01"
-	}
-	return "LLN0$RP$urcb0101"
-}()
+// urcbID is the item ID of the fixture's URCB on the peer's server: the
+// SCL ReportControl urcb01 is indexed (the default), so every server,
+// go-iec61850's included, names its first instance urcb0101
+// (IEC 61850-8-1 §17.1.3.2).
+var urcbID = "LLN0$RP$urcb0101"
 
 const (
 	urcbLD    = "InteropLD"

@@ -310,7 +310,7 @@ func TestGoServer_Neg_InvalidDataSet(t *testing.T) {
 // Client A's reservation must remain intact after the rejection.
 func TestGoServer_Neg_URCBDoubleReserve(t *testing.T) {
 	const srvUrcbLD = "InteropLD"
-	const srvUrcbID = "LLN0$RP$urcb01"
+	const srvUrcbID = "LLN0$RP$urcb0101"
 
 	srv := startGoIEDServerWithReports(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

@@ -40,14 +40,6 @@ func sgSpecServer(t *testing.T, resvTms uint16, h SettingGroupHandler) *Server {
 	return srv
 }
 
-func dataAccessCode(err error) mms.DataAccessErrorCode {
-	var dae *mms.DataAccessError
-	if errors.As(err, &dae) {
-		return dae.Code
-	}
-	return mms.DataAccessErrorNone
-}
-
 var seRef = Ref{LD: "LD1", LN: "LLN0", Path: []string{"Set1", "setVal"}}
 
 // IEC 61850-7-2 16.3.3.1: the edit reservation belongs to one client; it
