@@ -98,7 +98,7 @@ error) and the test is skipped with that reason.
 
 ### Per-stack matrix
 
-Results with the iec61850-interop v1.6.0 images pinned in
+Results with the iec61850-interop v1.6.1 images pinned in
 `.github/workflows/interop.yml`.
 
 | Area | libiec61850 | iec61850bean | dscsystems | iec61850-rust | cbsigma |
@@ -150,7 +150,7 @@ neither affects the suites here.
 
 ⁹ `interop/rsession_test.go` (`TestRGOOSE_*`, `TestRSV_*`) runs against
 every stack whose image takes `--transport udp` (iec61850-interop contract
-1.4): the dscsystems and libiec61850 adapters (iec61850-interop v1.6.0,
+1.4): the dscsystems and libiec61850 adapters (iec61850-interop v1.6.1,
 pinned in `.github/workflows/interop.yml`), each in both directions, GOOSE
 and SV, session versions 1 and 2 with HMAC-SHA256-80, -128 and -256.
 dscsystems: all of it, and its refusal of forged, unsecured and replayed

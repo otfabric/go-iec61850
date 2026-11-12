@@ -173,7 +173,7 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   it, since 90-5 itself was not available. `interop/rsession_test.go`
   exchanges it with dscsystems/go-iec61850 (both directions, GOOSE and
   SV, versions 1 and 2, the three HMACs) and libiec61850 against the
-  pinned iec61850-interop v1.6.0 images in CI. libiec61850 at the pinned
+  pinned iec61850-interop v1.6.1 images in CI. libiec61850 at the pinned
   revision interoperates only with HMAC-SHA256-128 and -256 towards it and
   version 2 HMAC-SHA256-128 from it: it sends version 2 only, no
   HMAC-SHA256-80 signature, an HMAC-SHA256-256 signature length of 16
