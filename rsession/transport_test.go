@@ -157,7 +157,8 @@ func TestUnsecuredRequiresOptIn(t *testing.T) {
 	if err := send.Send(gooseFrame(t)); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return recv.Stats().Unsecured == 1 })
+	// The counter is raised before OnReject runs: wait for both.
+	waitFor(t, func() bool { return recv.Stats().Unsecured == 1 && rejected.Load() != nil })
 	if err, _ := rejected.Load().(error); !errors.Is(err, rsession.ErrUnsecured) {
 		t.Fatalf("OnReject got %v", err)
 	}
