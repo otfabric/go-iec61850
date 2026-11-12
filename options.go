@@ -69,9 +69,14 @@ type DialOptions struct {
 	// for a destination allowlist checked against the resolved IP, a
 	// proxy, custom socket options, or an in-memory transport in tests.
 	// It is called once per attempt (see Retry) with network "tcp" and
-	// the address given to [Dial]; the returned connection is owned and
-	// closed by the client. An error it returns is wrapped by [Dial] and
-	// can be matched with [errors.Is]. Nil keeps the default dialer.
+	// the address given to [Dial]. The context carries the caller's
+	// deadline and cancellation; a custom dialer must honour it. Like
+	// [net.Dialer], it returns a non-nil connection exactly when the error
+	// is nil: a connection returned with an error is closed, and a nil
+	// connection with a nil error fails the dial. The returned connection
+	// is owned and closed by the client. An error it returns is wrapped by
+	// [Dial] and can be matched with [errors.Is]. Nil keeps the default
+	// dialer.
 	Dialer func(ctx context.Context, network, addr string) (net.Conn, error)
 
 	// Clock stamps the T member of control commands (see

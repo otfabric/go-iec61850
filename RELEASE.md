@@ -1,5 +1,24 @@
 # go-iec61850 Releases
 
+## v1.19.3
+
+**Date:** 2026-11-12
+**Previous release:** v1.19.2
+
+### Fixed
+
+- go-mms v1.9.2 (was v1.9.1): a `DialOptions.Dialer` that returns neither a connection nor an error fails `Dial` instead of panicking, and a connection it returns together with an error is closed.
+
+### Documentation
+
+- `DialOptions.Dialer`: the context carries the caller's deadline and cancellation that a custom dialer must honour, and the connection/error contract (policy 1.5, API-R03).
+
+### Testing
+
+- `TestDialDialerNilConnNilError`.
+
+---
+
 ## v1.19.2
 
 **Date:** 2026-11-12

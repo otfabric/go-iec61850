@@ -429,3 +429,16 @@ func TestChaosDialerByteFaults(t *testing.T) {
 	}
 	t.Logf("dials ok=%d failed=%d; operations ok=%d failed=%d", dialed, failedDials, okOps, failedOps)
 }
+
+// TestDialDialerNilConnNilError: a dialer that returns neither a
+// connection nor an error fails Dial instead of panicking (go-mms v1.9.2).
+func TestDialDialerNilConnNilError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c, err := Dial(ctx, "127.0.0.1:102", DialOptions{
+		Dialer: func(context.Context, string, string) (net.Conn, error) { return nil, nil },
+	})
+	if err == nil || c != nil {
+		t.Fatalf("client = %v err = %v, want an error and no client", c, err)
+	}
+}
