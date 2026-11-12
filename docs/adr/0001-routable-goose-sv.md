@@ -173,7 +173,7 @@ option that verifies them, both with the `rsession.KeyProvider`.
 - R-GOOSE and R-SV work with the existing publishers and subscribers over
   UDP unicast and multicast, authenticated with HMAC-SHA256, behind
   `rsession.KeyProvider`.
-- Interoperability (iec61850-interop v1.6.0, CI): dscsystems in both
+- Interoperability (iec61850-interop v1.6.1, CI): dscsystems in both
   directions with every profile; libiec61850 in both directions with
   HMAC-SHA256-128/-256 towards it and version 2 HMAC-SHA256-128 from it,
   its other profiles asserted as expected failures (COMPATIBILITY.md⁹).
