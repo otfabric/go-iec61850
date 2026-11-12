@@ -172,9 +172,13 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   61850-90-5 structure as libiec61850, Wireshark and dscsystems implement
   it, since 90-5 itself was not available. `interop/rsession_test.go`
   exchanges it with dscsystems/go-iec61850 (both directions, GOOSE and
-  SV, versions 1 and 2, the three HMACs) against the pinned
-  iec61850-interop v1.5.0 image in CI. libiec61850 is no peer: at the pinned
-  revision it writes an APDU length its own decoder refuses. A restarted publisher's SPDUs are
+  SV, versions 1 and 2, the three HMACs) and libiec61850 against the
+  pinned iec61850-interop v1.6.0 images in CI. libiec61850 at the pinned
+  revision interoperates only with HMAC-SHA256-128 and -256 towards it and
+  version 2 HMAC-SHA256-128 from it: it sends version 2 only, no
+  HMAC-SHA256-80 signature, an HMAC-SHA256-256 signature length of 16
+  (refused here as malformed), and an APDU length two octets too long
+  (accepted here on the last element only); see COMPATIBILITY.md⁹. A restarted publisher's SPDUs are
   refused as replays until the key changes, unless `ReplayResetAfter` or
   `InitialSPDUNumber` is used. Multicast needs Linux, macOS or a BSD.
 - **Raw Ethernet only on Linux, macOS and the BSDs** — Linux uses
