@@ -164,18 +164,19 @@ option that verifies them, both with the `rsession.KeyProvider`.
 - IEC 61850-8-1 Amendment 1 changes to the GOOSE APDU itself and SCL
   binding of R-GOOSE addresses (`IP`, `IP-SUBNET` in `GSE/Address`): the
   caller passes the address.
-- Interop: libiec61850 at the pinned revision writes an APDU length its own
-  decoder refuses, and the pinned interop images are not built with
-  R-GOOSE. Adding an R-GOOSE/R-SV peer to iec61850-interop is a separate
-  change in that repository.
+- Interop with libiec61850 beyond what its `RSession` does at the pinned
+  revision: it writes an APDU length its own decoder refuses (the
+  iec61850-interop libiec61850 → libiec61850 pair is a known failure).
 
 ## Consequences
 
 - R-GOOSE and R-SV work with the existing publishers and subscribers over
   UDP unicast and multicast, authenticated with HMAC-SHA256, behind
   `rsession.KeyProvider`.
-- Interoperability with other stacks is unverified until a peer exists in
-  iec61850-interop; FEATURE-STATUS says "none".
+- Interoperability (iec61850-interop v1.6.0, CI): dscsystems in both
+  directions with every profile; libiec61850 in both directions with
+  HMAC-SHA256-128/-256 towards it and version 2 HMAC-SHA256-128 from it,
+  its other profiles asserted as expected failures (COMPATIBILITY.md⁹).
 - When IEC TR 61850-90-5 or IEC 62351-6 becomes available, the layout
   choices above are checked against it; a difference is a wire change and
   gets its own record.

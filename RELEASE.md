@@ -1,5 +1,18 @@
 # go-iec61850 Releases
 
+## v1.19.4
+
+**Date:** 2026-11-12
+**Previous release:** v1.19.3
+
+Interop evidence, tests and documentation; the library is unchanged from v1.19.3.
+
+### Changed
+
+- **Interop CI** pins the iec61850-interop v1.6.0 adapter images (were v1.5.0), whose libiec61850 image takes `--transport udp` (R-GOOSE, R-SV through libiec61850's `RSession`). `interop/rsession_test.go` runs six profiles (session versions 1 and 2, each with HMAC-SHA256-80, -128 and -256) against dscsystems and libiec61850 in both directions; what libiec61850 at its pinned revision does not do is a table of expected failures (`rExpectation`) that the subtests assert, not skip. The matrix is in INTEROP.md and COMPATIBILITY.md⁹.
+
+---
+
 ## v1.19.3
 
 **Date:** 2026-11-12

@@ -32,6 +32,8 @@ iec61850-interop
       goose_test.go                  TestGOOSE_* (libiec61850, dscsystems, iec61850-rust, cbsigma)
       sv_test.go                     TestSV_* (libiec61850, dscsystems, iec61850-rust),
                                      TestLibIECClient_SVCB_Read (MSVCB over MMS)
+      rsession_test.go               TestRGOOSE_* / TestRSV_* (R-GOOSE, R-SV over UDP:
+                                     dscsystems, libiec61850)
 ```
 
 The `TestLibIEC*` tests run once per stack in CI: against libiec61850 and, with
@@ -65,17 +67,17 @@ IEC61850BEAN_IMAGE=iec61850-interop-iec61850bean:local \
 make interop
 
 # Run against published images (version tags)
-LIBIEC61850_IMAGE=ghcr.io/otfabric/iec61850-interop-libiec61850:v1.5.0 \
-IEC61850BEAN_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850bean:v1.5.0 \
+LIBIEC61850_IMAGE=ghcr.io/otfabric/iec61850-interop-libiec61850:v1.6.0 \
+IEC61850BEAN_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850bean:v1.6.0 \
 make interop
 
 # The same suites against another stack
 IEC61850_PEER_STACK=dscsystems \
-DSCSYSTEMS_IMAGE=ghcr.io/otfabric/iec61850-interop-dscsystems:v1.5.0 make interop
+DSCSYSTEMS_IMAGE=ghcr.io/otfabric/iec61850-interop-dscsystems:v1.6.0 make interop
 IEC61850_PEER_STACK=iec61850-rust \
-IEC61850RUST_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850-rust:v1.5.0 make interop
+IEC61850RUST_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850-rust:v1.6.0 make interop
 IEC61850_PEER_STACK=cbsigma \
-CBSIGMA_IMAGE=ghcr.io/otfabric/iec61850-interop-cbsigma:v1.5.0 make interop
+CBSIGMA_IMAGE=ghcr.io/otfabric/iec61850-interop-cbsigma:v1.6.0 make interop
 ```
 
 ### Against go-iec61850 itself (Self-interop)
@@ -299,6 +301,34 @@ encodes the MSVCB's ConfRev, SmpRate, SmpMod and noASDU as MMS
 unsigned control-block attribute is expected. The MS `OptFlds` is 5
 bits from libiec61850 and 10 bits from dscsystems; the client reads the
 first five.
+
+### R-GOOSE and R-SV
+
+Package `rsession` (IEC TR 61850-90-5 session protocol over UDP) against
+the images that take `--transport udp` (iec61850-interop v1.6.0, contract
+1.4): `interop/rsession_test.go`, GOOSE (`gcbAll`) and SV (`MSVCB01`),
+six profiles each. ✓ passes; ✗ is an expected failure the test asserts
+(`rExpectation`), at libiec61850's pinned revision (6e265c5).
+
+| Profile | dscsystems: Go → stack | dscsystems: stack → Go | libiec61850: Go → stack | libiec61850: stack → Go |
+|---|:---:|:---:|:---:|:---:|
+| version 1, HMAC-SHA256-80 | ✓ | ✓ | ✗¹ | ✗² |
+| version 1, HMAC-SHA256-128 | ✓ | ✓ | ✓ | ✗² |
+| version 1, HMAC-SHA256-256 | ✓ | ✓ | ✓ | ✗² |
+| version 2, HMAC-SHA256-80 | ✓ | ✓ | ✗¹ | ✗³ |
+| version 2, HMAC-SHA256-128 | ✓ | ✓ | ✓ | ✓ |
+| version 2, HMAC-SHA256-256 | ✓ | ✓ | ✓ | ✗⁴ |
+| forged (other key, same ID) and unsecured SPDUs refused | ✓ | ✓ | ✓ | ✓ |
+| replayed SPDU refused (by the subscriber) | ✓ | n/a | ✗⁵ | n/a |
+
+¹ libiec61850 refuses every HMAC-SHA256-80 SPDU (unsupported signature
+algorithm). ² Its publisher sends version 2 only; no API sets the
+version, and the adapter answers unsupported. ³ It sends HMAC-SHA256-80
+SPDUs without a signature; `rsession` refuses them (authentication).
+⁴ It writes a signature length of 16 before the 32-octet MAC; `rsession`
+refuses it as malformed. ⁵ It keeps no replay window and accepts the
+replay. Its APDU length is two octets too long; `rsession` accepts that
+on the last element (ADR 0001).
 
 ---
 
@@ -540,7 +570,7 @@ Report delivery (InformationReports) and confirmed services (Read, Write, SetRCB
 ## Fixtures
 
 `interop/testdata/` holds synchronized copies of the canonical iec61850-interop
-fixtures, matching the pinned adapter images (iec61850-interop v1.5.0):
+fixtures, matching the pinned adapter images (iec61850-interop v1.6.0):
 
 | Path | Fixture revision | Content |
 |---|---|---|

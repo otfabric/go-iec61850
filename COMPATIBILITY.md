@@ -98,7 +98,7 @@ error) and the test is skipped with that reason.
 
 ### Per-stack matrix
 
-Results with the iec61850-interop v1.5.0 images pinned in
+Results with the iec61850-interop v1.6.0 images pinned in
 `.github/workflows/interop.yml`.
 
 | Area | libiec61850 | iec61850bean | dscsystems | iec61850-rust | cbsigma |
@@ -121,7 +121,7 @@ Results with the iec61850-interop v1.5.0 images pinned in
 | SV: stack publisher → Go subscriber (SCL-validated) | ✓ | n/a⁷ | ✓ | ✓ | n/a⁸ |
 | SV: Go IED server MSVCB → stack subscriber | ✓ | n/a⁷ | ✓ | ✓ | n/a⁸ |
 | MSVCB over MMS (Go client → stack server) | ✓ | n/a⁷ | ✓ | unsupported⁵ | n/a⁸ |
-| R-GOOSE / R-SV (UDP, HMAC-SHA256) | n/a⁹ | n/a | ✓⁹ | n/a | n/a |
+| R-GOOSE / R-SV (UDP, HMAC-SHA256) | partial⁹ | n/a | ✓⁹ | n/a | n/a |
 
 ¹ The iec61850bean server does not support URCB reservation (`Resv`);
 that negative test is skipped.
@@ -150,12 +150,20 @@ neither affects the suites here.
 
 ⁹ `interop/rsession_test.go` (`TestRGOOSE_*`, `TestRSV_*`) runs against
 every stack whose image takes `--transport udp` (iec61850-interop contract
-1.4). Only the dscsystems adapter does (iec61850-interop v1.5.0, pinned in
-`.github/workflows/interop.yml`): R-GOOSE and R-SV in both directions,
-session version 1 with HMAC-SHA256-80 and version 2 with -128 and -256,
-and the peer's refusal of forged, unsecured and replayed SPDUs. libiec61850
-has R-GOOSE but, at the pinned revision, writes an APDU length its own
-decoder refuses; its adapter does not expose it.
+1.4): the dscsystems and libiec61850 adapters (iec61850-interop v1.6.0,
+pinned in `.github/workflows/interop.yml`), each in both directions, GOOSE
+and SV, session versions 1 and 2 with HMAC-SHA256-80, -128 and -256.
+dscsystems: all of it, and its refusal of forged, unsecured and replayed
+SPDUs. libiec61850 (`RSession` at the pinned revision 6e265c5): the Go
+publisher's SPDUs are accepted with HMAC-SHA256-128 and -256 in both
+versions, forged and unsecured ones refused; its publisher's version 2
+HMAC-SHA256-128 SPDUs are accepted by `rsession` (whose decoder tolerates
+libiec61850's APDU length, two octets too long, on the last element). The
+rest are expected failures the test asserts (`rExpectation` in
+`interop/rsession_test.go`): libiec61850 sends version 1 not at all
+(no API), HMAC-SHA256-80 without a signature, HMAC-SHA256-256 with a
+signature length of 16 (refused as malformed); it refuses every
+HMAC-SHA256-80 SPDU and keeps no replay window.
 
 Stack-specific deviations are listed in iec61850-interop
 `fixtures/capabilities.json` (`knownLimitations`). Interoperability with physical IEDs has not yet been formally

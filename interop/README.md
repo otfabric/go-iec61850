@@ -46,8 +46,8 @@ IEC61850BEAN_IMAGE=iec61850-interop-iec61850bean:local \
 make interop
 
 # Or using published images
-LIBIEC61850_IMAGE=ghcr.io/otfabric/iec61850-interop-libiec61850:v1.5.0 \
-IEC61850BEAN_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850bean:v1.5.0 \
+LIBIEC61850_IMAGE=ghcr.io/otfabric/iec61850-interop-libiec61850:v1.6.0 \
+IEC61850BEAN_IMAGE=ghcr.io/otfabric/iec61850-interop-iec61850bean:v1.6.0 \
 make interop
 ```
 
@@ -121,9 +121,9 @@ iec61850-rust:
 `rsession_test.go` runs package `rsession` (IEC TR 61850-90-5 session
 protocol over UDP, HMAC-SHA256) against every stack whose image lists
 `"transports":["ethernet","udp"]` in `--capabilities` (iec61850-interop
-contract 1.4, `docs/routable.md`); it skips when none does. Today that is
-the dscsystems adapter (iec61850-interop v1.5.0, pinned in
-`.github/workflows/interop.yml`).
+contract 1.4, `docs/routable.md`); it skips when none does. Today those
+are the dscsystems and libiec61850 adapters (iec61850-interop v1.6.0,
+pinned in `.github/workflows/interop.yml`).
 
 UDP needs no shared layer-2 segment and no `CAP_NET_RAW`: an adapter
 subscriber publishes its port 102/udp on 127.0.0.1, and an adapter
@@ -137,8 +137,11 @@ gateway). That works the same on a Linux host and on Docker Desktop.
 | `TestRSV_GoPublisher` | `sv.Publisher` → `*-sv-subscriber` | `MSVCB01` values and update, no loss |
 | `TestRSV_GoSubscriber` | `*-sv-publisher` → `sv.Subscriber` (SCL-validated) | values and update in every 100th sample, no refusals |
 
-Each runs three profiles: session version 1 with HMAC-SHA256-80, version 2
-with HMAC-SHA256-128 and with -256. Their names match the `GOOSE|SV_` filter
+Each runs six profiles: session versions 1 and 2, each with
+HMAC-SHA256-80, -128 and -256. What a stack is expected not to do is in
+`rExpectation`: the subtest asserts that failure (the adapter answers
+unsupported, or every SPDU is refused on the side named, or a replay is
+accepted), so a fix upstream fails it until the table is updated. Their names match the `GOOSE|SV_` filter
 of `make interop-goose` and the CI step, so they run there; without root:
 
 ```bash

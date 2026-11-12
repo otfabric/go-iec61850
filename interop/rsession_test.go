@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -45,17 +46,170 @@ const (
 	rKeyHex = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
 )
 
-// rProfiles are the security profiles every test runs: session protocol
-// version and MAC, as the adapter's --session-version and --mac name them.
-var rProfiles = []struct {
+// rProfile is a security profile: session protocol version and MAC, as
+// the adapter's --session-version and --mac name them.
+type rProfile struct {
 	name    string
 	version uint16
 	mac     rsession.MACAlgorithm
 	flag    string
-}{
+}
+
+// rProfiles are the profiles every test runs: both session protocol
+// versions with each HMAC.
+var rProfiles = []rProfile{
 	{"v1-hmac-sha256-80", 1, rsession.MACHMACSHA256_80, "hmac-sha256-80"},
+	{"v1-hmac-sha256-128", 1, rsession.MACHMACSHA256_128, "hmac-sha256-128"},
+	{"v1-hmac-sha256-256", 1, rsession.MACHMACSHA256_256, "hmac-sha256-256"},
+	{"v2-hmac-sha256-80", 2, rsession.MACHMACSHA256_80, "hmac-sha256-80"},
 	{"v2-hmac-sha256-128", 2, rsession.MACHMACSHA256_128, "hmac-sha256-128"},
 	{"v2-hmac-sha256-256", 2, rsession.MACHMACSHA256_256, "hmac-sha256-256"},
+}
+
+// rOutcome is what a direction does with a profile.
+type rOutcome int
+
+const (
+	// rPass: the full check passes.
+	rPass rOutcome = iota
+	// rUnsupported: the peer's publisher cannot send the profile; its
+	// command answers unsupported (exit 4).
+	rUnsupported
+	// rRefusedByGo: rsession refuses every SPDU the peer's publisher
+	// sends, counted under refusal.
+	rRefusedByGo
+	// rRefusedByPeer: the peer's subscriber refuses every SPDU rsession
+	// sends, with reject events of reason refusal.
+	rRefusedByPeer
+)
+
+// rExpect is the expected result of a direction: an expected failure is
+// asserted as such, so a fix upstream fails the test until the table is
+// updated.
+type rExpect struct {
+	outcome rOutcome
+	refusal string // rRefusedByGo: a Stats counter; rRefusedByPeer: a reject reason
+	// noReplay: the peer's subscriber accepts a replayed SPDU.
+	noReplay bool
+	why      string
+}
+
+// Directions of rExpectation.
+const (
+	goToPeer = "go->peer"
+	peerToGo = "peer->go"
+)
+
+// rExpectation is the table of expected failures (docs/adr/0001, the
+// "libiec61850" section of iec61850-interop docs/routable.md). Everything
+// not listed passes.
+func rExpectation(stack, dir string, p rProfile) rExpect {
+	if stack != "libiec61850" {
+		return rExpect{}
+	}
+	// libiec61850 at the pinned revision (6e265c5), src/r_session/r_session.c.
+	switch dir {
+	case peerToGo:
+		switch {
+		case p.version == 1:
+			return rExpect{outcome: rUnsupported, why: "RSession sends protocol version 2 only; no API sets the version"}
+		case p.mac == rsession.MACHMACSHA256_80:
+			return rExpect{outcome: rRefusedByGo, refusal: "AuthFailed",
+				why: "the encoder writes no signature for HMAC-SHA256-80"}
+		case p.mac == rsession.MACHMACSHA256_256:
+			return rExpect{outcome: rRefusedByGo, refusal: "Malformed",
+				why: "the encoder writes a length octet of 16 before the 32-octet HMAC-SHA256-256 MAC"}
+		}
+	case goToPeer:
+		if p.mac == rsession.MACHMACSHA256_80 {
+			return rExpect{outcome: rRefusedByPeer, refusal: "authentication",
+				why: "the decoder supports no HMAC-SHA256-80 (unsupported signature algorithm)"}
+		}
+		return rExpect{noReplay: true, why: "the decoder keeps no replay window"}
+	}
+	return rExpect{}
+}
+
+// refused returns the Stats counter named by an rExpect refusal.
+func refused(ts rsession.Stats, counter string) uint64 {
+	switch counter {
+	case "Malformed":
+		return ts.Malformed
+	case "AuthFailed":
+		return ts.AuthFailed
+	case "UnknownKey":
+		return ts.UnknownKey
+	case "Unsecured":
+		return ts.Unsecured
+	}
+	return 0
+}
+
+// expectUnsupported runs proto-role of st with the profile and asserts the
+// command answers unsupported and exits 4.
+func expectUnsupported(t *testing.T, st peerStack, proto, role string, p rProfile, args ...string) {
+	t.Helper()
+	dargs := append([]string{"run", "--rm", "--entrypoint", st.name + "-" + proto + "-" + role, st.dockerImage(),
+		"--transport", "udp", "--key-id", strconv.Itoa(rKeyID), "--key", rKeyHex, "--mac", p.flag,
+		"--session-version", strconv.Itoa(int(p.version))}, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "docker", dargs...).Output()
+	var ee *exec.ExitError
+	if !errors.As(err, &ee) || ee.ExitCode() != 4 {
+		t.Fatalf("%s-%s-%s: want exit 4 (unsupported), got %v: %s", st.name, proto, role, err, out)
+	}
+	var ev rEvent
+	line, _, _ := bytes.Cut(out, []byte("\n"))
+	if json.Unmarshal(line, &ev) != nil || ev.Event != "error" || ev.Code != unsupportedError || ev.Reason == "" {
+		t.Fatalf("%s-%s-%s: want an unsupported error event, got %s", st.name, proto, role, out)
+	}
+	t.Logf("expected: %s-%s-%s unsupported: %s", st.name, proto, role, ev.Reason)
+}
+
+// expectAllRefused reads a's events for d and asserts at least three
+// reject events, all of reason, and no event isFrame accepts.
+func (a *rAdapter) expectAllRefused(t *testing.T, d time.Duration, reason string, isFrame func(rEvent) bool) {
+	t.Helper()
+	deadline := time.After(d)
+	n := 0
+	for {
+		select {
+		case ev, ok := <-a.events:
+			if !ok {
+				t.Fatalf("%s: exited", a.name)
+			}
+			switch {
+			case isFrame(ev):
+				t.Fatalf("%s accepted an SPDU it is expected to refuse: %s", a.name, ev.line)
+			case ev.Event == "reject":
+				if ev.Reason != reason || ev.From == "" {
+					t.Errorf("%s: reject %s, want reason %s", a.name, ev.line, reason)
+				}
+				n++
+			}
+		case <-deadline:
+			if n < 3 {
+				t.Fatalf("%s: %d reject events in %v, want every SPDU refused", a.name, n, d)
+			}
+			t.Logf("expected: %s refused all %d SPDUs (%s)", a.name, n, reason)
+			return
+		}
+	}
+}
+
+// expectGoRefusedAll waits until tr has refused at least three SPDUs under
+// counter, and asserts it delivered none and refused none otherwise.
+func expectGoRefusedAll(t *testing.T, tr *rsession.Transport, counter string) {
+	t.Helper()
+	waitUntil(t, 15*time.Second, func() bool { return refused(tr.Stats(), counter) >= 3 })
+	time.Sleep(500 * time.Millisecond)
+	ts := tr.Stats()
+	other := ts.Malformed + ts.AuthFailed + ts.UnknownKey + ts.Unsecured + ts.Replayed - refused(ts, counter)
+	if ts.Received != 0 || other != 0 {
+		t.Fatalf("transport stats %+v: want every SPDU refused as %s", ts, counter)
+	}
+	t.Logf("expected: rsession refused all %d SPDUs as %s", refused(ts, counter), counter)
 }
 
 func rKey(t *testing.T, mac rsession.MACAlgorithm, material string) rsession.Key {
@@ -330,6 +484,10 @@ func TestRGOOSE_GoPublisher(t *testing.T) {
 	for _, st := range stacks {
 		for _, p := range rProfiles {
 			t.Run(st.name+"/"+p.name, func(t *testing.T) {
+				e := rExpectation(st.name, goToPeer, p)
+				if e.why != "" {
+					t.Logf("expected failure: %s", e.why)
+				}
 				cb, fx := fix.controlBlock(t, "gcbAll")
 				sub := startRAdapter(t, st, "goose", "subscriber", p.flag, p.version, "--app-id", fx.AppID, "--gocb-ref", fx.GocbRef)
 				ring := rRing(t, p.mac)
@@ -358,6 +516,10 @@ func TestRGOOSE_GoPublisher(t *testing.T) {
 				defer stop()
 
 				isFrame := func(ev rEvent) bool { return ev.Event == "goose" }
+				if e.outcome == rRefusedByPeer {
+					sub.expectAllRefused(t, 5*time.Second, e.refusal, isFrame)
+					return
+				}
 				ev, ok := sub.next(t, gooseEventTimeout, func(e rEvent) bool { return isFrame(e) && e.goose(t).StNum == 1 })
 				if !ok {
 					t.Fatal("subscriber saw no frame of state 1")
@@ -418,6 +580,19 @@ func TestRGOOSE_GoPublisher(t *testing.T) {
 					t.Fatal("subscriber refused a valid SPDU from a second socket")
 				}
 				send(good)
+				if e.noReplay {
+					ev, ok := sub.next(t, 10*time.Second, func(e rEvent) bool {
+						return e.Event == "reject" || isFrame(e) && e.goose(t).StNum == 9
+					})
+					switch {
+					case !ok:
+						t.Fatal("no event for the replayed SPDU")
+					case ev.Event == "reject":
+						t.Fatalf("the subscriber refused the replay (%s): update rExpectation", ev.line)
+					}
+					t.Log("expected: the subscriber accepted the replayed SPDU")
+					return
+				}
 				sub.expectReject(t, "replay")
 			})
 		}
@@ -437,6 +612,10 @@ func TestRGOOSE_GoSubscriber(t *testing.T) {
 	for _, st := range stacks {
 		for _, p := range rProfiles {
 			t.Run(st.name+"/"+p.name, func(t *testing.T) {
+				e := rExpectation(st.name, peerToGo, p)
+				if e.why != "" {
+					t.Logf("expected failure: %s", e.why)
+				}
 				cb, fx := fix.controlBlock(t, "gcbAll")
 				var rejects atomic.Int64
 				tr, port := openRReceiver(t, rsession.SIGOOSE, rRing(t, p.mac), cb.Dst, &rejects)
@@ -460,6 +639,23 @@ func TestRGOOSE_GoSubscriber(t *testing.T) {
 					"--conf-rev", strconv.FormatUint(uint64(fx.ConfRev), 10),
 					"--min-time", strconv.Itoa(fx.MinTime), "--max-time", strconv.Itoa(fx.MaxTime),
 					"--values", string(values)}
+
+				if e.outcome == rUnsupported {
+					expectUnsupported(t, st, "goose", "publisher", p, args...)
+					return
+				}
+				if e.outcome == rRefusedByGo {
+					startRAdapter(t, st, "goose", "publisher", p.flag, p.version, args...)
+					expectGoRefusedAll(t, tr, e.refusal)
+					select {
+					case ev := <-sub.Events():
+						if ev.Kind == goose.EventMessage {
+							t.Fatalf("event from a refused publisher: %+v", ev)
+						}
+					default:
+					}
+					return
+				}
 
 				// A rogue publisher: its key has the same ID, other material.
 				rogue := startRAdapter(t, st, "goose", "publisher", p.flag, p.version,
@@ -544,6 +740,10 @@ func TestRSV_GoPublisher(t *testing.T) {
 	for _, st := range stacks {
 		for _, p := range rProfiles {
 			t.Run(st.name+"/"+p.name, func(t *testing.T) {
+				e := rExpectation(st.name, goToPeer, p)
+				if e.outcome != rPass { // noReplay: this test sends no replay
+					t.Logf("expected failure: %s", e.why)
+				}
 				cb, fx := fix.stream(t, "MSVCB01")
 				every := fx.SamplesPerSecond / 10
 				sub := startRAdapter(t, st, "sv", "subscriber", p.flag, p.version,
@@ -569,6 +769,10 @@ func TestRSV_GoPublisher(t *testing.T) {
 				}()
 
 				isSV := func(e rEvent) bool { return e.Event == "sv" && e.sv(t).SvID == fx.SvID }
+				if e.outcome == rRefusedByPeer {
+					sub.expectAllRefused(t, 3*time.Second, e.refusal, isSV)
+					return
+				}
 				ev, ok := sub.next(t, svEventTimeout, isSV)
 				if !ok {
 					t.Fatal("subscriber saw no ASDU")
@@ -617,6 +821,10 @@ func TestRSV_GoSubscriber(t *testing.T) {
 	for _, st := range stacks {
 		for _, p := range rProfiles {
 			t.Run(st.name+"/"+p.name, func(t *testing.T) {
+				e := rExpectation(st.name, peerToGo, p)
+				if e.why != "" {
+					t.Logf("expected failure: %s", e.why)
+				}
 				cb, fx := fix.stream(t, "MSVCB01")
 				var rejects atomic.Int64
 				tr, port := openRReceiver(t, rsession.SISV, rRing(t, p.mac), cb.Dst, &rejects)
@@ -656,13 +864,24 @@ func TestRSV_GoSubscriber(t *testing.T) {
 				go func() { _ = s.Run(ctx) }()
 
 				values, _ := json.Marshal(fx.Values)
-				pub := startRAdapter(t, st, "sv", "publisher", p.flag, p.version,
-					"--remote", fmt.Sprintf("host.docker.internal:%d", port),
+				args := []string{"--remote", fmt.Sprintf("host.docker.internal:%d", port),
 					"--app-id", fx.AppID, "--sv-id", fx.SvID, "--dataset", fx.DatSet,
 					"--conf-rev", strconv.FormatUint(uint64(fx.ConfRev), 10),
 					"--smp-rate", strconv.Itoa(int(fx.SmpRate)), "--smp-mod", fx.SmpMod,
 					"--no-asdu", strconv.Itoa(fx.NoASDU), "--profile", "9-2LE",
-					"--values", string(values))
+					"--values", string(values)}
+				if e.outcome == rUnsupported {
+					expectUnsupported(t, st, "sv", "publisher", p, args...)
+					return
+				}
+				pub := startRAdapter(t, st, "sv", "publisher", p.flag, p.version, args...)
+				if e.outcome == rRefusedByGo {
+					expectGoRefusedAll(t, tr, e.refusal)
+					if n.Load() != 0 {
+						t.Fatalf("%d ASDUs from a refused publisher", n.Load())
+					}
+					return
+				}
 				go func() {
 					for ev := range sub.Events() {
 						if ev.Kind == sv.EventInvalid {
