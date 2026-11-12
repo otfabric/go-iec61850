@@ -1,6 +1,6 @@
 # Known Limitations
 
-What `go-iec61850` does not do, or does only partly, as of v1.2. Each item
+What `go-iec61850` does not do, or does only partly, as of v1.19. Each item
 is a deliberate scope decision or a documented gap; behaviour that deviates
 from a peer stack is listed in [INTEROP.md](INTEROP.md) and
 [COMPATIBILITY.md](COMPATIBILITY.md).

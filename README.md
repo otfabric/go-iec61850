@@ -885,6 +885,8 @@ latest published go-iec61850 itself: the **Self-interop** workflow uses
 `ghcr.io/otfabric/iec61850-interop-otfabric:latest` (`IEC61850_PEER_STACK=otfabric`),
 which finds a wire change that breaks an earlier release. It is not
 independent evidence ([INTEROP.md](INTEROP.md#against-go-iec61850-itself-self-interop)).
+iec61850-interop publishes that image only from a manual workflow
+(`own-go-iec61850.yml`), so its tags can lag the latest go-iec61850 release.
 
 | Where | What |
 |---|---|
