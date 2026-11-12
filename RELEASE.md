@@ -16,6 +16,7 @@
 ### Testing
 
 - `TestDialDialerNilConnNilError`.
+- `rsession` `TestUnsecuredRequiresOptIn` no longer fails when it reads the `OnReject` result between the `Unsecured` counter rising and the hook running.
 
 ---
 
