@@ -4,6 +4,7 @@ package sv
 
 import (
 	"encoding/binary"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -113,6 +114,13 @@ type Frame struct {
 
 	// PDU is the savPdu.
 	PDU PDU
+
+	// From is the sender's network address when the frame was rebuilt
+	// from an R-SV SPDU by a transport that reports it
+	// ([l2.SourceReceiver], such as rsession.Transport): the subscriber
+	// sets it. It is zero for a layer-2 frame and is not encoded; the
+	// decoders leave it zero.
+	From netip.AddrPort
 
 	// strs interns svID and datSet strings across DecodeInto calls, so
 	// that frames of several interleaved streams decode without
@@ -397,6 +405,7 @@ func DecodeInto(f *Frame, b []byte, lim Limits) error {
 	}
 	copy(f.Dst[:], b[0:6])
 	copy(f.Src[:], b[6:12])
+	f.From = netip.AddrPort{}
 	pos := 12
 	et := binary.BigEndian.Uint16(b[pos:])
 	pos += 2

@@ -29,7 +29,9 @@
 //
 // The publisher's Ethernet addresses and VLAN tag are not sent; frames a
 // receiving Transport returns carry [Config.FrameDst] and [SourceMAC] of
-// the sender instead.
+// the sender instead. [Transport.RecvFrom] also returns the sender's UDP
+// address and port, which the goose and sv subscribers report as
+// Frame.From.
 //
 // # Security
 //

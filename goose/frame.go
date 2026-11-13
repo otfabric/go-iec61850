@@ -5,6 +5,7 @@ package goose
 import (
 	"encoding/binary"
 	"math"
+	"net/netip"
 	"strconv"
 	"time"
 
@@ -100,6 +101,13 @@ type Frame struct {
 
 	// PDU is the goosePdu.
 	PDU PDU
+
+	// From is the sender's network address when the frame was rebuilt
+	// from an R-GOOSE SPDU by a transport that reports it
+	// ([l2.SourceReceiver], such as rsession.Transport): the subscriber
+	// sets it. It is zero for a layer-2 frame and is not encoded; the
+	// decoders leave it zero.
+	From netip.AddrPort
 }
 
 // PDU is the IECGoosePdu (IEC 61850-8-1 Annex A).

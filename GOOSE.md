@@ -267,7 +267,10 @@ sub, _ := goose.NewSubscriber(rx, goose.SubscriberConfig{})
   not carried. `Recv` rebuilds a layer-2 frame for every APDU of a
   verified SPDU, with destination `Config.FrameDst` (broadcast by
   default) and source `rsession.SourceMAC(sender IP)`, so subscriptions
-  can filter on the sender.
+  can filter on the sender. `RecvFrom` (`l2.SourceReceiver`) also returns
+  the sender's UDP `address:port`, IPv4 or IPv6; the `goose` and `sv`
+  subscribers use it and report it as `Frame.From` (zero for layer-2
+  frames; `HandleFrameFrom` for callers that own the receive loop).
 - **Secured by default.** `Open` refuses a configuration without a
   `KeyProvider` unless `Insecure` is set. A receiver refuses unsecured
   SPDUs (unless `Insecure`), SPDUs under unknown keys, SPDUs whose
