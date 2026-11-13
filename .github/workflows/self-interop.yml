@@ -7,9 +7,9 @@ run-name: "Self-interop against iec61850-interop-otfabric:latest, by @${{ github
 # otfabric-sv-*), in both roles. The e2e tests run both sides from one commit;
 # this one finds a change on the wire that breaks an earlier release.
 #
-# Not part of the Interop workflow, which runs against the independent
-# references, and never a required check. Nothing is pinned or committed, so it
-# cannot ask for a release. A pass is not independent verification (INTEROP.md).
+# Never a required check; nothing here is pinned or committed. The Interop
+# workflow runs only the R-GOOSE and R-SV tests against a pinned digest of the
+# image (INTEROP.md). A pass is not independent verification.
 on:
   workflow_dispatch:
 

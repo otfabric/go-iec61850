@@ -90,9 +90,14 @@ built by hand from the latest releases. With that stack the GOOSE and SV tests
 run against it alone. The manual **Self-interop** workflow does this from any
 commit and logs the image digest; it finds a wire change that breaks an earlier
 release, which the e2e tests (both sides from one commit) cannot. It is not
-independent evidence, never a required check and not part of the Interop
-workflow, and nothing pins the image (ADR-0012), so it cannot ask for a release.
-Nothing in this file's matrices comes from it.
+independent evidence and never a required check. Nothing in this file's
+matrices comes from it.
+
+One exception to ADR-0012, by the maintainer's decision: the Interop workflow
+runs the R-GOOSE and R-SV tests (`interop/rsession_test.go`, `^TestR(GOOSE|SV)_`)
+against one pinned digest of the image, in a step of its own with
+`IEC61850_PEER_STACK=otfabric` after the steps against the references. That
+step is not independent evidence either.
 
 CI pins every image by digest in `.github/workflows/interop.yml`. GOOSE
 and SV need a raw interface on a Docker network and root; see
