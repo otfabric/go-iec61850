@@ -529,6 +529,11 @@ func TestRGOOSE_GoPublisher(t *testing.T) {
 					g.ConfRev != fx.ConfRev || g.Test || g.Simulation || g.NdsCom || ev.From == "" {
 					t.Errorf("frame header: %s", ev.line)
 				}
+				// The contract's from is the sender's address:port
+				// (iec61850-interop docs/routable.md).
+				if from, err := netip.ParseAddrPort(ev.From); err != nil || from.Port() == 0 {
+					t.Errorf("from %q is not address:port: %s", ev.From, ev.line)
+				}
 				if got, want := canonJSON(t, g.Values), canonJSON(t, fx.Values); got != want {
 					t.Errorf("state 1 values:\n got %s\nwant %s", got, want)
 				}

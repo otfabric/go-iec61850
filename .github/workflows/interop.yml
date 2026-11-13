@@ -82,14 +82,14 @@ jobs:
 
       # R-GOOSE and R-SV (UDP, no raw Ethernet) against go-iec61850's own
       # adapter image, built by iec61850-interop's own-go-iec61850.yml from a
-      # go-iec61850 release (here v1.19.4). It is not an independent
+      # go-iec61850 release (here v1.20.1). It is not an independent
       # implementation (INTEROP.md): it finds wire changes against a released
       # go-iec61850, it is no interop evidence. IEC61850_PEER_STACK=otfabric
       # selects it alone; the steps above stay on the references.
       - name: Run R-GOOSE and R-SV interop against otfabric (own stack)
         env:
           IEC61850_PEER_STACK: otfabric
-          IEC61850_INTEROP_OTFABRIC_IMAGE: ghcr.io/otfabric/iec61850-interop-otfabric@sha256:5ddd6b25118e21fba0b55c69d29fe79783a49e08b7a3a810b0ea100dd18adfd2
+          IEC61850_INTEROP_OTFABRIC_IMAGE: ghcr.io/otfabric/iec61850-interop-otfabric@sha256:f674ac1681af43abf274e00a5db04e281a0a0d3e548ec95de4503b1608cf779b
         run: |
           docker pull -q "$IEC61850_INTEROP_OTFABRIC_IMAGE"
           go test -tags=interop -v -count=1 -timeout 600s -run '^TestR(GOOSE|SV)_' ./interop/...
