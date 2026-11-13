@@ -5,6 +5,7 @@ package l2
 import (
 	"context"
 	"log/slog"
+	"net/netip"
 )
 
 // EtherTypes of the IEC 61850 layer-2 protocols and of the 802.1Q tag.
@@ -46,6 +47,17 @@ type Transport interface {
 	// Close releases the transport. Blocked Recv calls return
 	// [ErrClosed]. Close is idempotent.
 	Close() error
+}
+
+// SourceReceiver is implemented by a [Transport] that carries frames
+// over a routable network and knows the address each received frame
+// came from, such as rsession.Transport (R-GOOSE, R-SV over UDP). The
+// goose and sv subscribers use it when their transport implements it
+// and report the address as Frame.From.
+type SourceReceiver interface {
+	// RecvFrom is Recv that also returns the sender's address. It
+	// returns the same errors as Recv, with a zero address.
+	RecvFrom(ctx context.Context) ([]byte, netip.AddrPort, error)
 }
 
 // TransportOptions configures a raw Ethernet transport opened with

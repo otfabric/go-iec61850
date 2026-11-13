@@ -7,10 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"slices"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/otfabric/go-iec61850/l2"
 )
 
 // DefaultTimeout is the default stream supervision timeout.
@@ -394,15 +397,16 @@ func (s *Subscriber) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go s.supervise(ctx)
+	sr, _ := s.t.(l2.SourceReceiver)
 	for {
-		raw, err := s.t.Recv(ctx)
+		raw, from, err := s.recv(ctx, sr)
 		if err != nil {
 			if ctx.Err() != nil || errors.Is(err, ErrClosed) || s.isClosed() {
 				return nil //nolint:nilerr // cancellation and Close are a normal stop
 			}
 			return err
 		}
-		s.HandleFrame(raw)
+		s.HandleFrameFrom(raw, from)
 		if s.isClosed() {
 			return nil
 		}
@@ -439,10 +443,26 @@ func (s *Subscriber) CheckTimeouts() {
 	}
 }
 
+// recv receives from sr when the transport reports senders, from the
+// transport otherwise.
+func (s *Subscriber) recv(ctx context.Context, sr l2.SourceReceiver) ([]byte, netip.AddrPort, error) {
+	if sr != nil {
+		return sr.RecvFrom(ctx)
+	}
+	raw, err := s.t.Recv(ctx)
+	return raw, netip.AddrPort{}, err
+}
+
 // HandleFrame decodes and dispatches one raw Ethernet frame. Frames of
 // other EtherTypes are ignored. It must not be called concurrently with
 // itself or with Run (the decoder reuses its storage).
-func (s *Subscriber) HandleFrame(raw []byte) {
+func (s *Subscriber) HandleFrame(raw []byte) { s.HandleFrameFrom(raw, netip.AddrPort{}) }
+
+// HandleFrameFrom is [Subscriber.HandleFrame] for a frame received from
+// the network address from, which is reported as Frame.From. Run calls
+// it when the transport is an [l2.SourceReceiver]. It must not be
+// called concurrently with itself, HandleFrame or Run.
+func (s *Subscriber) HandleFrameFrom(raw []byte, from netip.AddrPort) {
 	now := s.cfg.Now()
 	f := &s.frame
 	if err := DecodeInto(f, raw, s.cfg.Limits); err != nil {
@@ -456,6 +476,7 @@ func (s *Subscriber) HandleFrame(raw []byte) {
 		}
 		return
 	}
+	f.From = from
 	if f.Simulation && !s.cfg.AcceptSimulation {
 		s.metrics.FrameDropped("simulation")
 		return

@@ -551,6 +551,13 @@ type Frame struct {
 
 	// PDU is the goosePdu.
 	PDU PDU
+
+	// From is the sender's network address when the frame was rebuilt
+	// from an R-GOOSE SPDU by a transport that reports it
+	// ([l2.SourceReceiver], such as rsession.Transport): the subscriber
+	// sets it. It is zero for a layer-2 frame and is not encoded; the
+	// decoders leave it zero.
+	From netip.AddrPort
 }
 ```
 
@@ -1073,6 +1080,14 @@ func (s *Subscriber) HandleFrame(raw []byte)
 ```
 
 HandleFrame decodes and dispatches one raw Ethernet frame. Run calls it for every received frame; it is exported for callers that own the receive loop.
+
+#### func (Subscriber) HandleFrameFrom
+
+```go
+func (s *Subscriber) HandleFrameFrom(raw []byte, from netip.AddrPort)
+```
+
+HandleFrameFrom is [Subscriber.HandleFrame](#func-subscriber-handleframe) for a frame received from the network address from, which is reported as Frame.From. Run calls it when the transport is an [l2.SourceReceiver](https://pkg.go.dev/github.com/otfabric/go-iec61850/l2#SourceReceiver).
 
 #### func (Subscriber) Run
 

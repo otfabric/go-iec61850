@@ -1,5 +1,20 @@
 # go-iec61850 Releases
 
+## v1.20.0
+
+**Date:** 2026-11-13
+**Previous release:** v1.19.4
+
+### Added
+
+- **Sender address of R-GOOSE and R-SV.** `rsession.Transport.RecvFrom` returns each frame with the UDP `address:port` of the SPDU's sender, IPv4 or IPv6 (`Recv` returns the frame only, whose source address `SourceMAC` carries neither the port nor an IPv6 address). It implements the new optional interface `l2.SourceReceiver`. `goose.Frame.From` and `sv.Frame.From` carry that address: `goose.Subscriber.Run` and `sv.Subscriber.Run` use `RecvFrom` when their transport implements it, and `HandleFrameFrom` takes the address from callers that own the receive loop. `From` is zero for layer-2 frames and is not encoded.
+
+### Testing
+
+- `rsession` `TestRecvFromReportsSender`, `TestRecvFromClosedAndCancelled` and `TestSubscribersReportSender`: IPv4 and IPv6 loopback, the transport and the goose and sv subscribers.
+
+---
+
 ## v1.19.4
 
 **Date:** 2026-11-12

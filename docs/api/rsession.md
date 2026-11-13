@@ -29,7 +29,7 @@ and on the receiving side
 	})
 	sub, _ := goose.NewSubscriber(t, goose.SubscriberConfig{})
 
-The publisher's Ethernet addresses and VLAN tag are not sent; frames a receiving Transport returns carry [Config.FrameDst](#func-config-framedst) and [SourceMAC](#func-sourcemac) of the sender instead.
+The publisher's Ethernet addresses and VLAN tag are not sent; frames a receiving Transport returns carry [Config.FrameDst](#func-config-framedst) and [SourceMAC](#func-sourcemac) of the sender instead. [Transport.RecvFrom](#func-transport-recvfrom) also returns the sender's UDP address and port, which the goose and sv subscribers report as Frame.From.
 
 #### Security {#hdr-Security}
 
@@ -613,7 +613,7 @@ type Transport struct {
 }
 ```
 
-Transport carries GOOSE or SV over UDP as R-GOOSE or R-SV. It implements [l2.Transport](https://pkg.go.dev/github.com/otfabric/go-iec61850/l2#Transport) (goose.Transport, sv.Transport), so the goose and sv publishers and subscribers run over it unchanged: [Transport.Send](#func-transport-send) takes the layer-2 frame a publisher builds and sends its APDU in an SPDU; [Transport.Recv](#func-transport-recv) returns a layer-2 frame for each APDU of every SPDU that verifies.
+Transport carries GOOSE or SV over UDP as R-GOOSE or R-SV. It implements [l2.Transport](https://pkg.go.dev/github.com/otfabric/go-iec61850/l2#Transport) (goose.Transport, sv.Transport), so the goose and sv publishers and subscribers run over it unchanged: [Transport.Send](#func-transport-send) takes the layer-2 frame a publisher builds and sends its APDU in an SPDU; [Transport.Recv](#func-transport-recv) returns a layer-2 frame for each APDU of every SPDU that verifies, and [Transport.RecvFrom](#func-transport-recvfrom) that frame with the sender's address ([l2.SourceReceiver](https://pkg.go.dev/github.com/otfabric/go-iec61850/l2#SourceReceiver)), which the goose and sv subscribers report as Frame.From.
 
 A Transport is safe for concurrent use.
 
@@ -663,7 +663,15 @@ NextSPDUNumber returns the number the next SPDU sent will carry.
 func (t *Transport) Recv(ctx context.Context) ([]byte, error)
 ```
 
-Recv implements [l2.Transport](https://pkg.go.dev/github.com/otfabric/go-iec61850/l2#Transport): it returns the next layer-2 frame rebuilt from a verified SPDU.
+Recv implements [l2.Transport](https://pkg.go.dev/github.com/otfabric/go-iec61850/l2#Transport): it returns the next layer-2 frame rebuilt from a verified SPDU. [Transport.RecvFrom](#func-transport-recvfrom) also returns the sender's address.
+
+#### func (Transport) RecvFrom
+
+```go
+func (t *Transport) RecvFrom(ctx context.Context) ([]byte, netip.AddrPort, error)
+```
+
+RecvFrom implements [l2.SourceReceiver](https://pkg.go.dev/github.com/otfabric/go-iec61850/l2#SourceReceiver): it is [Transport.Recv](#func-transport-recv) that also returns the UDP address and port of the sender of the SPDU the frame came from (an IPv4 address unmapped from IPv6). The frame's source address is [SourceMAC](#func-sourcemac) of that address, which carries neither the port nor, for IPv6, the address itself. On error the address is zero.
 
 #### func (Transport) Send
 

@@ -1,7 +1,7 @@
 # Support, feature and interop status
 
 What go-iec61850 supports, how each feature is tested and which independent
-stacks exchanged it. Status: v1.19.1, interop suite on iec61850-interop v1.5.0
+stacks exchanged it. Status: v1.20.0, interop suite on iec61850-interop v1.6.1
 images. Go 1.26 or later (CI: 1.26–1.27).
 
 None of this is a conformance claim: no conformance test has been run, nothing
@@ -57,7 +57,7 @@ independent evidence: the feature must not be described as interoperable.
 | Server MSVCB published at `smpRate` | n/a | ✅ | in-memory hub | libiec61850, dscsystems, iec61850-rust |
 | MSVCB read over MMS | ✅ | ✅ | in-memory | libiec61850, dscsystems |
 | MSVCB write over MMS | ✅ | ✅ | in-memory | none |
-| R-GOOSE and R-SV over UDP (`rsession`, HMAC-SHA256) | ✅ subscriber | ✅ publisher | UDP loopback, multicast, hand-built SPDU vectors, tamper and replay, fuzz | dscsystems, both directions (iec61850-interop v1.6.1): versions 1 and 2, HMAC-SHA256-80/-128/-256, refusal of forged, unsecured and replayed SPDUs. libiec61850, both directions: Go → libiec61850 versions 1 and 2 with HMAC-SHA256-128/-256, libiec61850 → Go version 2 with HMAC-SHA256-128; its other profiles are asserted expected failures (COMPATIBILITY.md⁹) |
+| R-GOOSE and R-SV over UDP (`rsession`, HMAC-SHA256) | ✅ subscriber | ✅ publisher | UDP loopback (IPv4, IPv6), multicast, hand-built SPDU vectors, tamper and replay, fuzz; sender `address:port` reported (`RecvFrom`, `Frame.From`) | dscsystems, both directions (iec61850-interop v1.6.1): versions 1 and 2, HMAC-SHA256-80/-128/-256, refusal of forged, unsecured and replayed SPDUs. libiec61850, both directions: Go → libiec61850 versions 1 and 2 with HMAC-SHA256-128/-256, libiec61850 → Go version 2 with HMAC-SHA256-128; its other profiles are asserted expected failures (COMPATIBILITY.md⁹) |
 | Layer-2 GOOSE/SV authentication (IEC 62351-6) | ⬜ open, to do | ⬜ open, to do | n/a | n/a — blocked on the IEC 62351-6 specification |
 | SCL parse, validate, flatten, generate | n/a | model from SCL | fixtures, specification examples, ABB CID files | peers load the same ICD fixture; no independent validator compares results |
 | TLS | ◐ through go-mms | ◐ through go-mms | none here | none; see [SECURITY.md](../SECURITY.md) |

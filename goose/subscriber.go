@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"slices"
 	"strconv"
 	"sync"
 	"time"
 
+	"github.com/otfabric/go-iec61850/l2"
 	"github.com/otfabric/go-mms"
 )
 
@@ -316,22 +318,38 @@ func (s *Subscriber) Subscribe(cfg SubscriptionConfig) (*Subscription, error) {
 // Run receives frames until ctx is done (returning nil), the subscriber
 // is closed (returning nil) or the transport fails.
 func (s *Subscriber) Run(ctx context.Context) error {
+	sr, _ := s.t.(l2.SourceReceiver)
 	for {
-		raw, err := s.t.Recv(ctx)
+		raw, from, err := s.recv(ctx, sr)
 		if err != nil {
 			if ctx.Err() != nil || errors.Is(err, ErrClosed) {
 				return nil //nolint:nilerr // cancellation and Close are a normal stop
 			}
 			return err
 		}
-		s.HandleFrame(raw)
+		s.HandleFrameFrom(raw, from)
 	}
+}
+
+// recv receives from sr when the transport reports senders, from the
+// transport otherwise.
+func (s *Subscriber) recv(ctx context.Context, sr l2.SourceReceiver) ([]byte, netip.AddrPort, error) {
+	if sr != nil {
+		return sr.RecvFrom(ctx)
+	}
+	raw, err := s.t.Recv(ctx)
+	return raw, netip.AddrPort{}, err
 }
 
 // HandleFrame decodes and dispatches one raw Ethernet frame. Run calls
 // it for every received frame; it is exported for callers that own the
 // receive loop.
-func (s *Subscriber) HandleFrame(raw []byte) {
+func (s *Subscriber) HandleFrame(raw []byte) { s.HandleFrameFrom(raw, netip.AddrPort{}) }
+
+// HandleFrameFrom is [Subscriber.HandleFrame] for a frame received from
+// the network address from, which is reported as Frame.From. Run calls
+// it when the transport is an [l2.SourceReceiver].
+func (s *Subscriber) HandleFrameFrom(raw []byte, from netip.AddrPort) {
 	now := s.cfg.Now()
 	f, err := DecodeWithLimits(raw, s.cfg.Limits)
 	if err != nil {
@@ -345,6 +363,7 @@ func (s *Subscriber) HandleFrame(raw []byte) {
 		}
 		return
 	}
+	f.From = from
 	s.mu.RLock()
 	subs := s.subs
 	s.mu.RUnlock()

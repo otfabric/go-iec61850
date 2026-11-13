@@ -123,12 +123,16 @@ type Stats struct {
 	OtherErrors uint64 // receive errors of the socket
 }
 
+var _ l2.SourceReceiver = (*Transport)(nil)
+
 // Transport carries GOOSE or SV over UDP as R-GOOSE or R-SV. It
 // implements [l2.Transport] (goose.Transport, sv.Transport), so the
 // goose and sv publishers and subscribers run over it unchanged:
 // [Transport.Send] takes the layer-2 frame a publisher builds and sends
 // its APDU in an SPDU; [Transport.Recv] returns a layer-2 frame for each
-// APDU of every SPDU that verifies.
+// APDU of every SPDU that verifies, and [Transport.RecvFrom] that frame
+// with the sender's address ([l2.SourceReceiver]), which the goose and
+// sv subscribers report as Frame.From.
 //
 // A Transport is safe for concurrent use.
 type Transport struct {
@@ -141,7 +145,7 @@ type Transport struct {
 	guard     *replayGuard
 
 	number atomic.Uint32
-	queue  chan []byte
+	queue  chan received
 
 	sent, sendErrors, received, dropped, ignored           atomic.Uint64
 	malformed, unsecured, unknownKey, authFailed, replayed atomic.Uint64
@@ -220,7 +224,7 @@ func Open(cfg Config) (*Transport, error) {
 	}
 	t.guard = newReplayGuard(cfg.MaxSenders, cfg.ReplayResetAfter)
 	t.number.Store(cfg.InitialSPDUNumber)
-	t.queue = make(chan []byte, cfg.Queue)
+	t.queue = make(chan received, cfg.Queue)
 	t.wg.Add(1)
 	go t.readLoop()
 	return t, nil
@@ -403,21 +407,39 @@ func (t *Transport) parseFrame(b []byte) (Payload, error) {
 	}, nil
 }
 
+// received is one queued frame and the address it came from.
+type received struct {
+	frame []byte
+	from  netip.AddrPort
+}
+
 // Recv implements [l2.Transport]: it returns the next layer-2 frame
-// rebuilt from a verified SPDU.
+// rebuilt from a verified SPDU. [Transport.RecvFrom] also returns the
+// sender's address.
 func (t *Transport) Recv(ctx context.Context) ([]byte, error) {
+	f, _, err := t.RecvFrom(ctx)
+	return f, err
+}
+
+// RecvFrom implements [l2.SourceReceiver]: it is [Transport.Recv] that
+// also returns the UDP address and port of the sender of the SPDU the
+// frame came from (an IPv4 address unmapped from IPv6). The frame's
+// source address is [SourceMAC] of that address, which carries neither
+// the port nor, for IPv6, the address itself. On error the address is
+// zero.
+func (t *Transport) RecvFrom(ctx context.Context) ([]byte, netip.AddrPort, error) {
 	select {
 	case <-t.closed:
-		return nil, ErrClosed
+		return nil, netip.AddrPort{}, ErrClosed
 	default:
 	}
 	select {
-	case f := <-t.queue:
-		return f, nil
+	case r := <-t.queue:
+		return r.frame, r.from, nil
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, netip.AddrPort{}, ctx.Err()
 	case <-t.closed:
-		return nil, ErrClosed
+		return nil, netip.AddrPort{}, ErrClosed
 	}
 }
 
@@ -472,6 +494,7 @@ func (t *Transport) handle(b []byte, from netip.AddrPort) {
 		t.ignored.Add(1)
 		return
 	}
+	from = netip.AddrPortFrom(from.Addr().Unmap(), from.Port())
 	src := SourceMAC(from.Addr())
 	for _, p := range s.Payloads {
 		if p.Type != t.payload {
@@ -484,7 +507,7 @@ func (t *Transport) handle(b []byte, from netip.AddrPort) {
 			continue
 		}
 		select {
-		case t.queue <- f:
+		case t.queue <- received{frame: f, from: from}:
 			t.received.Add(1)
 		default:
 			t.dropped.Add(1)
