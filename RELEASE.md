@@ -1,5 +1,20 @@
 # go-iec61850 Releases
 
+## v1.20.1
+
+**Date:** 2026-11-13
+**Previous release:** v1.20.0
+
+The go-iec61850 library is unchanged from v1.20.0.
+
+### Changed
+
+- `sclparse` and `sclgen` are built on go-iec61850 v1.20.0 (were v1.19.3).
+- **Interop CI** runs the R-GOOSE and R-SV tests (`interop/rsession_test.go`) against go-iec61850's own adapter image `iec61850-interop-otfabric` v1.19.4, pinned by digest, in a step of its own with `IEC61850_PEER_STACK=otfabric`: 24 of 24 subtests pass (session versions 1 and 2, three HMACs, both directions, GOOSE and SV). This is OT Fabric's own stack and not independent evidence; INTEROP.md records it as an exception to ADR-0012.
+- The DS-REL docsync exception for v1.20.0 is removed now that v1.20.0 is tagged.
+
+---
+
 ## v1.20.0
 
 **Date:** 2026-11-13

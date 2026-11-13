@@ -1,9 +1,0 @@
-{
-  "ignore": [
-    {
-      "rule": "DS-REL",
-      "subject": "v1.20.0",
-      "reason": "A v1.20.0 heading was in RELEASE.md on 2026-11-11 (#70) and folded into v1.18.0 untagged (#72); DS-REL dates the section from that first heading. The v1.20.0 section of 2026-11-13 is new. Remove this entry once v1.20.0 is tagged."
-    }
-  ]
-}
