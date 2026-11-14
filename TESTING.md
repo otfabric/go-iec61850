@@ -173,3 +173,5 @@ Every new decoder of untrusted input gets a target.
 2. Reproduce it: `go test -run '<Target>/<file>' <package>`.
 3. Fix the decoder, and commit the input file with the fix. `go test` then
    replays it as a regression test.
+
+<!-- Disposable: verifies OT Fabric Required Checks on a documentation-only pull request after the PR workflow merged. Never merged. -->
