@@ -4,6 +4,7 @@ package iec61850
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -15,9 +16,34 @@ import (
 	"github.com/otfabric/go-iec61850/internal/servermodel"
 )
 
+// errSGHandlerRecovered marks the error of a SettingGroupHandler callback
+// whose call was recovered: the write is refused with
+// object-access-denied.
+var errSGHandlerRecovered = errors.New("SettingGroupHandler callback ended abnormally")
+
+// callSGHandler invokes the SettingGroupHandler callback fn under a
+// recover, as callControlHandler does for ControlHandler callbacks: a
+// callback that ends abnormally is logged and gives an error, so the
+// write that reached it is refused and the server keeps serving this and
+// every other association.
+func (e *SettingGroupEngine) callSGHandler(ctx context.Context, name string, fn func(context.Context, string, uint8) error, ld string, sg uint8) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.logger.Error("iec61850: SettingGroupHandler callback recovered", "callback", name, "ld", ld, "group", sg, "recovered", r)
+			err = fmt.Errorf("%w: %s: %v", errSGHandlerRecovered, name, r)
+		}
+	}()
+	return fn(ctx, ld, sg)
+}
+
 // SettingGroupHandler provides application callbacks for setting
 // group operations. All callbacks are optional; nil callbacks accept
 // the operation unconditionally.
+//
+// The callbacks are called on the goroutine that serves the client's
+// request, under a recover like [ControlHandler] callbacks: a callback
+// that ends abnormally is logged and refuses the write with
+// object-access-denied, as if it had returned an error.
 type SettingGroupHandler struct {
 	// OnActiveSGChanged is called when a client selects a new active
 	// setting group. Return a non-nil error to reject the activation.
@@ -88,7 +114,10 @@ type SettingGroupEngine struct {
 	mu     sync.RWMutex
 	sgcbs  map[string]*sgcbRuntime // key: ldName
 	store  *servermodel.ValueStore
-	logger interface{ Debug(string, ...any) }
+	logger interface {
+		Debug(string, ...any)
+		Error(string, ...any)
+	}
 
 	// setLive changes an active (FC=SG) setting with notification of
 	// reports, logs and GOOSE; nil stores without notification.
@@ -103,7 +132,10 @@ type SettingGroupEngine struct {
 }
 
 // newSettingGroupEngine creates a new engine backed by the given store.
-func newSettingGroupEngine(store *servermodel.ValueStore, logger interface{ Debug(string, ...any) }) *SettingGroupEngine {
+func newSettingGroupEngine(store *servermodel.ValueStore, logger interface {
+	Debug(string, ...any)
+	Error(string, ...any)
+}) *SettingGroupEngine {
 	return &SettingGroupEngine{
 		sgcbs:  make(map[string]*sgcbRuntime),
 		store:  store,
@@ -311,7 +343,7 @@ func (e *SettingGroupEngine) handleActSGWrite(ctx context.Context, rt *sgcbRunti
 	var before []*mms.Value
 	if rt.handler.OnActiveSGChanged != nil {
 		before = e.snapshotLocked(rt, false)
-		if err := rt.handler.OnActiveSGChanged(ctx, rt.ldName, newSG); err != nil {
+		if err := e.callSGHandler(ctx, "OnActiveSGChanged", rt.handler.OnActiveSGChanged, rt.ldName, newSG); err != nil {
 			return fmt.Errorf("iec61850: ActSG write rejected: %w", err)
 		}
 	}
@@ -414,7 +446,7 @@ func (e *SettingGroupEngine) handleEditSGWrite(ctx context.Context, rt *sgcbRunt
 	var before []*mms.Value
 	if rt.handler.OnEditSGSelected != nil {
 		before = e.snapshotLocked(rt, true)
-		if err := rt.handler.OnEditSGSelected(ctx, rt.ldName, editSG); err != nil {
+		if err := e.callSGHandler(ctx, "OnEditSGSelected", rt.handler.OnEditSGSelected, rt.ldName, editSG); err != nil {
 			return fmt.Errorf("iec61850: EditSG write rejected: %w", err)
 		}
 	}
@@ -486,7 +518,7 @@ func (e *SettingGroupEngine) handleCnfEditWrite(ctx context.Context, rt *sgcbRun
 	}
 
 	if rt.handler.OnConfirmEdit != nil {
-		if err := rt.handler.OnConfirmEdit(ctx, rt.ldName, rt.editSG); err != nil {
+		if err := e.callSGHandler(ctx, "OnConfirmEdit", rt.handler.OnConfirmEdit, rt.ldName, rt.editSG); err != nil {
 			return fmt.Errorf("iec61850: CnfEdit write rejected: %w", err)
 		}
 	}

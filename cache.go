@@ -5,6 +5,7 @@ package iec61850
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
 
@@ -145,7 +146,7 @@ func (mc *modelCache) setLDs(lds []LogicalDevice) {
 	mc.ldsValid = true
 }
 
-// getParsedRefs returns a copy of cached parsed Refs for an LD.
+// getParsedRefs returns a deep copy of cached parsed Refs for an LD.
 func (mc *modelCache) getParsedRefs(ld string) ([]Ref, bool) {
 	mc.mu.RLock()
 	defer mc.mu.RUnlock()
@@ -153,18 +154,25 @@ func (mc *modelCache) getParsedRefs(ld string) ([]Ref, bool) {
 	if !ok {
 		return nil, false
 	}
-	cp := make([]Ref, len(refs))
-	copy(cp, refs)
-	return cp, true
+	return cloneRefs(refs), true
 }
 
-// setParsedRefs stores a defensive copy of parsed Refs for an LD.
+// setParsedRefs stores a deep copy of parsed Refs for an LD.
 func (mc *modelCache) setParsedRefs(ld string, refs []Ref) {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
+	mc.parsedByLD[ld] = cloneRefs(refs)
+}
+
+// cloneRefs copies refs with their Paths, so that the copy shares no
+// storage with refs.
+func cloneRefs(refs []Ref) []Ref {
 	cp := make([]Ref, len(refs))
-	copy(cp, refs)
-	mc.parsedByLD[ld] = cp
+	for i, r := range refs {
+		cp[i] = r
+		cp[i].Path = slices.Clone(r.Path)
+	}
+	return cp
 }
 
 // getItems returns cached MMS items for an LD if available.
@@ -211,7 +219,8 @@ func (c *Client) cachedLDs(ctx context.Context) ([]LogicalDevice, error) {
 		if err != nil {
 			return nil, err
 		}
-		lds := v.([]LogicalDevice)
+		// Callers coalesced by singleflight share v: each gets a copy.
+		lds := slices.Clone(v.([]LogicalDevice))
 		if c.cache.strategy == CacheLazy {
 			c.cache.setLDs(lds)
 		}

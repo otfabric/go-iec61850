@@ -230,6 +230,9 @@ for ev := range sub.Events() { … }             // gaps, timeouts, …
   so the real and simulated counters are not interleaved.
 - `HandleFrame` and `CheckTimeouts` drive the subscriber without a
   transport (e.g. from a pcap).
+- `Close` ends `Run`, also while `Run` waits for a frame on a transport
+  that delivers none; `Run` returns after its supervision goroutine has
+  ended.
 
 ## Transports
 
@@ -346,16 +349,27 @@ warnings.
 
 ## Performance
 
-Measured on an Apple M-series laptop (`go test -bench . ./sv`):
+Observed on one machine, one run; not a guarantee. The figures depend on
+the CPU, the Go version and what else the machine runs.
+
+```text
+version:     v1.20.3 (working tree based on bddeee5)
+date:        2026-11-14
+go:          go1.27.4 darwin/arm64
+cpu:         Apple M1, 8 cores
+GOMAXPROCS:  default (8); GOGC, GOMEMLIMIT, GOFLAGS: default
+machine:     development laptop, not idle; CPU frequency not controlled
+command:     go test -run '^$' -bench . -benchmem -count 1 ./sv
+```
 
 | Benchmark | Time | Allocations |
 |---|---|---|
-| `DecodeInto`, 1 ASDU | 89 ns | 0 |
-| `DecodeInto`, 8 ASDUs | 530 ns | 0 |
-| `AppendFrame` | 66 ns | 0 |
-| Publisher, one frame | 85 ns | 0 |
-| Subscriber, 1 stream | 180 ns/frame | 0 |
-| Subscriber, 32 interleaved 4 kHz streams | 217 ns/frame (2.8 % of a core) | 0 |
+| `DecodeInto`, 1 ASDU | 91 ns | 0 |
+| `DecodeInto`, 8 ASDUs | 526 ns | 0 |
+| `AppendFrame` | 60 ns | 0 |
+| Publisher, one frame | 87 ns | 0 |
+| Subscriber, 1 stream | 178 ns/frame | 0 |
+| Subscriber, 32 interleaved 4 kHz streams | 214 ns/frame (observed 2.7 % of a core) | 0 |
 
 `TestSubscriberZeroAlloc` pins the steady-state receive and send paths
 to zero allocations.

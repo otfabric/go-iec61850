@@ -111,6 +111,9 @@ func (c *Client) Select(ctx context.Context, ref Ref) (string, error) {
 	if err != nil {
 		return "", &ControlError{Ref: ref.String(), Operation: "select", Wrapped: err}
 	}
+	c.ctlMu.Lock()
+	c.markAddressedLocked(controlKey(string(domainID), string(itemID)))
+	c.ctlMu.Unlock()
 
 	result, err := c.mmsClient.Read(ctx, mms.ReadRequest{
 		DomainID: domainID,
@@ -265,7 +268,11 @@ func (c *Client) ReadCtlModel(ctx context.Context, ref Ref) (CtlModel, error) {
 
 // ReadLastApplError returns the last LastApplError this client received
 // for the control object ref (or, for a ref without a data object, for
-// any control of that logical node).
+// any control of that logical node). The client keeps the LastApplError
+// of the controls it sent a control service to ([Client.Select],
+// [Client.SelectWithValue], [Client.Operate], [Client.OperateWait],
+// [Client.Cancel]), one per control; a LastApplError that names another
+// control is not kept.
 //
 // LastApplError is a VMD-specific MMS variable a server creates,
 // reports and deletes at once (IEC 61850-8-1 20.11); it cannot be read.

@@ -1071,7 +1071,7 @@ NewSubscriber returns a subscriber reading from t. Call [Subscriber.Run](#func-s
 func (s *Subscriber) Close() error
 ```
 
-Close closes all subscriptions. The transport is not closed; Run returns when the transport is closed or its context is cancelled.
+Close closes all subscriptions. The transport is not closed; Run returns when the transport is closed or its context is cancelled. Close may be called from a Handler: see [Subscription.Close](#func-subscription-close).
 
 #### func (Subscriber) HandleFrame
 
@@ -1095,7 +1095,7 @@ HandleFrameFrom is [Subscriber.HandleFrame](#func-subscriber-handleframe) for a 
 func (s *Subscriber) Run(ctx context.Context) error
 ```
 
-Run receives frames until ctx is done (returning nil), the subscriber is closed (returning nil) or the transport fails.
+Run receives frames until ctx is done or the transport is closed (both return nil), or the transport fails. [Subscriber.Close](#func-subscriber-close) closes the subscriptions and does not stop Run: end it with ctx or by closing the transport.
 
 #### func (Subscriber) Subscribe
 
@@ -1133,7 +1133,10 @@ SubscriberConfig configures a [Subscriber](#type-subscriber).
 
 ```go
 type Subscription struct {
-	// contains filtered or unexported fields
+
+	// handlerID identifies the goroutine that calls the Handler, so that
+	// a Close called from the Handler does not wait for itself.
+
 }
 ```
 
@@ -1145,7 +1148,9 @@ Subscription is one set of filters with per-stream supervision.
 func (sub *Subscription) Close() error
 ```
 
-Close removes the subscription, stops its timers and closes the event channel after pending events have been handed to the Handler.
+Close removes the subscription, stops its timers and closes the event channel. With a Handler it returns after the events still queued have been handed to the Handler and the Handler's goroutine has ended.
+
+Close may be called from the Handler. It then returns without waiting for its own goroutine: the events still queued are handed to the Handler after the current call returns, and the goroutine ends then. A Close from another goroutine waits for that. Close is safe to call more than once and from multiple goroutines.
 
 #### func (Subscription) Events
 

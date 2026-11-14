@@ -138,13 +138,14 @@ func ParseGSEAddress(ps []scl.P) (GSEAddress, error) {
 }
 
 // parseMillis parses an SCL MinTime/MaxTime value (milliseconds,
-// possibly with a fraction).
+// possibly with a fraction): a number from 0 to 4294967295; anything else
+// (negative, larger, not a number) is an error.
 func parseMillis(s string) (uint32, error) {
 	if s == "" {
 		return 0, nil
 	}
 	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
-	if err != nil || f < 0 || f > math.MaxUint32 {
+	if err != nil || !(f >= 0 && f <= math.MaxUint32) {
 		return 0, fmt.Errorf("invalid time %q", s)
 	}
 	return uint32(math.Round(f)), nil

@@ -286,6 +286,9 @@ type Subscriber struct {
 	mu     sync.RWMutex
 	subs   []*Subscription
 	closed bool
+	// done is closed by Close: it ends Run, also while its Recv waits
+	// on a transport that delivers nothing.
+	done chan struct{}
 
 	// Receive-goroutine state.
 	frame Frame
@@ -307,7 +310,7 @@ func NewSubscriber(t Transport, cfg SubscriberConfig) (*Subscriber, error) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	return &Subscriber{t: t, cfg: cfg, logger: orDiscard(cfg.Logger), metrics: orNop(cfg.Metrics)}, nil
+	return &Subscriber{t: t, cfg: cfg, logger: orDiscard(cfg.Logger), metrics: orNop(cfg.Metrics), done: make(chan struct{})}, nil
 }
 
 // Subscription is a set of streams selected by a [SubscriptionConfig].
@@ -370,7 +373,10 @@ func (s *Subscriber) Subscribe(cfg SubscriptionConfig) (*Subscription, error) {
 }
 
 // Close stops Run and closes every subscription. It does not close the
-// transport.
+// transport. Run returns nil, also when it is waiting for a frame on a
+// transport that delivers none: Close ends the context Run gives to the
+// transport's Recv. Close does not wait for Run to return. Close is safe
+// to call more than once and from multiple goroutines.
 func (s *Subscriber) Close() error {
 	s.mu.Lock()
 	if s.closed {
@@ -380,6 +386,9 @@ func (s *Subscriber) Close() error {
 	s.closed = true
 	subs := s.subs
 	s.subs = nil
+	if s.done != nil {
+		close(s.done)
+	}
 	s.mu.Unlock()
 	for _, sub := range subs {
 		sub.shut()
@@ -389,14 +398,16 @@ func (s *Subscriber) Close() error {
 
 // Run receives frames until ctx is done or the subscriber is closed
 // (both return nil), or the transport fails. It also runs timeout
-// supervision.
+// supervision, in a goroutine that has ended when Run returns.
 func (s *Subscriber) Run(ctx context.Context) error {
 	if s.t == nil {
 		return configErr("Transport", "nil transport; use HandleFrame")
 	}
 	ctx, cancel := context.WithCancel(ctx)
+	var supervision sync.WaitGroup
+	defer supervision.Wait() // after cancel
 	defer cancel()
-	go s.supervise(ctx)
+	supervision.Go(func() { s.supervise(ctx, cancel) })
 	sr, _ := s.t.(l2.SourceReceiver)
 	for {
 		raw, from, err := s.recv(ctx, sr)
@@ -419,12 +430,18 @@ func (s *Subscriber) isClosed() bool {
 	return s.closed
 }
 
-func (s *Subscriber) supervise(ctx context.Context) {
+// supervise runs the timeout checks until ctx is done or the subscriber
+// is closed; on Close it calls stop, which ends Run's context and with it
+// a Recv that waits for a frame.
+func (s *Subscriber) supervise(ctx context.Context, stop context.CancelFunc) {
 	t := time.NewTicker(s.cfg.SupervisionInterval)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
+			return
+		case <-s.done:
+			stop()
 			return
 		case <-t.C:
 			s.CheckTimeouts()

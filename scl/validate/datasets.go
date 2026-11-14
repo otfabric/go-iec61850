@@ -22,6 +22,7 @@ import (
 // silently.
 func Datasets(s *scl.SCL, idx *index.Index) []scl.Diagnostic {
 	var diags []scl.Diagnostic
+	fcs := newFCIndex(idx)
 
 	for _, ied := range s.IEDs {
 		for _, ap := range ied.AccessPoints {
@@ -47,7 +48,7 @@ func Datasets(s *scl.SCL, idx *index.Index) []scl.Diagnostic {
 								})
 								continue
 							}
-							if d, bad := resolveFCDA(idx, ied.Name, &fcda); bad {
+							if d, bad := resolveFCDA(fcs, ied.Name, &fcda); bad {
 								d.Path = path
 								diags = append(diags, d)
 							}
@@ -69,7 +70,8 @@ func Datasets(s *scl.SCL, idx *index.Index) []scl.Diagnostic {
 
 // resolveFCDA resolves an FCDA below its logical device (see
 // [Datasets]); it returns a diagnostic and true when a step fails.
-func resolveFCDA(idx *index.Index, iedName string, f *scl.FCDA) (scl.Diagnostic, bool) {
+func resolveFCDA(fcs *fcIndex, iedName string, f *scl.FCDA) (scl.Diagnostic, bool) {
+	idx := fcs.idx
 	unresolved := func(format string, args ...any) (scl.Diagnostic, bool) {
 		return scl.Diagnostic{Severity: scl.DiagWarning, Code: "unresolved-fcda", Message: fmt.Sprintf(format, args...)}, true
 	}
@@ -137,7 +139,7 @@ func resolveFCDA(idx *index.Index, iedName string, f *scl.FCDA) (scl.Diagnostic,
 		dot = idx.FindDOType(next)
 	}
 	// The FCDA selects every attribute of the (S)DO with fc.
-	if dot != nil && f.FC != "" && !doHasFC(idx, dot, f.FC, 0) {
+	if dot != nil && f.FC != "" && !fcs.doHasFC(dot, f.FC, 0) {
 		return scl.Diagnostic{Severity: scl.DiagWarning, Code: "fcda-fc-mismatch",
 			Message: fmt.Sprintf("data object %q has no attribute with FC %s", strings.Join(path, "."), f.FC)}, true
 	}
@@ -175,18 +177,59 @@ func fcMatches(daFC, fc string) bool {
 	return daFC == fc || (sg(daFC) && sg(fc))
 }
 
-// doHasFC reports whether dot (or one of its SDOs) has a DA with FC fc.
-func doHasFC(idx *index.Index, dot *scl.DOType, fc string, depth int) bool {
-	if depth > 16 {
+// maxSDODepth is the number of SDO levels below a data object that
+// doHasFC follows; deeper levels (and so cycles of SDO types, which other
+// passes report) count as holding the FC.
+const maxSDODepth = 16
+
+// fcIndex answers doHasFC for one Datasets call. It remembers each answer
+// per DOType, FC and SDO level, so that a DOType is walked at most once
+// per FC and level however many SDO paths lead to it: the cost is linear
+// in the size of the type graph.
+type fcIndex struct {
+	idx   *index.Index
+	memo  map[fcKey]bool
+	steps int // doHasFC calls, for tests
+}
+
+// fcKey is an fcIndex entry: DOType dot, FC fc, depth SDO levels below
+// the data object of the FCDA.
+type fcKey struct {
+	dot   *scl.DOType
+	fc    string
+	depth int
+}
+
+func newFCIndex(idx *index.Index) *fcIndex {
+	return &fcIndex{idx: idx, memo: make(map[fcKey]bool)}
+}
+
+// doHasFC reports whether dot (or one of its SDOs) has a DA with FC fc. An
+// SDO of a type the document does not define may hold one, and levels
+// below maxSDODepth are not followed: both count as found.
+func (m *fcIndex) doHasFC(dot *scl.DOType, fc string, depth int) bool {
+	m.steps++
+	if depth > maxSDODepth {
 		return true // cycles are reported elsewhere; do not guess
 	}
+	k := fcKey{dot, fc, depth}
+	if r, ok := m.memo[k]; ok {
+		return r
+	}
+	r := m.walkFC(dot, fc, depth)
+	m.memo[k] = r
+	return r
+}
+
+// walkFC looks for fc in the DAs of dot, then below its SDOs.
+func (m *fcIndex) walkFC(dot *scl.DOType, fc string, depth int) bool {
 	for _, da := range dot.DAs {
 		if fcMatches(da.FC, fc) {
 			return true
 		}
 	}
 	for _, sdo := range dot.SDOs {
-		if t := idx.FindDOType(sdo.Type); t == nil || doHasFC(idx, t, fc, depth+1) {
+		if t := m.idx.FindDOType(sdo.Type); t == nil || m.doHasFC(t, fc, depth+1) {
 			return true // an unresolved SDO type may hold it
 		}
 	}

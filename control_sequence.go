@@ -165,10 +165,29 @@ type laeEntry struct {
 	seq uint64
 }
 
+// markAddressedLocked records that this client sends a control service
+// (Select, SelectWithValue, Operate, Cancel) to the control key. Must be
+// called with c.ctlMu held.
+func (c *Client) markAddressedLocked(key string) {
+	if key == "" {
+		return
+	}
+	if c.ctlAddressed == nil {
+		c.ctlAddressed = make(map[string]struct{})
+	}
+	c.ctlAddressed[key] = struct{}{}
+}
+
 // recordLastApplErrorLocked keeps the LastApplError for
-// [Client.ReadLastApplError]. Must be called with c.ctlMu held.
+// [Client.ReadLastApplError] when this client addressed the control: one
+// entry per addressed control, so the number of entries follows the
+// client's own control services and not the CntrlObj names it receives.
+// Must be called with c.ctlMu held.
 func (c *Client) recordLastApplErrorLocked(key string, lae *LastApplError) {
 	if key == "" || lae == nil {
+		return
+	}
+	if _, addressed := c.ctlAddressed[key]; !addressed {
 		return
 	}
 	if c.ctlLAE == nil {
@@ -179,7 +198,8 @@ func (c *Client) recordLastApplErrorLocked(key string, lae *LastApplError) {
 }
 
 // cachedLastApplError returns the last LastApplError received for the
-// control ref, or for any control of its LN when ref has no data object.
+// control ref, or for any control of its LN when ref has no data object,
+// among the controls this client addressed.
 func (c *Client) cachedLastApplError(ref Ref) *LastApplError {
 	domainID, itemID, err := c.refToMMS(Ref{LD: ref.LD, LN: ref.LN, Path: ref.Path, FC: FCCO})
 	if err != nil {

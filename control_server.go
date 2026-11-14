@@ -565,21 +565,46 @@ func (b *backgroundTasks) stop() {
 // --- state machine -------------------------------------------------------
 
 // expireLocked releases a selection whose select timeout passed or whose
-// client's association is gone (IEC 61850-7-2 20.2.2 a, Table 47). It
-// reports whether it released one. Must be called with reg.mu held.
+// client's association is gone (IEC 61850-7-2 20.2.2 a, Table 47), and
+// aborts a time activated operate that waits for operTm when the
+// association that sent it is gone (see releaseLostLocked). It reports
+// whether it released one. Must be called with reg.mu held.
 //
 // now is time.Now, never the server's Clock: sboTimeout is a timer on
 // the monotonic clock, so a wall-clock step neither expires nor extends
 // a selection.
 func (s *Server) expireLocked(reg *controlRegistration, now time.Time) bool {
-	if reg.state != ctlReady {
-		return false
+	if s.releaseLostLocked(reg) {
+		return true
 	}
-	if now.Sub(reg.selTime) > s.effectiveSelectTimeout(reg) || s.connLost(reg.sel.conn) {
+	if reg.state == ctlReady && now.Sub(reg.selTime) > s.effectiveSelectTimeout(reg) {
 		s.unselectLocked(reg)
 		return true
 	}
 	return false
+}
+
+// releaseLostLocked returns a control to Unselected when the association
+// that holds it has ended: a selection (Ready), and a time activated
+// operate that still waits for operTm (WaitForActivationTime), which is
+// aborted like a Cancel would and never operates. IEC 61850-7-2 Table 47
+// names the selection; for the pending activation the standard leaves the
+// behaviour to the device (KNOWN_LIMITATIONS.md). It reports whether it
+// released the control. Must be called with reg.mu held.
+func (s *Server) releaseLostLocked(reg *controlRegistration) bool {
+	if reg.state != ctlReady && reg.state != ctlWaitActivation {
+		return false
+	}
+	if !s.connLost(reg.sel.conn) {
+		return false
+	}
+	if reg.abort != nil {
+		// Ends the goroutine that waits for operTm.
+		close(reg.abort)
+		reg.abort = nil
+	}
+	s.unselectLocked(reg)
+	return true
 }
 
 // connLost reports whether conn is an association that has ended.
@@ -906,7 +931,7 @@ func (s *Server) startTimeActivated(ctx context.Context, reg *controlRegistratio
 		select {
 		case <-t.C:
 		case <-abort:
-			s.logger.Debug("iec61850: time activated operate cancelled", "ref", req.Ref)
+			s.logger.Debug("iec61850: time activated operate ended before operTm", "ref", req.Ref)
 			return
 		case <-life.Done():
 			return
@@ -1406,7 +1431,8 @@ func (s *Server) stopControls() {
 
 // releaseLostSelections releases the selections of associations that
 // ended (IEC 61850-7-2 Table 47: association loss returns a selected
-// control to Unselected).
+// control to Unselected) and aborts their time activated operates that
+// still wait for operTm.
 func (s *Server) releaseLostSelections() {
 	s.controlMu.RLock()
 	regs := make([]*controlRegistration, 0, len(s.controls))
@@ -1416,10 +1442,7 @@ func (s *Server) releaseLostSelections() {
 	s.controlMu.RUnlock()
 	for _, reg := range regs {
 		reg.mu.Lock()
-		lost := reg.state == ctlReady && s.connLost(reg.sel.conn)
-		if lost {
-			s.unselectLocked(reg)
-		}
+		lost := s.releaseLostLocked(reg)
 		reg.mu.Unlock()
 		if lost {
 			s.syncStSeld(context.Background(), reg)
@@ -1468,11 +1491,10 @@ func (s *Server) isConnActive(conn *mms.ServerConn) bool {
 	return slices.Contains(s.mms.Connections(), conn)
 }
 
-// mmsValuesEqual returns true if a and b are both non-nil and encode to
-// the same canonical string. Used for ctlVal matching in SBOw.
+// mmsValuesEqual reports whether a and b are both nil, or have the same
+// type and the same content ([mms.Value.Equal]: the bits of a bit string,
+// the octets of an octet string, every member of a structure). Used for
+// ctlVal matching in SBOw.
 func mmsValuesEqual(a, b *mms.Value) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	return a.String() == b.String()
+	return a.Equal(b)
 }

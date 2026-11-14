@@ -3,7 +3,9 @@
 package servermodel
 
 import (
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/otfabric/go-iec61850/scl"
@@ -215,6 +217,7 @@ func convertLD(s *scl.SCL, sclLD *scl.LDevice, dotIdx map[string]*scl.DOType, da
 		}
 		ld.LogicalNodes = append(ld.LogicalNodes, *ln)
 	}
+	checkInitialValueRanges(ld, warnings)
 	setGroupInitialValues(ld, warnings)
 
 	return ld, nil
@@ -595,6 +598,75 @@ func setFC(a *DataAttribute, fc string) {
 	for i := range a.Children {
 		setFC(&a.Children[i], fc)
 	}
+}
+
+// checkInitialValueRanges reports the SCL values (Val) of the attributes
+// of ld that are numbers outside the range of their basic type (an INT8
+// of 300, a FLOAT32 of 1e300) as warnings, and drops them: the attribute
+// keeps the default value of its type, as an attribute without a Val.
+func checkInitialValueRanges(ld *LogicalDevice, warnings *[]string) {
+	warn := func(format string, args ...any) {
+		if warnings != nil {
+			*warnings = append(*warnings, fmt.Sprintf(format, args...))
+		}
+	}
+	var walk func(prefix string, a *DataAttribute)
+	walk = func(prefix string, a *DataAttribute) {
+		name := prefix + "." + a.Name
+		for i := range a.Children {
+			walk(name, &a.Children[i])
+		}
+		for g, text := range a.GroupValues {
+			if initialValueOutOfRange(a.BType, text) {
+				warn("%s: Val sGroup=%d %q is outside %s: the default value is kept", name, g, text, a.BType)
+				a.GroupValues[g] = ""
+			}
+		}
+		if initialValueOutOfRange(a.BType, a.InitialValue) {
+			// With values per group, InitialValue is one of them and has
+			// been reported above.
+			if a.GroupValues == nil {
+				warn("%s: Val %q is outside %s: the default value is kept", name, a.InitialValue, a.BType)
+			}
+			a.InitialValue = ""
+		}
+	}
+	var walkDO func(prefix string, o *DataObject)
+	walkDO = func(prefix string, o *DataObject) {
+		name := prefix + "." + o.Name
+		for i := range o.Children {
+			walkDO(name, &o.Children[i])
+		}
+		for i := range o.Attributes {
+			walk(name, &o.Attributes[i])
+		}
+	}
+	for i := range ld.LogicalNodes {
+		ln := &ld.LogicalNodes[i]
+		for j := range ln.DataObjects {
+			walkDO(ld.Inst+"/"+ln.Name, &ln.DataObjects[j])
+		}
+	}
+}
+
+// initialValueOutOfRange reports whether val, an SCL value of basic type
+// btype, is a number outside the range of an integer type (INT8 to INT64,
+// INT8U to INT32U) or of FLOAT32. Other types, and values that are not a
+// number, are left to parseInitialValue.
+func initialValueOutOfRange(btype, val string) bool {
+	if val == "" {
+		return false
+	}
+	var err error
+	switch btype {
+	case "INT8", "INT16", "INT24", "INT32", "INT64":
+		_, err = strconv.ParseInt(val, 10, btypeToMMS[btype].Size)
+	case "INT8U", "INT16U", "INT24U", "INT32U":
+		_, err = strconv.ParseUint(val, 10, btypeToMMS[btype].Size)
+	case "FLOAT32":
+		_, err = strconv.ParseFloat(val, 32)
+	}
+	return errors.Is(err, strconv.ErrRange)
 }
 
 // setGroupInitialValues makes the active group's value (SettingControl

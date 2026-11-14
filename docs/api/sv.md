@@ -1462,6 +1462,9 @@ String formats the key for logs.
 ```go
 type Subscriber struct {
 
+	// done is closed by Close: it ends Run, also while its Recv waits
+	// on a transport that delivers nothing.
+
 	// Receive-goroutine state.
 
 }
@@ -1491,7 +1494,7 @@ CheckTimeouts runs one timeout check (Run calls it periodically).
 func (s *Subscriber) Close() error
 ```
 
-Close stops Run and closes every subscription. It does not close the transport.
+Close stops Run and closes every subscription. It does not close the transport. Run returns nil, also when it is waiting for a frame on a transport that delivers none: Close ends the context Run gives to the transport's Recv. Close does not wait for Run to return. Close is safe to call more than once and from multiple goroutines.
 
 #### func (Subscriber) HandleFrame
 
@@ -1515,7 +1518,7 @@ HandleFrameFrom is [Subscriber.HandleFrame](#func-subscriber-handleframe) for a 
 func (s *Subscriber) Run(ctx context.Context) error
 ```
 
-Run receives frames until ctx is done or the subscriber is closed (both return nil), or the transport fails. It also runs timeout supervision.
+Run receives frames until ctx is done or the subscriber is closed (both return nil), or the transport fails. It also runs timeout supervision, in a goroutine that has ended when Run returns.
 
 #### func (Subscriber) Subscribe
 

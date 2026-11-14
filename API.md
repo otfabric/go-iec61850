@@ -58,6 +58,13 @@ func (c *Client) Abort(ctx context.Context) error
 func (c *Client) MMS() *mms.Client
 ```
 
+`Close` refuses new requests and closes every report subscription
+locally first (its `Reports` channel is closed); then it disables the
+RCBs the subscriptions enabled and releases the URCBs they reserved,
+until `ctx` ends and for 5 seconds at the latest, and closes the MMS
+connection of a client made with `Dial`. `Abort` closes the
+subscriptions locally and sends nothing.
+
 ### DialOptions
 
 ```go
@@ -555,7 +562,7 @@ type ReportIndication struct {
 func DecodeReport(values []*mms.Value) (*ReportIndication, error)
 ```
 
-Decodes the access results of an MMS InformationReport that carries an IEC 61850 report, for reports not received through a subscription, such as those of a capture decoded with go-mms `mms.DecodeTSDU`. It reads the fields in the order of the IEC 61850-8-1 report format: RptID, OptFlds, the optional fields OptFlds announces, the inclusion bit string, then per included member its data reference, value and reason for inclusion. It is strict: a missing or nil value, a field of the wrong MMS type, and values left over after the last member are a `*ReportError`. A `Client` decoding the reports it subscribed to stays lenient about field types.
+Decodes the access results of an MMS InformationReport that carries an IEC 61850 report, for reports not received through a subscription, such as those of a capture decoded with go-mms `mms.DecodeTSDU`. It reads the fields in the order of the IEC 61850-8-1 report format: RptID, OptFlds, the optional fields OptFlds announces, the inclusion bit string, then per included member its data reference, value and reason for inclusion. It is strict: a missing or nil value, a field of the wrong MMS type, an inclusion bit string that announces more members than the values that follow can hold (checked before any member is decoded), and values left over after the last member are a `*ReportError`. A `Client` decoding the reports it subscribed to stays lenient about field types.
 
 ### ReasonCode
 
@@ -601,7 +608,8 @@ sends operTm when the type has it, all zero for an immediate command; a
 non-zero `OperTm` is a TimeActivatedOperate. `ReadLastApplError` is
 deprecated (LastApplError is a transient VMD variable): use
 `ControlError.LastApplError`; it returns the last LastApplError the client
-received for the control.
+received for the control, for a control the client sent a control service
+to (other LastApplError reports are not kept).
 
 A refused `Operate`, `SelectWithValue` or `Cancel` returns a `*ControlError`
 carrying the `LastApplError` the server reported before the negative write
@@ -1173,6 +1181,12 @@ func NewServer(model *servermodel.Model, opts ServerOptions) (*Server, error)
 func NewServerModelFromSCL(s *scl.SCL, iedName, apName string) (*servermodel.Model, error)
 ```
 
+An SCL value outside the range of its basic type (an INT8 of 300, a
+FLOAT32 of 1e300, also one per setting group) is a warning in
+`Model.Warnings` of the model `NewServerModelFromSCL` builds, and the
+attribute keeps the default value of its type. A GSE `MinTime` or
+`MaxTime` that is not a number from 0 to 4294967295 ms is a warning too.
+
 ### ServerOptions
 
 ```go
@@ -1473,7 +1487,10 @@ The banks start from the SCL `Val sGroup="n"` values (IEC 61850-6
 one (IEC 61850-6 Table 47), which the model adds. Active settings change
 through `Server.SetValue`, so reports, logs and GOOSE follow them. A
 value a handler callback sets on FC=SG (OnActiveSGChanged) or FC=SE
-(OnEditSGSelected) wins over the bank and is kept in it.
+(OnEditSGSelected) wins over the bank and is kept in it. The callbacks run
+under a recover, as `ControlHandler` callbacks do: a callback that ends
+abnormally is logged and refuses the write with object-access-denied, as
+a returned error does.
 
 ### Journal engine
 

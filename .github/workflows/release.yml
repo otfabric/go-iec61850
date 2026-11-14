@@ -40,7 +40,7 @@ jobs:
     secrets: inherit
 
   release-sclparse-binary:
-    needs: release-package
+    needs: [release-package, release-sclgen-binary]
     uses: otfabric/.github/.github/workflows/go-binary-release.yml@v3.8.0
     with:
       bump: none

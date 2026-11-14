@@ -11,8 +11,10 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/otfabric/go-iec61850/internal/goid"
 	"github.com/otfabric/go-iec61850/l2"
 	"github.com/otfabric/go-mms"
 )
@@ -306,6 +308,7 @@ func (s *Subscriber) Subscribe(cfg SubscriptionConfig) (*Subscription, error) {
 	s.mu.Unlock()
 	if cfg.Handler != nil {
 		sub.wg.Go(func() {
+			sub.handlerID.Store(goid.ID())
 			for ev := range sub.events {
 				cfg.Handler(ev)
 			}
@@ -315,8 +318,10 @@ func (s *Subscriber) Subscribe(cfg SubscriptionConfig) (*Subscription, error) {
 	return sub, nil
 }
 
-// Run receives frames until ctx is done (returning nil), the subscriber
-// is closed (returning nil) or the transport fails.
+// Run receives frames until ctx is done or the transport is closed (both
+// return nil), or the transport fails. [Subscriber.Close] closes the
+// subscriptions and does not stop Run: end it with ctx or by closing the
+// transport.
 func (s *Subscriber) Run(ctx context.Context) error {
 	sr, _ := s.t.(l2.SourceReceiver)
 	for {
@@ -383,6 +388,7 @@ func (s *Subscriber) HandleFrameFrom(raw []byte, from netip.AddrPort) {
 
 // Close closes all subscriptions. The transport is not closed; Run
 // returns when the transport is closed or its context is cancelled.
+// Close may be called from a Handler: see [Subscription.Close].
 func (s *Subscriber) Close() error {
 	s.mu.Lock()
 	subs := s.subs
@@ -414,6 +420,9 @@ type Subscription struct {
 	done      chan struct{}
 	closeOnce sync.Once
 	wg        sync.WaitGroup
+	// handlerID identifies the goroutine that calls the Handler, so that
+	// a Close called from the Handler does not wait for itself.
+	handlerID atomic.Uint64
 }
 
 type stream struct {
@@ -453,7 +462,14 @@ func (sub *Subscription) Supervision() []Supervision {
 }
 
 // Close removes the subscription, stops its timers and closes the event
-// channel after pending events have been handed to the Handler.
+// channel. With a Handler it returns after the events still queued have
+// been handed to the Handler and the Handler's goroutine has ended.
+//
+// Close may be called from the Handler. It then returns without waiting
+// for its own goroutine: the events still queued are handed to the
+// Handler after the current call returns, and the goroutine ends then. A
+// Close from another goroutine waits for that. Close is safe to call more
+// than once and from multiple goroutines.
 func (sub *Subscription) Close() error {
 	sub.s.remove(sub)
 	sub.close()
@@ -472,8 +488,14 @@ func (sub *Subscription) close() {
 		close(sub.events)
 		sub.mu.Unlock()
 		close(sub.done)
-		sub.wg.Wait()
 	})
+	if goid.ID() == sub.handlerID.Load() {
+		// Called from the Handler: its goroutine ends when the Handler
+		// returns. (Without a Handler handlerID is zero, which is no
+		// goroutine's identifier, and there is nothing to wait for.)
+		return
+	}
+	sub.wg.Wait()
 }
 
 func (sub *Subscription) matches(f *Frame) bool {

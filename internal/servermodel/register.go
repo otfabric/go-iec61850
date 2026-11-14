@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/otfabric/go-mms"
 )
@@ -1424,6 +1425,15 @@ func validateWriteSize(val *mms.Value, ts mms.TypeSpec) error {
 		if ts.Size > 0 {
 			if s, ok := val.VisibleString(); ok && len(s) > ts.Size {
 				return fmt.Errorf("visible string length %d exceeds max %d", len(s), ts.Size)
+			}
+		}
+	case mms.ValueTypeMmsString:
+		// The size of an MMS string (Unicode255) counts characters.
+		if ts.Size > 0 {
+			if s, ok := val.MmsString(); ok {
+				if n := utf8.RuneCountInString(s); n > ts.Size {
+					return fmt.Errorf("MMS string length %d characters exceeds max %d", n, ts.Size)
+				}
 			}
 		}
 	case mms.ValueTypeOctetString:

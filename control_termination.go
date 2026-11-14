@@ -80,6 +80,7 @@ func (c *Client) watchLastApplError(key string, ctlNum uint8) *lastApplErrorWatc
 		c.ctlWrites = make(map[*lastApplErrorWatch]struct{})
 	}
 	c.ctlWrites[w] = struct{}{}
+	c.markAddressedLocked(key)
 	return w
 }
 
@@ -106,6 +107,7 @@ func (c *Client) addTerminationWaiter(key, ref string) (*terminationWaiter, erro
 		c.ctlWaiters = make(map[string][]*terminationWaiter)
 	}
 	c.ctlWaiters[key] = append(c.ctlWaiters[key], w)
+	c.markAddressedLocked(key)
 	return w, nil
 }
 
