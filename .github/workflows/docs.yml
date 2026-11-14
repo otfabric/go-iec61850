@@ -14,29 +14,27 @@ permissions:
 jobs:
   docs:
     name: Docs (library)
-    uses: otfabric/.github/.github/workflows/docs-check.yml@v3.6.0
+    uses: otfabric/.github/.github/workflows/docs-check.yml@v3.8.0
     with:
       docsync-version: v0.3.1
       # The repository's only otfabric-policy run (ci.yml turns go-ci's off).
-      policy-version: v1.5.0
+      policy-version: v1.6.1
     secrets: inherit
 
   docs-sclparse:
     name: Docs (scl/cmd/sclparse)
-    uses: otfabric/.github/.github/workflows/docs-check.yml@v3.6.0
+    uses: otfabric/.github/.github/workflows/docs-check.yml@v3.8.0
     with:
       module-dir: scl/cmd/sclparse
       docsync-version: v0.3.1
-      policy-version: v1.5.0
-      run-policy: false
+      policy-version: v1.6.1
     secrets: inherit
 
   docs-sclgen:
     name: Docs (scl/cmd/sclgen)
-    uses: otfabric/.github/.github/workflows/docs-check.yml@v3.6.0
+    uses: otfabric/.github/.github/workflows/docs-check.yml@v3.8.0
     with:
       module-dir: scl/cmd/sclgen
       docsync-version: v0.3.1
-      policy-version: v1.5.0
-      run-policy: false
+      policy-version: v1.6.1
     secrets: inherit
