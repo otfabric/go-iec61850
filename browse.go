@@ -247,7 +247,10 @@ func (c *Client) TreeWithOptions(ctx context.Context, opts TreeOptions) (*ModelN
 			Name:      ld.Name,
 			Reference: Ref{LD: ld.Name},
 		}
-		ldNode.Children = buildLDTreeWithOptions(ld.Name, items, opts, c.opts.Strictness.RejectUnknownFC, c.logger)
+		ldNode.Children, err = buildLDTree(ctx, ld.Name, items, opts, c.opts.Strictness.RejectUnknownFC, c.logger)
+		if err != nil {
+			return nil, fmt.Errorf("iec61850: tree: %w", err)
+		}
 		root.Children = append(root.Children, ldNode)
 	}
 
@@ -422,87 +425,187 @@ func (c *Client) parsedRefsForLD(ctx context.Context, ld string) ([]Ref, error) 
 // buildLDTreeWithOptions constructs the tree of LN → DO → DA nodes
 // from a flat list of MMS item IDs, applying tree options.
 func buildLDTreeWithOptions(ld string, items []string, opts TreeOptions, rejectUnknownFC bool, logger *slog.Logger) []*ModelNode {
-	lnNames := mapping.ExtractLogicalNodes(items)
-	lnNodes := make([]*ModelNode, 0, len(lnNames))
+	nodes, _ := buildLDTree(context.Background(), ld, items, opts, rejectUnknownFC, logger)
+	return nodes
+}
 
-	for _, lnName := range lnNames {
+// treeCtxEvery is the number of items or nodes between two checks of
+// the context while a tree is built.
+const treeCtxEvery = 4096
+
+// itemTrie is the index of the items of one LN (or of a name below
+// it): the FCs of the items at or under it and its child names.
+type itemTrie struct {
+	fcs      map[string]struct{}
+	children map[string]*itemTrie
+	// data is set on a child of an LN when at least one item under it
+	// is not a control block (mapping.IsControlBlockItem): only those
+	// are data objects.
+	data bool
+}
+
+func (t *itemTrie) addFC(fc string) {
+	if t.fcs == nil {
+		t.fcs = make(map[string]struct{}, 1)
+	}
+	t.fcs[fc] = struct{}{}
+}
+
+func (t *itemTrie) child(name string) *itemTrie {
+	c := t.children[name]
+	if c == nil {
+		if t.children == nil {
+			t.children = make(map[string]*itemTrie)
+		}
+		c = &itemTrie{}
+		t.children[name] = c
+	}
+	return c
+}
+
+// sortedKeys returns the keys of m in ascending order.
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// treeBuilder builds the model tree of one LD from the item index.
+type treeBuilder struct {
+	ctx             context.Context
+	ld              string
+	opts            TreeOptions
+	rejectUnknownFC bool
+	logger          *slog.Logger
+	ops             int
+}
+
+// step counts one unit of work and returns the context's error every
+// treeCtxEvery units.
+func (b *treeBuilder) step() error {
+	b.ops++
+	if b.ops%treeCtxEvery == 0 {
+		return b.ctx.Err()
+	}
+	return nil
+}
+
+func (b *treeBuilder) setFCs(n *ModelNode, t *itemTrie) {
+	if !b.opts.IncludeFCs {
+		return
+	}
+	n.FCs = convertFCs(sortedKeys(t.fcs), b.rejectUnknownFC, b.logger)
+	if len(n.FCs) == 1 {
+		n.FC = n.FCs[0]
+	}
+}
+
+// buildLDTree constructs the tree of LN → DO → DA nodes from a flat list
+// of MMS item IDs in one pass: each item is parsed once into an index
+// per LN, from which the nodes are emitted, so the cost is linear in the
+// size of the list. It returns ctx.Err() once ctx ends.
+func buildLDTree(ctx context.Context, ld string, items []string, opts TreeOptions, rejectUnknownFC bool, logger *slog.Logger) ([]*ModelNode, error) {
+	b := &treeBuilder{ctx: ctx, ld: ld, opts: opts, rejectUnknownFC: rejectUnknownFC, logger: logger}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	lns := make(map[string]*itemTrie)
+	for _, item := range items {
+		if err := b.step(); err != nil {
+			return nil, err
+		}
+		pv, ok := mapping.ParseItemID(item)
+		if !ok {
+			continue
+		}
+		t := lns[pv.LN]
+		if t == nil {
+			t = &itemTrie{}
+			lns[pv.LN] = t
+		}
+		t.addFC(pv.FC)
+		if len(pv.Path) == 0 {
+			continue
+		}
+		t = t.child(pv.Path[0])
+		if !mapping.IsControlBlockItem(pv) {
+			t.data = true
+		}
+		t.addFC(pv.FC)
+		for _, name := range pv.Path[1:] {
+			t = t.child(name)
+			t.addFC(pv.FC)
+		}
+	}
+
+	lnNodes := make([]*ModelNode, 0, len(lns))
+	for _, lnName := range sortedKeys(lns) {
+		lt := lns[lnName]
 		lnNode := &ModelNode{
 			Name:      lnName,
 			Reference: Ref{LD: ld, LN: lnName},
 		}
-
-		if opts.IncludeFCs {
-			lnNode.FCs = convertFCs(mapping.ExtractFCsForLN(items, lnName), rejectUnknownFC, logger)
-			if len(lnNode.FCs) == 1 {
-				lnNode.FC = lnNode.FCs[0]
-			}
-		}
+		b.setFCs(lnNode, lt)
+		lnNodes = append(lnNodes, lnNode)
 
 		if opts.MaxDepth > 0 && opts.MaxDepth <= 2 {
-			lnNodes = append(lnNodes, lnNode)
 			continue
 		}
 
-		doNames := mapping.ExtractDataObjects(items, lnName)
-		for _, doName := range doNames {
-			doRef := Ref{LD: ld, LN: lnName, Path: []string{doName}}
+		for _, doName := range sortedKeys(lt.children) {
+			dt := lt.children[doName]
+			if !dt.data {
+				continue
+			}
+			if err := b.step(); err != nil {
+				return nil, err
+			}
 			doNode := &ModelNode{
 				Name:      doName,
-				Reference: doRef,
+				Reference: Ref{LD: ld, LN: lnName, Path: []string{doName}},
 			}
-
-			if opts.IncludeFCs {
-				doNode.FCs = convertFCs(mapping.ExtractFCsForPath(items, lnName, []string{doName}), rejectUnknownFC, logger)
-				if len(doNode.FCs) == 1 {
-					doNode.FC = doNode.FCs[0]
-				}
-			}
-
+			b.setFCs(doNode, dt)
 			if opts.MaxDepth <= 0 || opts.MaxDepth > 3 {
-				buildSubTreeWithOptions(doNode, ld, lnName, items, []string{doName}, opts, rejectUnknownFC, logger)
+				if err := b.buildSubTree(doNode, lnName, dt, []string{doName}); err != nil {
+					return nil, err
+				}
 			}
 			lnNode.Children = append(lnNode.Children, doNode)
 		}
-
-		lnNodes = append(lnNodes, lnNode)
 	}
-
-	return lnNodes
+	return lnNodes, nil
 }
 
-// buildSubTreeWithOptions recursively expands child nodes. Note: each
-// level re-scans the flat item list via ExtractChildren and
-// ExtractFCsForPath, which is O(n) per level. For very large models
-// (thousands of items) a trie-based index would reduce tree build
-// cost. For typical substation sizes this is adequate.
-func buildSubTreeWithOptions(node *ModelNode, ld, ln string, items []string, basePath []string, opts TreeOptions, rejectUnknownFC bool, logger *slog.Logger) {
+// buildSubTree expands the child nodes of node from its index t.
+func (b *treeBuilder) buildSubTree(node *ModelNode, ln string, t *itemTrie, basePath []string) error {
 	currentDepth := 2 + len(basePath) // LD(1) + LN(2) + path components
-	if opts.MaxDepth > 0 && currentDepth >= opts.MaxDepth {
-		return
+	if b.opts.MaxDepth > 0 && currentDepth >= b.opts.MaxDepth {
+		return nil
 	}
 
-	childNames := mapping.ExtractChildren(items, ln, basePath)
-	for _, name := range childNames {
+	for _, name := range sortedKeys(t.children) {
+		if err := b.step(); err != nil {
+			return err
+		}
+		ct := t.children[name]
 		childPath := make([]string, len(basePath)+1)
 		copy(childPath, basePath)
 		childPath[len(basePath)] = name
 
-		childRef := Ref{LD: ld, LN: ln, Path: childPath}
 		child := &ModelNode{
 			Name:      name,
-			Reference: childRef,
+			Reference: Ref{LD: b.ld, LN: ln, Path: childPath},
 		}
-
-		if opts.IncludeFCs {
-			child.FCs = convertFCs(mapping.ExtractFCsForPath(items, ln, childPath), rejectUnknownFC, logger)
-			if len(child.FCs) == 1 {
-				child.FC = child.FCs[0]
-			}
+		b.setFCs(child, ct)
+		if err := b.buildSubTree(child, ln, ct, childPath); err != nil {
+			return err
 		}
-
-		buildSubTreeWithOptions(child, ld, ln, items, childPath, opts, rejectUnknownFC, logger)
 		node.Children = append(node.Children, child)
 	}
+	return nil
 }
 
 // convertFCs converts FC strings to FunctionalConstraint values. When

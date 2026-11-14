@@ -20,8 +20,9 @@ func Controls(s *scl.SCL, idx *index.Index) []scl.Diagnostic {
 				continue
 			}
 			for _, ld := range ap.Server.LDevices {
+				ldPath := "IED[" + q(ied.Name) + "]/LD[" + q(ld.Inst) + "]"
 				checkRC := func(ln *scl.LN) {
-					lnPath := fmt.Sprintf("IED[%s]/LD[%s]/LN[%s%s%s]", ied.Name, ld.Inst, ln.Prefix, ln.LNClass, ln.Inst)
+					lnPath := ldPath + "/LN[" + q(ln.Prefix+ln.LNClass+ln.Inst) + "]"
 
 					dsNames := make(map[string]bool, len(ln.DataSets))
 					for _, ds := range ln.DataSets {
@@ -35,8 +36,8 @@ func Controls(s *scl.SCL, idx *index.Index) []scl.Diagnostic {
 						if !dsNames[rc.DatSet] {
 							diags = append(diags, scl.Diagnostic{
 								Severity: scl.DiagError, Code: "missing-dataset",
-								Path:    lnPath + "/RC[" + rc.Name + "]",
-								Message: fmt.Sprintf("references datSet %q which is not defined in this LN", rc.DatSet),
+								Path:    lnPath + "/RC[" + q(rc.Name) + "]",
+								Message: fmt.Sprintf("references datSet %q which is not defined in this LN", q(rc.DatSet)),
 							})
 						}
 					}
@@ -47,8 +48,8 @@ func Controls(s *scl.SCL, idx *index.Index) []scl.Diagnostic {
 						if !dsNames[gc.DatSet] {
 							diags = append(diags, scl.Diagnostic{
 								Severity: scl.DiagError, Code: "missing-dataset",
-								Path:    lnPath + "/GC[" + gc.Name + "]",
-								Message: fmt.Sprintf("references datSet %q which is not defined in this LN", gc.DatSet),
+								Path:    lnPath + "/GC[" + q(gc.Name) + "]",
+								Message: fmt.Sprintf("references datSet %q which is not defined in this LN", q(gc.DatSet)),
 							})
 						}
 					}
@@ -58,7 +59,7 @@ func Controls(s *scl.SCL, idx *index.Index) []scl.Diagnostic {
 						if sv.SmpRate == 0 || sv.NofASDU == 0 {
 							diags = append(diags, scl.Diagnostic{
 								Severity: scl.DiagError, Code: "invalid-attribute",
-								Path:    lnPath + "/SV[" + sv.Name + "]",
+								Path:    lnPath + "/SV[" + q(sv.Name) + "]",
 								Message: fmt.Sprintf("smpRate %d / nofASDU %d: both must be at least 1", sv.SmpRate, sv.NofASDU),
 							})
 						}
@@ -68,8 +69,8 @@ func Controls(s *scl.SCL, idx *index.Index) []scl.Diagnostic {
 						if !dsNames[sv.DatSet] {
 							diags = append(diags, scl.Diagnostic{
 								Severity: scl.DiagError, Code: "missing-dataset",
-								Path:    lnPath + "/SV[" + sv.Name + "]",
-								Message: fmt.Sprintf("references datSet %q which is not defined in this LN", sv.DatSet),
+								Path:    lnPath + "/SV[" + q(sv.Name) + "]",
+								Message: fmt.Sprintf("references datSet %q which is not defined in this LN", q(sv.DatSet)),
 							})
 						}
 					}

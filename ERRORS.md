@@ -36,7 +36,7 @@ Use `errors.Is(err, iec61850.ErrXxx)` for category classification.
 | `ErrNotControllable` | Target data object has no controllable model |
 | `ErrGOOSE` | Server GOOSE engine: already enabled, no transport, engine stopped, GoCB without address |
 | `ErrSV` | Server SV engine: already enabled, no transport, engine stopped, MSVCB sample not encodable |
-| `ErrLimitExceeded` | A limit of the package was reached: `ReadFile` beyond `FileLimits.MaxSize`, `ReadFile` or `DownloadFile` beyond `FileLimits.SizeTolerance` over the announced size or after more than `FileLimits.MaxEmptyChunks` empty answers, a server model beyond `ServerModelOptions.MaxExpandedNodes` (which also matches `scl.ErrLimitExceeded`). See [SECURITY.md](SECURITY.md#limits) |
+| `ErrLimitExceeded` | A limit of the package was reached: `ReadFile` beyond `FileLimits.MaxSize`, `ReadFile` or `DownloadFile` beyond `FileLimits.SizeTolerance` over the announced size or after more than `FileLimits.MaxEmptyChunks` empty answers, `ReadJournalAll` or `ReadJournalAfterAll` beyond `JournalLimits.MaxEntries` or `JournalLimits.MaxBytes`, a server model beyond `ServerModelOptions.MaxExpandedNodes` or with type references nested deeper than `scl.DefaultMaxTypeDepth` (both also match `scl.ErrLimitExceeded`). See [SECURITY.md](SECURITY.md#limits) |
 
 ### Server write refusals
 
@@ -59,10 +59,12 @@ Codes the server sends on its own:
 |-----------|-----------------|
 | Value of another type or layout, integer outside INTn, string or bit string of the wrong size (including a malformed Oper/SBOw/Cancel) | type-inconsistent |
 | ENUMERATED value outside the EnumType | object-value-invalid |
-| Read-only attribute or SGCB member, write of SBO or of an Oper/SBOw/Cancel member alone, CF ctlModel of a registered control, control without `RegisterControl` | object-access-denied |
+| Non-zero IntgPd of a BRCB, URCB or LCB below `ServerOptions.MinIntegrityPeriod` | object-value-invalid |
+| GoCB DatSet or MSVCB change that would take ConfRev past 4294967295; SvEna TRUE while SmpRate and SmpMod select more than `SVOptions.MaxSamplesPerSecond` | object-value-invalid |
+| Read-only attribute or SGCB member (NumOfSG, LActTm, ResvTms also without `EnableSettingGroups`), write of SBO or of an Oper/SBOw/Cancel member alone, CF ctlModel of a registered control, control without `RegisterControl` | object-access-denied |
 | Control refused with AddCause 12, 19 or 27 (in execution, already selected, locked by another client) | temporarily-unavailable |
 | Other control refusals (not selected, inconsistent parameters, application refusal) | object-access-denied |
-| SGCB EditSG/CnfEdit/FC=SE while another client holds the edit reservation, FC=SE without an edit group | temporarily-unavailable |
+| SGCB EditSG/CnfEdit/FC=SE while another client holds the edit reservation, FC=SE without an edit group (leaf, FC-group `LN$SE` and data object `LN$SE$DO` reads included) | temporarily-unavailable |
 | SGCB ActSG/EditSG out of 1..NumOfSG | object-value-invalid |
 | SGCB of an unknown LD | object-non-existent |
 
@@ -103,10 +105,10 @@ that unwrap to one of the decode sentinels. `*sv.ValidationError` unwraps to
 | `ErrInvalidFrame` | Ethernet frame cannot carry an SV message: too short or a malformed 802.1Q tag |
 | `ErrNotSV` | Well-formed Ethernet frame whose EtherType is not 0x88BA |
 | `ErrInvalidLength` | SV header length field inconsistent with the frame or the encoded APDU |
-| `ErrInvalidPDU` | BER structure error in the savPdu: bad tag or length, missing mandatory field, duplicate or out-of-order field, wrong field size, or noASDU not matching the ASDU count |
+| `ErrInvalidPDU` | BER structure error in the savPdu: bad tag or length, missing mandatory field, duplicate or out-of-order field, wrong field size, an svID or datSet longer than `MaxIDLength` (129) octets, or noASDU not matching the ASDU count |
 | `ErrInvalidData` | Sample does not match its dataset layout: wrong size or an undecodable member |
 | `ErrLimitExceeded` | Decoder or encoder limit exceeded: ASDU count, sample size, frame size |
-| `ErrInvalidValue` | Value cannot be encoded in a sample: nil, wrong type, out of range |
+| `ErrInvalidValue` | Value cannot be encoded in a sample: nil, wrong type, out of range; an svID or datSet longer than `MaxIDLength` on encode |
 | `ErrSCL` | A control block could not be built from an SCL document |
 | `ErrNotFound` | Requested control block or stream does not exist |
 | `ErrValidation` | Base sentinel of subscriber validation failures |
@@ -127,14 +129,14 @@ below. See [GOOSE.md](GOOSE.md#r-goose-and-r-sv-over-udp).
 | `ErrMalformed` | Datagram is not a well-formed SPDU: transport header, a length past the datagram, a truncated field, trailing octets |
 | `ErrUnsupported` | Protocol version other than 1 or 2, encryption, or a MAC algorithm other than HMAC-SHA256 |
 | `ErrUnsecured` | SPDU without key ID and signature, refused without `Insecure` |
-| `ErrUnknownKey` | SPDU under a key ID the key provider does not hold |
+| `ErrUnknownKey` | SPDU under a key ID the key provider does not hold, or the provider returned a key with another ID, ID 0 or less than `MinKeySize` octets of material (then also `ErrInvalidKey`) |
 | `ErrAuthentication` | Signature missing, of the wrong length or algorithm, or not verifying |
 | `ErrReplay` | SPDU number already accepted, or older than the replay window, for that sender and key (for that key whatever the sender with `Config.SingleSenderPerKey`) |
 | `ErrSenderNotAllowed` | SPDU from a source address outside `Config.AllowedSenders`, refused before verification |
 | `ErrNoKey` | The key provider has no current key to send with |
 | `ErrInvalidKey` | Key ID 0, key material shorter than 16 octets, or an unsupported MAC algorithm |
 | `ErrInvalidFrame` | Frame passed to `Transport.Send` is not a GOOSE or SV frame of the transport's kind |
-| `ErrLimitExceeded` | SPDU larger than 65507 octets, or an APDU longer than 65535 |
+| `ErrLimitExceeded` | SPDU larger than 65507 octets, an APDU longer than 65535, or `Transport.Send` after SPDU number 0xffffffff was sent under the current key (make a key with another ID current) |
 | `ErrUnsupportedPlatform` | Multicast socket options requested on a platform other than Linux, macOS or a BSD |
 
 ### Package `scl`
@@ -144,7 +146,7 @@ Parse failures are errors with text, and problems in a document are
 
 | Sentinel | Meaning |
 |----------|---------|
-| `ErrLimitExceeded` | A document beyond `ParseOptions.MaxBytes` or `ParseOptions.MaxDepth` (the parse is refused), or a type expansion beyond `FlattenOptions.MaxExpandedNodes` or the model limit of `ServerModelOptions`, `goose.SCLOptions` or `sv.SCLOptions`. See [scl/README.md](scl/README.md#limits) |
+| `ErrLimitExceeded` | A document beyond `ParseOptions.MaxBytes` or `ParseOptions.MaxDepth` (the parse is refused), or a type expansion beyond `FlattenOptions.MaxExpandedNodes`, type references nested deeper than `FlattenOptions.MaxTypeDepth` (`DefaultMaxTypeDepth`, 64), or the model limit of `ServerModelOptions`, `goose.SCLOptions` or `sv.SCLOptions`. See [scl/README.md](scl/README.md#limits) |
 
 ### Transport sentinels
 

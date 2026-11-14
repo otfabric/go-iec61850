@@ -79,10 +79,14 @@ and `SmpSynchGlobal` name the first three.
 The decoder is strict: field order and mandatory fields per IEC 61850-9-2,
 definite BER lengths only, length fields checked against the
 frame, `noASDU` equal to the number of ASDUs, fixed sizes for the
-integer and time fields, visible strings for `svID`/`datSet`, no trailing
-data inside the APDU (Ethernet padding after it is accepted). `Limits`
-bounds the ASDUs per frame and the sample size (`DefaultLimits`: 64 and
-1500 octets).
+integer and time fields, visible strings for `svID`/`datSet` of at most
+`MaxIDLength` (129) octets (VisibleString129, 9-2 Table 14), no trailing
+data inside the APDU (Ethernet padding after it is accepted). A longer
+`svID` or `datSet` is refused with `ErrInvalidPDU` on decode and
+`ErrInvalidValue` on encode; `NewPublisher` refuses one with
+`ErrInvalidConfig`. `Limits` bounds the ASDUs per frame and the sample
+size (`DefaultLimits`: 64 and 1500 octets). In `SubscriberConfig.Limits`
+a zero field takes its value from `DefaultLimits`.
 
 `DecodeInto` decodes into a caller-owned `Frame` and reuses its storage:
 the ASDU slice, the VLAN tag and the `svID`/`datSet` strings (interned
@@ -319,8 +323,18 @@ without `APPID` uses 0x4000 (9-2 5.3.3.4.2) and `VLAN-ID` without
 `SampledValueControl` with `multicast="false"` (USVCB) is skipped with a
 warning. Invalid values (empty `MsvID`, zero `SmpRate`, `SmpMod`
 outside 0–2, an unknown dataset, a `SmpRate` above 65535) are rejected with
-object-value-invalid. A publisher does not start while a stored `ConfRev`,
+object-value-invalid, and so is a change that would take `ConfRev` past
+4294967295 (INT32U). A publisher does not start while a stored `ConfRev`,
 `SmpRate`, `noASDU` or `SmpMod` is outside its type.
+
+`SVOptions.MaxSamplesPerSecond` bounds the sample rate a client selects
+with `SmpRate` and `SmpMod`, in samples per second at `NominalFrequency`
+(default `DefaultSVMaxSamplesPerSecond`, 96000, the highest IEC 61869-9
+preferred rate; a negative value removes the bound). The rate configured
+for the MSVCB in SCL is always allowed. The check is made when the MSVCB
+is enabled (`SvEna` TRUE or `SVEngine.SetEnabled`), which is refused with
+object-value-invalid; `SmpRate` and `SmpMod` writes are not refused on
+their own, since a client changes them one at a time.
 `Capabilities().SV` reports the engine.
 
 ## Client MSVCB access

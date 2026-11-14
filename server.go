@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -79,6 +80,7 @@ type Server struct {
 	reportEngine       *ReportEngine
 	reportMaxPDU       int // MMS MaxPDUSize bounding one InformationReport
 	newReportBuffer    func(ldName, rcbItemID string) ReportBuffer
+	minIntgPd          uint32 // ms; ServerOptions.MinIntegrityPeriod, 0 = no minimum
 	sgEngine           *SettingGroupEngine
 	journalEngine      *JournalEngine
 	mmsJournalProvider *MemoryJournalProvider
@@ -231,10 +233,41 @@ type ServerOptions struct {
 	// [ServerStats.ConnectionsRefused]. Connections given to
 	// [Server.Serve] by the caller are not counted.
 	MaxConnections int
+
+	// MinIntegrityPeriod is the smallest non-zero IntgPd that may be
+	// written to a BRCB, URCB or LCB, by an MMS client or through
+	// [ReportEngine.HandleRCBWrite] and [JournalEngine.HandleLCBWrite];
+	// a smaller non-zero value is refused with object-value-invalid,
+	// so a client cannot make the server produce integrity reports or
+	// journal entries at an unbounded rate. IntgPd 0 (no integrity
+	// period) is always accepted, and periods configured in the model
+	// (SCL) are not checked. Zero means [DefaultMinIntegrityPeriod]; a
+	// negative value removes the minimum. It is rounded up to whole
+	// milliseconds, the unit of IntgPd.
+	MinIntegrityPeriod time.Duration
 }
 
 // DefaultMaxConnections is the default [ServerOptions.MaxConnections].
 const DefaultMaxConnections = 1024
+
+// DefaultMinIntegrityPeriod is the default
+// [ServerOptions.MinIntegrityPeriod].
+const DefaultMinIntegrityPeriod = 100 * time.Millisecond
+
+// minIntgPdMillis returns ServerOptions.MinIntegrityPeriod in whole
+// milliseconds (rounded up), 0 for no minimum.
+func minIntgPdMillis(d time.Duration) uint32 {
+	switch {
+	case d < 0:
+		return 0
+	case d == 0:
+		d = DefaultMinIntegrityPeriod
+	}
+	if d >= math.MaxUint32*time.Millisecond {
+		return math.MaxUint32
+	}
+	return uint32((d + time.Millisecond - 1) / time.Millisecond)
+}
 
 // ServerStats counts connections and callbacks of a [Server]; see
 // [Server.Stats].
@@ -344,6 +377,7 @@ func NewServer(model *servermodel.Model, opts ServerOptions) (*Server, error) {
 		reportMaxPDU:       mmsOpts.MMS.MaxPDUSize,
 		clock:              clockOrSystem(opts.Clock),
 		newReportBuffer:    opts.NewReportBuffer,
+		minIntgPd:          minIntgPdMillis(opts.MinIntegrityPeriod),
 		maxConns:           opts.MaxConnections,
 		cb:                 cb,
 	}
@@ -855,7 +889,9 @@ func (s *Server) listenAndServeWithHooks(ctx context.Context, ln mms.TransportLi
 // The expansion of the type templates stops at
 // [scl.DefaultMaxExpandedNodes] data objects and attributes with an error
 // that wraps [ErrLimitExceeded] and [scl.ErrLimitExceeded];
-// [ServerModelOptions.MaxExpandedNodes] sets another limit.
+// [ServerModelOptions.MaxExpandedNodes] sets another limit. Type
+// references nested deeper than [scl.DefaultMaxTypeDepth] levels are
+// refused with the same error.
 //
 // This is a convenience wrapper around [servermodel.FromSCL].
 func NewServerModelFromSCL(s *scl.SCL, iedName, apName string) (*servermodel.Model, error) {
@@ -871,8 +907,9 @@ type ServerModelOptions struct {
 
 	// MaxExpandedNodes is the number of data objects and data
 	// attributes (DO, SDO, DA and BDA, each counted once per place in
-	// the model it is expanded to) the expansion of the type templates
-	// may produce; zero or less means [scl.DefaultMaxExpandedNodes].
+	// the model it is expanded to, and each report control block
+	// instance) the expansion of the type templates may produce; zero or
+	// less means [scl.DefaultMaxExpandedNodes].
 	// Beyond it the model is not built and the error wraps
 	// [ErrLimitExceeded] and [scl.ErrLimitExceeded].
 	MaxExpandedNodes int

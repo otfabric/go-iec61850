@@ -132,6 +132,12 @@ const DefaultTimeout = 100 * time.Millisecond
 DefaultTimeout is the default stream supervision timeout.
 
 ```go
+const MaxIDLength = 129
+```
+
+MaxIDLength is the longest svID and datSet accepted, in octets: both are VisibleString129 (IEC 61850-9-2 Table 14: MsvID/UsvID, and the datSet ObjectReference of IEC 61850-7-2). Longer ones are refused on decode with ErrInvalidPDU and on encode with ErrInvalidValue.
+
+```go
 const ResyncAfter = 3
 ```
 
@@ -155,8 +161,8 @@ var (
 
 	// ErrInvalidPDU indicates a BER structure error inside the savPdu:
 	// bad tag, bad length, missing mandatory field, duplicate or
-	// out-of-order field, wrong field size, or noASDU not matching the
-	// number of ASDUs.
+	// out-of-order field, wrong field size, an svID or datSet longer
+	// than [MaxIDLength], or noASDU not matching the number of ASDUs.
 	ErrInvalidPDU = errors.New("sv: invalid PDU")
 
 	// ErrInvalidData indicates a sample that does not match its dataset
@@ -1576,7 +1582,8 @@ Subscribe adds a subscription.
 
 ```go
 type SubscriberConfig struct {
-	// Limits bounds the decoder (default [DefaultLimits]).
+	// Limits bounds the decoder; a zero field takes its value from
+	// [DefaultLimits].
 	Limits Limits
 
 	// AcceptSimulation accepts frames with the simulation bit set. By

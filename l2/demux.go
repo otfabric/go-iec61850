@@ -40,6 +40,13 @@ const DefaultDemuxQueue = 4096
 // Each port has a bounded queue; when a slow receiver lets it fill up,
 // further frames for that port are dropped and counted in
 // [DemuxStats].Overflow, so one receiver never blocks another.
+//
+// The queues are bounded by frame count only, not by octets: a port
+// holds up to its queue length of frames of whatever size the transport
+// returns (on a raw socket up to the interface MTU plus headers, so a
+// full default queue of 1500-octet frames is about 6 MiB, and more with
+// jumbo frames). Choose the queue length of [NewDemux] for the memory a
+// receiver that stops reading may hold.
 type Demux struct {
 	t     Transport
 	queue int

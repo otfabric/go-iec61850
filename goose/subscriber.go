@@ -241,7 +241,8 @@ type SubscriptionConfig struct {
 	// dropped: it is counted in SubscriptionCounters.StreamsRefused and
 	// reported to Metrics.FrameDropped with the reason "streams". A
 	// stream seen once keeps its entry until the subscription is closed;
-	// no stream is replaced by a new one.
+	// no stream is replaced by a new one. A simulated frame dropped
+	// because AcceptSimulation is false creates no stream.
 	MaxStreams int
 }
 
@@ -642,6 +643,13 @@ func (sub *Subscription) process(f *Frame, now time.Time) {
 	if sub.closed {
 		return
 	}
+	// Simulation handling (LPHD.Sim / LGOS.SimSt). A simulated frame the
+	// subscription does not accept is dropped before it can create a
+	// stream, so it takes none of the MaxStreams slots.
+	if f.Simulation && !sub.cfg.AcceptSimulation {
+		sub.s.metrics.FrameDropped("simulation")
+		return
+	}
 	key := StreamKey{Src: f.Src, AppID: f.AppID, GocbRef: f.PDU.GocbRef}
 	st := sub.streams[key]
 	if st == nil {
@@ -661,11 +669,6 @@ func (sub *Subscription) process(f *Frame, now time.Time) {
 		sub.streams[key] = st
 	}
 
-	// Simulation handling (LPHD.Sim / LGOS.SimSt).
-	if f.Simulation && !sub.cfg.AcceptSimulation {
-		sub.s.metrics.FrameDropped("simulation")
-		return
-	}
 	if f.Simulation {
 		st.simSeen = true
 		st.sup.SimSt = true

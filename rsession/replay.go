@@ -22,8 +22,11 @@ type streamKey struct {
 	keyID uint32
 }
 
-// window is the sliding replay window of one stream (RFC 4303 3.4.3,
-// with RFC 1982 serial number arithmetic for the 32-bit wrap).
+// window is the sliding replay window of one stream (RFC 4303 3.4.3).
+// SPDU numbers are compared as plain 32-bit unsigned values: a sender
+// does not wrap its number under one key ([Transport.Send] refuses to,
+// as an IPsec sender must not cycle its sequence counter under one SA,
+// RFC 4303 3.3.3), so a number below the window is old, never ahead.
 type window struct {
 	top    uint32
 	bitmap uint64 // bit i: top-i was accepted
@@ -58,17 +61,16 @@ func (g *replayGuard) accept(k streamKey, n uint32, now time.Time) bool {
 		g.windows[k] = &window{top: n, bitmap: 1, last: now}
 		return true
 	}
-	diff := serialDiff(n, w.top)
 	switch {
-	case diff > 0:
-		if diff >= ReplayWindow {
+	case n > w.top:
+		if d := n - w.top; d >= ReplayWindow {
 			w.bitmap = 1
 		} else {
-			w.bitmap = w.bitmap<<uint(diff) | 1
+			w.bitmap = w.bitmap<<d | 1
 		}
 		w.top = n
-	case -diff < ReplayWindow:
-		bit := uint64(1) << uint(-diff)
+	case w.top-n < ReplayWindow:
+		bit := uint64(1) << (w.top - n)
 		if w.bitmap&bit != 0 {
 			return false
 		}

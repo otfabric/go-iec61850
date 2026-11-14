@@ -175,7 +175,9 @@ goID, confRev, the member count and each member's type
 `*ValidationError` that wraps `ErrValidation` and one of
 `ErrConfRevMismatch`, `ErrDatSetMismatch`, `ErrGoIDMismatch`,
 `ErrMemberMismatch`, `ErrNeedsCommissioning` (frame with ndsCom set).
-Frames with the simulation bit are dropped unless `AcceptSimulation`.
+Frames with the simulation bit are dropped unless `AcceptSimulation`;
+such a frame is dropped before it can create a stream, so it takes none
+of the `MaxStreams` slots.
 
 Supervision is per stream (source MAC, APPID, gocbRef):
 
@@ -393,8 +395,10 @@ srv.SetValue(ctx, "LD0/GGIO1$ST$Ind1$stVal", mms.NewBoolean(true)) // -> new GOO
   (object-value-invalid), is stored as the ObjectReference
   (`LD/LLN0$ds`, 8-1 Table 73) also when written by its bare name, and
   every DatSet write increments ConfRev, also to the same value (7-2
-  18.2.1.6); once ConfRev would pass
-  2^32-1 the GoCB cannot be enabled (object-value-invalid). Other attributes are
+  18.2.1.6); a DatSet write at ConfRev 4294967295 (2^32-1, INT32U) is
+  refused with object-value-invalid and changes nothing, so the GoCB stays
+  enablable. A ConfRev past 2^32-1 that reaches the store some other way
+  makes enabling fail (object-value-invalid). Other attributes are
   read-only (object-access-denied). GoID and DatSet are writable as in
   7-2 Table 42 although 8-1 Table 73 maps them read-only (PIXIT choice).
 - `GOOSEEngine.ControlBlocks()`, `Publisher(ref)`, `SetEnabled(ref, on)`

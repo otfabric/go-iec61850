@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/otfabric/go-iec61850/scl"
+	"github.com/otfabric/go-iec61850/scl/internal/diagname"
 )
 
 // Index provides O(1) lookup into a normalized SCL model.
@@ -28,7 +29,9 @@ type Index struct {
 }
 
 // Build constructs an Index from a parsed SCL model.
-// Duplicates and ambiguous entries are reported as diagnostics.
+// Duplicates and ambiguous entries are reported as diagnostics. A
+// diagnostic quotes each name of the document cut to
+// [scl.DefaultMaxDiagnosticName] bytes.
 func Build(s *scl.SCL) (*Index, []scl.Diagnostic) {
 	idx := &Index{
 		IEDs:         make(map[string]*scl.IED),
@@ -47,6 +50,7 @@ func Build(s *scl.SCL) (*Index, []scl.Diagnostic) {
 	}
 
 	var diags []scl.Diagnostic
+	q := diagname.Q
 	add := func(sev scl.DiagSeverity, code, path, msg string) {
 		diags = append(diags, scl.Diagnostic{
 			Severity: sev, Code: code, Path: path, Message: msg,
@@ -59,7 +63,7 @@ func Build(s *scl.SCL) (*Index, []scl.Diagnostic) {
 		seen := make(map[string]bool, len(names))
 		for _, n := range names {
 			if seen[n] {
-				add(scl.DiagError, "duplicate-name", path, fmt.Sprintf("duplicate %s %q", what, n))
+				add(scl.DiagError, "duplicate-name", path, fmt.Sprintf("duplicate %s %q", what, q(n)))
 			}
 			seen[n] = true
 		}
@@ -72,7 +76,7 @@ func Build(s *scl.SCL) (*Index, []scl.Diagnostic) {
 		for _, do := range lnt.DOs {
 			names = append(names, do.Name)
 		}
-		unique("LNodeType["+lnt.ID+"]", "DO", names)
+		unique("LNodeType["+q(lnt.ID)+"]", "DO", names)
 	}
 	for _, dot := range s.DataTypeTemplates.DOTypes {
 		// The same DA name under two FCs (for example setVal as SP and
@@ -82,8 +86,8 @@ func Build(s *scl.SCL) (*Index, []scl.Diagnostic) {
 		var names []string
 		for _, da := range dot.DAs {
 			if fc, dup := fcs[da.Name]; dup && fc != da.FC {
-				add(scl.DiagWarning, "duplicate-name", "DOType["+dot.ID+"]",
-					fmt.Sprintf("DA %q given for FC %s and %s (uniqueDAorSDOInDOType)", da.Name, fc, da.FC))
+				add(scl.DiagWarning, "duplicate-name", "DOType["+q(dot.ID)+"]",
+					fmt.Sprintf("DA %q given for FC %s and %s (uniqueDAorSDOInDOType)", q(da.Name), q(fc), q(da.FC)))
 				continue
 			}
 			fcs[da.Name] = da.FC
@@ -92,48 +96,48 @@ func Build(s *scl.SCL) (*Index, []scl.Diagnostic) {
 		for _, sdo := range dot.SDOs {
 			names = append(names, sdo.Name)
 		}
-		unique("DOType["+dot.ID+"]", "DA/SDO", names)
+		unique("DOType["+q(dot.ID)+"]", "DA/SDO", names)
 	}
 	for _, dat := range s.DataTypeTemplates.DATypes {
 		var names []string
 		for _, b := range dat.BDAs {
 			names = append(names, b.Name)
 		}
-		unique("DAType["+dat.ID+"]", "BDA", names)
+		unique("DAType["+q(dat.ID)+"]", "BDA", names)
 	}
 	for _, et := range s.DataTypeTemplates.EnumTypes {
 		var ords []string
 		for _, v := range et.Vals {
 			ords = append(ords, strconv.Itoa(v.Ord))
 		}
-		unique("EnumType["+et.ID+"]", "EnumVal ord", ords)
+		unique("EnumType["+q(et.ID)+"]", "EnumVal ord", ords)
 	}
 
 	for i := range s.DataTypeTemplates.LNodeTypes {
 		lnt := &s.DataTypeTemplates.LNodeTypes[i]
 		if _, dup := idx.LNodeTypes[lnt.ID]; dup {
-			add(scl.DiagError, "duplicate-id", "LNodeType", fmt.Sprintf("duplicate LNodeType ID %q", lnt.ID))
+			add(scl.DiagError, "duplicate-id", "LNodeType", fmt.Sprintf("duplicate LNodeType ID %q", q(lnt.ID)))
 		}
 		idx.LNodeTypes[lnt.ID] = lnt
 	}
 	for i := range s.DataTypeTemplates.DOTypes {
 		dot := &s.DataTypeTemplates.DOTypes[i]
 		if _, dup := idx.DOTypes[dot.ID]; dup {
-			add(scl.DiagError, "duplicate-id", "DOType", fmt.Sprintf("duplicate DOType ID %q", dot.ID))
+			add(scl.DiagError, "duplicate-id", "DOType", fmt.Sprintf("duplicate DOType ID %q", q(dot.ID)))
 		}
 		idx.DOTypes[dot.ID] = dot
 	}
 	for i := range s.DataTypeTemplates.DATypes {
 		dat := &s.DataTypeTemplates.DATypes[i]
 		if _, dup := idx.DATypes[dat.ID]; dup {
-			add(scl.DiagError, "duplicate-id", "DAType", fmt.Sprintf("duplicate DAType ID %q", dat.ID))
+			add(scl.DiagError, "duplicate-id", "DAType", fmt.Sprintf("duplicate DAType ID %q", q(dat.ID)))
 		}
 		idx.DATypes[dat.ID] = dat
 	}
 	for i := range s.DataTypeTemplates.EnumTypes {
 		et := &s.DataTypeTemplates.EnumTypes[i]
 		if _, dup := idx.EnumTypes[et.ID]; dup {
-			add(scl.DiagError, "duplicate-id", "EnumType", fmt.Sprintf("duplicate EnumType ID %q", et.ID))
+			add(scl.DiagError, "duplicate-id", "EnumType", fmt.Sprintf("duplicate EnumType ID %q", q(et.ID)))
 		}
 		idx.EnumTypes[et.ID] = et
 	}
@@ -142,17 +146,17 @@ func Build(s *scl.SCL) (*Index, []scl.Diagnostic) {
 	for i := range s.IEDs {
 		ied := &s.IEDs[i]
 		if _, dup := idx.IEDs[ied.Name]; dup {
-			add(scl.DiagError, "duplicate-ied", "IED", fmt.Sprintf("duplicate IED name %q", ied.Name))
+			add(scl.DiagError, "duplicate-ied", "IED", fmt.Sprintf("duplicate IED name %q", q(ied.Name)))
 		}
 		idx.IEDs[ied.Name] = ied
+		iedPath := "IED[" + q(ied.Name) + "]"
 
 		for j := range ied.AccessPoints {
 			ap := &ied.AccessPoints[j]
 			apKey := AccessPointKey{IED: ied.Name, AP: ap.Name}
 			if _, dup := idx.AccessPoints[apKey]; dup {
-				add(scl.DiagError, "duplicate-access-point",
-					fmt.Sprintf("IED[%s]", ied.Name),
-					fmt.Sprintf("duplicate AccessPoint %q", ap.Name))
+				add(scl.DiagError, "duplicate-access-point", iedPath,
+					fmt.Sprintf("duplicate AccessPoint %q", q(ap.Name)))
 			}
 			idx.AccessPoints[apKey] = ap
 
@@ -163,24 +167,25 @@ func Build(s *scl.SCL) (*Index, []scl.Diagnostic) {
 				ld := &ap.Server.LDevices[k]
 				ldKey := LDeviceKey{IED: ied.Name, LDInst: ld.Inst}
 				if _, dup := idx.LDevices[ldKey]; dup {
-					add(scl.DiagError, "duplicate-ld",
-						fmt.Sprintf("IED[%s]", ied.Name),
-						fmt.Sprintf("duplicate LDevice %q", ld.Inst))
+					add(scl.DiagError, "duplicate-ld", iedPath,
+						fmt.Sprintf("duplicate LDevice %q", q(ld.Inst)))
 				}
 				idx.LDevices[ldKey] = ld
+				ldPath := iedPath + "/LD[" + q(ld.Inst) + "]"
 
 				indexLN := func(ln *scl.LN) {
 					lnKey := LNKey{
 						IED: ied.Name, LDInst: ld.Inst,
 						Prefix: ln.Prefix, LNClass: ln.LNClass, Inst: ln.Inst,
 					}
+					lnName := q(ln.Prefix + ln.LNClass + ln.Inst)
 					if _, dup := idx.LNs[lnKey]; dup {
-						add(scl.DiagError, "duplicate-ln",
-							fmt.Sprintf("IED[%s]/LD[%s]", ied.Name, ld.Inst),
-							fmt.Sprintf("duplicate LN %s%s%s", ln.Prefix, ln.LNClass, ln.Inst))
+						add(scl.DiagError, "duplicate-ln", ldPath,
+							fmt.Sprintf("duplicate LN %s", lnName))
 					}
 					idx.LNs[lnKey] = ln
-					lnPath := fmt.Sprintf("IED[%s]/LD[%s]/LN[%s%s%s]", ied.Name, ld.Inst, ln.Prefix, ln.LNClass, ln.Inst)
+					// The path of the diagnostics of the LN, built once.
+					lnPath := ldPath + "/LN[" + lnName + "]"
 					// SCL_IED.xsd uniqueGSEControlInLN0 and
 					// uniqueSampledValueControlInLN0. (uniqueDOIinLN is
 					// not checked: the model drops DOI@ix, which tells
@@ -205,9 +210,8 @@ func Build(s *scl.SCL) (*Index, []scl.Diagnostic) {
 						if _, dup := idx.DataSets[dsKey]; dup {
 							// DataSetKeyLN0 / DataSetKeyInLN are
 							// xs:key constraints: an error.
-							add(scl.DiagError, "duplicate-dataset",
-								fmt.Sprintf("IED[%s]/LD[%s]/LN[%s%s%s]", ied.Name, ld.Inst, ln.Prefix, ln.LNClass, ln.Inst),
-								fmt.Sprintf("duplicate DataSet %q", ds.Name))
+							add(scl.DiagError, "duplicate-dataset", lnPath,
+								fmt.Sprintf("duplicate DataSet %q", q(ds.Name)))
 						}
 						idx.DataSets[dsKey] = ds
 					}
@@ -219,9 +223,8 @@ func Build(s *scl.SCL) (*Index, []scl.Diagnostic) {
 							Name: rc.Name,
 						}
 						if _, dup := idx.Reports[rcKey]; dup {
-							add(scl.DiagWarning, "duplicate-report",
-								fmt.Sprintf("IED[%s]/LD[%s]/LN[%s%s%s]", ied.Name, ld.Inst, ln.Prefix, ln.LNClass, ln.Inst),
-								fmt.Sprintf("duplicate ReportControl %q", rc.Name))
+							add(scl.DiagWarning, "duplicate-report", lnPath,
+								fmt.Sprintf("duplicate ReportControl %q", q(rc.Name)))
 						}
 						idx.Reports[rcKey] = rc
 					}
@@ -264,6 +267,7 @@ func Build(s *scl.SCL) (*Index, []scl.Diagnostic) {
 		unique("Communication", "SubNetwork", sns) // uniqueSubNetwork
 		for i := range s.Communication.SubNetworks {
 			sn := &s.Communication.SubNetworks[i]
+			snPath := "SubNetwork[" + q(sn.Name) + "]"
 			for j := range sn.ConnectedAPs {
 				cap := &sn.ConnectedAPs[j]
 				// uniqueGSEinConnectedAP / uniqueSMVinConnectedAP:
@@ -275,14 +279,13 @@ func Build(s *scl.SCL) (*Index, []scl.Diagnostic) {
 				for _, v := range cap.SMVs {
 					smvs = append(smvs, v.LDInst+"/"+v.CBName)
 				}
-				capPath := fmt.Sprintf("SubNetwork[%s]/ConnectedAP[%s/%s]", sn.Name, cap.IEDName, cap.APName)
+				capPath := snPath + "/ConnectedAP[" + q(cap.IEDName) + "/" + q(cap.APName) + "]"
 				unique(capPath, "GSE", gses)
 				unique(capPath, "SMV", smvs)
 				capKey := AccessPointKey{IED: cap.IEDName, AP: cap.APName}
 				if _, dup := idx.ConnectedAPs[capKey]; dup {
-					add(scl.DiagWarning, "duplicate-connected-ap",
-						fmt.Sprintf("SubNetwork[%s]", sn.Name),
-						fmt.Sprintf("duplicate ConnectedAP for IED %q AP %q", cap.IEDName, cap.APName))
+					add(scl.DiagWarning, "duplicate-connected-ap", snPath,
+						fmt.Sprintf("duplicate ConnectedAP for IED %q AP %q", q(cap.IEDName), q(cap.APName)))
 				}
 				idx.ConnectedAPs[capKey] = cap
 			}

@@ -73,6 +73,10 @@ type ReportEngine struct {
 	// newBuffer returns the buffer of an RCB (ServerOptions.NewReportBuffer);
 	// nil or a nil result is the default MemoryReportBuffer.
 	newBuffer func(ldName, rcbItemID string) ReportBuffer
+
+	// minIntgPd is the smallest non-zero IntgPd in ms a client may
+	// write (ServerOptions.MinIntegrityPeriod); 0 means no minimum.
+	minIntgPd uint32
 }
 
 // rcbRuntime holds the live state for a single report control block.
@@ -177,6 +181,7 @@ func (s *Server) EnableReports() *ReportEngine {
 		clk:    systemClock{},
 
 		newBuffer: s.newReportBuffer,
+		minIntgPd: s.minIntgPd,
 	}
 	if engine.maxPDU <= 0 {
 		engine.maxPDU = defaultReportMaxPDU

@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/otfabric/go-iec61850/scl"
-	"github.com/otfabric/go-iec61850/scl/index"
 )
 
 // Options control how [FromSCLWithOptions] builds a model.
@@ -27,7 +26,9 @@ type Options struct {
 	// MaxExpandedNodes is the number of data objects and data
 	// attributes (DO, SDO, DA and BDA, each counted once per place in
 	// the model it is expanded to) the expansion of the type templates
-	// may produce; zero or less means [scl.DefaultMaxExpandedNodes].
+	// may produce, together with the report control block instances
+	// (one per instance of an indexed ReportControl); zero or less
+	// means [scl.DefaultMaxExpandedNodes].
 	// Beyond it [FromSCLWithOptions] fails with an error that wraps
 	// [scl.ErrLimitExceeded].
 	MaxExpandedNodes int
@@ -37,6 +38,113 @@ type Options struct {
 	// limit then applies to them together, and MaxExpandedNodes is not
 	// used.
 	Budget *Budget
+
+	// MaxTypeDepth is the number of type references (a DO's DOType,
+	// then each SDO's DOType and each Struct DA's or BDA's DAType) one
+	// path of the expansion may follow; zero or less means
+	// [scl.DefaultMaxTypeDepth]. Beyond it [FromSCLWithOptions] fails
+	// with an error that wraps [scl.ErrLimitExceeded].
+	MaxTypeDepth int
+
+	// Templates, when non-nil, are the lookups of the document built
+	// once by [NewTemplates], shared by the [FromSCLWithOptions] calls
+	// that build models from that document. They must have been built
+	// from the same document.
+	Templates *Templates
+}
+
+// Templates are the lookups [FromSCLWithOptions] needs from one
+// document: the type templates by ID, the IEDs by name and the GSE and
+// SMV addresses of each access point. Building them costs one pass over
+// the document; they are not changed afterwards.
+type Templates struct {
+	doc        *scl.SCL
+	lnodeTypes map[string]*scl.LNodeType
+	doTypes    map[string]*scl.DOType
+	daTypes    map[string]*scl.DAType
+	enumTypes  map[string]*scl.EnumType
+	ieds       map[string]*scl.IED
+	servers    map[apKey]*scl.AccessPoint
+	gse        map[apKey]map[string]*scl.GSEAddress
+	smv        map[apKey]map[string]*scl.SMVAddress
+}
+
+// apKey names an access point of an IED.
+type apKey struct{ ied, ap string }
+
+// NewTemplates builds the lookups of s for [Options.Templates]. An
+// LNodeType ID, IED name or AccessPoint name (with a Server) given twice
+// resolves to the first (as a linear search in document order does); a
+// DOType, DAType or EnumType ID given twice to the last. Duplicates are reported by scl/validate,
+// not here.
+func NewTemplates(s *scl.SCL) *Templates {
+	dtt := &s.DataTypeTemplates
+	t := &Templates{
+		doc:        s,
+		lnodeTypes: make(map[string]*scl.LNodeType, len(dtt.LNodeTypes)),
+		doTypes:    make(map[string]*scl.DOType, len(dtt.DOTypes)),
+		daTypes:    make(map[string]*scl.DAType, len(dtt.DATypes)),
+		enumTypes:  make(map[string]*scl.EnumType, len(dtt.EnumTypes)),
+		ieds:       make(map[string]*scl.IED, len(s.IEDs)),
+		servers:    map[apKey]*scl.AccessPoint{},
+		gse:        map[apKey]map[string]*scl.GSEAddress{},
+		smv:        map[apKey]map[string]*scl.SMVAddress{},
+	}
+	for i := range dtt.LNodeTypes {
+		if _, dup := t.lnodeTypes[dtt.LNodeTypes[i].ID]; !dup {
+			t.lnodeTypes[dtt.LNodeTypes[i].ID] = &dtt.LNodeTypes[i]
+		}
+	}
+	for i := range dtt.DOTypes {
+		t.doTypes[dtt.DOTypes[i].ID] = &dtt.DOTypes[i]
+	}
+	for i := range dtt.DATypes {
+		t.daTypes[dtt.DATypes[i].ID] = &dtt.DATypes[i]
+	}
+	for i := range dtt.EnumTypes {
+		t.enumTypes[dtt.EnumTypes[i].ID] = &dtt.EnumTypes[i]
+	}
+	for i := range s.IEDs {
+		ied := &s.IEDs[i]
+		if _, dup := t.ieds[ied.Name]; dup {
+			continue
+		}
+		t.ieds[ied.Name] = ied
+		// The first AccessPoint of each name with a Server, as
+		// findServer picks it.
+		for j := range ied.AccessPoints {
+			ap := &ied.AccessPoints[j]
+			k := apKey{ied.Name, ap.Name}
+			if _, dup := t.servers[k]; !dup && ap.Server != nil {
+				t.servers[k] = ap
+			}
+		}
+	}
+	if s.Communication == nil {
+		return t
+	}
+	for i := range s.Communication.SubNetworks {
+		sn := &s.Communication.SubNetworks[i]
+		for j := range sn.ConnectedAPs {
+			cap := &sn.ConnectedAPs[j]
+			k := apKey{cap.IEDName, cap.APName}
+			for n := range cap.GSEs {
+				g := &cap.GSEs[n]
+				if t.gse[k] == nil {
+					t.gse[k] = map[string]*scl.GSEAddress{}
+				}
+				t.gse[k][g.LDInst+"/"+g.CBName] = g
+			}
+			for n := range cap.SMVs {
+				a := &cap.SMVs[n]
+				if t.smv[k] == nil {
+					t.smv[k] = map[string]*scl.SMVAddress{}
+				}
+				t.smv[k][a.LDInst+"/"+a.CBName] = a
+			}
+		}
+	}
+	return t
 }
 
 // Budget counts the nodes the expansions of one document may still
@@ -71,7 +179,9 @@ func (b *Budget) take() error {
 // SCL DataTypeTemplates to produce fully expanded data objects with
 // their attribute hierarchies. Logical devices get their IEC 61850-8-1
 // names (see [Options]). The expansion stops at
-// [scl.DefaultMaxExpandedNodes] nodes with an error that wraps
+// [scl.DefaultMaxExpandedNodes] nodes (data objects, data attributes and
+// report control block instances), or at a type reference
+// [scl.DefaultMaxTypeDepth] levels deep, with an error that wraps
 // [scl.ErrLimitExceeded].
 func FromSCL(s *scl.SCL, iedName, apName string) (*Model, error) {
 	return FromSCLWithOptions(s, iedName, apName, Options{})
@@ -83,14 +193,32 @@ func FromSCLWithOptions(s *scl.SCL, iedName, apName string, opts Options) (*Mode
 		return nil, fmt.Errorf("servermodel: nil SCL")
 	}
 
-	ied := s.FindIED(iedName)
+	tmpl := opts.Templates
+	if tmpl == nil {
+		tmpl = NewTemplates(s)
+	} else if tmpl.doc != s {
+		return nil, fmt.Errorf("servermodel: Templates built from another document")
+	}
+
+	ied := tmpl.ieds[iedName]
 	if ied == nil {
 		return nil, fmt.Errorf("servermodel: IED %q not found", iedName)
 	}
 
-	srv, apUsed, err := findServer(ied, apName)
-	if err != nil {
-		return nil, fmt.Errorf("servermodel: %w", err)
+	var srv *scl.Server
+	apUsed := apName
+	if apName != "" && opts.Templates != nil {
+		// Shared lookups: the models of all access points of a document
+		// cost no scan of the access points each.
+		if ap := tmpl.servers[apKey{iedName, apName}]; ap != nil {
+			srv = ap.Server
+		}
+	} else {
+		var err error
+		srv, apUsed, err = findServer(ied, apName)
+		if err != nil {
+			return nil, fmt.Errorf("servermodel: %w", err)
+		}
 	}
 	if srv == nil {
 		if apName != "" {
@@ -99,20 +227,21 @@ func FromSCLWithOptions(s *scl.SCL, iedName, apName string, opts Options) (*Mode
 		return nil, fmt.Errorf("servermodel: no Server in IED %q", iedName)
 	}
 
-	// Type templates by ID. Duplicate IDs (last one wins) are reported
-	// by scl/validate, not here.
-	tmpl, _ := index.Build(s)
-	dotIdx, datIdx, enumIdx := tmpl.DOTypes, tmpl.DATypes, tmpl.EnumTypes
-
 	budget := opts.Budget
 	if budget == nil {
 		budget = NewBudget(opts.MaxExpandedNodes)
 	}
+	maxDepth := opts.MaxTypeDepth
+	if maxDepth <= 0 {
+		maxDepth = scl.DefaultMaxTypeDepth
+	}
 	m := &Model{}
 	var warnings []string
-	gse, smv := gseIndex(s, iedName, apUsed)
+	e := &expander{t: tmpl, budget: budget, warnings: &warnings, maxDepth: maxDepth}
+	k := apKey{iedName, apUsed}
+	gse, smv := tmpl.gse[k], tmpl.smv[k]
 	for _, sclLD := range srv.LDevices {
-		ld, err := convertLD(s, &sclLD, dotIdx, datIdx, enumIdx, gse, smv, budget, &warnings)
+		ld, err := e.convertLD(&sclLD, gse, smv)
 		if err != nil {
 			return nil, fmt.Errorf("servermodel: LD %q: %w", sclLD.Inst, err)
 		}
@@ -195,39 +324,25 @@ func findServer(ied *scl.IED, apName string) (*scl.Server, string, error) {
 	return found, name, nil
 }
 
-// gseIndex maps "ldInst/cbName" to the GSE and SMV addresses of the
-// given IED/AccessPoint in the Communication section.
-func gseIndex(s *scl.SCL, iedName, apName string) (map[string]*scl.GSEAddress, map[string]*scl.SMVAddress) {
-	idx := map[string]*scl.GSEAddress{}
-	smv := map[string]*scl.SMVAddress{}
-	if s.Communication == nil {
-		return idx, smv
-	}
-	for i := range s.Communication.SubNetworks {
-		sn := &s.Communication.SubNetworks[i]
-		for j := range sn.ConnectedAPs {
-			cap := &sn.ConnectedAPs[j]
-			if cap.IEDName != iedName || cap.APName != apName {
-				continue
-			}
-			for k := range cap.GSEs {
-				g := &cap.GSEs[k]
-				idx[g.LDInst+"/"+g.CBName] = g
-			}
-			for k := range cap.SMVs {
-				a := &cap.SMVs[k]
-				smv[a.LDInst+"/"+a.CBName] = a
-			}
-		}
-	}
-	return idx, smv
+// expander is the state of the expansion of one model.
+type expander struct {
+	t        *Templates
+	budget   *Budget
+	warnings *[]string
+	maxDepth int
 }
 
-func convertLD(s *scl.SCL, sclLD *scl.LDevice, dotIdx map[string]*scl.DOType, datIdx map[string]*scl.DAType, enumIdx map[string]*scl.EnumType, gse map[string]*scl.GSEAddress, smv map[string]*scl.SMVAddress, budget *Budget, warnings *[]string) (*LogicalDevice, error) {
+// deep is the error of a type reference beyond the depth limit.
+func (e *expander) deep() error {
+	return fmt.Errorf("%w: the type references nest deeper than %d levels (MaxTypeDepth)", scl.ErrLimitExceeded, e.maxDepth)
+}
+
+func (e *expander) convertLD(sclLD *scl.LDevice, gse map[string]*scl.GSEAddress, smv map[string]*scl.SMVAddress) (*LogicalDevice, error) {
+	warnings := e.warnings
 	ld := &LogicalDevice{Name: sclLD.Inst, Inst: sclLD.Inst}
 
 	if sclLD.LN0 != nil {
-		ln, err := convertLN(s, sclLD.LN0, dotIdx, datIdx, enumIdx, sclLD.Inst, budget, warnings)
+		ln, err := e.convertLN(sclLD.LN0, sclLD.Inst)
 		if err != nil {
 			return nil, fmt.Errorf("LLN0: %w", err)
 		}
@@ -255,7 +370,7 @@ func convertLD(s *scl.SCL, sclLD *scl.LDevice, dotIdx map[string]*scl.DOType, da
 	}
 
 	for i := range sclLD.LNs {
-		ln, err := convertLN(s, &sclLD.LNs[i], dotIdx, datIdx, enumIdx, sclLD.Inst, budget, warnings)
+		ln, err := e.convertLN(&sclLD.LNs[i], sclLD.Inst)
 		if err != nil {
 			return nil, fmt.Errorf("LN %s: %w", lnName(&sclLD.LNs[i]), err)
 		}
@@ -271,7 +386,8 @@ func lnName(ln *scl.LN) string {
 	return ln.Prefix + ln.LNClass + ln.Inst
 }
 
-func convertLN(s *scl.SCL, sclLN *scl.LN, dotIdx map[string]*scl.DOType, datIdx map[string]*scl.DAType, enumIdx map[string]*scl.EnumType, ldInst string, budget *Budget, warnings *[]string) (*LogicalNode, error) {
+func (e *expander) convertLN(sclLN *scl.LN, ldInst string) (*LogicalNode, error) {
+	warnings := e.warnings
 	name := lnName(sclLN)
 	ln := &LogicalNode{
 		Name:    name,
@@ -281,20 +397,26 @@ func convertLN(s *scl.SCL, sclLN *scl.LN, dotIdx map[string]*scl.DOType, datIdx 
 	if sclLN.LNType == "" {
 		return nil, fmt.Errorf("empty LNType")
 	}
-	lnt := findLNodeType(s, sclLN.LNType)
+	lnt := e.t.lnodeTypes[sclLN.LNType]
 	if lnt == nil {
 		return nil, fmt.Errorf("unresolved LNodeType %q", sclLN.LNType)
 	}
 
+	// The DOIs of each DO name, in document order.
+	dois := make(map[string][]*scl.DOI, len(sclLN.DOIs))
+	for i := range sclLN.DOIs {
+		doi := &sclLN.DOIs[i]
+		dois[doi.Name] = append(dois[doi.Name], doi)
+	}
 	doNames := make(map[string]bool, len(lnt.DOs))
 	for _, do := range lnt.DOs {
 		doNames[do.Name] = true
-		obj, err := expandDO(do, dotIdx, datIdx, enumIdx, nil, budget, warnings)
+		obj, err := e.expandDO(do, nil, 1)
 		if err != nil {
 			return nil, fmt.Errorf("DO %s: %w", do.Name, err)
 		}
 		prefix := ldInst + "/" + name + "." + do.Name
-		applyDAIOverrides(&obj, sclLN.DOIs, prefix, warnings)
+		applyDAIOverrides(&obj, dois[obj.Name], prefix, warnings)
 		ln.DataObjects = append(ln.DataObjects, obj)
 	}
 
@@ -313,7 +435,11 @@ func convertLN(s *scl.SCL, sclLN *scl.LN, dotIdx map[string]*scl.DOType, datIdx 
 	}
 
 	for _, sclRpt := range sclLN.Reports {
-		ln.Reports = append(ln.Reports, expandReport(&sclRpt)...)
+		rpts, err := expandReport(&sclRpt, e.budget)
+		if err != nil {
+			return nil, fmt.Errorf("ReportControl %s: %w", sclRpt.Name, err)
+		}
+		ln.Reports = append(ln.Reports, rpts...)
 	}
 
 	for _, sclLog := range sclLN.Logs {
@@ -335,22 +461,19 @@ func convertLN(s *scl.SCL, sclLN *scl.LN, dotIdx map[string]*scl.DOType, datIdx 
 	return ln, nil
 }
 
-func findLNodeType(s *scl.SCL, id string) *scl.LNodeType {
-	for i := range s.DataTypeTemplates.LNodeTypes {
-		if s.DataTypeTemplates.LNodeTypes[i].ID == id {
-			return &s.DataTypeTemplates.LNodeTypes[i]
-		}
-	}
-	return nil
-}
-
-func expandDO(do scl.DO, dotIdx map[string]*scl.DOType, datIdx map[string]*scl.DAType, enumIdx map[string]*scl.EnumType, visited map[string]bool, budget *Budget, warnings *[]string) (DataObject, error) {
+// expandDO expands DO (or SDO) do, whose DOType is depth type
+// references below the logical node.
+func (e *expander) expandDO(do scl.DO, visited map[string]bool, depth int) (DataObject, error) {
+	warnings := e.warnings
 	obj := DataObject{Name: do.Name}
-	if err := budget.take(); err != nil {
+	if err := e.budget.take(); err != nil {
 		return obj, err
 	}
+	if depth > e.maxDepth {
+		return obj, e.deep()
+	}
 
-	dot, ok := dotIdx[do.Type]
+	dot, ok := e.t.doTypes[do.Type]
 	if !ok {
 		return obj, fmt.Errorf("unresolved DOType %q", do.Type)
 	}
@@ -366,7 +489,7 @@ func expandDO(do scl.DO, dotIdx map[string]*scl.DOType, datIdx map[string]*scl.D
 	defer delete(visited, do.Type)
 
 	for _, sdo := range dot.SDOs {
-		child, err := expandDO(scl.DO{Name: sdo.Name, Type: sdo.Type}, dotIdx, datIdx, enumIdx, visited, budget, warnings)
+		child, err := e.expandDO(scl.DO{Name: sdo.Name, Type: sdo.Type}, visited, depth+1)
 		if err != nil {
 			return obj, err
 		}
@@ -379,7 +502,7 @@ func expandDO(do scl.DO, dotIdx map[string]*scl.DOType, datIdx map[string]*scl.D
 				"DOType %q DA %q: count=%d will be registered as scalar (array expansion not supported)",
 				do.Type, da.Name, da.Count))
 		}
-		attr, err := expandDA(da.Name, da.FC, da.BType, da.Type, da.Val, datIdx, enumIdx, nil, budget, warnings)
+		attr, err := e.expandDA(da.Name, da.FC, da.BType, da.Type, da.Val, nil, depth+1)
 		if err != nil {
 			return obj, fmt.Errorf("DA %s: %w", da.Name, err)
 		}
@@ -401,18 +524,21 @@ func setTrgOps(a *DataAttribute, dchg, qchg, dupd bool) {
 	}
 }
 
-func expandDA(name, fc, btype, typeRef, val string, datIdx map[string]*scl.DAType, enumIdx map[string]*scl.EnumType, visited map[string]bool, budget *Budget, warnings *[]string) (DataAttribute, error) {
+// expandDA expands DA (or BDA) name, whose DAType, when it is a
+// Struct, is depth type references below the logical node.
+func (e *expander) expandDA(name, fc, btype, typeRef, val string, visited map[string]bool, depth int) (DataAttribute, error) {
+	warnings, enumIdx := e.warnings, e.t.enumTypes
 	attr := DataAttribute{
 		Name:         name,
 		FC:           fc,
 		BType:        btype,
 		InitialValue: val,
 	}
-	if err := budget.take(); err != nil {
+	if err := e.budget.take(); err != nil {
 		return attr, err
 	}
 
-	if btype == "Enum" && typeRef != "" && enumIdx != nil {
+	if btype == "Enum" && typeRef != "" {
 		if et, ok := enumIdx[typeRef]; ok {
 			attr.EnumValues = make([]int, len(et.Vals))
 			attr.EnumNames = make(map[string]int, len(et.Vals))
@@ -430,9 +556,12 @@ func expandDA(name, fc, btype, typeRef, val string, datIdx map[string]*scl.DATyp
 		return attr, fmt.Errorf("struct DA %q has no type reference", name)
 	}
 
-	dat, ok := datIdx[typeRef]
+	dat, ok := e.t.daTypes[typeRef]
 	if !ok {
 		return attr, fmt.Errorf("unresolved DAType %q for DA %q", typeRef, name)
+	}
+	if depth > e.maxDepth {
+		return attr, e.deep()
 	}
 
 	if visited == nil {
@@ -450,7 +579,7 @@ func expandDA(name, fc, btype, typeRef, val string, datIdx map[string]*scl.DATyp
 				"DAType %q BDA %q: count=%d will be registered as scalar (array expansion not supported)",
 				typeRef, bda.Name, bda.Count))
 		}
-		child, err := expandDA(bda.Name, fc, bda.BType, bda.Type, bda.Val, datIdx, enumIdx, visited, budget, warnings)
+		child, err := e.expandDA(bda.Name, fc, bda.BType, bda.Type, bda.Val, visited, depth+1)
 		if err != nil {
 			return attr, err
 		}
@@ -460,11 +589,9 @@ func expandDA(name, fc, btype, typeRef, val string, datIdx map[string]*scl.DATyp
 	return attr, nil
 }
 
-func applyDAIOverrides(obj *DataObject, dois []scl.DOI, prefix string, warnings *[]string) {
+// applyDAIOverrides applies dois, the DOIs named as obj, to obj.
+func applyDAIOverrides(obj *DataObject, dois []*scl.DOI, prefix string, warnings *[]string) {
 	for _, doi := range dois {
-		if doi.Name != obj.Name {
-			continue
-		}
 		for _, dai := range doi.DAIs {
 			if !setDAIValue(obj, dai.Name, dai) && warnings != nil {
 				*warnings = append(*warnings, fmt.Sprintf(
@@ -793,20 +920,27 @@ func convertDataSet(ds *scl.DataSet) DataSetDef {
 // indexed, instances named after the control block with a two-digit
 // suffix from 01 up to RptEnabled max (at most 99); without, one instance
 // named as the control block (IEC 61850-8-1 §17.1.2 and §17.1.3.2,
-// IEC 61850-6 §9.3.8).
-func expandReport(rpt *scl.ReportControl) []ReportDef {
+// IEC 61850-6 §9.3.8). Each instance counts one node of budget.
+func expandReport(rpt *scl.ReportControl, budget *Budget) ([]ReportDef, error) {
 	base := convertReport(rpt)
-	if !rpt.Indexed {
-		return []ReportDef{base}
+	n := 1
+	if rpt.Indexed {
+		n = int(min(max(rpt.MaxInstances, 1), 99))
 	}
-	n := max(rpt.MaxInstances, 1)
-	n = min(n, 99)
+	for range n {
+		if err := budget.take(); err != nil {
+			return nil, err
+		}
+	}
+	if !rpt.Indexed {
+		return []ReportDef{base}, nil
+	}
 	out := make([]ReportDef, n)
 	for i := range out {
 		out[i] = base
 		out[i].Name = fmt.Sprintf("%s%02d", rpt.Name, i+1)
 	}
-	return out
+	return out, nil
 }
 
 // convertLog maps an SCL LogControl onto an LCB definition. The log is

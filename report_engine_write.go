@@ -18,7 +18,8 @@ import (
 //   - read-only attribute: object-access-denied (access-violation);
 //   - wrong type or size: type-inconsistent (type-conflict);
 //   - bad value (unknown data set, unknown EntryID, RptEna with a NULL
-//     DatSet): object-value-invalid (parameter-value-inconsistent);
+//     DatSet, a non-zero IntgPd below ServerOptions.MinIntegrityPeriod):
+//     object-value-invalid (parameter-value-inconsistent);
 //   - attribute not present in the RCB: object-non-existent.
 const (
 	rcbErrLocked         = mms.DataAccessErrorTemporarilyUnavailable
@@ -363,6 +364,12 @@ func (re *ReportEngine) writeConfigLocked(rt *rcbRuntime, subfield string, val *
 		u, ok := val.Uint32()
 		if !ok {
 			return rcbError(rcbErrType, rt.rcbItemID, "%s: expected unsigned", subfield)
+		}
+		// ServerOptions.MinIntegrityPeriod: a non-zero IntgPd below the
+		// minimum is a bad value, object-value-invalid
+		// (parameter-value-inconsistent, IEC 61850-8-1 Table 23).
+		if subfield == "IntgPd" && u != 0 && u < re.minIntgPd {
+			return rcbError(rcbErrValue, rt.rcbItemID, "IntgPd %d ms is below the minimum %d ms", u, re.minIntgPd)
 		}
 		prev, havePrev := storedUint32(re.store.Get(rt.sk(subfield)))
 		changed = !havePrev || prev != u

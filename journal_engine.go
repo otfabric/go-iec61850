@@ -41,6 +41,10 @@ type JournalEngine struct {
 	// clock stamps integrity entries (the server's Clock); nil is
 	// SystemClock. The IntgPd ticker never uses it.
 	clock Clock
+
+	// minIntgPd is the smallest non-zero IntgPd in ms a client may
+	// write (ServerOptions.MinIntegrityPeriod); 0 means no minimum.
+	minIntgPd uint32
 }
 
 type journalDef struct {
@@ -180,6 +184,7 @@ func (s *Server) EnableJournals(opts ...JournalEngineOption) *JournalEngine {
 
 	engine := newJournalEngine(s.logger, s.store, s.model, opts)
 	engine.clock = s.clock
+	engine.minIntgPd = s.minIntgPd
 	count := engine.registerJournalsFromModel()
 
 	s.journalEngine = engine

@@ -131,6 +131,12 @@ type Frame struct {
 // maxInterned bounds the per-frame string intern table.
 const maxInterned = 256
 
+// MaxIDLength is the longest svID and datSet accepted, in octets: both
+// are VisibleString129 (IEC 61850-9-2 Table 14: MsvID/UsvID, and the
+// datSet ObjectReference of IEC 61850-7-2). Longer ones are refused on
+// decode with [ErrInvalidPDU] and on encode with [ErrInvalidValue].
+const MaxIDLength = 129
+
 // PDU is the savPdu (IEC 61850-9-2 clause 8.5).
 type PDU struct {
 	// NoASDU is the number of ASDUs. On encode, zero means len(ASDUs);
@@ -301,6 +307,9 @@ func pduLen(p *PDU) (int, error) {
 		}
 		if !isVisible(a.SvID) || !isVisible(a.DatSet) {
 			return 0, errValue("ASDU %d: svID/datSet must be VisibleString", i)
+		}
+		if len(a.SvID) > MaxIDLength || len(a.DatSet) > MaxIDLength {
+			return 0, errValue("ASDU %d: svID/datSet longer than %d octets", i, MaxIDLength)
 		}
 		if a.HasRefrTm {
 			if _, ok := utcTimeSeconds(a.RefrTm); !ok {
@@ -665,6 +674,9 @@ func sizeErr(field string, off, want, got int) error {
 // reusing an interned copy from strs when there is one, so that known
 // identifiers do not allocate.
 func setVisible(dst *string, c []byte, strs map[string]string, field string, off int) error {
+	if len(c) > MaxIDLength {
+		return decodeErr(ErrInvalidPDU, field, off, "%d octets, at most %d (VisibleString129)", len(c), MaxIDLength)
+	}
 	if *dst == string(c) {
 		return nil
 	}

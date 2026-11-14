@@ -89,6 +89,7 @@ type DialOptions struct {
     Dialer func(ctx context.Context, network, addr string) (net.Conn, error) // passed to iso.WithDialer; nil: net.Dialer
     Clock  Clock // stamps control T; nil: SystemClock (see Clock)
     FileLimits FileLimits // ReadFile and DownloadFile; zero fields: defaults (see Files)
+    JournalLimits JournalLimits // ReadJournalAll and ReadJournalAfterAll; zero fields: defaults (see Journals)
 }
 ```
 
@@ -143,6 +144,7 @@ type ClientOptions struct {
     IEDName    string
     Clock      Clock      // stamps control T; nil: SystemClock
     FileLimits FileLimits // ReadFile and DownloadFile; zero fields: defaults (see Files)
+    JournalLimits JournalLimits // ReadJournalAll and ReadJournalAfterAll; zero fields: defaults (see Journals)
 }
 ```
 
@@ -181,6 +183,11 @@ func (c *Client) TreeWithOptions(ctx context.Context, opts TreeOptions) (*ModelN
 func (c *Client) FindPaths(ctx context.Context, query FindQuery) ([]Ref, error)
 func (c *Client) GetVariableType(ctx context.Context, ref Ref) (*mms.TypeSpec, error)
 ```
+
+`Tree` and `TreeWithOptions` build the model of each logical device in
+one pass over its name list, in time linear in the number of names, and
+check `ctx` while they build it: when `ctx` ends they return its error.
+The item list a cached client keeps is copied for each caller.
 
 ### LogicalDevice
 
@@ -655,6 +662,10 @@ carrying the `LastApplError` the server reported before the negative write
 response (and its `AddCause`). `OperateWait` operates a control with enhanced
 security and waits for its CommandTermination; a negative termination returns
 the termination and a `*ControlError` wrapping `ErrCommandTerminationNegative`.
+`OperateWait` fixes the ctlNum of its operate before it sends it. With
+several `OperateWait` of one control in flight, a termination goes to the
+waiter whose ctlNum its Oper carries (IEC 61850-8-1 20.9.2), else (no
+decodable ctlNum, or one no waiter sent) to the oldest waiter.
 
 ### CommandTermination
 
@@ -835,6 +846,26 @@ func (c *Client) ReadJournalAfterAll(ctx context.Context, ld, journal string, af
 ```
 
 The range bounds of QueryLogByTime are optional (IEC 61850-7-2 §17.3.5.2): a zero `start` reads from the first entry and a zero `stop` up to the last. MMS ReadJournal always carries both, so they are sent as 1984-01-01 and 2163-06-05 23:59:59.999 UTC, the range of BinaryTime. A journal the server does not have is an error (object-non-existent).
+
+`ReadJournal` and `ReadJournalAfter` put the client's `IEDName` before
+`ld` as the other services do. `ReadJournalAll` and `ReadJournalAfterAll`
+follow `MoreFollows` page by page and refuse a page whose last entry is a
+cursor (time and EntryID) already used. The entries they collect are
+bounded by `JournalLimits`; a journal beyond a limit is given up with an
+error that matches `ErrLimitExceeded`. The single-page reads are bounded
+by the MMS PDU size; use them for very large journals.
+
+```go
+const (
+    DefaultMaxJournalEntries       = 1_000_000
+    DefaultMaxJournalBytes   int64 = 256 << 20 // 256 MiB
+)
+
+type JournalLimits struct {
+    MaxEntries int   // entries; 0: DefaultMaxJournalEntries, negative: no limit
+    MaxBytes   int64 // estimated memory of entry IDs, tags and decoded values; 0: DefaultMaxJournalBytes, negative: no limit
+}
+```
 
 A journal entry written by an IEC 61850 log control block holds, per logged member, a variable tagged with the member's ObjectReference (`LD/LN$FC$DO$DA`) followed by a variable tagged `ReasonCode` with a 7-bit reason bit string (IEC 61850-8-1 §17.3.3.4.4). Read the LCB itself (`LLN0$LG$<name>`, components LogEna, LogRef, DatSet, OldEntrTm, NewEntrTm, OldEnt, NewEnt, TrgOps, IntgPd) with the ordinary read and write calls.
 
@@ -1238,13 +1269,15 @@ func NewServerModelFromSCLWithOptions(s *scl.SCL, iedName, apName string, o Serv
 
 type ServerModelOptions struct {
     InstanceDomainNames bool
-    MaxExpandedNodes    int // DO, SDO, DA, BDA instances; 0: scl.DefaultMaxExpandedNodes (33,554,432)
+    MaxExpandedNodes    int // DO, SDO, DA, BDA and RCB instances; 0: scl.DefaultMaxExpandedNodes (33,554,432)
 }
 ```
 
 The expansion of the type templates into the model stops at
-`MaxExpandedNodes` instances; the model is then not built, and the error
-matches `ErrLimitExceeded` and `scl.ErrLimitExceeded`.
+`MaxExpandedNodes` instances (report control block instances included),
+or at a type reference `scl.DefaultMaxTypeDepth` (64) levels deep; the
+model is then not built, and the error matches `ErrLimitExceeded` and
+`scl.ErrLimitExceeded`.
 
 An SCL value outside the range of its basic type (an INT8 of 300, a
 FLOAT32 of 1e300, also one per setting group) is a warning in
@@ -1276,7 +1309,12 @@ type ServerOptions struct {
     MMS          mms.ServerOptions // incl. AssociationTimeout
     Clock        Clock // stamps t, TimeOfEntry, journal, LActTm, GOOSE T, SV refrTm; nil: SystemClock
     MaxConnections int // served at once by ListenAndServe; 0: DefaultMaxConnections (1024)
+    // MinIntegrityPeriod: smallest non-zero IntgPd a client may write to a
+    // BRCB, URCB or LCB; 0: DefaultMinIntegrityPeriod (100 ms), negative: none.
+    MinIntegrityPeriod time.Duration
 }
+
+const DefaultMinIntegrityPeriod = 100 * time.Millisecond
 
 type ServerIdentity struct {
     Vendor   string
@@ -1311,6 +1349,12 @@ type ServerStats struct {
     CallbacksRecovered uint64 // calls of application code that did not return normally
 }
 ```
+
+A non-zero IntgPd below `MinIntegrityPeriod` written by an MMS client, or
+through `ReportEngine.HandleRCBWrite` or `JournalEngine.HandleLCBWrite`,
+is refused with object-value-invalid. IntgPd 0 is always accepted, and
+the periods of the model (SCL) are not checked. The option is rounded up
+to whole milliseconds, the unit of IntgPd.
 
 `ListenAndServe` serves at most `MaxConnections` connections at once; a
 connection accepted beyond it is closed at once, before `OnConnect` and
@@ -1462,7 +1506,10 @@ owned by the association; a future `OperTm` waits for activation (a
 Cancel by the owner aborts it) and its termination carries the original
 operTm; Oper, SBOw and Cancel during execution get
 command-already-in-execution. CF `sboTimeout`, `sboClass` (operate-many)
-and `operTimeout` (CmdTerm- time-limit-over) apply, the registered
+and `operTimeout` (CmdTerm- time-limit-over) apply: a selection keeps
+the select timeout in force when it was made, so a later CF `sboTimeout`
+write applies to later selections only, and `operTimeout` is read once
+when an execution starts. The registered
 ctlModel replaces CF `ctlModel` (clients cannot write it), and `stSeld`
 follows the selection. A callback refuses with an error: its
 `AddCause` goes into the LastApplError, a wrapped write sentinel such as `ErrWriteAccessDenied` (or
@@ -1538,6 +1585,10 @@ type SVOptions struct {
     StartDisabled    bool         // SvEna false initially
     SmpSynch         uint8        // smpSynch sent
     NominalFrequency float64      // for SmpPerPeriod, default 50
+    // MaxSamplesPerSecond bounds the rate SmpRate and SmpMod select, checked
+    // when an MSVCB is enabled; 0: DefaultSVMaxSamplesPerSecond (96000),
+    // raised to the SCL rate when that is higher; negative: no bound.
+    MaxSamplesPerSecond float64
     Logger           *slog.Logger
     Metrics          sv.Metrics
 }
@@ -1548,6 +1599,8 @@ func (e *SVEngine) ControlBlocks() []string // "LD/LLN0$MS$name", sorted
 func (e *SVEngine) Publisher(ref string) (*sv.Publisher, error) // nil while disabled
 func (e *SVEngine) SetEnabled(ref string, enabled bool) error
 func (e *SVEngine) Stop()
+
+const DefaultSVMaxSamplesPerSecond = 96000
 ```
 
 Errors wrap `ErrSV` (or `ErrNotFound` for an unknown reference). See
@@ -1598,6 +1651,15 @@ value a handler callback sets on FC=SG (OnActiveSGChanged) or FC=SE
 under a recover, as `ControlHandler` callbacks do: a callback that ends
 abnormally is logged and refuses the write with object-access-denied, as
 a returned error does.
+
+SGCB `NumOfSG`, `LActTm` and `ResvTms` are read-only (IEC 61850-7-2
+Table 36): a write gets object-access-denied. A write of an SGCB
+component with a value of the wrong type gets type-inconsistent
+(IEC 61850-8-1 8.1.3.4.4.2). Both hold also when `EnableSettingGroups`
+was not called. A read of an FC=SE FC-group or data object (`LN$SE`,
+`LN$SE$DO`) without a selected edit group gets a negative response, as
+attribute reads do (IEC 61850-7-2 16.2.2.5); a read of the bare LN name
+is answered (KNOWN_LIMITATIONS.md).
 
 ### Journal engine
 
@@ -1918,6 +1980,7 @@ const EtherType uint16 = 0x88BA
 const EtherTypeVLAN uint16 = 0x8100
 const SimulationBit uint16 = 0x8000
 const MaxPayload = 1500
+const MaxIDLength = 129 // svID and datSet, VisibleString129
 const SmpSynchNone, SmpSynchLocal, SmpSynchGlobal uint8 = 0, 1, 2
 
 type SmpMod uint16 // SmpPerPeriod, SmpPerSec, SecPerSmp
@@ -2714,7 +2777,8 @@ func FlattenWithOptions(s *SCL, opts FlattenOptions) ([]FlatRow, []Diagnostic)
 func WriteCSV(w io.Writer, rows []FlatRow) error
 
 type FlattenOptions struct {
-    MaxExpandedNodes int // rows of the type expansion; 0: DefaultMaxExpandedNodes (33,554,432)
+    MaxExpandedNodes int // rows of the type expansion (one more per 256 bytes of a row's path); 0: DefaultMaxExpandedNodes (33,554,432)
+    MaxTypeDepth     int // type references one path follows; 0: DefaultMaxTypeDepth (64)
 }
 func PrintTree(w io.Writer, s *SCL) error
 
@@ -2757,8 +2821,10 @@ func ExportConnectedAPs(s *SCL) []ConnectedAPRow
 ```
 
 The type expansion of `Flatten` stops after `DefaultMaxExpandedNodes`
-rows, the last with the status `expansion-limit`; `FlattenWithOptions`
-sets another limit and also returns an error diagnostic
+rows, or at a type reference `DefaultMaxTypeDepth` levels deep (a DO's
+DOType, each SDO's DOType, each Struct DA's or BDA's DAType), the last
+row with the status `expansion-limit`; `FlattenWithOptions` sets other
+limits and also returns an error diagnostic
 `expansion-limit` naming the logical node where it stopped.
 
 ### Lookup helpers

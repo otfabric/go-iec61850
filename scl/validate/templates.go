@@ -15,38 +15,38 @@ func Templates(s *scl.SCL, idx *index.Index) []scl.Diagnostic {
 	var diags []scl.Diagnostic
 
 	for _, lnt := range s.DataTypeTemplates.LNodeTypes {
-		path := fmt.Sprintf("LNodeType[%s]", lnt.ID)
+		path := "LNodeType[" + q(lnt.ID) + "]"
 		for _, do := range lnt.DOs {
 			if idx.FindDOType(do.Type) == nil {
 				diags = append(diags, scl.Diagnostic{
 					Severity: scl.DiagError, Code: "missing-dotype",
-					Path:    path + ".DO[" + do.Name + "]",
-					Message: fmt.Sprintf("references DOType %q which does not exist", do.Type),
+					Path:    path + ".DO[" + q(do.Name) + "]",
+					Message: fmt.Sprintf("references DOType %q which does not exist", q(do.Type)),
 				})
 			}
 		}
 	}
 
 	for _, dot := range s.DataTypeTemplates.DOTypes {
-		path := fmt.Sprintf("DOType[%s]", dot.ID)
+		path := "DOType[" + q(dot.ID) + "]"
 		for _, da := range dot.DAs {
-			diags = append(diags, checkTypeRef(idx, path+".DA["+da.Name+"]", da.BType, da.Type)...)
+			diags = append(diags, checkTypeRef(idx, path+".DA["+q(da.Name)+"]", da.BType, da.Type)...)
 		}
 		for _, sdo := range dot.SDOs {
 			if idx.FindDOType(sdo.Type) == nil {
 				diags = append(diags, scl.Diagnostic{
 					Severity: scl.DiagError, Code: "missing-dotype",
-					Path:    path + ".SDO[" + sdo.Name + "]",
-					Message: fmt.Sprintf("references DOType %q which does not exist", sdo.Type),
+					Path:    path + ".SDO[" + q(sdo.Name) + "]",
+					Message: fmt.Sprintf("references DOType %q which does not exist", q(sdo.Type)),
 				})
 			}
 		}
 	}
 
 	for _, dat := range s.DataTypeTemplates.DATypes {
-		path := fmt.Sprintf("DAType[%s]", dat.ID)
+		path := "DAType[" + q(dat.ID) + "]"
 		for _, bda := range dat.BDAs {
-			diags = append(diags, checkTypeRef(idx, path+".BDA["+bda.Name+"]", bda.BType, bda.Type)...)
+			diags = append(diags, checkTypeRef(idx, path+".BDA["+q(bda.Name)+"]", bda.BType, bda.Type)...)
 		}
 	}
 
@@ -59,7 +59,7 @@ func checkTypeRef(idx *index.Index, path, bType, typRef string) []scl.Diagnostic
 			// 6 Ed2 9.5.4: type is required for bType Struct and Enum.
 			return []scl.Diagnostic{{
 				Severity: scl.DiagError, Code: "missing-type",
-				Path: path, Message: fmt.Sprintf("bType %s without type", bType),
+				Path: path, Message: fmt.Sprintf("bType %s without type", q(bType)),
 			}}
 		}
 		return nil
@@ -69,14 +69,14 @@ func checkTypeRef(idx *index.Index, path, bType, typRef string) []scl.Diagnostic
 		if idx.FindDAType(typRef) == nil {
 			return []scl.Diagnostic{{
 				Severity: scl.DiagError, Code: "missing-datype",
-				Path: path, Message: fmt.Sprintf("references DAType %q which does not exist", typRef),
+				Path: path, Message: fmt.Sprintf("references DAType %q which does not exist", q(typRef)),
 			}}
 		}
 	case "Enum":
 		if idx.FindEnumType(typRef) == nil {
 			return []scl.Diagnostic{{
 				Severity: scl.DiagError, Code: "missing-enumtype",
-				Path: path, Message: fmt.Sprintf("references EnumType %q which does not exist", typRef),
+				Path: path, Message: fmt.Sprintf("references EnumType %q which does not exist", q(typRef)),
 			}}
 		}
 	}

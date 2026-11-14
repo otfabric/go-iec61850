@@ -205,6 +205,12 @@ func NewPublisher(t Transport, cfg PublisherConfig) (*Publisher, error) {
 	if cfg.SvID == "" || !isVisible(cfg.SvID) {
 		return nil, configErr("SvID", "required VisibleString")
 	}
+	if len(cfg.SvID) > MaxIDLength {
+		return nil, configErr("SvID", "%d octets, at most %d", len(cfg.SvID), MaxIDLength)
+	}
+	if len(cfg.DatSet) > MaxIDLength {
+		return nil, configErr("DatSet", "%d octets, at most %d", len(cfg.DatSet), MaxIDLength)
+	}
 	if !isVisible(cfg.DatSet) {
 		return nil, configErr("DatSet", "must be a VisibleString")
 	}

@@ -139,6 +139,10 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   - SetEditSGValue of a whole data object (an FCD, `LN$SE$DO`) is refused
     (object-access-denied); FCDA writes, leaf or constructed, work.
   - `Val sGroup` is read on DAI elements, not on DA/BDA template values.
+  - A read of the bare LN name returns its FC=SE component also when the
+    association has no edit group selected, as libiec61850 serves it;
+    reads of the FC-group (`LN$SE`), a data object (`LN$SE$DO`) or an
+    attribute get a negative response then (IEC 61850-7-2 16.2.2.5).
   - No independent stack in the pinned iec61850-interop images exercises
     the SGCB services, so the banks have own tests only.
 - **Journals: in memory, no EVENT-DATA entries** — log control blocks

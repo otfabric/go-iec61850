@@ -5,6 +5,7 @@ package sv
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -558,6 +559,8 @@ func TestPublisherConfigErrors(t *testing.T) {
 		func(c *PublisherConfig) { c.SvID = "" },
 		func(c *PublisherConfig) { c.SvID = "\x01" },
 		func(c *PublisherConfig) { c.DatSet = "\x01" },
+		func(c *PublisherConfig) { c.SvID = strings.Repeat("A", MaxIDLength+1) },
+		func(c *PublisherConfig) { c.DatSet = strings.Repeat("A", MaxIDLength+1) },
 		func(c *PublisherConfig) { c.SmpRate = 0 },
 		func(c *PublisherConfig) { c.SmpMod = 9 },
 		func(c *PublisherConfig) { c.NominalFrequency = -1 },

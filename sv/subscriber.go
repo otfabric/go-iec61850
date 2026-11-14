@@ -29,7 +29,8 @@ const rateWindow = 500 * time.Millisecond
 
 // SubscriberConfig configures a [Subscriber].
 type SubscriberConfig struct {
-	// Limits bounds the decoder (default [DefaultLimits]).
+	// Limits bounds the decoder; a zero field takes its value from
+	// [DefaultLimits].
 	Limits Limits
 
 	// AcceptSimulation accepts frames with the simulation bit set. By
@@ -344,8 +345,11 @@ type Subscriber struct {
 // NewSubscriber returns a subscriber reading from t. t may be nil when
 // frames are fed with HandleFrame only.
 func NewSubscriber(t Transport, cfg SubscriberConfig) (*Subscriber, error) {
-	if cfg.Limits == (Limits{}) {
-		cfg.Limits = DefaultLimits
+	if cfg.Limits.MaxASDUs == 0 {
+		cfg.Limits.MaxASDUs = DefaultLimits.MaxASDUs
+	}
+	if cfg.Limits.MaxSample == 0 {
+		cfg.Limits.MaxSample = DefaultLimits.MaxSample
 	}
 	if cfg.Limits.MaxASDUs < 0 || cfg.Limits.MaxSample < 0 {
 		return nil, configErr("Limits", "negative limit")

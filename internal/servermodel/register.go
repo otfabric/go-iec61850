@@ -285,6 +285,24 @@ func (vs *ValueStore) checkEdit(ctx context.Context, fc, key string, write bool)
 	return fn(ctx, key, write)
 }
 
+// editGuardedRead wraps the read of an FC=SE FC-group or data object
+// (LN$SE, LN$SE$DO) with the edit guard the leaf and constructed
+// attribute reads use (IEC 61850-7-2 16.2.2.5: GetEditSGValue without a
+// selected edit group gets Response-). Reads of another FC are returned
+// unchanged. The LN-level read (the bare LN name) is not guarded, as
+// libiec61850 serves it.
+func (vs *ValueStore) editGuardedRead(fc, key string, read func(context.Context) (*mms.Value, error)) func(context.Context) (*mms.Value, error) {
+	if fc != "SE" {
+		return read
+	}
+	return func(ctx context.Context) (*mms.Value, error) {
+		if err := vs.checkEdit(ctx, fc, key, false); err != nil {
+			return nil, err
+		}
+		return read(ctx)
+	}
+}
+
 func (vs *ValueStore) callInterceptor(ctx context.Context, key string, val *mms.Value) (bool, error) {
 	vs.interceptorMu.RLock()
 	fn := vs.interceptor
@@ -463,7 +481,7 @@ func registerLNHierarchy(srv Registrar, vs *ValueStore, ldName string, ln *Logic
 				ItemID: mms.ItemID(fcItemID),
 			},
 			TypeSpec: fcTS,
-			Read:     fcRead,
+			Read:     vs.editGuardedRead(fc, StoreKey(ldName, fcItemID), fcRead),
 		}); err != nil {
 			return fmt.Errorf("register FC group %s: %w", fcItemID, err)
 		}
@@ -480,7 +498,7 @@ func registerLNHierarchy(srv Registrar, vs *ValueStore, ldName string, ln *Logic
 					ItemID: mms.ItemID(doItemID),
 				},
 				TypeSpec: entry.ts,
-				Read:     doRead,
+				Read:     vs.editGuardedRead(fc, StoreKey(ldName, doItemID), doRead),
 			}); err != nil {
 				return fmt.Errorf("register DO %s: %w", doItemID, err)
 			}
@@ -1331,7 +1349,7 @@ func registerSGCB(srv Registrar, vs *ValueStore, ldName, lnName string, sg *Sett
 
 		subSK := sk
 		subTS := f.typeSpec
-		if err := srv.RegisterVariable(mms.Variable{
+		v := mms.Variable{
 			Name: mms.ObjectName{
 				Scope:  mms.ObjectScopeDomain,
 				Domain: mms.DomainID(ldName),
@@ -1346,13 +1364,25 @@ func registerSGCB(srv Registrar, vs *ValueStore, ldName, lnName string, sg *Sett
 				return defaultMMSValue(subTS), nil
 			},
 			Write: func(ctx context.Context, val *mms.Value) error {
+				// The type check holds with and without a setting group
+				// engine (IEC 61850-8-1 8.1.3.4.4.2: type-inconsistent).
+				if err := CheckWriteValue(val, subTS); err != nil {
+					return err
+				}
 				if handled, err := vs.callInterceptor(ctx, subSK, val); handled || err != nil {
 					return err
 				}
 				vs.Set(subSK, val)
 				return nil
 			},
-		}); err != nil {
+		}
+		if !sgcbWritable[f.suffix] {
+			// NumOfSG, LActTm and ResvTms are read-only (IEC 61850-7-2
+			// Table 36); go-mms answers object-access-denied (IEC
+			// 61850-8-1 8.1.3.4.4.2).
+			v.Write = nil
+		}
+		if err := srv.RegisterVariable(v); err != nil {
 			return fmt.Errorf("register SGCB subfield %s: %w", subItemID, err)
 		}
 	}

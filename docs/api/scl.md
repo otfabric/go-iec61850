@@ -42,7 +42,14 @@ const (
 	// diagnostic quotes from the document; a longer one is cut at a
 	// character boundary and ends with "…". Names of the SCL schema
 	// are at most 64 characters long.
-	DefaultMaxDiagnosticName = 256
+	DefaultMaxDiagnosticName = diagname.Max
+
+	// DefaultMaxTypeDepth is the number of type references one path of
+	// a type expansion may follow: 64. A data object's DOType is the
+	// first, each SDO's DOType and each Struct DA's or BDA's DAType below
+	// it one more. The common data classes of IEC 61850-7-3 and the
+	// documents of the test data nest them less than ten deep.
+	DefaultMaxTypeDepth = 64
 )
 ```
 
@@ -54,7 +61,7 @@ Defaults of the limits of [ParseOptions](#type-parseoptions) and [FlattenOptions
 var ErrLimitExceeded = errors.New("scl: limit exceeded")
 ```
 
-ErrLimitExceeded is wrapped by the error of a parse whose document goes beyond a limit of [ParseOptions](#type-parseoptions) ([ParseOptions.MaxBytes](#func-parseoptions-maxbytes), [ParseOptions.MaxDepth](#func-parseoptions-maxdepth)), and by the error or diagnostic of a type expansion that goes beyond DefaultMaxExpandedNodes or the limit given in its options ([FlattenOptions.MaxExpandedNodes](#func-flattenoptions-maxexpandednodes)). Test it with [errors.Is](https://pkg.go.dev/errors#Is). SECURITY.md lists every limit and its default.
+ErrLimitExceeded is wrapped by the error of a parse whose document goes beyond a limit of [ParseOptions](#type-parseoptions) ([ParseOptions.MaxBytes](#func-parseoptions-maxbytes), [ParseOptions.MaxDepth](#func-parseoptions-maxdepth)), and by the error or diagnostic of a type expansion that goes beyond DefaultMaxExpandedNodes, DefaultMaxTypeDepth or the limit given in its options ([FlattenOptions.MaxExpandedNodes](#func-flattenoptions-maxexpandednodes), [FlattenOptions.MaxTypeDepth](#func-flattenoptions-maxtypedepth)). Test it with [errors.Is](https://pkg.go.dev/errors#Is). SECURITY.md lists every limit and its default.
 
 ## Functions
 
@@ -64,7 +71,7 @@ ErrLimitExceeded is wrapped by the error of a parse whose document goes beyond a
 func FlattenWithOptions(s *SCL, opts FlattenOptions) ([]FlatRow, []Diagnostic)
 ```
 
-FlattenWithOptions is [Flatten](#func-flatten) with options. When the expansion reaches opts.MaxExpandedNodes it stops: the rows expanded so far are returned, the last with the status "expansion-limit", together with an error diagnostic with code "expansion-limit" that names the logical node where the expansion stopped. The diagnostics are empty otherwise.
+FlattenWithOptions is [Flatten](#func-flatten) with options. When the expansion reaches opts.MaxExpandedNodes, or a type reference deeper than opts.MaxTypeDepth, it stops: the rows expanded so far are returned, the last with the status "expansion-limit", together with an error diagnostic with code "expansion-limit" that names the logical node where the expansion stopped. The diagnostics are empty otherwise.
 
 ### func Generate
 
@@ -581,8 +588,9 @@ type FlatRow struct {
 	// whose DAType is missing) and "type-cycle" (an SDO or BDA that
 	// refers back to a type being expanded). Such a row is the stub of
 	// the branch that could not be expanded. "expansion-limit" marks
-	// the row where the expansion stopped at its limit
-	// ([FlattenOptions.MaxExpandedNodes]); no row follows it. Arrays
+	// the row where the expansion stopped at a limit
+	// ([FlattenOptions.MaxExpandedNodes], [FlattenOptions.MaxTypeDepth]);
+	// no row follows it. Arrays
 	// (count attribute) are flattened as a single element; the count is
 	// not expanded.
 	Status string
@@ -601,7 +609,7 @@ Flatten expands an SCL model into a flat list of rows, one per data attribute. E
 
 Type resolution uses the DataTypeTemplates to expand LNodeType → DOType → DA/SDO chains. Attributes whose types cannot be resolved are still emitted with available metadata.
 
-The expansion stops after DefaultMaxExpandedNodes nodes; the last row then has the status "expansion-limit". [FlattenWithOptions](#func-flattenwithoptions) sets another limit and reports it as a diagnostic.
+The expansion stops after DefaultMaxExpandedNodes nodes, or at a type reference DefaultMaxTypeDepth levels deep; the last row then has the status "expansion-limit". [FlattenWithOptions](#func-flattenwithoptions) sets other limits and reports the stop as a diagnostic.
 
 ### type FlattenOptions
 
@@ -611,8 +619,16 @@ type FlattenOptions struct {
 	// produce; zero or less means [DefaultMaxExpandedNodes]. A node is
 	// one DO, SDO, DA or BDA at one place of the expanded model (a type
 	// referenced from n places counts n times), or the stub row of a
-	// branch that cannot be expanded.
+	// branch that cannot be expanded. A node counts one more node for
+	// every 256 bytes of its Path, so that the rows hold about 256 bytes
+	// of path per node at the most.
 	MaxExpandedNodes int
+
+	// MaxTypeDepth is the number of type references one path of the
+	// expansion may follow (a DO's DOType, then each SDO's DOType and
+	// each Struct DA's or BDA's DAType); zero or less means
+	// [DefaultMaxTypeDepth].
+	MaxTypeDepth int
 }
 ```
 

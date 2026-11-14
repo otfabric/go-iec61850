@@ -47,12 +47,9 @@ func int16ToWire(v int16) uint16 {
 	return uint16(x)
 }
 
-// serialDiff is a - b in 32-bit serial number arithmetic (RFC 1982):
-// positive when a is ahead of b by less than 2^31.
-func serialDiff(a, b uint32) int64 {
-	d := a - b
-	if d <= math.MaxInt32 {
-		return int64(d)
-	}
-	return int64(d) - (1 << 32)
+// seqParts splits the send state of a [Transport]: the next SPDU number
+// (low 32 bits) and the ID of the key whose numbers are used up (high
+// 32 bits).
+func seqParts(v uint64) (next, spent uint32) {
+	return uint32(v & math.MaxUint32), uint32(v >> 32)
 }

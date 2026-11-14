@@ -402,7 +402,11 @@ type VerifyOptions struct {
 // [ErrUnsupported] when it is encrypted or uses a MAC algorithm other
 // than HMAC-SHA256, and with [ErrAuthentication] when the signature is
 // missing, its length or algorithm does not match the key, or it does
-// not verify. Replay is checked by [Transport], not here.
+// not verify. A key the provider returns with another ID than the
+// SPDU's, with ID 0 or with less than [MinKeySize] octets of material is
+// not used: the SPDU is refused with an error that wraps both
+// [ErrUnknownKey] and [ErrInvalidKey]. Replay is checked by [Transport],
+// not here.
 func Verify(b []byte, opts VerifyOptions) (*SPDU, *Key, error) {
 	s, err := Decode(b)
 	if err != nil {
@@ -436,6 +440,12 @@ func Verify(b []byte, opts VerifyOptions) (*SPDU, *Key, error) {
 	}
 	if key.MAC.Size() == 0 {
 		return nil, nil, fmt.Errorf("%w: key %d uses %v", ErrUnsupported, key.ID, key.MAC)
+	}
+	if key.ID != s.KeyID {
+		return nil, nil, fmt.Errorf("%w: %w: provider returned key %d for key ID %d", ErrUnknownKey, ErrInvalidKey, key.ID, s.KeyID)
+	}
+	if err := key.validate(); err != nil {
+		return nil, nil, fmt.Errorf("%w: %w", ErrUnknownKey, err)
 	}
 	if s.Version == 1 && s.MAC != key.MAC {
 		return nil, nil, fmt.Errorf("%w: SPDU uses %v, key %d is %v", ErrAuthentication, s.MAC, key.ID, key.MAC)

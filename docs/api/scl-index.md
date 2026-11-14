@@ -81,7 +81,7 @@ Index provides O(1) lookup into a normalized SCL model. Build one with [Build](#
 func Build(s *scl.SCL) (*Index, []scl.Diagnostic)
 ```
 
-Build constructs an Index from a parsed SCL model. Duplicates and ambiguous entries are reported as diagnostics.
+Build constructs an Index from a parsed SCL model. Duplicates and ambiguous entries are reported as diagnostics. A diagnostic quotes each name of the document cut to [scl.DefaultMaxDiagnosticName](https://pkg.go.dev/github.com/otfabric/go-iec61850/scl#DefaultMaxDiagnosticName) bytes.
 
 #### func (Index) FindAccessPoint
 

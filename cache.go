@@ -251,7 +251,8 @@ func (c *Client) cachedItems(ctx context.Context, ld string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		items := v.([]string)
+		// Callers coalesced by singleflight share v: each gets a copy.
+		items := slices.Clone(v.([]string))
 		if c.cache.strategy == CacheLazy {
 			c.cache.setItems(ld, items)
 		}

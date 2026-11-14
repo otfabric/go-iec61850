@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -37,7 +38,7 @@ func init() {
 func runDetect(_ *cobra.Command, args []string) error {
 	path := args[0]
 
-	data, err := os.ReadFile(filepath.Clean(path)) // the file named on the command line
+	data, err := readDetect(path)
 	if err != nil {
 		return exitErr(ExitInvalidInput, "read %s: %v", path, err)
 	}
@@ -105,6 +106,23 @@ func runDetect(_ *cobra.Command, args []string) error {
 		fmt.Printf("Vendor NS:  %v\n", vi.VendorNamespaces)
 	}
 	return nil
+}
+
+// maxDetectBytes is the most of a file detect reads: 1 GiB, the
+// library's default document limit (scl.DefaultMaxBytes since
+// go-iec61850 v1.21). The root element, all detection needs, comes
+// first.
+var maxDetectBytes int64 = 1 << 30
+
+// readDetect reads the file named on the command line for detection: at
+// most maxDetectBytes of it.
+func readDetect(path string) ([]byte, error) {
+	f, err := os.Open(filepath.Clean(path)) // the file named on the command line
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return io.ReadAll(io.LimitReader(f, maxDetectBytes))
 }
 
 func schemaLabel(v scl.SchemaVersion) string {

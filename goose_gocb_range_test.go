@@ -49,23 +49,37 @@ func TestDecodeGoCBRanges(t *testing.T) {
 }
 
 // Regression: a DatSet change increments ConfRev in the store; from
-// 2^32-1 that reaches 2^32, which the GOOSE publisher used to send as
-// confRev 0. Enabling must now fail instead of publishing a wrapped
-// configuration revision.
+// 2^32-1 that reached 2^32, which the GOOSE publisher used to send as
+// confRev 0, and then made the GoCB impossible to enable. The DatSet
+// write is now refused with object-value-invalid and ConfRev stays at
+// 2^32-1; a ConfRev of 2^32 that reaches the store some other way still
+// makes enabling fail instead of publishing a wrapped revision.
 func TestGOOSEServerConfRevOverflow(t *testing.T) {
 	ctx := context.Background()
 	f := newGOOSEFixture(t, GOOSEOptions{StartDisabled: true})
 	confRevKey := gcbAllRef + "$ConfRev"
 	f.srv.store.Set(confRevKey, mms.NewUnsigned(math.MaxUint32))
 	ds := "InteropIEDInteropLD/LLN0$dsGooseBool"
-	if err := f.client.SetGoCB(ctx, "InteropIEDInteropLD", "LLN0$GO$gcbAll", GoCBUpdate{DatSet: &ds}); err != nil {
+	before := f.srv.store.Get(gcbAllRef + "$DatSet")
+	err := f.client.SetGoCB(ctx, "InteropIEDInteropLD", "LLN0$GO$gcbAll", GoCBUpdate{DatSet: &ds})
+	var dae *mms.DataAccessError
+	if !errors.As(err, &dae) || dae.Code != mms.DataAccessErrorObjectValueInvalid {
+		t.Fatalf("DatSet write at ConfRev 2^32-1: %v, want object-value-invalid", err)
+	}
+	if cr, _ := f.srv.store.Get(confRevKey).Uint64(); cr != math.MaxUint32 {
+		t.Fatalf("ConfRev after refused DatSet change = %d", cr)
+	}
+	if !f.srv.store.Get(gcbAllRef + "$DatSet").Equal(before) {
+		t.Fatal("DatSet changed by a refused write")
+	}
+	if err := f.engine.SetEnabled(gcbAllRef, true); err != nil {
+		t.Fatalf("enable with ConfRev 2^32-1: %v", err)
+	}
+	if err := f.engine.SetEnabled(gcbAllRef, false); err != nil {
 		t.Fatal(err)
 	}
-	if cr, _ := f.srv.store.Get(confRevKey).Uint64(); cr != math.MaxUint32+1 {
-		t.Fatalf("ConfRev after DatSet change = %d", cr)
-	}
-	err := f.engine.SetEnabled(gcbAllRef, true)
-	var dae *mms.DataAccessError
+	f.srv.store.Set(confRevKey, mms.NewUnsigned(math.MaxUint32+1))
+	err = f.engine.SetEnabled(gcbAllRef, true)
 	if !errors.As(err, &dae) || dae.Code != mms.DataAccessErrorObjectValueInvalid {
 		t.Fatalf("enable with ConfRev 2^32: %v, want object-value-invalid", err)
 	}

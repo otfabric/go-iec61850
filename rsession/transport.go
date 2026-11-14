@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net"
 	"net/netip"
 	"runtime/debug"
@@ -184,8 +185,12 @@ type Transport struct {
 	logger    *slog.Logger
 	guard     *replayGuard
 
-	number atomic.Uint32
-	queue  chan received
+	// seq is the send state: the number of the next SPDU (low 32 bits)
+	// and the ID of the key whose SPDU numbers are used up (high 32
+	// bits, 0 for none). One word, so that taking a number and marking
+	// the key used up are one CompareAndSwap.
+	seq   atomic.Uint64
+	queue chan received
 
 	sent, sendErrors, received, dropped, ignored           atomic.Uint64
 	malformed, unsecured, unknownKey, authFailed, replayed atomic.Uint64
@@ -275,7 +280,7 @@ func Open(cfg Config) (*Transport, error) {
 		return nil, err
 	}
 	t.guard = newReplayGuard(cfg.MaxSenders, cfg.ReplayResetAfter)
-	t.number.Store(cfg.InitialSPDUNumber)
+	t.seq.Store(uint64(cfg.InitialSPDUNumber))
 	t.queue = make(chan received, cfg.Queue)
 	t.wg.Add(1)
 	go t.readLoop()
@@ -361,7 +366,35 @@ func (t *Transport) LocalAddr() netip.AddrPort {
 }
 
 // NextSPDUNumber returns the number the next SPDU sent will carry.
-func (t *Transport) NextSPDUNumber() uint32 { return t.number.Load() }
+// After the numbers of a key are used up (see [Transport.Send]) it is 0,
+// the number the first SPDU under the next key carries.
+func (t *Transport) NextSPDUNumber() uint32 {
+	next, _ := seqParts(t.seq.Load())
+	return next
+}
+
+// takeNumber returns the number of the next SPDU secured with the key
+// keyID (0: unsecured). SPDU numbers do not repeat under one key: once
+// 0xffffffff was sent under a key, taking another number under it fails
+// with [ErrLimitExceeded] until a key with another ID is current. The
+// numbering then goes on at 0. Unsecured SPDUs wrap, as there is no
+// replay window for them.
+func (t *Transport) takeNumber(keyID uint32) (uint32, error) {
+	for {
+		old := t.seq.Load()
+		n, spent := seqParts(old)
+		if keyID != 0 && spent == keyID {
+			return 0, fmt.Errorf("%w: the SPDU numbers of key %d are used up: make a key with another ID current", ErrLimitExceeded, keyID)
+		}
+		spent = 0
+		if n == math.MaxUint32 {
+			spent = keyID
+		}
+		if t.seq.CompareAndSwap(old, uint64(spent)<<32|uint64(n+1)) {
+			return n, nil
+		}
+	}
+}
 
 // HardwareAddr implements [l2.Transport]: it returns
 // Config.HardwareAddr.
@@ -383,6 +416,13 @@ func (t *Transport) Stats() Stats {
 // simulation bit and APDU are sent in one SPDU to Config.RemoteAddr,
 // secured with the provider's current key. The Ethernet addresses, VLAN
 // tag and Reserved 2 are not carried.
+//
+// SPDU numbers do not repeat under one key: after the SPDU numbered
+// 0xffffffff was sent under a key, Send fails with an error wrapping
+// [ErrLimitExceeded] until the provider's current key has another ID;
+// numbering then goes on at 0 under that key. Rotate keys well before
+// 2^32 SPDUs (about 10 days of an R-SV stream at 4800 SPDUs per second).
+// Unsecured SPDUs (Config.Insecure without keys) wrap at 2^32.
 func (t *Transport) Send(frame []byte) error {
 	select {
 	case <-t.closed:
@@ -407,7 +447,16 @@ func (t *Transport) Send(frame []byte) error {
 			return fmt.Errorf("rsession: send: %w", ErrNoKey)
 		}
 	}
-	s := SPDU{SI: t.cfg.SI, Number: t.number.Add(1) - 1, Version: t.cfg.Version, Payloads: []Payload{p}}
+	var keyID uint32
+	if key != nil {
+		keyID = key.ID
+	}
+	n, err := t.takeNumber(keyID)
+	if err != nil {
+		t.sendErrors.Add(1)
+		return fmt.Errorf("rsession: send: %w", err)
+	}
+	s := SPDU{SI: t.cfg.SI, Number: n, Version: t.cfg.Version, Payloads: []Payload{p}}
 	b, err := Encode(&s, key)
 	if err != nil {
 		t.sendErrors.Add(1)
