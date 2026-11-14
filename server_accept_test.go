@@ -235,6 +235,49 @@ func TestServer_MaxConnections(t *testing.T) {
 	})
 }
 
+// The associations the server holds are bounded by MaxConnections, not by
+// go-mms's own default of 100, unless MMS.MaxAssociations is set.
+func TestServer_MaxConnectionsBoundsAssociations(t *testing.T) {
+	cases := []struct {
+		name   string
+		opts   ServerOptions
+		served int  // associations held at once
+		refuse bool // the next one is refused
+	}{
+		{"default MaxConnections, above 100", ServerOptions{}, 101, false},
+		{"MaxConnections 150", ServerOptions{MaxConnections: 150}, 150, true},
+		{"MMS.MaxAssociations 2", ServerOptions{MaxConnections: 10, MMS: mms.ServerOptions{MaxAssociations: 2}}, 2, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				srv := acceptServer(t, tc.opts)
+				ln := newScriptedListener()
+				ctx, cancel := context.WithCancel(context.Background())
+				served := make(chan error, 1)
+				go func() { served <- srv.ListenAndServe(ctx, ln) }()
+				defer func() {
+					cancel()
+					if err := <-served; !errors.Is(err, context.Canceled) {
+						t.Errorf("ListenAndServe = %v, want context.Canceled", err)
+					}
+				}()
+				for i := range tc.served {
+					if _, err := dialScripted(t, ln); err != nil {
+						t.Fatalf("association %d of %d: %v", i+1, tc.served, err)
+					}
+				}
+				if !tc.refuse {
+					return
+				}
+				if _, err := dialScripted(t, ln); err == nil {
+					t.Errorf("association %d was served, want it refused", tc.served+1)
+				}
+			})
+		})
+	}
+}
+
 // After a temporary accept error ListenAndServe waits before the next
 // Accept: 5 ms, doubling up to 1 s; a connection accepted starts the
 // pause again at 5 ms. Shutdown ends a pause at once. The times are the

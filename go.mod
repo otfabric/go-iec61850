@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/otfabric/go-cotp v1.4.1
-	github.com/otfabric/go-mms v1.10.0
+	github.com/otfabric/go-mms v1.11.0
 	golang.org/x/sync v0.19.0
 	golang.org/x/sys v0.44.0
 )

@@ -232,6 +232,11 @@ type ServerOptions struct {
 	// at once, before OnConnect and the association, and counted in
 	// [ServerStats.ConnectionsRefused]. Connections given to
 	// [Server.Serve] by the caller are not counted.
+	//
+	// It is also the bound on the associations the server holds at a
+	// time, those of connections given to [Server.Serve] included, unless
+	// MMS.MaxAssociations is set ([mms.ServerOptions]; math.MaxInt there
+	// removes the bound).
 	MaxConnections int
 
 	// MinIntegrityPeriod is the smallest non-zero IntgPd that may be
@@ -355,6 +360,18 @@ func NewServer(model *servermodel.Model, opts ServerOptions) (*Server, error) {
 		mmsOpts.JournalProvider = guardJournal(mmsOpts.JournalProvider, cb)
 	}
 
+	// go-mms bounds the associations a server holds (100 when
+	// MaxAssociations is zero). Unless MMS.MaxAssociations is set, the
+	// bound is MaxConnections, so that every connection ListenAndServe
+	// serves can associate.
+	maxConns := opts.MaxConnections
+	if maxConns <= 0 {
+		maxConns = DefaultMaxConnections
+	}
+	if mmsOpts.MaxAssociations == 0 {
+		mmsOpts.MaxAssociations = maxConns
+	}
+
 	mmsSrv := mms.NewServer(mmsOpts)
 
 	vs, err := servermodel.RegisterModel(guardedRegistrar{srv: mmsSrv, g: cb}, model, servermodel.NewValueStoreWithOptions(servermodel.ValueStoreOptions{
@@ -378,11 +395,8 @@ func NewServer(model *servermodel.Model, opts ServerOptions) (*Server, error) {
 		clock:              clockOrSystem(opts.Clock),
 		newReportBuffer:    opts.NewReportBuffer,
 		minIntgPd:          minIntgPdMillis(opts.MinIntegrityPeriod),
-		maxConns:           opts.MaxConnections,
+		maxConns:           maxConns,
 		cb:                 cb,
-	}
-	if s.maxConns <= 0 {
-		s.maxConns = DefaultMaxConnections
 	}
 
 	if opts.Identity != nil {
