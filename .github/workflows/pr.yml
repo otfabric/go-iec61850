@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   changes:
-    uses: otfabric/.github/.github/workflows/pr-changes.yml@6c23fd32380ae9db00fc52b6ac64f0a69826a92d # main after otfabric/.github#20; v3.7.0 once tagged
+    uses: otfabric/.github/.github/workflows/pr-changes.yml@v3.7.0
     with:
       # TestREADMESnippets (readme_test.go) checks the README's Go blocks.
       code-paths: |
@@ -55,7 +55,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: otfabric/.github/actions/required-gate@6c23fd32380ae9db00fc52b6ac64f0a69826a92d # main after otfabric/.github#20; v3.7.0 once tagged
+      - uses: otfabric/.github/actions/required-gate@v3.7.0
         with:
           needs: ${{ toJSON(needs) }}
           required: changes docs
