@@ -35,6 +35,8 @@ The publisher's Ethernet addresses and VLAN tag are not sent; frames a receiving
 
 Secured is the default: [Open](#func-open) refuses a configuration without a [KeyProvider](#type-keyprovider) unless [Config.Insecure](#func-config-insecure) is set, and a receiver refuses unsecured SPDUs unless it is set. A receiver also refuses SPDUs under keys it does not hold, SPDUs whose signature does not verify, and replays: per sender and key, an SPDU number accepted before or older than the ReplayWindow. Refusals are counted ([Transport.Stats](#func-transport-stats)) and reported to [Config.OnReject](#func-config-onreject).
 
+The replay window is kept per sender address, which the signature does not cover, so an SPDU that verified is accepted once more from each source address the receiver has no window for (also after a sender's window was forgotten at [Config.MaxSenders](#func-config-maxsenders), or after a restart). [Config.AllowedSenders](#func-config-allowedsenders) refuses datagrams from addresses outside the listed prefixes before they are verified; [Config.SingleSenderPerKey](#func-config-singlesenderperkey) keeps one window per key ID whatever the address, for keys that one publisher uses. Set one of them on a receiver, and filter the goose or sv subscription on the publisher with Src: [SourceMAC](#func-sourcemac) of its address.
+
 Keys come from a [KeyProvider](#type-keyprovider): the current key secures what is sent, every key it holds is accepted on receipt. [KeyRing](#type-keyring) is a static provider; key distribution (IEC 62351-9 GDOI) is outside this package.
 
 Only HMAC-SHA256 (80, 128 and 256 bits) is implemented: AES-GMAC and encryption are refused as ErrUnsupported. The layer-2 IEC 62351-6 extension of GOOSE and SV frames is not implemented. See docs/adr/0001-routable-goose-sv.md for the wire layout, the references it follows and the scope.
@@ -108,9 +110,15 @@ var (
 	ErrAuthentication = errors.New("rsession: authentication failed")
 
 	// ErrReplay indicates an SPDU whose number was already accepted
-	// from the same sender under the same key, or is older than the
+	// from the same sender under the same key (under the same key from
+	// any sender with Config.SingleSenderPerKey), or is older than the
 	// replay window.
 	ErrReplay = errors.New("rsession: replayed SPDU")
+
+	// ErrSenderNotAllowed indicates a datagram from a source address
+	// outside Config.AllowedSenders. It is refused before it is decoded
+	// or verified.
+	ErrSenderNotAllowed = errors.New("rsession: sender not allowed")
 
 	// ErrNoKey indicates that the key provider has no current key to
 	// secure an SPDU with.
@@ -143,7 +151,7 @@ var (
 )
 ```
 
-Sentinel errors returned by the rsession package. Use [errors.Is](https://pkg.go.dev/errors#Is) to test against them. Decoder failures are [\*DecodeError](#type-decodeerror) values that unwrap to ErrMalformed or ErrUnsupported; verification failures wrap ErrUnsecured, ErrUnknownKey, ErrAuthentication or ErrReplay.
+Sentinel errors returned by the rsession package. Use [errors.Is](https://pkg.go.dev/errors#Is) to test against them. Decoder failures are [\*DecodeError](#type-decodeerror) values that unwrap to ErrMalformed or ErrUnsupported; verification failures wrap ErrUnsecured, ErrUnknownKey, ErrAuthentication or ErrReplay; a datagram from a sender outside Config.AllowedSenders is refused with an error that wraps ErrSenderNotAllowed.
 
 ## Functions
 
@@ -255,6 +263,28 @@ type Config struct {
 	// forgotten first.
 	MaxSenders int
 
+	// AllowedSenders, when not empty, lists the source addresses that
+	// datagrams are accepted from. A datagram from any other address is
+	// refused before it is decoded or verified: it is counted in
+	// Stats.NotAllowed and reported to OnReject with an error that wraps
+	// [ErrSenderNotAllowed]. An IPv4 sender matches an IPv4 prefix
+	// (also one written as an IPv4-mapped IPv6 prefix). Empty accepts
+	// every sender.
+	//
+	// The replay window is kept per sender address (see
+	// SingleSenderPerKey): without AllowedSenders or SingleSenderPerKey,
+	// an SPDU that verified is accepted once more from each source
+	// address the transport has no window for.
+	AllowedSenders []netip.Prefix
+
+	// SingleSenderPerKey keeps one replay window per session identifier
+	// and key ID, whatever the source address: an SPDU number accepted
+	// under a key is refused from every address. Set it when every key
+	// ID is used by one publisher only; publishers that share a key
+	// would refuse each other's SPDUs. False keeps one window per sender
+	// address, session identifier and key ID.
+	SingleSenderPerKey bool
+
 	// Queue is the receive queue length; zero means [DefaultQueue].
 	// Frames that do not fit are dropped and counted.
 	Queue int
@@ -273,6 +303,12 @@ type Config struct {
 	// receive goroutine and must not block. It may call
 	// [Transport.Close], which then returns without waiting for the
 	// receive goroutine: that goroutine ends when OnReject returns.
+	//
+	// A call of OnReject or of the [KeyProvider] on the receive
+	// goroutine that does not return normally is recovered: it is
+	// logged at error level with its stack, the datagram is dropped and
+	// counted in Stats.CallbacksRecovered, and the transport goes on
+	// receiving.
 	OnReject func(from netip.AddrPort, err error)
 
 	// Logger receives transport diagnostics. Nil disables logging.
@@ -602,6 +638,14 @@ type Stats struct {
 	AuthFailed  uint64 // SPDUs whose signature did not verify
 	Replayed    uint64 // SPDUs refused by the replay window
 	OtherErrors uint64 // receive errors of the socket
+
+	// NotAllowed counts datagrams refused because their source address
+	// is outside Config.AllowedSenders.
+	NotAllowed uint64
+
+	// CallbacksRecovered counts datagrams dropped because OnReject or
+	// the KeyProvider did not return normally on the receive goroutine.
+	CallbacksRecovered uint64
 }
 ```
 
@@ -611,6 +655,9 @@ Stats counts transport activity.
 
 ```go
 type Transport struct {
+
+	// allowed is Config.AllowedSenders with IPv4-mapped prefixes
+	// unmapped; empty accepts every sender.
 
 	// readID identifies the receive goroutine, which calls OnReject, so
 	// that a Close called from OnReject does not wait for itself.

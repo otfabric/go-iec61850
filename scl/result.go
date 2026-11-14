@@ -102,9 +102,29 @@ type ParseOptions struct {
 	// or content.
 	Kind DocumentKind
 
-	// MaxDiagnostics, when > 0, truncates the diagnostic list
-	// to at most this many entries.
+	// MaxDiagnostics, when > 0, is the most diagnostics a parse
+	// returns: once the list holds this many, parsing and semantic
+	// validation add no further one (the first ones are kept, in the
+	// order they are found). Zero keeps every diagnostic.
 	MaxDiagnostics int
+
+	// MaxBytes is the largest document read; zero or less means
+	// [DefaultMaxBytes]. A larger document is refused with an error
+	// that wraps [ErrLimitExceeded]; it is never read in part.
+	MaxBytes int64
+
+	// MaxDepth is the deepest element nesting accepted, the root
+	// element being at depth 1, also for content that is skipped
+	// (unknown elements, Private content); zero or less means
+	// [DefaultMaxDepth]. A deeper document is refused with an error that
+	// wraps [ErrLimitExceeded].
+	MaxDepth int
+
+	// MaxDiagnosticName is the longest name, in bytes, that a
+	// diagnostic quotes from the document; zero or less means
+	// [DefaultMaxDiagnosticName]. A longer name is cut at a character
+	// boundary and ends with "…".
+	MaxDiagnosticName int
 
 	// AssumeSCLNamespace, when true, reads an SCL root element without a
 	// namespace as if it declared the IEC 61850-6 namespace

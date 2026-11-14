@@ -43,6 +43,16 @@
 // than the [ReplayWindow]. Refusals are counted ([Transport.Stats]) and
 // reported to [Config.OnReject].
 //
+// The replay window is kept per sender address, which the signature does
+// not cover, so an SPDU that verified is accepted once more from each
+// source address the receiver has no window for (also after a sender's
+// window was forgotten at [Config.MaxSenders], or after a restart).
+// [Config.AllowedSenders] refuses datagrams from addresses outside the
+// listed prefixes before they are verified; [Config.SingleSenderPerKey]
+// keeps one window per key ID whatever the address, for keys that one
+// publisher uses. Set one of them on a receiver, and filter the goose or
+// sv subscription on the publisher with Src: [SourceMAC] of its address.
+//
 // Keys come from a [KeyProvider]: the current key secures what is sent,
 // every key it holds is accepted on receipt. [KeyRing] is a static
 // provider; key distribution (IEC 62351-9 GDOI) is outside this package.

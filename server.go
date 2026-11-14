@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/otfabric/go-mms"
 
@@ -98,6 +99,20 @@ type Server struct {
 	hookListeners map[mms.TransportListener]struct{}
 	shutdown      bool
 	conns         map[*servedConn]struct{}
+	// downCh is closed when shutdown is set; it ends the accept backoff
+	// of ListenAndServe. Guarded by lnMu, created on first use.
+	downCh chan struct{}
+
+	// maxConns bounds conns (ServerOptions.MaxConnections, default
+	// filled in).
+	maxConns int
+
+	// Counter of Stats.
+	connsRefused atomic.Uint64
+
+	// cb calls application code under a recover and counts the calls
+	// that did not return normally (ServerStats.CallbacksRecovered).
+	cb *callbackGuard
 
 	// bg tracks background sends (CommandTermination) stopped by Close.
 	bg backgroundTasks
@@ -116,6 +131,20 @@ type servedConn struct {
 }
 
 // ServerOptions configures the IEC 61850 server.
+//
+// The server calls application code under a recover: OnConnect and
+// OnDisconnect, the FileProvider, Authenticate, Metrics and a
+// JournalProvider set in MMS, the [ControlHandler] and
+// [SettingGroupHandler] callbacks, and the code a variable read or write
+// reaches (the report buffers, the Clock). A call that does not return
+// normally is logged with its stack at error level and counted in
+// [ServerStats.CallbacksRecovered], and the request is answered with an
+// error: object-access-denied for a variable read or write, a service
+// error for a file or journal service, a rejection of the association
+// for Authenticate and a refusal for a control service. A connection
+// hook or a Metrics call loses that event. The connection, the other
+// associations and the process go on. Code registered directly on
+// [Server.MMS] is called by go-mms as it is.
 type ServerOptions struct {
 	// Logger, when non-nil, enables structured logging. When
 	// [ServerOptions.MMS].Logger is also nil, this logger is passed
@@ -194,6 +223,47 @@ type ServerOptions struct {
 	// BufTm, ResvTms) run on the monotonic clock and ignore it; see
 	// [Clock].
 	Clock Clock
+
+	// MaxConnections bounds the connections [Server.ListenAndServe]
+	// serves at once, over all its listeners; zero or less means
+	// [DefaultMaxConnections]. A connection accepted beyond it is closed
+	// at once, before OnConnect and the association, and counted in
+	// [ServerStats.ConnectionsRefused]. Connections given to
+	// [Server.Serve] by the caller are not counted.
+	MaxConnections int
+}
+
+// DefaultMaxConnections is the default [ServerOptions.MaxConnections].
+const DefaultMaxConnections = 1024
+
+// ServerStats counts connections and callbacks of a [Server]; see
+// [Server.Stats].
+type ServerStats struct {
+	// Connections is the number of connections [Server.ListenAndServe]
+	// serves now.
+	Connections int
+
+	// ConnectionsRefused counts the connections closed at once because
+	// [ServerOptions.MaxConnections] were served.
+	ConnectionsRefused uint64
+
+	// CallbacksRecovered counts the calls of application code (hooks,
+	// providers, handlers, metrics) that did not return normally (see
+	// [ServerOptions]).
+	CallbacksRecovered uint64
+}
+
+// Stats returns the counters of the server. It is safe to call from any
+// goroutine.
+func (s *Server) Stats() ServerStats {
+	s.lnMu.Lock()
+	n := len(s.conns)
+	s.lnMu.Unlock()
+	return ServerStats{
+		Connections:        n,
+		ConnectionsRefused: s.connsRefused.Load(),
+		CallbacksRecovered: s.cb.count(),
+	}
 }
 
 // NewServer creates an IEC 61850 server from the given data model.
@@ -238,9 +308,23 @@ func NewServer(model *servermodel.Model, opts ServerOptions) (*Server, error) {
 		mmsOpts.JournalProvider = mjp
 	}
 
+	// Application code that go-mms calls on its goroutines runs under a
+	// recover (see ServerOptions).
+	cb := &callbackGuard{logger: logger}
+	if mmsOpts.FileProvider != nil {
+		mmsOpts.FileProvider = &guardedFileProvider{p: mmsOpts.FileProvider, g: cb}
+	}
+	if mmsOpts.Authenticate != nil {
+		mmsOpts.Authenticate = cb.authenticator(mmsOpts.Authenticate)
+	}
+	mmsOpts.Metrics = guardMetrics(mmsOpts.Metrics, cb)
+	if mmsOpts.JournalProvider != nil && mjp == nil {
+		mmsOpts.JournalProvider = guardJournal(mmsOpts.JournalProvider, cb)
+	}
+
 	mmsSrv := mms.NewServer(mmsOpts)
 
-	vs, err := servermodel.RegisterModel(mmsSrv, model, servermodel.NewValueStoreWithOptions(servermodel.ValueStoreOptions{
+	vs, err := servermodel.RegisterModel(guardedRegistrar{srv: mmsSrv, g: cb}, model, servermodel.NewValueStoreWithOptions(servermodel.ValueStoreOptions{
 		AllowReadOnlyFCWrites: opts.AllowReadOnlyFCWrites,
 	}))
 	if err != nil {
@@ -260,6 +344,11 @@ func NewServer(model *servermodel.Model, opts ServerOptions) (*Server, error) {
 		reportMaxPDU:       mmsOpts.MMS.MaxPDUSize,
 		clock:              clockOrSystem(opts.Clock),
 		newReportBuffer:    opts.NewReportBuffer,
+		maxConns:           opts.MaxConnections,
+		cb:                 cb,
+	}
+	if s.maxConns <= 0 {
+		s.maxConns = DefaultMaxConnections
 	}
 
 	if opts.Identity != nil {
@@ -540,7 +629,12 @@ func (s *Server) Close() {
 // for the connection goroutine it is called on.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.lnMu.Lock()
-	s.shutdown = true
+	if !s.shutdown {
+		s.shutdown = true
+		if s.downCh != nil {
+			close(s.downCh)
+		}
+	}
 	for ln := range s.hookListeners {
 		_ = ln.Close()
 	}
@@ -593,7 +687,7 @@ func (s *Server) MMS() *mms.Server {
 // subsequently fails during authentication or handshake.
 func (s *Server) Serve(ctx context.Context, conn mms.Transport) error {
 	if s.onConnect != nil {
-		s.onConnect(ConnectionEvent{})
+		s.cb.hook("OnConnect", s.onConnect, ConnectionEvent{})
 	}
 	// The gate orders reports after the response to the request that
 	// triggered them (see respGate).
@@ -609,7 +703,7 @@ func (s *Server) Serve(ctx context.Context, conn mms.Transport) error {
 		s.reportEngine.reapClosedConns()
 	}
 	if s.onDisconnect != nil {
-		s.onDisconnect(ConnectionEvent{})
+		s.cb.hook("OnDisconnect", s.onDisconnect, ConnectionEvent{})
 	}
 	return err
 }
@@ -620,9 +714,25 @@ func (s *Server) Serve(ctx context.Context, conn mms.Transport) error {
 //
 // Each accepted connection is handled by [Server.Serve] in its own
 // goroutine, which ensures that connection lifecycle hooks are invoked.
+// At most [ServerOptions.MaxConnections] are served at once; a connection
+// beyond that is closed at once. A temporary accept error is retried
+// after a pause that starts at 5 ms and doubles up to 1 s.
+//
+// ListenAndServe returns after the connection goroutines it started have
+// returned (their OnDisconnect included): after ctx ends, which ends
+// their associations; after [Server.Shutdown], which concludes them; and
+// after an accept error that is not temporary, when it first ends the
+// connections it serves.
 func (s *Server) ListenAndServe(ctx context.Context, ln mms.TransportListener) error {
 	return s.listenAndServeWithHooks(ctx, ln)
 }
+
+// Accept backoff of ListenAndServe after a temporary accept error, as
+// net/http and go-mms transport/iso do.
+const (
+	acceptBackoffMin = 5 * time.Millisecond
+	acceptBackoffMax = time.Second
+)
 
 // listenAndServeWithHooks implements the accept loop: every connection
 // goes through [Server.Serve], so connection hooks are invoked and
@@ -638,14 +748,26 @@ func (s *Server) listenAndServeWithHooks(ctx context.Context, ln mms.TransportLi
 		s.hookListeners = make(map[mms.TransportListener]struct{})
 	}
 	s.hookListeners[ln] = struct{}{}
+	if s.downCh == nil {
+		s.downCh = make(chan struct{})
+	}
+	down := s.downCh
 	s.lnMu.Unlock()
+
+	// The connections of this call: served with connCtx, cancelled when
+	// the listener fails, and waited for before returning.
+	connCtx, cancelConns := context.WithCancel(ctx)
+	var served sync.WaitGroup
 	defer func() {
 		s.lnMu.Lock()
 		delete(s.hookListeners, ln)
 		s.lnMu.Unlock()
 		_ = ln.Close()
+		served.Wait()
+		cancelConns()
 	}()
 
+	var backoff time.Duration
 	for {
 		transport, err := ln.Accept(ctx)
 		if err != nil {
@@ -653,18 +775,29 @@ func (s *Server) listenAndServeWithHooks(ctx context.Context, ln mms.TransportLi
 				return ctx.Err()
 			}
 			s.lnMu.Lock()
-			down := s.shutdown
+			isDown := s.shutdown
 			s.lnMu.Unlock()
-			if down {
+			if isDown {
 				return mms.ErrServerClosed
 			}
 			if isTemporaryAcceptError(err) {
-				s.logger.Warn("iec61850: temporary accept error, retrying", "error", err)
+				backoff = min(max(2*backoff, acceptBackoffMin), acceptBackoffMax)
+				s.logger.Warn("iec61850: temporary accept error, retrying", "error", err, "backoff", backoff)
+				t := time.NewTimer(backoff)
+				select {
+				case <-t.C:
+				case <-ctx.Done():
+				case <-down:
+				}
+				t.Stop()
 				continue
 			}
 			s.logger.Error("iec61850: accept error", "error", err)
+			// The listener has failed: end the connections it served.
+			cancelConns()
 			return err
 		}
+		backoff = 0
 		// The goroutine is registered before it starts, and none starts
 		// once Shutdown has begun: Shutdown waits for all of them.
 		sc := &servedConn{done: make(chan struct{})}
@@ -674,12 +807,24 @@ func (s *Server) listenAndServeWithHooks(ctx context.Context, ln mms.TransportLi
 			_ = transport.Close()
 			return mms.ErrServerClosed
 		}
+		if len(s.conns) >= s.maxConns {
+			s.lnMu.Unlock()
+			_ = transport.Close()
+			if s.connsRefused.Add(1) == 1 {
+				s.logger.Warn("iec61850: connection refused: MaxConnections served", "max", s.maxConns)
+			} else {
+				s.logger.Debug("iec61850: connection refused: MaxConnections served", "max", s.maxConns)
+			}
+			continue
+		}
 		if s.conns == nil {
 			s.conns = make(map[*servedConn]struct{})
 		}
 		s.conns[sc] = struct{}{}
 		s.lnMu.Unlock()
+		served.Add(1)
 		go func() {
+			defer served.Done()
 			sc.goroutine.Store(goid.ID())
 			defer func() {
 				s.lnMu.Lock()
@@ -688,7 +833,7 @@ func (s *Server) listenAndServeWithHooks(ctx context.Context, ln mms.TransportLi
 				close(sc.done)
 			}()
 			defer func() { _ = transport.Close() }()
-			if serveErr := s.Serve(ctx, transport); serveErr != nil {
+			if serveErr := s.Serve(connCtx, transport); serveErr != nil {
 				s.logger.Debug("iec61850: connection closed", "error", serveErr)
 			}
 		}()
@@ -707,9 +852,14 @@ func (s *Server) listenAndServeWithHooks(ctx context.Context, ln mms.TransportLi
 // was LDevice@inst alone; [NewServerModelFromSCLWithOptions] with
 // [ServerModelOptions.InstanceDomainNames] keeps that.
 //
+// The expansion of the type templates stops at
+// [scl.DefaultMaxExpandedNodes] data objects and attributes with an error
+// that wraps [ErrLimitExceeded] and [scl.ErrLimitExceeded];
+// [ServerModelOptions.MaxExpandedNodes] sets another limit.
+//
 // This is a convenience wrapper around [servermodel.FromSCL].
 func NewServerModelFromSCL(s *scl.SCL, iedName, apName string) (*servermodel.Model, error) {
-	return servermodel.FromSCL(s, iedName, apName)
+	return NewServerModelFromSCLWithOptions(s, iedName, apName, ServerModelOptions{})
 }
 
 // ServerModelOptions control [NewServerModelFromSCLWithOptions].
@@ -718,13 +868,36 @@ type ServerModelOptions struct {
 	// LDevice@inst alone ("InteropLD"), as go-iec61850 did before v1.7.0,
 	// instead of its IEC 61850-8-1 name.
 	InstanceDomainNames bool
+
+	// MaxExpandedNodes is the number of data objects and data
+	// attributes (DO, SDO, DA and BDA, each counted once per place in
+	// the model it is expanded to) the expansion of the type templates
+	// may produce; zero or less means [scl.DefaultMaxExpandedNodes].
+	// Beyond it the model is not built and the error wraps
+	// [ErrLimitExceeded] and [scl.ErrLimitExceeded].
+	MaxExpandedNodes int
 }
 
 // NewServerModelFromSCLWithOptions is [NewServerModelFromSCL] with
 // options.
 func NewServerModelFromSCLWithOptions(s *scl.SCL, iedName, apName string, o ServerModelOptions) (*servermodel.Model, error) {
-	return servermodel.FromSCLWithOptions(s, iedName, apName, servermodel.Options{InstanceDomainNames: o.InstanceDomainNames})
+	m, err := servermodel.FromSCLWithOptions(s, iedName, apName, servermodel.Options{
+		InstanceDomainNames: o.InstanceDomainNames,
+		MaxExpandedNodes:    o.MaxExpandedNodes,
+	})
+	if err != nil && errors.Is(err, scl.ErrLimitExceeded) {
+		return nil, modelLimitError{err}
+	}
+	return m, err
 }
+
+// modelLimitError is the error of a model whose expansion went beyond
+// its limit: it reads as the servermodel error and matches both
+// [ErrLimitExceeded] and [scl.ErrLimitExceeded].
+type modelLimitError struct{ err error }
+
+func (e modelLimitError) Error() string   { return e.err.Error() }
+func (e modelLimitError) Unwrap() []error { return []error{ErrLimitExceeded, e.err} }
 
 // isTemporaryAcceptError reports whether an Accept error is temporary, as
 // mms.Server.ListenAndServe does.

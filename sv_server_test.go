@@ -79,7 +79,7 @@ func newSVFixture(t *testing.T, opts SVOptions) *svFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(sctx, serverT) }()
 	mc, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
 	if err != nil {
@@ -242,15 +242,17 @@ func TestSVServerMSVCBOverMMS(t *testing.T) {
 func TestSVServerStartDisabledAndErrors(t *testing.T) {
 	ctx := context.Background()
 	f := newSVFixture(t, SVOptions{StartDisabled: true})
-	time.Sleep(20 * time.Millisecond)
+	// Nothing can be sent while no control block has a publisher.
+	for _, ref := range f.engine.ControlBlocks() {
+		if p, err := f.engine.Publisher(ref); err != nil || p != nil {
+			t.Errorf("%s: publisher %v, %v while disabled", ref, p, err)
+		}
+	}
 	f.mu.Lock()
 	n := len(f.samples)
 	f.mu.Unlock()
 	if n != 0 {
 		t.Fatalf("%d streams while disabled", n)
-	}
-	if p, _ := f.engine.Publisher(msvcb2Ref); p != nil {
-		t.Error("publisher while disabled")
 	}
 	if err := f.engine.SetEnabled(msvcb2Ref, true); err != nil {
 		t.Fatal(err)

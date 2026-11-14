@@ -114,8 +114,19 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   association ends is ended at the same points, as a Cancel would end it:
   the object returns to unselected, the operate is not executed and no
   termination is sent (the standard leaves this case to the device; the
-  operate cannot be confirmed to a client that is gone). Choices where the standard is
+  operate cannot be confirmed to a client that is gone). The application
+  ends a waiting time activated operate with
+  `Server.CancelTimeActivatedOperate`; an operTm further ahead than
+  `ControlHandler.MaxOperDelay` (24 hours by default) is refused with
+  time-limit-over. Choices where the standard is
   ambiguous follow libiec61850; see [INTEROP.md](INTEROP.md#control-model-choices).
+- **Application code runs under a recover, with its own state as it
+  left it** — hooks, providers, handlers and `Metrics` (API.md "Server
+  methods") are called under a recover; a call that does not return
+  normally is answered with the service's error. State the application
+  code itself held at that moment (a lock of its own, a value half
+  written) stays as it left it. Code registered directly on `Server.MMS()`
+  and the `slog.Handler` of `Logger` are called as they are.
 - **Setting groups: value banks in memory** — the server keeps one value
   bank per setting group (IEC 61850-7-2 §16, built from SCL `Val sGroup`)
   with the SGCB services and the edit reservation per association. Limits:

@@ -70,12 +70,34 @@ type Member struct {
 // access point with a Server in doc. Blocks that cannot be resolved are
 // skipped and reported in the returned error (which wraps [ErrSCL]);
 // the blocks that could be resolved are returned regardless.
+//
+// The models of all IEDs of doc together expand the type templates to at
+// most [scl.DefaultMaxExpandedNodes] data objects and attributes; beyond
+// that the IEDs not yet read are left out and the error wraps
+// [scl.ErrLimitExceeded] too. [ControlBlocksFromSCLWithOptions] sets
+// another limit.
 func ControlBlocksFromSCL(doc *scl.SCL) ([]ControlBlock, error) {
+	return ControlBlocksFromSCLWithOptions(doc, SCLOptions{})
+}
+
+// SCLOptions control [ControlBlocksFromSCLWithOptions].
+type SCLOptions struct {
+	// MaxExpandedNodes is the number of data objects and data
+	// attributes (DO, SDO, DA and BDA, each counted once per place in a
+	// model) the models of all IEDs of the document together may
+	// expand the type templates to; zero or less means
+	// [scl.DefaultMaxExpandedNodes].
+	MaxExpandedNodes int
+}
+
+// ControlBlocksFromSCLWithOptions is [ControlBlocksFromSCL] with options.
+func ControlBlocksFromSCLWithOptions(doc *scl.SCL, opts SCLOptions) ([]ControlBlock, error) {
 	if doc == nil {
 		return nil, fmt.Errorf("%w: nil SCL document", ErrSCL)
 	}
 	var out []ControlBlock
 	var errs []error
+	budget := servermodel.NewBudget(opts.MaxExpandedNodes)
 	for i := range doc.IEDs {
 		ied := &doc.IEDs[i]
 		for j := range ied.AccessPoints {
@@ -83,10 +105,13 @@ func ControlBlocksFromSCL(doc *scl.SCL) ([]ControlBlock, error) {
 			if ap.Server == nil {
 				continue
 			}
-			cbs, err := blocksForAP(doc, ied.Name, ap.Name)
+			cbs, err := blocksForAP(doc, ied.Name, ap.Name, budget)
 			out = append(out, cbs...)
 			if err != nil {
 				errs = append(errs, err)
+				if errors.Is(err, scl.ErrLimitExceeded) {
+					return out, errors.Join(errs...)
+				}
 			}
 		}
 	}
@@ -109,8 +134,8 @@ func ControlBlockFromSCL(doc *scl.SCL, iedName, ldInst, cbName string) (*Control
 	return nil, fmt.Errorf("%w: %w: SvCB %s/%s/%s", ErrSCL, ErrNotFound, iedName, ldInst, cbName)
 }
 
-func blocksForAP(doc *scl.SCL, iedName, apName string) ([]ControlBlock, error) {
-	model, err := servermodel.FromSCL(doc, iedName, apName)
+func blocksForAP(doc *scl.SCL, iedName, apName string, budget *servermodel.Budget) ([]ControlBlock, error) {
+	model, err := servermodel.FromSCLWithOptions(doc, iedName, apName, servermodel.Options{Budget: budget})
 	if err != nil {
 		return nil, fmt.Errorf("%w: IED %s AP %s: %w", ErrSCL, iedName, apName, err)
 	}

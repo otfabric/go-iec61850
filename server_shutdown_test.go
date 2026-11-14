@@ -40,18 +40,21 @@ func (m *countMetrics) counts() (int, int) {
 }
 
 // closingListener is a chanListener whose Accept returns once Close is
-// called, like a real listener.
+// called, like a real listener. accepting is closed by the first Accept.
 type closingListener struct {
 	*chanListener
-	once sync.Once
-	done chan struct{}
+	once      sync.Once
+	done      chan struct{}
+	acceptOne sync.Once
+	accepting chan struct{}
 }
 
 func newClosingListener() *closingListener {
-	return &closingListener{chanListener: newChanListener(), done: make(chan struct{})}
+	return &closingListener{chanListener: newChanListener(), done: make(chan struct{}), accepting: make(chan struct{})}
 }
 
 func (l *closingListener) Accept(ctx context.Context) (mms.Transport, error) {
+	l.acceptOne.Do(func() { close(l.accepting) })
 	select {
 	case t := <-l.conns:
 		return t, nil
@@ -129,8 +132,8 @@ func TestServerShutdown_WithHooks(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- srv.ListenAndServe(context.Background(), ln) }()
 
-	// Let the loop register its listener before shutting down.
-	time.Sleep(50 * time.Millisecond)
+	// The loop has registered its listener once it accepts.
+	<-ln.accepting
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {

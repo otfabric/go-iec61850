@@ -3,7 +3,6 @@
 package scl
 
 import (
-	"bytes"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -24,7 +23,15 @@ import (
 // It detects the schema version from the root element, dispatches
 // to the correct versioned raw type for unmarshalling, and converts
 // the result into the normalized [SCL] model.
+//
+// The limits of opts (MaxBytes, MaxDepth, MaxDiagnostics,
+// MaxDiagnosticName) apply; a document beyond MaxBytes or MaxDepth is
+// refused with an error that wraps [ErrLimitExceeded].
 func ParseBytes(data []byte, opts ParseOptions) (*Result, error) {
+	lim := opts.limits()
+	if int64(len(data)) > lim.maxBytes {
+		return nil, sizeError(lim.maxBytes)
+	}
 	vi, err := DetectVersion(data)
 	if err != nil {
 		return nil, err
@@ -35,19 +42,19 @@ func ParseBytes(data []byte, opts ParseOptions) (*Result, error) {
 		kind = KindUnknown
 	}
 
+	sink := newDiagSink(opts.MaxDiagnostics, lim.nameCap)
 	originalNamespace := vi.Namespace
 	defaultSpace := ""
-	var nsDiag []Diagnostic
 	if opts.AssumeSCLNamespace && vi.Namespace == "" {
 		defaultSpace = iecNamespace
 		vi.Namespace = iecNamespace
 		vi.Schema, vi.Confidence, vi.Reasons = classifyVersion(vi)
-		nsDiag = []Diagnostic{{
+		sink.add(Diagnostic{
 			Severity: DiagWarning,
 			Code:     "namespace-assumed",
 			Path:     "SCL",
 			Message:  fmt.Sprintf("the SCL root element has no namespace; read as %s (the schema requires it)", iecNamespace),
-		}}
+		})
 	}
 
 	result := &Result{
@@ -55,11 +62,10 @@ func ParseBytes(data []byte, opts ParseOptions) (*Result, error) {
 		Kind:    kind,
 	}
 
-	doc, diags, err := decodeAndConvert(data, vi, defaultSpace)
+	doc, err := decodeAndConvert(data, vi, defaultSpace, lim.maxDepth, sink)
 	if err != nil {
 		return nil, err
 	}
-	diags = append(nsDiag, diags...)
 	doc.Metadata = &DocumentMetadata{
 		Version:           vi,
 		Kind:              kind,
@@ -68,16 +74,12 @@ func ParseBytes(data []byte, opts ParseOptions) (*Result, error) {
 		HasHeader:         rootHasChild(data, "Header"),
 	}
 	result.Document = doc
-	result.Diagnostics = diags
 
 	if opts.ValidateSemantic {
-		result.Diagnostics = append(result.Diagnostics, Validate(doc)...)
-		result.Diagnostics = append(result.Diagnostics, ValidateKind(doc, kind)...)
+		validateInto(doc, sink)
+		validateKindInto(doc, kind, sink)
 	}
-
-	if opts.MaxDiagnostics > 0 && len(result.Diagnostics) > opts.MaxDiagnostics {
-		result.Diagnostics = result.Diagnostics[:opts.MaxDiagnostics]
-	}
+	result.Diagnostics = sink.diags
 
 	if opts.Strict && result.HasErrors() {
 		return result, fmt.Errorf("scl: strict mode: %d error(s)", countErrors(result.Diagnostics))
@@ -87,11 +89,12 @@ func ParseBytes(data []byte, opts ParseOptions) (*Result, error) {
 }
 
 // ParseFileOpts reads and parses an SCL file, using the file
-// extension to infer [DocumentKind] when not specified in opts.
+// extension to infer [DocumentKind] when not specified in opts. A file
+// larger than [ParseOptions.MaxBytes] is refused before it is read.
 func ParseFileOpts(path string, opts ParseOptions) (*Result, error) {
-	data, err := os.ReadFile(filepath.Clean(path)) // the caller names the file to read
+	data, err := readFileLimited(path, opts.limits().maxBytes)
 	if err != nil {
-		return nil, fmt.Errorf("scl: read %q: %w", path, err)
+		return nil, err
 	}
 
 	if opts.Kind == "" {
@@ -101,12 +104,45 @@ func ParseFileOpts(path string, opts ParseOptions) (*Result, error) {
 	return ParseBytes(data, opts)
 }
 
+// readFileLimited reads the file at path when it holds at most max
+// bytes. The size is checked before reading, and the read itself stops
+// one byte beyond max, for a file that grows or reports no size.
+func readFileLimited(path string, max int64) ([]byte, error) {
+	f, err := os.Open(filepath.Clean(path)) // the caller names the file to read
+	if err != nil {
+		return nil, fmt.Errorf("scl: read %q: %w", path, err)
+	}
+	defer func() { _ = f.Close() }()
+	if st, err := f.Stat(); err == nil && st.Size() > max {
+		return nil, fmt.Errorf("scl: read %q: %w", path, sizeError(max))
+	}
+	data, err := readLimited(f, max)
+	if err != nil {
+		return nil, fmt.Errorf("scl: read %q: %w", path, err)
+	}
+	return data, nil
+}
+
+// readLimited reads r to its end when it holds at most max bytes, and
+// fails with an error that wraps [ErrLimitExceeded] when it holds more.
+func readLimited(r io.Reader, max int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, max+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > max {
+		return nil, sizeError(max)
+	}
+	return data, nil
+}
+
 // --- Compatibility wrappers ---
 
 // Parse reads an SCL XML document from r and returns the parsed model.
-// For richer output, use [ParseBytes].
+// A document larger than [DefaultMaxBytes] is refused with an error that
+// wraps [ErrLimitExceeded]. For richer output, use [ParseBytes].
 func Parse(r io.Reader) (*SCL, error) {
-	data, err := io.ReadAll(r)
+	data, err := readLimited(r, DefaultMaxBytes)
 	if err != nil {
 		return nil, fmt.Errorf("scl: read: %w", err)
 	}
@@ -117,8 +153,9 @@ func Parse(r io.Reader) (*SCL, error) {
 	return result.Document, nil
 }
 
-// ParseFile reads and parses an SCL XML file from the given path.
-// For richer output, use [ParseFileOpts].
+// ParseFile reads and parses an SCL XML file from the given path, with
+// the default limits of [ParseOptions]. For richer output, use
+// [ParseFileOpts].
 func ParseFile(path string) (*SCL, error) {
 	result, err := ParseFileOpts(path, ParseOptions{})
 	if err != nil {
@@ -127,11 +164,13 @@ func ParseFile(path string) (*SCL, error) {
 	return result.Document, nil
 }
 
-// ParseWithOptions is a compatibility wrapper around [ParseBytes].
+// ParseWithOptions is a compatibility wrapper around [ParseBytes]. It
+// reads at most [ParseOptions.MaxBytes] from r: a longer document is
+// refused with an error that wraps [ErrLimitExceeded].
 //
 // Deprecated: Use [ParseBytes] directly.
 func ParseWithOptions(r io.Reader, opts ParseOptions) (*Result, error) {
-	data, err := io.ReadAll(r)
+	data, err := readLimited(r, opts.limits().maxBytes)
 	if err != nil {
 		return nil, fmt.Errorf("scl: read: %w", err)
 	}
@@ -147,63 +186,66 @@ func ParseFileWithOptions(path string, opts ParseOptions) (*Result, error) {
 
 // --- Internal dispatch ---
 
-func decodeAndConvert(data []byte, vi VersionInfo, defaultSpace string) (*SCL, []Diagnostic, error) {
+// decodeAndConvert decodes data with the bindings of vi.Schema and
+// converts it; its diagnostics go to sink.
+func decodeAndConvert(data []byte, vi VersionInfo, defaultSpace string, maxDepth int, sink *diagSink) (*SCL, error) {
 	switch vi.Schema {
 	case Version2007C5:
 		var raw v2007c5.SCL
-		if err := decodeSCL(data, defaultSpace, &raw); err != nil {
-			return nil, nil, fmt.Errorf("scl: unmarshal v2007c5: %w", err)
+		if err := decodeSCL(data, defaultSpace, maxDepth, &raw); err != nil {
+			return nil, fmt.Errorf("scl: unmarshal v2007c5: %w", err)
 		}
-		return convertV2007C5(&raw)
+		return convertV2007C5(&raw, sink)
 
 	case Version2007B4:
 		var raw v2007b4.SCL
-		if err := decodeSCL(data, defaultSpace, &raw); err != nil {
-			return nil, nil, fmt.Errorf("scl: unmarshal v2007b4: %w", err)
+		if err := decodeSCL(data, defaultSpace, maxDepth, &raw); err != nil {
+			return nil, fmt.Errorf("scl: unmarshal v2007b4: %w", err)
 		}
-		return convertV2007B4(&raw)
+		return convertV2007B4(&raw, sink)
 
 	case Version2007B:
 		var raw v2007b.SCL
-		if err := decodeSCL(data, defaultSpace, &raw); err != nil {
-			return nil, nil, fmt.Errorf("scl: unmarshal v2007b: %w", err)
+		if err := decodeSCL(data, defaultSpace, maxDepth, &raw); err != nil {
+			return nil, fmt.Errorf("scl: unmarshal v2007b: %w", err)
 		}
-		return convertV2007B(&raw)
+		return convertV2007B(&raw, sink)
 
 	case Version17:
 		var raw v17.SCL
-		if err := decodeSCL(data, defaultSpace, &raw); err != nil {
-			return nil, nil, fmt.Errorf("scl: unmarshal v17: %w", err)
+		if err := decodeSCL(data, defaultSpace, maxDepth, &raw); err != nil {
+			return nil, fmt.Errorf("scl: unmarshal v17: %w", err)
 		}
-		return convertV17(&raw)
+		return convertV17(&raw, sink)
 
 	default:
 		fb, ok := fallbackSchema(vi)
 		if !ok {
-			return nil, nil, fmt.Errorf("scl: unsupported schema version (version=%q revision=%q release=%q)", vi.Version, vi.Revision, vi.Release)
+			return nil, fmt.Errorf("scl: unsupported schema version (version=%q revision=%q release=%q)",
+				sink.name(vi.Version), sink.name(vi.Revision), sink.name(vi.Release))
 		}
 		alt := vi
 		alt.Schema = fb
-		doc, diags, err := decodeAndConvert(data, alt, defaultSpace)
-		if err != nil {
-			return nil, nil, err
-		}
-		warn := Diagnostic{
+		sink.add(Diagnostic{
 			Severity: DiagWarning,
 			Code:     "schema-fallback",
 			Path:     "SCL",
 			Message: fmt.Sprintf("schema version=%q revision=%q release=%q is not a published SCL schema this library knows; parsed with the %s schema, elements it does not define are ignored",
-				vi.Version, vi.Revision, vi.Release, fb),
-		}
-		return doc, append([]Diagnostic{warn}, diags...), nil
+				sink.name(vi.Version), sink.name(vi.Revision), sink.name(vi.Release), fb),
+		})
+		return decodeAndConvert(data, alt, defaultSpace, maxDepth, sink)
 	}
 }
 
 // rootHasChild reports whether the root element of data has a direct
 // child element with the given local name. It stops at the first match
 // and ignores everything deeper than the root's children.
+//
+// It reads data with the decoder of the parse itself (newDecoder), so a
+// document declared in an encoding label the parse accepts ("utf8",
+// "US-ASCII") is read here too.
 func rootHasChild(data []byte, name string) bool {
-	d := xml.NewDecoder(bytes.NewReader(data))
+	d := newDecoder(data)
 	d.Strict = false
 	depth := 0
 	for {

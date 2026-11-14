@@ -1,5 +1,61 @@
 # go-iec61850 Releases
 
+## v1.21.0
+
+**Date:** 2026-11-14
+**Previous release:** v1.20.3
+
+Exported identifiers are added; none is removed or changed. Every new limit has a default above what a real substation sends or holds, and an option that raises it; SECURITY.md lists them all in one table, with the reason for each default. go-mms moves to v1.9.4.
+
+### Breaking
+
+The defaults below refuse or drop input that this library accepted before. Each names the option that raises it.
+
+- **File reads.** `Client.ReadFile` holds at most 256 MiB (`FileLimits.MaxSize`): a file announced larger is refused before it is read, and a server that sends more is stopped. `ReadFile` and `DownloadFile` stop when the server sends more than 64 MiB beyond the size it announced at FileOpen (`FileLimits.SizeTolerance`; a server that announces size 0 is read up to that much) or more than 64 answers in a row without data that announce more (`FileLimits.MaxEmptyChunks`). They close the file on the server and return an error that matches the new `ErrLimitExceeded`. Set the limits in `DialOptions.FileLimits` or `ClientOptions.FileLimits`.
+- **Time activated operate.** An Operate whose operTm is more than 24 hours ahead is refused with AddCause time-limit-over and object-access-denied, and the control stays as it was (`ControlHandler.MaxOperDelay`).
+- **Connections.** `Server.ListenAndServe` serves at most 1024 connections at once, over all its listeners; a connection accepted beyond that is closed at once, before `OnConnect`, and counted (`ServerOptions.MaxConnections`). Connections given to `Server.Serve` by the caller are not counted.
+- **Segmented reports.** A segmented report whose buffered segments grow beyond 64 MiB (as the client estimates them from the decoded values), or whose last segment has not arrived 60 seconds after its first, is dropped and counted (`SubscribeReportOptions.MaxSegmentBytes`, `SubscribeReportOptions.SegmentTimeout`).
+- **GOOSE and SV streams.** A `goose` or `sv` subscription supervises at most 4096 streams. While it supervises that many, a frame (an ASDU for SV) of a stream it has not seen is dropped, counted in `Subscription.Counters().StreamsRefused` and reported to `Metrics.FrameDropped` with the new reason `"streams"`; the streams it supervises go on and are never replaced (`SubscriptionConfig.MaxStreams`).
+- **SCL documents.** A document larger than 1 GiB (`ParseOptions.MaxBytes`; `ParseFileOpts` checks the file size before it reads) or with elements nested deeper than 1024 levels, skipped content included (`ParseOptions.MaxDepth`), is refused with an error that matches the new `scl.ErrLimitExceeded`. The expansion of the type templates stops at 33,554,432 DO, SDO, DA and BDA instances: `scl.Flatten` then ends with a row of status `expansion-limit`, and `NewServerModelFromSCL` and the `goose` and `sv` `ControlBlocksFromSCL` refuse the document with an error that matches `scl.ErrLimitExceeded` (and `ErrLimitExceeded` for the server model). The options are `scl.FlattenOptions.MaxExpandedNodes`, `ServerModelOptions.MaxExpandedNodes`, `goose.SCLOptions` and `sv.SCLOptions`.
+- **Application code that does not return normally.** The library calls application code under a recover where it did not before: on the server `OnConnect`, `OnDisconnect`, the `FileProvider`, `Authenticate`, `Metrics`, a `JournalProvider` set in `MMS`, and the code a variable read or write reaches (report buffers, the `Clock`); on the client `Metrics`; the GOOSE `Handler` and `OnDecodeError`; the SV `OnASDU` and `OnDecodeError`; the `goose` and `sv` subscriber and publisher `Metrics`; `rsession` `OnReject` and the `KeyProvider` on the receive goroutine. A call that does not return normally used to end the process. It is now logged with its stack at error level and counted (`Server.Stats().CallbacksRecovered`, `Subscription.Counters().CallbacksRecovered`, `Subscriber.CallbacksRecovered()`, `rsession` `Stats.CallbacksRecovered`). The request is answered with the service's error: object-access-denied for a variable read or write, a service error for a file or journal service, a rejected association for `Authenticate`; a frame or datagram is dropped, a connection hook or `Metrics` call loses that event. The connection, the subscription, the other associations and the process go on. `ControlHandler` and `SettingGroupHandler` callbacks, recovered before, are now logged with their stack and counted too. For a server built with `NewServer` the `SettingGroupHandler` record is now `iec61850: callback did not return normally` with `callback=SettingGroupHandler.<method>` (it was `iec61850: SettingGroupHandler callback recovered`); `iec61850: OnOverflow callback panicked` is unchanged. Code registered directly on `Server.MMS()` and a `slog.Handler` are called as before.
+
+### Added
+
+- `ErrLimitExceeded`; `FileLimits` with `DefaultMaxFileSize`, `DefaultFileSizeTolerance` and `DefaultMaxEmptyFileChunks`; `DialOptions.FileLimits`, `ClientOptions.FileLimits`.
+- **Association end.** `Client.Done` is closed when the association has ended, and `Client.Err` says why: it matches `ErrClosed` and the go-mms error. When the association ends without `Close` (the server concludes or aborts it, or the connection is lost), every report subscription is closed: a consumer ranging over `Reports` stops, a new request or subscription is refused with `ErrClosed`, and `Close` returns without waiting for the server.
+- `ReportSubscription.Stats` (`ReportSubscriptionStats`: `ReportsDropped` for a full channel, `PartialReportsDropped`, `CallbacksRecovered` for `OnOverflow`); `SubscribeReportOptions.MaxSegmentBytes` and `SegmentTimeout`, `DefaultMaxSegmentBytes`, `DefaultSegmentTimeout`.
+- `ControlHandler.MaxOperDelay`, `DefaultMaxOperDelay`; `Server.CancelTimeActivatedOperate`, which ends a time activated operate that waits for its operTm as a Cancel of its client would (no operate, no termination, the control Unselected) and reports whether one was waiting.
+- `ServerOptions.MaxConnections`, `DefaultMaxConnections`; `Server.Stats` (`ServerStats`: `Connections`, `ConnectionsRefused`, `CallbacksRecovered`); `ServerModelOptions.MaxExpandedNodes`.
+- `goose` and `sv`: `SubscriptionConfig.MaxStreams`, `DefaultMaxStreams`, `SubscriptionCounters`, `Subscription.Counters`, `Subscriber.CallbacksRecovered`, `SCLOptions`, `ControlBlocksFromSCLWithOptions`.
+- `rsession`: `Config.AllowedSenders` (source address prefixes; any other sender is refused before its SPDU is decoded or verified, with `ErrSenderNotAllowed`, and counted in `Stats.NotAllowed`), `Config.SingleSenderPerKey` (one replay window per key whatever the sender address), `Stats.CallbacksRecovered`. Both options are off by default.
+- `scl`: `ParseOptions.MaxBytes`, `MaxDepth` and `MaxDiagnosticName`; `DefaultMaxBytes`, `DefaultMaxDepth`, `DefaultMaxDiagnosticName`, `DefaultMaxExpandedNodes`; `ErrLimitExceeded`; `FlattenOptions` and `FlattenWithOptions`, which also returns an `expansion-limit` diagnostic naming the logical node where the expansion stopped.
+
+### Fixed
+
+- **Report subscriptions after the association ended.** `Reports` is closed when the association ends, as its documentation said; before, it stayed open (see Added).
+- **`Client.Close` of a client made by `Dial`** gives its Conclude 5 seconds at the most and then closes the connection, so it returns also when the server does not answer, as documented. Before, with a context without deadline, it waited for the server.
+- **SCL Header with an encoding label.** A document declared `encoding="utf8"`, `"US-ASCII"` or another label the parser accepts has its Header found: `DocumentMetadata.HasHeader` is true and semantic validation no longer reports it missing.
+
+### Changed
+
+- **`ListenAndServe`** returns after the connection goroutines it started have returned (their `OnDisconnect` included): when its context ends, after `Shutdown`, and after an accept error that is not temporary, which first ends the connections it serves. After a temporary accept error it waits 5 ms, doubling up to 1 s and starting again at 5 ms after a connection, before it accepts again; before, it retried at once.
+- **SCL diagnostics.** A name quoted in a diagnostic is cut at 256 bytes, at a character boundary, and ends with "…" (`ParseOptions.MaxDiagnosticName`). With `MaxDiagnostics`, parsing and semantic validation stop adding diagnostics once the list is full; the first ones are kept, as before. `scl.DetectFile` reads a file up to its root element only.
+- **Dependencies.** go-cotp v1.4.0 (was v1.3.0) and go-tpkt v1.2.0 (was v1.1.0, indirect). For an MMS connection: a write that times out over TLS ends the connection; a DC, ER, AK, EA or RJ TPDU with octets after its header is refused; a TPKT stream that failed inside a packet stays failed; an operating-system connection timeout is reported as a disconnect (go-cotp and go-tpkt RELEASE.md). Nothing in this library depended on the behaviour that changed.
+- **go-mms v1.9.4** (was v1.9.3). Among its changes: the write of a confirmed request keeps its deadline, and a write that fails or is cut by it ends the association; `Server.Shutdown` also ends connections that are still associating; the server's handlers run without the server's lock (go-mms RELEASE.md, v1.9.4).
+- **Documentation.** SECURITY.md has one table of every limit (default and reason, option, where it is enforced, test) and deployment guidance for `AllowedSenders`, `SingleSenderPerKey` and SCL files from untrusted sources. API.md, ERRORS.md, OBSERVABILITY.md (counters, the `"streams"` reason, recovered calls), ARCHITECTURE.md (goroutines of the client, `ListenAndServe`), KNOWN_LIMITATIONS.md, GOOSE.md, SV.md, `rsession` and `scl/README.md` describe the above. `go doc . Client` shows the `Client` documentation. `docs/api/` is regenerated.
+
+### Tests
+
+- A test at and past every new limit, with allocation budgets for the file, segment, stream and SCL limits; a test per recovered callback where the callback does not return normally and the server or subscriber goes on serving other requests, associations and streams.
+- `internal/leakcheck`: `TestMain` of the root package, `goose`, `sv`, `l2` and `rsession` fails the run when a goroutine started by the tests is left, compared by goroutine identifier. The two tests that compared goroutine counts with a tolerance are replaced by it; the test helpers that left goroutines close what they open.
+- Waiting for another goroutine is done with events or `testing/synctest`, not sleeps.
+- Fuzz targets assert invariants (round trips, errors only for invalid input, list lengths); new targets for the `l2` demultiplexer, BPF record reader and Linux VLAN tag restore, the GOOSE and SV subscribers, the `rsession` receive path, `scl/index`, `scl/validate` and the server model built from SCL.
+- TESTING.md has the lifecycle matrix L1–L16 for the client, server, `goose`, `sv`, `l2` and `rsession` types, each cell a test or n/a with the reason.
+- `goose` `BenchmarkDecode` and `BenchmarkSubscriber`; `sv` `BenchmarkAppendFrame` checks the errors of `Decode` and `AppendFrame`.
+- The documents are checked with docsync v0.3.2 (was v0.3.1), which dates a release section from the commit that last added its heading.
+
+---
+
 ## v1.20.3
 
 **Date:** 2026-11-14

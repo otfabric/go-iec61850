@@ -178,13 +178,13 @@ func buildSvCBFields(d *SvCBDef, ldName, lnName string) []rcbField {
 
 // registerSvCB registers the MSVCB structure and its attributes; see
 // registerGoCB for the write semantics.
-func registerSvCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, d *SvCBDef) error {
+func registerSvCB(srv Registrar, vs *ValueStore, ldName, lnName string, d *SvCBDef) error {
 	return registerCtrlBlock(srv, vs, ldName, SvCBItemID(lnName, d.Name), "SvCB", buildSvCBFields(d, ldName, lnName), SvCBWritableFields)
 }
 
 // registerMSGroup registers the "LN$MS" FC-group variable. ok is false
 // when the LN has no SvCBs.
-func registerMSGroup(srv *mms.Server, vs *ValueStore, ldName string, ln *LogicalNode) (mms.TypeSpecElement, func(context.Context) (*mms.Value, error), bool, error) {
+func registerMSGroup(srv Registrar, vs *ValueStore, ldName string, ln *LogicalNode) (mms.TypeSpecElement, func(context.Context) (*mms.Value, error), bool, error) {
 	names := make([]string, len(ln.SvCBs))
 	structs := make([]func() (mms.TypeSpec, func(context.Context) (*mms.Value, error)), len(ln.SvCBs))
 	for i := range ln.SvCBs {

@@ -4,6 +4,7 @@ package iec61850
 
 import (
 	"context"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -107,17 +108,14 @@ func TestResourceExhaust_ReportBackpressure(t *testing.T) {
 		t.Fatalf("iso.Listen: %v", err)
 	}
 
-	bgCtx, bgCancel := context.WithCancel(context.Background())
-	defer bgCancel()
-	go func() { _ = srv.ListenAndServe(bgCtx, ln) }()
+	stop := serveISO(t, srv, ln)
 
 	c, err := Dial(context.Background(), ln.Addr().String(), DialOptions{})
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
 	defer func() {
-		bgCancel()
-		time.Sleep(30 * time.Millisecond)
+		stop()
 		_ = c.Abort(context.Background())
 	}()
 
@@ -155,8 +153,14 @@ func TestResourceExhaust_ReportBackpressure(t *testing.T) {
 		})
 	}
 
-	// Allow time for the flood to be processed.
-	time.Sleep(100 * time.Millisecond)
+	// The flood has reached the client once the queue is full.
+	deadline := time.Now().Add(5 * time.Second)
+	for len(sub.Reports()) < cap(sub.Reports()) {
+		if time.Now().After(deadline) {
+			t.Fatalf("report queue holds %d of %d after the flood", len(sub.Reports()), cap(sub.Reports()))
+		}
+		runtime.Gosched()
+	}
 
 	// Reads should still work despite the flooded report queue.
 	ref, _ := ParseRef("IED1LD1/LLN0.Mod.stVal[ST]")
@@ -195,9 +199,7 @@ func TestResourceExhaust_ValueStoreUnderLoad(t *testing.T) {
 		t.Fatalf("iso.Listen: %v", err)
 	}
 
-	bgCtx, bgCancel := context.WithCancel(context.Background())
-	defer bgCancel()
-	go func() { _ = srv.ListenAndServe(bgCtx, ln) }()
+	stop := serveISO(t, srv, ln)
 
 	// Start N goroutines that call srv.SetValue() concurrently.
 	const setters = 10
@@ -222,8 +224,7 @@ func TestResourceExhaust_ValueStoreUnderLoad(t *testing.T) {
 		t.Fatalf("Dial: %v", err)
 	}
 	defer func() {
-		bgCancel()
-		time.Sleep(30 * time.Millisecond)
+		stop()
 		_ = c.Abort(context.Background())
 	}()
 

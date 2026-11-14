@@ -101,6 +101,7 @@ func TestSubscribersReportSender(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			defer func() { _ = sub.Close() }()
 			var mu sync.Mutex
 			var got []netip.AddrPort
 			if _, err := sub.Subscribe(goose.SubscriptionConfig{Handler: func(e goose.Event) {

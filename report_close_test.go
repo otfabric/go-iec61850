@@ -45,7 +45,7 @@ func (q *quietTransport) Receive(ctx context.Context) ([]byte, error) {
 func sharedAssociation(t *testing.T, srv *Server) (*mms.Client, *quietTransport, func()) {
 	t.Helper()
 	sctx, cancel := context.WithCancel(context.Background())
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	qt := &quietTransport{Transport: clientT, quiet: make(chan struct{})}
 	served := make(chan struct{})
 	go func() {

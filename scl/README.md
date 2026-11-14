@@ -91,6 +91,22 @@ info, err := scl.DetectFile("station.scd") // or scl.DetectVersion(data)
 kind := scl.DetectKind(s)
 ```
 
+#### Limits
+
+Every parse has limits; a document beyond one is refused with an error
+that wraps `scl.ErrLimitExceeded`, never read in part. Zero in an option
+means its default.
+
+| Limit | Default | Option |
+|---|---|---|
+| Document size (`ParseBytes`, `ParseFileOpts`, `Parse`, `ParseWithOptions`; a file's size is checked before it is read) | `DefaultMaxBytes`, 1 GiB | `ParseOptions.MaxBytes` |
+| Element nesting, also of skipped content (unknown elements, `Private`) | `DefaultMaxDepth`, 1024 | `ParseOptions.MaxDepth` |
+| Diagnostics returned; parsing and semantic validation stop adding them once the list is full | all | `ParseOptions.MaxDiagnostics` |
+| Length of a name quoted in a diagnostic (cut at a character boundary, ends with "…") | `DefaultMaxDiagnosticName`, 256 bytes | `ParseOptions.MaxDiagnosticName` |
+| Nodes of a type expansion (DO, SDO, DA, BDA at each place of the model) | `DefaultMaxExpandedNodes`, 33,554,432 | `FlattenOptions.MaxExpandedNodes`; for a server model `ServerModelOptions.MaxExpandedNodes`; for the GOOSE and SV control blocks of a document `goose.SCLOptions` and `sv.SCLOptions` |
+
+`scl.DetectFile` reads a file up to its root element only.
+
 ### Validation
 
 ```go
@@ -124,7 +140,9 @@ What is checked (code, severity):
 
 `scl.Flatten` keeps rows for branches it cannot expand, with `Status`
 `unresolved-lntype`, `unresolved-dotype`, `unresolved-datype` or
-`type-cycle`.
+`type-cycle`. It stops after `DefaultMaxExpandedNodes` nodes, the last
+row with `Status` `expansion-limit`; `scl.FlattenWithOptions` sets
+another limit and also returns an `expansion-limit` error diagnostic.
 
 ### Inspection and export
 

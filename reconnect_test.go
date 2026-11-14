@@ -4,10 +4,11 @@ package iec61850
 
 import (
 	"context"
-	"runtime"
+	"sync"
 	"testing"
 	"time"
 
+	mms "github.com/otfabric/go-mms"
 	"github.com/otfabric/go-mms/transport/iso"
 
 	"github.com/otfabric/go-iec61850/scl"
@@ -76,8 +77,10 @@ func testServerSCLWithURCB() *scl.SCL {
 }
 
 // startIECServer starts a listening IEC 61850 server on a random local port.
-// It returns the server, its listener address, and a cancel function that
-// shuts the server down. Callers must call the cancel function.
+// It returns the server, its listener address, and a stop function that
+// ends ListenAndServe and returns once ListenAndServe and the connection
+// goroutines it started have returned (the connections are closed). Stop
+// runs at the end of the test if the test does not call it.
 func startIECServer(t *testing.T, s *scl.SCL) (*Server, string, context.CancelFunc) {
 	t.Helper()
 
@@ -96,17 +99,37 @@ func startIECServer(t *testing.T, s *scl.SCL) (*Server, string, context.CancelFu
 		t.Fatalf("iso.Listen: %v", err)
 	}
 
+	return srv, ln.Addr().String(), serveISO(t, srv, ln)
+}
+
+// serveISO runs srv.ListenAndServe on ln and returns a function that
+// cancels it and waits until ListenAndServe and the connection goroutines
+// it started have returned. The function runs at the end of the test if
+// the test does not call it; calling it again does nothing.
+func serveISO(t *testing.T, srv *Server, ln mms.TransportListener) context.CancelFunc {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
+	served := make(chan struct{})
 	go func() {
+		defer close(served)
 		_ = srv.ListenAndServe(ctx, ln)
 	}()
-
-	t.Cleanup(func() {
-		cancel()
-		srv.Close()
-	})
-
-	return srv, ln.Addr().String(), cancel
+	var once sync.Once
+	stop := func() {
+		once.Do(func() {
+			cancel()
+			<-served
+			// The connection goroutines end with ctx; Shutdown waits for
+			// them and stops the engines.
+			sctx, scancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer scancel()
+			if err := srv.Shutdown(sctx); err != nil {
+				t.Errorf("Shutdown: %v", err)
+			}
+		})
+	}
+	t.Cleanup(stop)
+	return stop
 }
 
 // TestClientReconnect_AfterServerRestart verifies that a client can
@@ -129,10 +152,7 @@ func TestClientReconnect_AfterServerRestart(t *testing.T) {
 		t.Fatalf("ListLogicalDevices (first): %v", err)
 	}
 
-	cancel1()
-	srv1.Close()
-	// Allow the server goroutine to terminate.
-	time.Sleep(50 * time.Millisecond)
+	cancel1() // returns once the server and its connections have ended
 	_ = client1.Close(ctx)
 
 	// Start a second server on a new port and reconnect.
@@ -214,48 +234,6 @@ func TestClientReconnect_URCBResubscription(t *testing.T) {
 	subscribe(t, c2)
 }
 
-// TestClient_NoGoroutineLeakOnConnectDisconnect verifies that repeated
-// connect/close cycles do not accumulate goroutines.
-func TestClient_NoGoroutineLeakOnConnectDisconnect(t *testing.T) {
-	ctx := context.Background()
-	sclData := testServerSCLWithURCB()
-	_, addr, _ := startIECServer(t, sclData)
-
-	// Warm up: two rounds to allow any once-per-process goroutines to start.
-	for range 2 {
-		c, err := Dial(ctx, addr, DialOptions{})
-		if err != nil {
-			t.Fatalf("warmup Dial: %v", err)
-		}
-		_ = c.Close(ctx)
-	}
-	time.Sleep(50 * time.Millisecond)
-	runtime.GC()
-	before := runtime.NumGoroutine()
-
-	// Exercise: ten more connect/close cycles.
-	const rounds = 10
-	for i := range rounds {
-		c, err := Dial(ctx, addr, DialOptions{})
-		if err != nil {
-			t.Fatalf("round %d Dial: %v", i, err)
-		}
-		_ = c.Close(ctx)
-	}
-	// Allow background goroutines to drain.
-	time.Sleep(100 * time.Millisecond)
-	runtime.GC()
-	after := runtime.NumGoroutine()
-
-	// Allow a generous tolerance: up to 3 lingering goroutines are acceptable
-	// (e.g. time.AfterFunc, runtime finalizers).
-	const maxDelta = 3
-	if delta := after - before; delta > maxDelta {
-		t.Errorf("goroutine leak: before=%d after=%d delta=%d (max %d)",
-			before, after, delta, maxDelta)
-	}
-}
-
 // TestServer_Close_StopsReportEngine verifies that after Server.Close()
 // a client connecting to the same address gets a connection error (the port
 // is no longer being served) and that the server does not accumulate
@@ -276,13 +254,11 @@ func TestServer_Close_StopsReportEngine(t *testing.T) {
 	}
 	_ = c.Close(ctx)
 
-	// Stop the server.
+	// Stop the server: stop returns once ListenAndServe has closed the
+	// listener and its goroutines have ended.
 	cancel()
 	re.Stop()
 	srv.Close()
-
-	// Give goroutines time to drain.
-	time.Sleep(100 * time.Millisecond)
 
 	// New connections should fail because the listener is closed.
 	dialCtx, dialCancel := context.WithTimeout(ctx, 300*time.Millisecond)
@@ -312,9 +288,9 @@ func TestClientReconnect_ReadAfterServerClose(t *testing.T) {
 		t.Fatalf("initial ListLogicalDevices: %v", err)
 	}
 
-	// Shut down the server while the client is still connected.
+	// Shut down the server while the client is still connected: cancel
+	// returns once the server has closed the connection.
 	cancel()
-	time.Sleep(80 * time.Millisecond)
 
 	// Subsequent operations should return an error, not hang.
 	opCtx, opCancel := context.WithTimeout(ctx, 1*time.Second)

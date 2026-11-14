@@ -145,7 +145,7 @@ func dialModel(t *testing.T, srv *Server) *mms.Client {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(ctx, serverT) }()
 	c, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
 	if err != nil {

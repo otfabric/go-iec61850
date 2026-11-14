@@ -16,7 +16,7 @@ PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 win
 PREFIX   ?= /usr/local
 
 # docsync release of docs-check (DOC-008).
-DOCSYNC_VERSION := v0.3.1
+DOCSYNC_VERSION := v0.3.2
 
 # Build information for `sclparse version` and `sclgen version`, as the
 # release workflow injects it: on a tag, the version without its leading v

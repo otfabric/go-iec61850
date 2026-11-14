@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/otfabric/go-mms"
@@ -309,37 +310,40 @@ func TestSpec_8_1_20_10_OperTm(t *testing.T) {
 // stops a time activated operate; another client gets
 // locked-by-other-client.
 func TestSpec_7_2_Table47_CancelTimeActivated(t *testing.T) {
-	var operates atomic.Int32
-	srv := specControlServer(t, specCF{}, func(s *Server) {
-		mustRegister(t, s, "GGIO1.SPCTm", CtlModelSBOEnhanced, ControlHandler{OnOperate: func(context.Context, ControlRequest) error {
-			operates.Add(1)
-			return nil
-		}})
+	synctest.Test(t, func(t *testing.T) {
+		var operates atomic.Int32
+		srv := specControlServer(t, specCF{}, func(s *Server) {
+			mustRegister(t, s, "GGIO1.SPCTm", CtlModelSBOEnhanced, ControlHandler{OnOperate: func(context.Context, ControlRequest) error {
+				operates.Add(1)
+				return nil
+			}})
+		})
+		a, b := controlClient(t, srv), controlClient(t, srv)
+		ctx := waitCtx(t)
+		ref := mustParseRef(t, ctlTm)
+		operTm := time.Now().Add(400 * time.Millisecond)
+		params := OperateParams{CtlVal: BoolCtlVal(true), CtlNum: 3, OperTm: operTm}
+		if err := a.SelectWithValue(ctx, ref, params); err != nil {
+			t.Fatal(err)
+		}
+		if err := a.Operate(ctx, ref, params); err != nil {
+			t.Fatal(err)
+		}
+		cp := CancelParams{CtlVal: BoolCtlVal(true), CtlNum: 3, OperTm: operTm}
+		refusal(t, "B Cancel", b.Cancel(ctx, ref, cp), AddCauseLockedByOtherClient, mms.DataAccessErrorTemporarilyUnavailable)
+		refusal(t, "B Oper", b.Operate(ctx, ref, params), AddCauseCommandAlreadyExec, mms.DataAccessErrorTemporarilyUnavailable)
+		if err := a.Cancel(ctx, ref, cp); err != nil {
+			t.Fatalf("A Cancel: %v", err)
+		}
+		time.Sleep(time.Until(operTm) + 200*time.Millisecond) // fake time: beyond operTm
+		synctest.Wait()
+		if n := operates.Load(); n != 0 {
+			t.Errorf("OnOperate called %d times after Cancel", n)
+		}
+		if err := b.SelectWithValue(ctx, ref, boolParams(4)); err != nil {
+			t.Errorf("B SBOw after cancel: %v", err)
+		}
 	})
-	a, b := controlClient(t, srv), controlClient(t, srv)
-	ctx := waitCtx(t)
-	ref := mustParseRef(t, ctlTm)
-	operTm := time.Now().Add(400 * time.Millisecond)
-	params := OperateParams{CtlVal: BoolCtlVal(true), CtlNum: 3, OperTm: operTm}
-	if err := a.SelectWithValue(ctx, ref, params); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.Operate(ctx, ref, params); err != nil {
-		t.Fatal(err)
-	}
-	cp := CancelParams{CtlVal: BoolCtlVal(true), CtlNum: 3, OperTm: operTm}
-	refusal(t, "B Cancel", b.Cancel(ctx, ref, cp), AddCauseLockedByOtherClient, mms.DataAccessErrorTemporarilyUnavailable)
-	refusal(t, "B Oper", b.Operate(ctx, ref, params), AddCauseCommandAlreadyExec, mms.DataAccessErrorTemporarilyUnavailable)
-	if err := a.Cancel(ctx, ref, cp); err != nil {
-		t.Fatalf("A Cancel: %v", err)
-	}
-	time.Sleep(time.Until(operTm) + 200*time.Millisecond)
-	if n := operates.Load(); n != 0 {
-		t.Errorf("OnOperate called %d times after Cancel", n)
-	}
-	if err := b.SelectWithValue(ctx, ref, boolParams(4)); err != nil {
-		t.Errorf("B SBOw after cancel: %v", err)
-	}
 }
 
 // CTL-06, CTL-07: IEC 61850-7-2 Table 47 (WaitForChange): Oper, SBOw and
@@ -549,21 +553,34 @@ func TestSpec_7_2_20_CFAttributes(t *testing.T) {
 	}
 
 	t.Run("sboTimeout", func(t *testing.T) {
-		srv := specControlServer(t, specCF{sboTimeoutMs: 150}, func(s *Server) {
-			mustRegister(t, s, "GGIO1.SPCTm", CtlModelSBOEnhanced, ControlHandler{})
+		synctest.Test(t, func(t *testing.T) {
+			ctx := waitCtx(t)
+			readSeld := func(c *Client) bool {
+				t.Helper()
+				v, err := c.ReadRaw(ctx, stSeld)
+				if err != nil {
+					t.Fatal(err)
+				}
+				b, _ := v.Bool()
+				return b
+			}
+			srv := specControlServer(t, specCF{sboTimeoutMs: 150}, func(s *Server) {
+				mustRegister(t, s, "GGIO1.SPCTm", CtlModelSBOEnhanced, ControlHandler{})
+			})
+			c := controlClient(t, srv)
+			if err := c.SelectWithValue(ctx, ref, boolParams(1)); err != nil {
+				t.Fatal(err)
+			}
+			if !readSeld(c) {
+				t.Error("stSeld false while selected")
+			}
+			time.Sleep(300 * time.Millisecond) // fake time: beyond sboTimeout of 150 ms
+			synctest.Wait()                    // the selection timer has run
+			if readSeld(c) {
+				t.Error("stSeld true after sboTimeout")
+			}
+			refusal(t, "Oper after sboTimeout", c.Operate(ctx, ref, boolParams(1)), AddCauseObjectNotSelected, mms.DataAccessErrorObjectAccessDenied)
 		})
-		c := controlClient(t, srv)
-		if err := c.SelectWithValue(ctx, ref, boolParams(1)); err != nil {
-			t.Fatal(err)
-		}
-		if !readSeld(c) {
-			t.Error("stSeld false while selected")
-		}
-		time.Sleep(300 * time.Millisecond)
-		if readSeld(c) {
-			t.Error("stSeld true after sboTimeout")
-		}
-		refusal(t, "Oper after sboTimeout", c.Operate(ctx, ref, boolParams(1)), AddCauseObjectNotSelected, mms.DataAccessErrorObjectAccessDenied)
 	})
 
 	t.Run("operate-many", func(t *testing.T) {

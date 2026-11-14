@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/otfabric/go-mms"
@@ -371,26 +372,30 @@ func TestSpec_9_2_SV_RefrTmFromClock(t *testing.T) {
 func TestSpec_7_2_ClockStepKeepsTimers(t *testing.T) {
 	ctx := waitCtx(t)
 	t.Run("sboTimeout", func(t *testing.T) {
-		clk := newStepClock()
-		srv := specControlServer(t, specCF{sboTimeoutMs: 400}, func(s *Server) {
-			mustRegister(t, s, "GGIO1.SPCTm", CtlModelSBOEnhanced, ControlHandler{})
+		synctest.Test(t, func(t *testing.T) {
+			ctx := waitCtx(t)
+			clk := newStepClock()
+			srv := specControlServer(t, specCF{sboTimeoutMs: 400}, func(s *Server) {
+				mustRegister(t, s, "GGIO1.SPCTm", CtlModelSBOEnhanced, ControlHandler{})
+			})
+			srv.clock = clk
+			c := controlClient(t, srv)
+			ref := mustParseRef(t, ctlTm)
+			if err := c.SelectWithValue(ctx, ref, boolParams(1)); err != nil {
+				t.Fatal(err)
+			}
+			clk.step(24 * time.Hour) // forward: the selection does not expire
+			if _, err := c.OperateWait(ctx, ref, boolParams(1)); err != nil {
+				t.Fatalf("operate after a forward clock step: %v", err)
+			}
+			if err := c.SelectWithValue(ctx, ref, boolParams(2)); err != nil {
+				t.Fatal(err)
+			}
+			clk.step(-48 * time.Hour)          // backward: sboTimeout still fires
+			time.Sleep(700 * time.Millisecond) // fake time: beyond sboTimeout of 400 ms
+			synctest.Wait()
+			refusal(t, "operate after sboTimeout", c.Operate(ctx, ref, boolParams(2)), AddCauseObjectNotSelected, mms.DataAccessErrorObjectAccessDenied)
 		})
-		srv.clock = clk
-		c := controlClient(t, srv)
-		ref := mustParseRef(t, ctlTm)
-		if err := c.SelectWithValue(ctx, ref, boolParams(1)); err != nil {
-			t.Fatal(err)
-		}
-		clk.step(24 * time.Hour) // forward: the selection does not expire
-		if _, err := c.OperateWait(ctx, ref, boolParams(1)); err != nil {
-			t.Fatalf("operate after a forward clock step: %v", err)
-		}
-		if err := c.SelectWithValue(ctx, ref, boolParams(2)); err != nil {
-			t.Fatal(err)
-		}
-		clk.step(-48 * time.Hour) // backward: sboTimeout still fires
-		time.Sleep(700 * time.Millisecond)
-		refusal(t, "operate after sboTimeout", c.Operate(ctx, ref, boolParams(2)), AddCauseObjectNotSelected, mms.DataAccessErrorObjectAccessDenied)
 	})
 
 	t.Run("IntgPd", func(t *testing.T) {

@@ -41,7 +41,7 @@ func TestServer_ForgedControlWriteOnStatusObject(t *testing.T) {
 	}
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(sctx, serverT) }()
 	mc, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
 	if err != nil {

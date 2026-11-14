@@ -3,8 +3,11 @@
 package iec61850
 
 import (
+	"bytes"
+	"errors"
 	"io"
 	"log/slog"
+	"math"
 	"testing"
 
 	"github.com/otfabric/go-mms"
@@ -64,11 +67,16 @@ func FuzzAssembleSegments(f *testing.F) {
 }
 
 // FuzzDecodeRCB decodes RCB structures whose trailing components
-// (ResvTms, Owner, RPT-24) and lengths are arbitrary.
+// (ResvTms, Owner, RPT-24) and lengths are arbitrary. An error is a
+// *ReportError; a BRCB structure is accepted exactly when it has its 13
+// required components, and then ResvTms is the INT16/Unsigned component
+// when it fits an int32 and Owner the octet string; the URCB reading of
+// the same structure is refused (its DatSet position holds an Unsigned).
 func FuzzDecodeRCB(f *testing.F) {
 	f.Add(true, int64(-1), []byte{1, 2}, uint8(15))
 	f.Add(false, int64(5), []byte{}, uint8(3))
 	f.Add(true, int64(1<<40), []byte{0xff}, uint8(0))
+	f.Add(true, int64(30), []byte{192, 168, 0, 7}, uint8(17))
 	f.Fuzz(func(t *testing.T, buffered bool, resv int64, owner []byte, n uint8) {
 		v := brcbValue(mms.NewInteger(resv), mms.NewUnsigned(uint64(resv)), mms.NewOctetString(owner), mms.NewBoolean(true))
 		elems, _ := v.Structure()
@@ -79,6 +87,36 @@ func FuzzDecodeRCB(f *testing.F) {
 		if buffered {
 			typ = RCBBuffered
 		}
-		_, _ = decodeRCB("LD1", "LLN0$BR$x", typ, mms.NewStructure(elems))
+		rcb, err := decodeRCB("LD1", "LLN0$BR$x", typ, mms.NewStructure(elems))
+		if err != nil {
+			var re *ReportError
+			if !errors.As(err, &re) || rcb != nil {
+				t.Fatalf("error %T %v: want a *ReportError and no RCB", err, err)
+			}
+		}
+		if !buffered {
+			if err == nil {
+				t.Fatalf("%d components read as a URCB: accepted", len(elems))
+			}
+			return
+		}
+		if (err == nil) != (len(elems) >= minBRCBElements) {
+			t.Fatalf("%d components: error %v", len(elems), err)
+		}
+		if err != nil {
+			return
+		}
+		var wantResv int32
+		if len(elems) > minBRCBElements && resv >= math.MinInt32 && resv <= math.MaxInt32 {
+			wantResv = int32(resv)
+		}
+		var wantOwner []byte
+		if len(elems) > minBRCBElements+2 {
+			wantOwner = owner
+		}
+		if rcb.RptID != "rid" || rcb.DatSet != "LD1/LLN0$ds" || rcb.ResvTms != wantResv || !bytes.Equal(rcb.Owner, wantOwner) {
+			t.Fatalf("%d components, resv %d: RptID %q DatSet %q ResvTms %d Owner % x", len(elems), resv,
+				rcb.RptID, rcb.DatSet, rcb.ResvTms, rcb.Owner)
+		}
 	})
 }

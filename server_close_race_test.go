@@ -4,7 +4,9 @@ package iec61850
 
 import (
 	"context"
+	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,7 +23,10 @@ func TestServerClose_ConcurrentWithRequests(t *testing.T) {
 	srv := sgFixtureServer(t, SettingGroupHandler{}, func(s *Server) { s.EnableReports() })
 	ctx := context.Background()
 	c := dialLoopback(t, ctx, srv)
+	// Each loop counts its rounds; Close comes after both have run a few,
+	// and the loops stop after a few more rounds after Close.
 	stop := make(chan struct{})
+	var clientRounds, appRounds atomic.Int64
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		for g := uint8(1); ; g = g%3 + 1 {
@@ -34,6 +39,7 @@ func TestServerClose_ConcurrentWithRequests(t *testing.T) {
 			_ = c.SelectEditSG(ctx, sgFixtureLD, g)
 			_ = c.SetEditSGValue(ctx, refStrVal, mms.NewFloat(float64(g)))
 			_ = c.ConfirmEditSG(ctx, sgFixtureLD)
+			clientRounds.Add(1)
 		}
 	})
 	wg.Go(func() {
@@ -44,12 +50,25 @@ func TestServerClose_ConcurrentWithRequests(t *testing.T) {
 			default:
 			}
 			srv.SetValue(ctx, keyStrSG, mms.NewFloat(float64(i)))
+			appRounds.Add(1)
 		}
 	})
-	time.Sleep(20 * time.Millisecond)
+	// waitRounds returns once both loops have run three rounds more.
+	waitRounds := func() {
+		t.Helper()
+		c, a := clientRounds.Load()+3, appRounds.Load()+3
+		deadline := time.Now().Add(10 * time.Second)
+		for clientRounds.Load() < c || appRounds.Load() < a {
+			if time.Now().After(deadline) {
+				t.Fatalf("rounds: client %d, application %d, want %d and %d", clientRounds.Load(), appRounds.Load(), c, a)
+			}
+			runtime.Gosched()
+		}
+	}
+	waitRounds()
 	srv.Close()
 	srv.Close()
-	time.Sleep(20 * time.Millisecond)
+	waitRounds()
 	close(stop)
 	wg.Wait()
 	if srv.SettingGroupEngine() != nil || srv.JournalEngine() != nil {

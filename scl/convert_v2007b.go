@@ -9,8 +9,7 @@ import (
 	raw "github.com/otfabric/go-iec61850/scl/internal/raw/v2007b"
 )
 
-func convertV2007B(r *raw.SCL) (*SCL, []Diagnostic, error) {
-	var diags []Diagnostic
+func convertV2007B(r *raw.SCL, diags *diagSink) (*SCL, error) {
 
 	s := &SCL{
 		Header: Header{
@@ -27,16 +26,16 @@ func convertV2007B(r *raw.SCL) (*SCL, []Diagnostic, error) {
 		s.Communication = convCommB(r.Communication)
 	}
 	for _, ied := range r.IED {
-		s.IEDs = append(s.IEDs, convIEDB(ied, &diags))
+		s.IEDs = append(s.IEDs, convIEDB(ied, diags))
 	}
 	if r.DataTypeTemplates != nil {
-		s.DataTypeTemplates = convDTTB(r.DataTypeTemplates, &diags)
+		s.DataTypeTemplates = convDTTB(r.DataTypeTemplates, diags)
 	}
 
-	return s, diags, nil
+	return s, nil
 }
 
-func convIEDB(r raw.IED, diags *[]Diagnostic) IED {
+func convIEDB(r raw.IED, diags *diagSink) IED {
 	ied := IED{
 		Name:         r.Name,
 		Desc:         r.Desc,
@@ -55,7 +54,7 @@ func convIEDB(r raw.IED, diags *[]Diagnostic) IED {
 	return ied
 }
 
-func convAPB(r raw.AccessPoint, diags *[]Diagnostic) AccessPoint {
+func convAPB(r raw.AccessPoint, diags *diagSink) AccessPoint {
 	ap := AccessPoint{Name: r.Name}
 	if r.Server != nil {
 		srv := &Server{}
@@ -70,7 +69,7 @@ func convAPB(r raw.AccessPoint, diags *[]Diagnostic) AccessPoint {
 	return ap
 }
 
-func convLDB(r raw.LDevice, diags *[]Diagnostic) LDevice {
+func convLDB(r raw.LDevice, diags *diagSink) LDevice {
 	ld := LDevice{Inst: r.Inst, LdName: r.LdName, Desc: r.Desc}
 	ln0 := convLN0B(r.LN0, diags)
 	ld.LN0 = &ln0
@@ -83,7 +82,7 @@ func convLDB(r raw.LDevice, diags *[]Diagnostic) LDevice {
 	return ld
 }
 
-func convLN0B(r raw.LN0, diags *[]Diagnostic) LN {
+func convLN0B(r raw.LN0, diags *diagSink) LN {
 	ln := LN{LNClass: r.LnClass, Inst: r.Inst, LNType: r.LnType, Desc: r.Desc}
 	for _, doi := range r.DOI {
 		ln.DOIs = append(ln.DOIs, convDOIB(doi))
@@ -126,7 +125,7 @@ func convLN0B(r raw.LN0, diags *[]Diagnostic) LN {
 	return ln
 }
 
-func convLNB(r raw.LN, _ *[]Diagnostic) LN {
+func convLNB(r raw.LN, _ *diagSink) LN {
 	ln := LN{Prefix: r.Prefix, LNClass: r.LnClass, Inst: r.Inst, LNType: r.LnType, Desc: r.Desc}
 	for _, doi := range r.DOI {
 		ln.DOIs = append(ln.DOIs, convDOIB(doi))
@@ -216,7 +215,7 @@ func convRCB(r raw.ReportControl) ReportControl {
 	return rc
 }
 
-func convDTTB(r *raw.DataTypeTemplates, diags *[]Diagnostic) DataTypeTemplates {
+func convDTTB(r *raw.DataTypeTemplates, diags *diagSink) DataTypeTemplates {
 	var dtt DataTypeTemplates
 	for _, lnt := range r.LNodeType {
 		t := LNodeType{ID: lnt.Id, LNClass: lnt.LnClass, Desc: lnt.Desc}
@@ -233,10 +232,10 @@ func convDTTB(r *raw.DataTypeTemplates, diags *[]Diagnostic) DataTypeTemplates {
 			if d.Count != "" {
 				v, err := strconv.Atoi(d.Count)
 				if err != nil {
-					*diags = append(*diags, Diagnostic{
+					diags.add(Diagnostic{
 						Severity: DiagWarning, Code: "invalid-count",
-						Path:    fmt.Sprintf("DOType[%s].DA[%s]", dot.Id, d.Name),
-						Message: fmt.Sprintf("invalid count %q: %v", d.Count, err),
+						Path:    fmt.Sprintf("DOType[%s].DA[%s]", diags.name(dot.Id), diags.name(d.Name)),
+						Message: diags.countMessage(d.Count, err),
 					})
 				} else {
 					da.Count = v
@@ -262,10 +261,10 @@ func convDTTB(r *raw.DataTypeTemplates, diags *[]Diagnostic) DataTypeTemplates {
 			if b.Count != "" {
 				v, err := strconv.Atoi(b.Count)
 				if err != nil {
-					*diags = append(*diags, Diagnostic{
+					diags.add(Diagnostic{
 						Severity: DiagWarning, Code: "invalid-count",
-						Path:    fmt.Sprintf("DAType[%s].BDA[%s]", dat.Id, b.Name),
-						Message: fmt.Sprintf("invalid count %q: %v", b.Count, err),
+						Path:    fmt.Sprintf("DAType[%s].BDA[%s]", diags.name(dat.Id), diags.name(b.Name)),
+						Message: diags.countMessage(b.Count, err),
 					})
 				} else {
 					bda.Count = v

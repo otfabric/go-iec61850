@@ -23,6 +23,44 @@ type Options struct {
 	// server builds from the domain (data sets, report, GOOSE and SV
 	// control blocks), follow the name.
 	InstanceDomainNames bool
+
+	// MaxExpandedNodes is the number of data objects and data
+	// attributes (DO, SDO, DA and BDA, each counted once per place in
+	// the model it is expanded to) the expansion of the type templates
+	// may produce; zero or less means [scl.DefaultMaxExpandedNodes].
+	// Beyond it [FromSCLWithOptions] fails with an error that wraps
+	// [scl.ErrLimitExceeded].
+	MaxExpandedNodes int
+
+	// Budget, when non-nil, is shared by the [FromSCLWithOptions]
+	// calls that build models from one document (one per IED): the
+	// limit then applies to them together, and MaxExpandedNodes is not
+	// used.
+	Budget *Budget
+}
+
+// Budget counts the nodes the expansions of one document may still
+// produce. It is not safe for concurrent use.
+type Budget struct {
+	left, max int
+}
+
+// NewBudget returns a budget of max nodes; zero or less means
+// [scl.DefaultMaxExpandedNodes].
+func NewBudget(max int) *Budget {
+	if max <= 0 {
+		max = scl.DefaultMaxExpandedNodes
+	}
+	return &Budget{left: max, max: max}
+}
+
+// take counts one node, or fails when the budget is spent.
+func (b *Budget) take() error {
+	if b.left <= 0 {
+		return fmt.Errorf("%w: the type templates expand to more than %d data objects and attributes (MaxExpandedNodes)", scl.ErrLimitExceeded, b.max)
+	}
+	b.left--
+	return nil
 }
 
 // FromSCL builds a server [Model] from the first Server element found
@@ -32,7 +70,9 @@ type Options struct {
 // Type information (DOType, DAType, EnumType) is resolved from the
 // SCL DataTypeTemplates to produce fully expanded data objects with
 // their attribute hierarchies. Logical devices get their IEC 61850-8-1
-// names (see [Options]).
+// names (see [Options]). The expansion stops at
+// [scl.DefaultMaxExpandedNodes] nodes with an error that wraps
+// [scl.ErrLimitExceeded].
 func FromSCL(s *scl.SCL, iedName, apName string) (*Model, error) {
 	return FromSCLWithOptions(s, iedName, apName, Options{})
 }
@@ -64,11 +104,15 @@ func FromSCLWithOptions(s *scl.SCL, iedName, apName string, opts Options) (*Mode
 	tmpl, _ := index.Build(s)
 	dotIdx, datIdx, enumIdx := tmpl.DOTypes, tmpl.DATypes, tmpl.EnumTypes
 
+	budget := opts.Budget
+	if budget == nil {
+		budget = NewBudget(opts.MaxExpandedNodes)
+	}
 	m := &Model{}
 	var warnings []string
 	gse, smv := gseIndex(s, iedName, apUsed)
 	for _, sclLD := range srv.LDevices {
-		ld, err := convertLD(s, &sclLD, dotIdx, datIdx, enumIdx, gse, smv, &warnings)
+		ld, err := convertLD(s, &sclLD, dotIdx, datIdx, enumIdx, gse, smv, budget, &warnings)
 		if err != nil {
 			return nil, fmt.Errorf("servermodel: LD %q: %w", sclLD.Inst, err)
 		}
@@ -179,11 +223,11 @@ func gseIndex(s *scl.SCL, iedName, apName string) (map[string]*scl.GSEAddress, m
 	return idx, smv
 }
 
-func convertLD(s *scl.SCL, sclLD *scl.LDevice, dotIdx map[string]*scl.DOType, datIdx map[string]*scl.DAType, enumIdx map[string]*scl.EnumType, gse map[string]*scl.GSEAddress, smv map[string]*scl.SMVAddress, warnings *[]string) (*LogicalDevice, error) {
+func convertLD(s *scl.SCL, sclLD *scl.LDevice, dotIdx map[string]*scl.DOType, datIdx map[string]*scl.DAType, enumIdx map[string]*scl.EnumType, gse map[string]*scl.GSEAddress, smv map[string]*scl.SMVAddress, budget *Budget, warnings *[]string) (*LogicalDevice, error) {
 	ld := &LogicalDevice{Name: sclLD.Inst, Inst: sclLD.Inst}
 
 	if sclLD.LN0 != nil {
-		ln, err := convertLN(s, sclLD.LN0, dotIdx, datIdx, enumIdx, sclLD.Inst, warnings)
+		ln, err := convertLN(s, sclLD.LN0, dotIdx, datIdx, enumIdx, sclLD.Inst, budget, warnings)
 		if err != nil {
 			return nil, fmt.Errorf("LLN0: %w", err)
 		}
@@ -211,7 +255,7 @@ func convertLD(s *scl.SCL, sclLD *scl.LDevice, dotIdx map[string]*scl.DOType, da
 	}
 
 	for i := range sclLD.LNs {
-		ln, err := convertLN(s, &sclLD.LNs[i], dotIdx, datIdx, enumIdx, sclLD.Inst, warnings)
+		ln, err := convertLN(s, &sclLD.LNs[i], dotIdx, datIdx, enumIdx, sclLD.Inst, budget, warnings)
 		if err != nil {
 			return nil, fmt.Errorf("LN %s: %w", lnName(&sclLD.LNs[i]), err)
 		}
@@ -227,7 +271,7 @@ func lnName(ln *scl.LN) string {
 	return ln.Prefix + ln.LNClass + ln.Inst
 }
 
-func convertLN(s *scl.SCL, sclLN *scl.LN, dotIdx map[string]*scl.DOType, datIdx map[string]*scl.DAType, enumIdx map[string]*scl.EnumType, ldInst string, warnings *[]string) (*LogicalNode, error) {
+func convertLN(s *scl.SCL, sclLN *scl.LN, dotIdx map[string]*scl.DOType, datIdx map[string]*scl.DAType, enumIdx map[string]*scl.EnumType, ldInst string, budget *Budget, warnings *[]string) (*LogicalNode, error) {
 	name := lnName(sclLN)
 	ln := &LogicalNode{
 		Name:    name,
@@ -245,7 +289,7 @@ func convertLN(s *scl.SCL, sclLN *scl.LN, dotIdx map[string]*scl.DOType, datIdx 
 	doNames := make(map[string]bool, len(lnt.DOs))
 	for _, do := range lnt.DOs {
 		doNames[do.Name] = true
-		obj, err := expandDO(do, dotIdx, datIdx, enumIdx, nil, warnings)
+		obj, err := expandDO(do, dotIdx, datIdx, enumIdx, nil, budget, warnings)
 		if err != nil {
 			return nil, fmt.Errorf("DO %s: %w", do.Name, err)
 		}
@@ -300,8 +344,11 @@ func findLNodeType(s *scl.SCL, id string) *scl.LNodeType {
 	return nil
 }
 
-func expandDO(do scl.DO, dotIdx map[string]*scl.DOType, datIdx map[string]*scl.DAType, enumIdx map[string]*scl.EnumType, visited map[string]bool, warnings *[]string) (DataObject, error) {
+func expandDO(do scl.DO, dotIdx map[string]*scl.DOType, datIdx map[string]*scl.DAType, enumIdx map[string]*scl.EnumType, visited map[string]bool, budget *Budget, warnings *[]string) (DataObject, error) {
 	obj := DataObject{Name: do.Name}
+	if err := budget.take(); err != nil {
+		return obj, err
+	}
 
 	dot, ok := dotIdx[do.Type]
 	if !ok {
@@ -319,7 +366,7 @@ func expandDO(do scl.DO, dotIdx map[string]*scl.DOType, datIdx map[string]*scl.D
 	defer delete(visited, do.Type)
 
 	for _, sdo := range dot.SDOs {
-		child, err := expandDO(scl.DO{Name: sdo.Name, Type: sdo.Type}, dotIdx, datIdx, enumIdx, visited, warnings)
+		child, err := expandDO(scl.DO{Name: sdo.Name, Type: sdo.Type}, dotIdx, datIdx, enumIdx, visited, budget, warnings)
 		if err != nil {
 			return obj, err
 		}
@@ -332,7 +379,7 @@ func expandDO(do scl.DO, dotIdx map[string]*scl.DOType, datIdx map[string]*scl.D
 				"DOType %q DA %q: count=%d will be registered as scalar (array expansion not supported)",
 				do.Type, da.Name, da.Count))
 		}
-		attr, err := expandDA(da.Name, da.FC, da.BType, da.Type, da.Val, datIdx, enumIdx, nil, warnings)
+		attr, err := expandDA(da.Name, da.FC, da.BType, da.Type, da.Val, datIdx, enumIdx, nil, budget, warnings)
 		if err != nil {
 			return obj, fmt.Errorf("DA %s: %w", da.Name, err)
 		}
@@ -354,12 +401,15 @@ func setTrgOps(a *DataAttribute, dchg, qchg, dupd bool) {
 	}
 }
 
-func expandDA(name, fc, btype, typeRef, val string, datIdx map[string]*scl.DAType, enumIdx map[string]*scl.EnumType, visited map[string]bool, warnings *[]string) (DataAttribute, error) {
+func expandDA(name, fc, btype, typeRef, val string, datIdx map[string]*scl.DAType, enumIdx map[string]*scl.EnumType, visited map[string]bool, budget *Budget, warnings *[]string) (DataAttribute, error) {
 	attr := DataAttribute{
 		Name:         name,
 		FC:           fc,
 		BType:        btype,
 		InitialValue: val,
+	}
+	if err := budget.take(); err != nil {
+		return attr, err
 	}
 
 	if btype == "Enum" && typeRef != "" && enumIdx != nil {
@@ -400,7 +450,7 @@ func expandDA(name, fc, btype, typeRef, val string, datIdx map[string]*scl.DATyp
 				"DAType %q BDA %q: count=%d will be registered as scalar (array expansion not supported)",
 				typeRef, bda.Name, bda.Count))
 		}
-		child, err := expandDA(bda.Name, fc, bda.BType, bda.Type, bda.Val, datIdx, enumIdx, visited, warnings)
+		child, err := expandDA(bda.Name, fc, bda.BType, bda.Type, bda.Val, datIdx, enumIdx, visited, budget, warnings)
 		if err != nil {
 			return attr, err
 		}

@@ -35,7 +35,7 @@ func oddItemsClient(t *testing.T, opts ClientOptions) (*Client, *atomic.Int64) {
 			t.Fatalf("register %q: %v", item, err)
 		}
 	}
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(ctx, serverT) }()
 	mmsClient, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
 	if err != nil {

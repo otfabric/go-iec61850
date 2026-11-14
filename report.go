@@ -8,9 +8,11 @@ import (
 	"log/slog"
 	"math"
 	"path"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/otfabric/go-mms"
@@ -1325,6 +1327,63 @@ type ReportSubscription struct {
 	segRptID  string
 	segSeqNum uint32
 	segActive bool
+	// segBytes is the estimated size of segBuf (segmentSize); segGen
+	// counts the partial reports, so that the timer of a partial report
+	// that has ended does nothing; segTimer gives the partial report up
+	// after segTimeout.
+	segBytes    int
+	segGen      uint64
+	segTimer    *time.Timer
+	segMaxBytes int           // budget of segBuf; 0 = DefaultMaxSegmentBytes
+	segTimeout  time.Duration // reassembly time limit; 0 = DefaultSegmentTimeout
+
+	// Counters of Stats.
+	reportsDropped     atomic.Uint64
+	partialDropped     atomic.Uint64
+	callbacksRecovered atomic.Uint64
+}
+
+// Defaults of the reassembly limits of segmented reports
+// ([SubscribeReportOptions.MaxSegmentBytes],
+// [SubscribeReportOptions.SegmentTimeout]).
+const (
+	// DefaultMaxSegmentBytes is the default budget of the segments of one
+	// partial report a subscription buffers: 64 MiB.
+	DefaultMaxSegmentBytes = 64 << 20
+
+	// DefaultSegmentTimeout is the default time from the first segment of
+	// a report to its last: 60 seconds.
+	DefaultSegmentTimeout = 60 * time.Second
+)
+
+// ReportSubscriptionStats counts what a [ReportSubscription] did not
+// deliver. The counters only grow.
+type ReportSubscriptionStats struct {
+	// ReportsDropped counts the reports dropped because the Reports
+	// channel was full: the incoming report with [OverflowDropNewest]
+	// and [OverflowCallback], the oldest queued one with
+	// [OverflowDropOldest]. [OverflowBlock] drops none.
+	ReportsDropped uint64
+
+	// PartialReportsDropped counts the segmented reports given up before
+	// their last segment: beyond [SubscribeReportOptions.MaxSegmentBytes]
+	// or [SubscribeReportOptions.SegmentTimeout], beyond 65536 segments,
+	// or when a segment of another report arrived first.
+	PartialReportsDropped uint64
+
+	// CallbacksRecovered counts the calls of
+	// [SubscribeReportOptions.OnOverflow] that did not return normally.
+	CallbacksRecovered uint64
+}
+
+// Stats returns the counters of the subscription. It is safe to call from
+// any goroutine, also after Close.
+func (s *ReportSubscription) Stats() ReportSubscriptionStats {
+	return ReportSubscriptionStats{
+		ReportsDropped:        s.reportsDropped.Load(),
+		PartialReportsDropped: s.partialDropped.Load(),
+		CallbacksRecovered:    s.callbacksRecovered.Load(),
+	}
 }
 
 // Reports returns a read-only channel that delivers decoded report
@@ -1383,6 +1442,7 @@ func (s *ReportSubscription) closeLocal() bool {
 	}
 	s.closed = true
 	close(s.done)
+	s.resetSegmentsLocked()
 	s.mu.Unlock()
 
 	// Unregister from the client dispatch table first (under client
@@ -1510,6 +1570,21 @@ type SubscribeReportOptions struct {
 	// RCBItemID is the RCB MMS item ID for lifecycle operations.
 	// Required when any lifecycle option is set.
 	RCBItemID string
+
+	// MaxSegmentBytes is the budget of the segments of one segmented
+	// report (IEC 61850-8-1 17.2.2, SubSeqNum and MoreSegmentsFollow)
+	// the subscription buffers until the last arrives, in bytes of the
+	// decoded segments as estimated by the client; zero or less means
+	// [DefaultMaxSegmentBytes]. A partial report that grows beyond it is
+	// dropped and counted in [ReportSubscriptionStats.PartialReportsDropped].
+	MaxSegmentBytes int
+
+	// SegmentTimeout is the time from the first segment of a segmented
+	// report within which its last segment must arrive; zero or less
+	// means [DefaultSegmentTimeout]. A partial report still incomplete
+	// then is dropped, its segments released, and counted in
+	// [ReportSubscriptionStats.PartialReportsDropped].
+	SegmentTimeout time.Duration
 }
 
 // SubscribeReport creates a subscription that delivers decoded IEC 61850
@@ -1604,6 +1679,8 @@ func (c *Client) SubscribeReport(ctx context.Context, rptID string, opts Subscri
 		didReserve:   reserved,
 		lifecycleLD:  opts.LD,
 		lifecycleID:  opts.RCBItemID,
+		segMaxBytes:  opts.MaxSegmentBytes,
+		segTimeout:   opts.SegmentTimeout,
 	}
 
 	if !c.registerSubscription(rptID, sub) {
@@ -1660,8 +1737,17 @@ func (c *Client) SubscribeReport(ctx context.Context, rptID string, opts Subscri
 // underlying MMS client. Called lazily on first subscription.
 func (c *Client) initReportDispatch() {
 	c.reportOnce.Do(func() {
+		c.reportMu.Lock()
 		c.reportSubs = make(map[string][]*ReportSubscription)
-		c.mmsClient.OnInformationReport(c.handleInformationReport)
+		if c.mmsClient != nil && c.checkOpen() == nil {
+			// Closes the subscriptions when the association ends.
+			c.watchStop, c.watchDone = make(chan struct{}), make(chan struct{})
+			go c.watchAssociation(c.watchStop, c.watchDone)
+		}
+		c.reportMu.Unlock()
+		if c.mmsClient != nil {
+			c.mmsClient.OnInformationReport(c.handleInformationReport)
+		}
 	})
 }
 
@@ -1795,6 +1881,7 @@ func (s *ReportSubscription) deliver(ri *ReportIndication, logger interface{ War
 		select {
 		case s.ch <- ri:
 		default:
+			s.reportsDropped.Add(1)
 			logger.Warn("iec61850: report dropped (queue full)", "rptID", ri.RptID)
 		}
 		s.mu.Unlock()
@@ -1809,6 +1896,7 @@ func (s *ReportSubscription) deliver(ri *ReportIndication, logger interface{ War
 			}
 			select {
 			case <-s.ch:
+				s.reportsDropped.Add(1)
 				logger.Warn("iec61850: report dropped (oldest evicted)", "rptID", ri.RptID)
 			default:
 			}
@@ -1838,19 +1926,27 @@ func (s *ReportSubscription) deliver(ri *ReportIndication, logger interface{ War
 		// methods of the subscription.
 		onOverflow := s.onOverflow
 		s.mu.Unlock()
+		s.reportsDropped.Add(1)
 		if onOverflow == nil {
 			logger.Warn("iec61850: report dropped (queue full, no callback)", "rptID", ri.RptID)
 			return
 		}
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logger.Warn("iec61850: OnOverflow callback panicked", "panic", r, "rptID", ri.RptID)
-				}
-			}()
-			onOverflow(ri)
-		}()
+		s.callOnOverflow(onOverflow, ri)
 	}
+}
+
+// callOnOverflow calls the OnOverflow callback. A call that does not
+// return normally is recovered, logged with its stack at error level and
+// counted; delivery goes on.
+func (s *ReportSubscription) callOnOverflow(onOverflow func(*ReportIndication), ri *ReportIndication) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.callbacksRecovered.Add(1)
+			s.client.logger.Error("iec61850: OnOverflow callback panicked", "panic", r, "rptID", ri.RptID,
+				"stack", string(debug.Stack()))
+		}
+	}()
+	onOverflow(ri)
 }
 
 // --- Segmented report reassembly ---
@@ -1859,41 +1955,37 @@ func (s *ReportSubscription) deliver(ri *ReportIndication, logger interface{ War
 // assembled report when all segments have arrived. Returns nil
 // while segments are still pending.
 //
-// Sequence mismatches and buffer resets are logged as warnings.
+// The buffered segments of one partial report are bounded by the byte
+// budget (MaxSegmentBytes), by the time limit from the first segment
+// (SegmentTimeout) and by 65536 segments; a partial report beyond one of
+// them is dropped and counted, as is one that another report's segment
+// interrupts. Sequence mismatches and buffer resets are logged as
+// warnings.
 func (s *ReportSubscription) handleSegment(ri *ReportIndication) *ReportIndication {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed {
+		return nil
+	}
 
 	if ri.SubSeqNum == 0 {
 		if s.segActive {
 			s.client.logger.Warn("iec61850: segment buffer reset (new sequence started)",
 				"rptID", ri.RptID, "prevSeq", s.segSeqNum, "newSeq", ri.SeqNum,
 				"buffered", len(s.segBuf))
+			s.partialDropped.Add(1)
 		}
-		s.segBuf = []*ReportIndication{ri}
-		s.segRptID = ri.RptID
-		s.segSeqNum = ri.SeqNum
-		s.segActive = true
-		if !ri.MoreSegments {
-			s.segActive = false
-			return ri
-		}
-		return nil
+		return s.startSegmentsLocked(ri)
 	}
 
 	if !s.segActive || ri.SeqNum != s.segSeqNum || ri.RptID != s.segRptID {
 		s.client.logger.Warn("iec61850: segment sequence mismatch (resetting buffer)",
 			"rptID", ri.RptID, "expected", s.segSeqNum, "got", ri.SeqNum,
 			"active", s.segActive, "buffered", len(s.segBuf))
-		s.segBuf = []*ReportIndication{ri}
-		s.segRptID = ri.RptID
-		s.segSeqNum = ri.SeqNum
-		s.segActive = true
-		if !ri.MoreSegments {
-			s.segActive = false
-			return ri
+		if s.segActive {
+			s.partialDropped.Add(1)
 		}
-		return nil
+		return s.startSegmentsLocked(ri)
 	}
 
 	// SubSeqNum is INT16U (IEC 61850-7-2 clause 17, report format), so a
@@ -1904,8 +1996,15 @@ func (s *ReportSubscription) handleSegment(ri *ReportIndication) *ReportIndicati
 	if n > math.MaxUint16 {
 		s.client.logger.Warn("iec61850: segmented report exceeds 65536 segments (dropped)",
 			"rptID", ri.RptID, "seqNum", ri.SeqNum)
-		s.segBuf = nil
-		s.segActive = false
+		s.dropPartialLocked()
+		return nil
+	}
+	maxBytes, _ := s.segmentLimits()
+	size := segmentSize(ri)
+	if size > maxBytes-s.segBytes {
+		s.client.logger.Warn("iec61850: segmented report exceeds MaxSegmentBytes (dropped)",
+			"rptID", ri.RptID, "seqNum", ri.SeqNum, "segments", n+1, "maxBytes", maxBytes)
+		s.dropPartialLocked()
 		return nil
 	}
 	expectedSubSeq := uint32(n)
@@ -1915,15 +2014,148 @@ func (s *ReportSubscription) handleSegment(ri *ReportIndication) *ReportIndicati
 	}
 
 	s.segBuf = append(s.segBuf, ri)
+	s.segBytes += size
 
 	if ri.MoreSegments {
 		return nil
 	}
 
 	assembled := s.assembleSegments()
-	s.segBuf = nil
-	s.segActive = false
+	s.resetSegmentsLocked()
 	return assembled
+}
+
+// segmentLimits returns the byte budget and the time limit of the
+// reassembly, with the defaults filled in.
+func (s *ReportSubscription) segmentLimits() (int, time.Duration) {
+	maxBytes, timeout := s.segMaxBytes, s.segTimeout
+	if maxBytes <= 0 {
+		maxBytes = DefaultMaxSegmentBytes
+	}
+	if timeout <= 0 {
+		timeout = DefaultSegmentTimeout
+	}
+	return maxBytes, timeout
+}
+
+// startSegmentsLocked starts a partial report with ri, its first segment
+// (or the segment that interrupted another report); ri itself is returned
+// when it has no more segments. Must be called with s.mu held.
+func (s *ReportSubscription) startSegmentsLocked(ri *ReportIndication) *ReportIndication {
+	s.resetSegmentsLocked()
+	if !ri.MoreSegments {
+		return ri
+	}
+	maxBytes, timeout := s.segmentLimits()
+	size := segmentSize(ri)
+	if size > maxBytes {
+		s.client.logger.Warn("iec61850: segmented report exceeds MaxSegmentBytes (dropped)",
+			"rptID", ri.RptID, "seqNum", ri.SeqNum, "segments", 1, "maxBytes", maxBytes)
+		s.partialDropped.Add(1)
+		return nil
+	}
+	s.segBuf = []*ReportIndication{ri}
+	s.segBytes = size
+	s.segRptID = ri.RptID
+	s.segSeqNum = ri.SeqNum
+	s.segActive = true
+	gen := s.segGen
+	s.segTimer = time.AfterFunc(timeout, func() { s.expireSegments(gen) })
+	return nil
+}
+
+// expireSegments drops the partial report of generation gen when it is
+// still incomplete at its time limit.
+func (s *ReportSubscription) expireSegments(gen uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.segGen != gen || !s.segActive {
+		return
+	}
+	_, timeout := s.segmentLimits()
+	s.client.logger.Warn("iec61850: segmented report incomplete after SegmentTimeout (dropped)",
+		"rptID", s.segRptID, "seqNum", s.segSeqNum, "segments", len(s.segBuf), "timeout", timeout)
+	s.dropPartialLocked()
+}
+
+// dropPartialLocked gives up the partial report and counts it. Must be
+// called with s.mu held.
+func (s *ReportSubscription) dropPartialLocked() {
+	if s.segActive {
+		s.partialDropped.Add(1)
+	}
+	s.resetSegmentsLocked()
+}
+
+// resetSegmentsLocked releases the buffered segments and stops the time
+// limit. Must be called with s.mu held.
+func (s *ReportSubscription) resetSegmentsLocked() {
+	s.segBuf = nil
+	s.segBytes = 0
+	s.segActive = false
+	s.segGen++
+	if s.segTimer != nil {
+		s.segTimer.Stop()
+		s.segTimer = nil
+	}
+}
+
+// segmentOverhead is the estimated size of a decoded segment without its
+// members: the ReportIndication, its slice headers and its strings'
+// headers.
+const segmentOverhead = 256
+
+// segmentSize estimates the memory a buffered segment holds: its fixed
+// part, the inclusion bit string (one bool per data set member), the
+// data references, reason codes and values.
+func segmentSize(ri *ReportIndication) int {
+	n := segmentOverhead + len(ri.RptID) + len(ri.DatSet) + len(ri.EntryID) + len(ri.Inclusion) + len(ri.ReasonCodes)
+	for _, r := range ri.DataReferences {
+		n += 16 + len(r)
+	}
+	for _, v := range ri.Values {
+		n += 8 + valueFootprint(v.MMS(), 0)
+	}
+	return n
+}
+
+// valueFootprint estimates the memory of a decoded MMS value: a fixed
+// part and its content, members of structures and arrays included (to a
+// nesting of 64, which go-mms does not exceed).
+func valueFootprint(v *mms.Value, depth int) int {
+	const base = 96
+	if v == nil {
+		return 0
+	}
+	switch v.Type() {
+	case mms.ValueTypeVisibleString:
+		s, _ := v.VisibleString()
+		return base + len(s)
+	case mms.ValueTypeMmsString:
+		s, _ := v.MmsString()
+		return base + len(s)
+	case mms.ValueTypeOctetString:
+		b, _ := v.OctetString()
+		return base + len(b)
+	case mms.ValueTypeBitString:
+		bits, _ := v.BitStringLength()
+		return base + (bits+7)/8
+	case mms.ValueTypeStructure, mms.ValueTypeArray:
+		if depth >= 64 {
+			return base
+		}
+		elems, ok := v.Structure()
+		if !ok {
+			elems, _ = v.ArrayElements()
+		}
+		n := base
+		for _, e := range elems {
+			n += 8 + valueFootprint(e, depth+1)
+		}
+		return n
+	default:
+		return base
+	}
 }
 
 // assembleSegments combines buffered segment reports into a single

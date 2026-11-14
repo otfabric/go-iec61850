@@ -136,6 +136,15 @@ configurable.
   `ReplayResetAfter` (accept a lower number after that much silence) or the
   publisher sets `InitialSPDUNumber` from a persisted value. The window is a
   receiver policy of this package, not a 90-5 requirement.
+  Addendum (v1.21.0): the sender address selects the window and is not
+  covered by the signature, so an SPDU that verified is accepted once more
+  from each address without a window (a new address, a window forgotten at
+  `MaxSenders`, a receiver restart). Two receiver options close this, both
+  off by default: `AllowedSenders` (address prefixes; other senders are
+  refused before verification) and `SingleSenderPerKey` (one window per SI
+  and key ID, whatever the address, for a key used by one publisher).
+  Subscriptions over a transport should also filter on the publisher with
+  `Src: SourceMAC(publisher address)`.
 - **Rejections** are counted (`Transport.Stats`) and reported to
   `OnReject` with the sender address; they never reach the subscriber.
 

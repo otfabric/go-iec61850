@@ -230,7 +230,7 @@ func sclWithEnumDAs() *scl.SCL {
 // dialLoopback creates an IEC 61850 client over the loopback transport pair.
 func dialLoopback(t *testing.T, ctx context.Context, srv *Server) *Client {
 	t.Helper()
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(ctx, serverT) }()
 	mmsClient, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
 	if err != nil {

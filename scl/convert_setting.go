@@ -13,15 +13,15 @@ import (
 // clause 16), so a value above 255 cannot be represented: it is reported
 // as an error diagnostic and left zero instead of being truncated to a
 // different group number.
-func convSettingControl(numOfSGs, actSG uint32, resvTms uint16, diags *[]Diagnostic) *SettingControl {
+func convSettingControl(numOfSGs, actSG uint32, resvTms uint16, diags *diagSink) *SettingControl {
 	sc := &SettingControl{ResvTms: resvTms}
 	if numOfSGs > math.MaxUint8 {
-		*diags = append(*diags, settingControlRangeDiag("numOfSGs", numOfSGs))
+		diags.add(settingControlRangeDiag("numOfSGs", numOfSGs))
 	} else {
 		sc.NumOfSGs = uint8(numOfSGs)
 	}
 	if actSG > math.MaxUint8 {
-		*diags = append(*diags, settingControlRangeDiag("actSG", actSG))
+		diags.add(settingControlRangeDiag("actSG", actSG))
 	} else {
 		sc.ActSG = uint8(actSG)
 	}

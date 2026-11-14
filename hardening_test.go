@@ -614,7 +614,7 @@ func TestServer_FullLifecycle(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 
 	go func() {
 		_ = srv.Serve(ctx, serverT)

@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/otfabric/go-iec61850/l2"
@@ -41,6 +43,11 @@ type SubscriberConfig struct {
 
 	// OnDecodeError, when non-nil, is called for every frame with EtherType
 	// 0x88BA that fails to decode.
+	//
+	// A call of OnDecodeError or of a Metrics method that does not
+	// return normally is recovered: it is logged at error level with its
+	// stack and counted in [Subscriber.CallbacksRecovered], and the
+	// subscriber goes on.
 	OnDecodeError func(raw []byte, err error)
 
 	// Now is the clock (default time.Now).
@@ -94,7 +101,10 @@ type SubscriptionConfig struct {
 	// OnASDU, when non-nil, is called synchronously for every accepted
 	// ASDU on the receive goroutine. The [Sample] and the slices it
 	// references are only valid during the call; copy what you keep.
-	// This path does not allocate.
+	// This path does not allocate. A call that does not return normally
+	// is recovered: it is logged at error level with its stack and
+	// counted in SubscriptionCounters.CallbacksRecovered, and OnASDU is
+	// called with the next ASDU.
 	OnASDU func(s *Sample)
 
 	// SampleQueue, when positive and OnASDU is nil, delivers accepted
@@ -106,6 +116,38 @@ type SubscriptionConfig struct {
 	// EventQueue is the capacity of the event channel (default
 	// [DefaultEventQueue]). Events are dropped when it is full.
 	EventQueue int
+
+	// MaxStreams bounds the streams the subscription supervises; zero
+	// means [DefaultMaxStreams]. While the subscription supervises
+	// MaxStreams streams, an ASDU of a stream it has not seen is
+	// dropped: it is counted in SubscriptionCounters.StreamsRefused and
+	// reported to Metrics.FrameDropped with the reason "streams". A
+	// stream seen once keeps its entry until the subscription is closed;
+	// no stream is replaced by a new one.
+	MaxStreams int
+}
+
+// DefaultMaxStreams is the default of SubscriptionConfig.MaxStreams. A
+// merging unit publishes a few streams; a subscription without filters
+// on the process bus of the largest substations sees some hundreds. The
+// default is well above that, and it bounds the supervision state (and
+// the timeout scan of every SupervisionInterval) of a subscription for
+// streams it never asked for.
+const DefaultMaxStreams = 4096
+
+// SubscriptionCounters are the counters of a subscription as a whole;
+// [Stats] has those of each stream.
+type SubscriptionCounters struct {
+	// StreamsRefused counts ASDUs dropped because they belong to a
+	// stream not seen before while the subscription supervises
+	// MaxStreams streams.
+	StreamsRefused uint64
+
+	// CallbacksRecovered counts OnASDU calls that did not return
+	// normally. Each is logged at error level with its stack; the ASDU
+	// is not delivered again, and OnASDU goes on receiving the
+	// following ASDUs.
+	CallbacksRecovered uint64
 }
 
 // StreamKey identifies a stream within a subscription.
@@ -290,6 +332,10 @@ type Subscriber struct {
 	// on a transport that delivers nothing.
 	done chan struct{}
 
+	// recovered counts OnDecodeError and Metrics calls that did not
+	// return normally.
+	recovered atomic.Uint64
+
 	// Receive-goroutine state.
 	frame Frame
 	smp   Sample
@@ -310,8 +356,14 @@ func NewSubscriber(t Transport, cfg SubscriberConfig) (*Subscriber, error) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	return &Subscriber{t: t, cfg: cfg, logger: orDiscard(cfg.Logger), metrics: orNop(cfg.Metrics), done: make(chan struct{})}, nil
+	s := &Subscriber{t: t, cfg: cfg, logger: orDiscard(cfg.Logger), done: make(chan struct{})}
+	s.metrics = guardMetrics(cfg.Metrics, s.logger, &s.recovered)
+	return s, nil
 }
+
+// CallbacksRecovered returns the number of OnDecodeError and Metrics
+// calls of the subscriber that did not return normally.
+func (s *Subscriber) CallbacksRecovered() uint64 { return s.recovered.Load() }
 
 // Subscription is a set of streams selected by a [SubscriptionConfig].
 type Subscription struct {
@@ -323,6 +375,12 @@ type Subscription struct {
 	mu      sync.Mutex
 	streams map[StreamKey]*stream
 	closed  bool
+	// refused counts ASDUs of new streams dropped at MaxStreams;
+	// refusedLogged records that the first one was logged.
+	refused       uint64
+	refusedLogged bool
+	// recovered counts OnASDU calls that did not return normally.
+	recovered atomic.Uint64
 }
 
 type stream struct {
@@ -355,6 +413,12 @@ func (s *Subscriber) Subscribe(cfg SubscriptionConfig) (*Subscription, error) {
 	}
 	if cfg.EventQueue <= 0 {
 		cfg.EventQueue = DefaultEventQueue
+	}
+	if cfg.MaxStreams < 0 {
+		return nil, configErr("MaxStreams", "negative")
+	}
+	if cfg.MaxStreams == 0 {
+		cfg.MaxStreams = DefaultMaxStreams
 	}
 	if cfg.NominalFrequency == 0 {
 		cfg.NominalFrequency = DefaultNominalFrequency
@@ -489,7 +553,7 @@ func (s *Subscriber) HandleFrameFrom(raw []byte, from netip.AddrPort) {
 		s.metrics.FrameDropped("decode")
 		s.logger.Debug("sv: decode failed", "error", err)
 		if s.cfg.OnDecodeError != nil {
-			s.cfg.OnDecodeError(raw, err)
+			s.callOnDecodeError(raw, err)
 		}
 		return
 	}
@@ -553,6 +617,20 @@ func (sub *Subscription) handleASDU(f *Frame, idx int, a *ASDU, now time.Time, s
 	}
 	st := sub.streams[key]
 	if st == nil {
+		if len(sub.streams) >= sub.cfg.MaxStreams {
+			// No stream is replaced: the streams supervised keep
+			// their state, the ASDU of the new one is dropped.
+			sub.refused++
+			first := !sub.refusedLogged
+			sub.refusedLogged = true
+			sub.mu.Unlock()
+			if first {
+				sub.s.logger.Warn("sv: subscription supervises MaxStreams streams, ASDUs of further streams are dropped",
+					"maxStreams", sub.cfg.MaxStreams, "stream", key.String())
+			}
+			sub.s.metrics.FrameDropped("streams")
+			return
+		}
 		st = &stream{st: Stats{Stream: key, SmpCntWrap: 65536}}
 		st.wrap = sub.cfg.SmpCntWrap
 		sub.streams[key] = st
@@ -694,7 +772,7 @@ func (sub *Subscription) handleASDU(f *Frame, idx int, a *ASDU, now time.Time, s
 	}
 	if sub.cfg.OnASDU != nil {
 		*smp = Sample{Stream: key, Received: now, Frame: f, Index: idx, ASDU: a, Lost: lost}
-		sub.cfg.OnASDU(smp)
+		sub.callOnASDU(smp)
 		return
 	}
 	if sub.samples != nil {
@@ -813,6 +891,43 @@ func (sub *Subscription) emit(ev Event) {
 	default:
 		sub.s.metrics.Event(ev.Stream.SvID, ev.Kind, true)
 	}
+}
+
+// callOnASDU hands smp to OnASDU. A call that does not return normally
+// is logged with its stack and counted; the next ASDU is handed to
+// OnASDU as usual.
+func (sub *Subscription) callOnASDU(smp *Sample) {
+	defer sub.recoverOnASDU(smp)
+	sub.cfg.OnASDU(smp)
+}
+
+// recoverOnASDU is deferred by callOnASDU, so that recover is called by
+// the deferred function itself.
+func (sub *Subscription) recoverOnASDU(smp *Sample) {
+	if r := recover(); r != nil {
+		sub.recovered.Add(1)
+		sub.s.logger.Error("sv: OnASDU callback recovered", "stream", smp.Stream.String(), "value", r, "stack", string(debug.Stack()))
+	}
+}
+
+// callOnDecodeError calls OnDecodeError and recovers a call that does
+// not return normally.
+func (s *Subscriber) callOnDecodeError(raw []byte, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.recovered.Add(1)
+			s.logger.Error("sv: OnDecodeError callback recovered", "value", r, "stack", string(debug.Stack()))
+		}
+	}()
+	s.cfg.OnDecodeError(raw, err)
+}
+
+// Counters returns the counters of the subscription as a whole.
+func (sub *Subscription) Counters() SubscriptionCounters {
+	sub.mu.Lock()
+	refused := sub.refused
+	sub.mu.Unlock()
+	return SubscriptionCounters{StreamsRefused: refused, CallbacksRecovered: sub.recovered.Load()}
 }
 
 // Events returns the supervision event channel. It is closed when the

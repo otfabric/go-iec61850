@@ -27,6 +27,7 @@ func TestChaosLossReorderDuplicate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = s.Close() })
 	_, err = s.Subscribe(SubscriptionConfig{
 		GocbRef: "LD/LLN0$GO$gcb1", ConfRev: 1, QueueSize: 4096,
 		Members: []mms.TypeSpec{{Type: mms.ValueTypeInteger}},
@@ -115,6 +116,7 @@ func TestChaosCorruption(t *testing.T) {
 	}})
 	m := newCountingMetrics()
 	s, _ := NewSubscriber(hub.NewPort(MAC{}), SubscriberConfig{Metrics: m})
+	t.Cleanup(func() { _ = s.Close() })
 	sub, _ := s.Subscribe(SubscriptionConfig{GocbRef: "LD/LLN0$GO$gcb1", QueueSize: 4096})
 	ctx := t.Context()
 	go func() { _ = s.Run(ctx) }()

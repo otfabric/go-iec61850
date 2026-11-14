@@ -267,10 +267,11 @@ func NewPublisher(t Transport, cfg PublisherConfig) (*Publisher, error) {
 	if len(cfg.Layout) > 0 && len(sample) != cfg.Layout.Size() {
 		return nil, configErr("Sample", "%d octets, layout needs %d", len(sample), cfg.Layout.Size())
 	}
+	logger := orDiscard(cfg.Logger).With("svID", cfg.SvID)
 	p := &Publisher{
 		t: t, cfg: cfg, period: 1e9 / rate, wrap: uint64(wrap), noASDU: uint64(noASDU),
-		logger:  orDiscard(cfg.Logger).With("svID", cfg.SvID),
-		metrics: orNop(cfg.Metrics),
+		logger:  logger,
+		metrics: guardMetrics(cfg.Metrics, logger, nil),
 		sample:  sample, enabled: !cfg.Disabled, smpSynch: cfg.SmpSynch, sim: cfg.Simulation,
 		wake: make(chan struct{}, 1), closed: make(chan struct{}),
 	}

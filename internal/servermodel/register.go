@@ -300,17 +300,28 @@ func (vs *ValueStore) CallInterceptorForTest(ctx context.Context, key string, va
 	return vs.callInterceptor(ctx, key, val)
 }
 
+// Registrar is the part of [mms.Server] that [RegisterModel] uses. The
+// root package passes a Registrar that wraps the Read and Write of every
+// variable before it reaches the [mms.Server].
+type Registrar interface {
+	RegisterDomain(name string) error
+	RegisterVariable(v mms.Variable) error
+	RegisterNamedVariableList(nvl mms.NamedVariableList) error
+}
+
+var _ Registrar = (*mms.Server)(nil)
+
 // RegisterModel registers all logical devices, variables, datasets,
-// and report control blocks from the server [Model] with the MMS
-// [mms.Server]. The [ValueStore] is used as the backing store for
-// variable read/write callbacks.
+// and report control blocks from the server [Model] with srv, an
+// [*mms.Server] or a Registrar in front of one. The [ValueStore] is used
+// as the backing store for variable read/write callbacks.
 //
 // Returns the [ValueStore] used, which can also be provided pre-populated.
 //
 // Note: DA elements with Count > 1 in the SCL source are registered
 // as scalar variables (array semantics are not expanded). This is a
 // known limitation documented in the Server type.
-func RegisterModel(srv *mms.Server, m *Model, vs *ValueStore) (*ValueStore, error) {
+func RegisterModel(srv Registrar, m *Model, vs *ValueStore) (*ValueStore, error) {
 	if vs == nil {
 		vs = NewValueStore()
 	}
@@ -332,7 +343,7 @@ func RegisterModel(srv *mms.Server, m *Model, vs *ValueStore) (*ValueStore, erro
 	return vs, nil
 }
 
-func registerLN(srv *mms.Server, vs *ValueStore, ldName string, ln *LogicalNode) error {
+func registerLN(srv Registrar, vs *ValueStore, ldName string, ln *LogicalNode) error {
 	// Register the full variable hierarchy (LN, FC-group, DO, compound DA levels)
 	// before leaf DAs so the ordering in GetNameList matches libiec61850.
 	if err := registerLNHierarchy(srv, vs, ldName, ln); err != nil {
@@ -385,7 +396,7 @@ func registerLN(srv *mms.Server, vs *ValueStore, ldName string, ln *LogicalNode)
 // This allows clients like iec61850bean to use GetNameList(namedVariable) to
 // discover LN names (items without '$'), and then call GetVariableAccessAttributes
 // on each LN name to obtain the complete nested model tree.
-func registerLNHierarchy(srv *mms.Server, vs *ValueStore, ldName string, ln *LogicalNode) error {
+func registerLNHierarchy(srv Registrar, vs *ValueStore, ldName string, ln *LogicalNode) error {
 	// ---- Phase 1: collect DO→FC→elem mappings ----
 	type elemEntry struct {
 		ts   mms.TypeSpec
@@ -763,7 +774,7 @@ func buildAttrElemAndRead(vs *ValueStore, ldName, lnName string, path []string, 
 // registerDOWithFC registers compound DA intermediates and leaf DAs for a
 // DataObject restricted to a single FC. This mirrors registerDO but only
 // emits items whose FC matches the given constraint.
-func registerDOWithFC(srv *mms.Server, vs *ValueStore, ldName, lnName string, parentPath []string, obj *DataObject, fc string) error {
+func registerDOWithFC(srv Registrar, vs *ValueStore, ldName, lnName string, parentPath []string, obj *DataObject, fc string) error {
 	attrPath := append(append([]string(nil), parentPath...), obj.Name)
 
 	// Sub-DOs first
@@ -793,7 +804,7 @@ func registerDOWithFC(srv *mms.Server, vs *ValueStore, ldName, lnName string, pa
 // registerDAWithFC registers a DataAttribute (and its intermediate compound
 // levels) with the MMS server. For compound DAs (with children) it first
 // registers the compound variable, then recurses for the children.
-func registerDAWithFC(srv *mms.Server, vs *ValueStore, ldName, lnName string, path []string, attr *DataAttribute) error {
+func registerDAWithFC(srv Registrar, vs *ValueStore, ldName, lnName string, path []string, attr *DataAttribute) error {
 	if len(attr.Children) == 0 {
 		// Leaf DA — use the existing registerDA helper.
 		return registerDA(srv, vs, ldName, lnName, path, attr)
@@ -902,7 +913,7 @@ func registerDAWithFC(srv *mms.Server, vs *ValueStore, ldName, lnName string, pa
 	return nil
 }
 
-func registerDA(srv *mms.Server, vs *ValueStore, ldName, lnName string, path []string, attr *DataAttribute) error {
+func registerDA(srv Registrar, vs *ValueStore, ldName, lnName string, path []string, attr *DataAttribute) error {
 	if len(attr.Children) > 0 {
 		childPath := append(append([]string(nil), path...), attr.Name)
 		for _, child := range attr.Children {
@@ -1052,7 +1063,7 @@ func clientWritableFC(fc string) bool {
 	return true
 }
 
-func registerDataSet(srv *mms.Server, ldName, lnName string, ds *DataSetDef) error {
+func registerDataSet(srv Registrar, ldName, lnName string, ds *DataSetDef) error {
 	nvlName := lnName + "$" + ds.Name
 	vars := make([]mms.VariableSpec, len(ds.Members))
 
@@ -1184,7 +1195,7 @@ func rcbWriteErr(item string, err error) error {
 // stored as written. A write of the whole RCB structure is refused with
 // object-access-denied, because the structure has read-only components
 // (IEC 61850-8-1 §8.1.3.4.4.2).
-func registerRCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, rpt *ReportDef) error {
+func registerRCB(srv Registrar, vs *ValueStore, ldName, lnName string, rpt *ReportDef) error {
 	prefix := "RP"
 	if rpt.Buffered {
 		prefix = "BR"
@@ -1296,7 +1307,7 @@ func sameSGCBMember(cur, written *mms.Value) bool {
 // sgcbWritable are the SGCB attributes a client may write.
 var sgcbWritable = map[string]bool{"ActSG": true, "EditSG": true, "CnfEdit": true}
 
-func registerSGCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, sg *SettingGroupDef) error {
+func registerSGCB(srv Registrar, vs *ValueStore, ldName, lnName string, sg *SettingGroupDef) error {
 	sgcbItemID := lnName + "$SP$SGCB"
 
 	fields := []rcbField{

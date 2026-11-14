@@ -130,10 +130,75 @@ Run with `make test`:
   `-race`), `rsession` `TestTransport_CloseContract` (Close twice and
   concurrently with Send and Recv; both return `ErrClosed` afterwards; no
   goroutine left).
-- Goroutine leaks: `TestClient_NoGoroutineLeakOnConnectDisconnect`,
-  `TestConcurrent_TimeoutDoesNotLeakGoroutines`, and the chaos tests above
-  through `checkGoroutines`.
+- Callbacks that do not return normally (`server_callback_recover_test.go`,
+  `goose/`, `sv/` and `rsession/callback_recover_test.go`,
+  `setting_groups_handler_recover_test.go`): for each hook, provider,
+  handler and `Metrics` the library calls, the request is answered with an
+  error or the frame is dropped, the call is logged with its stack and
+  counted, and the server or subscriber goes on serving other requests,
+  associations and streams.
+- Limits: each limit of SECURITY.md has a test at the limit and one past it
+  (the Test column there); past it the input is refused or dropped and
+  counted, and the default is checked where a zero option applies it.
+- Goroutine leaks: `internal/leakcheck` compares goroutines by identifier,
+  not by count, and has no tolerance. `TestMain` of the root package, `goose`,
+  `sv`, `l2` and `rsession` (`leakcheck_main_test.go`) runs the tests and then
+  fails the run when a goroutine started by them is still running after 10 s
+  (goroutines that are ending get that long; the check passes as soon as none
+  is left). It reports each goroutine with its stack;
+  `GODEBUG=tracebackancestors=5` adds the goroutines that started them, which
+  names the test. Within a test, `checkGoroutines` (the chaos tests above,
+  `report_chaos_test.go`) and `leakcheck.Check` (`TestTransport_CloseContract`)
+  apply the same comparison around one test. Tests in a `testing/synctest`
+  bubble are checked by synctest itself: the bubble ends only when its
+  goroutines have ended. The in-memory transport of the root tests
+  (`loopbackPair(t)`) closes both ends when the test ends, which ends the MMS
+  client and server goroutines that read them.
+- Waiting without sleeping: tests wait for events (channels, hooks such as
+  `OnRetry`, the first `Accept` of a listener), run in a `testing/synctest`
+  bubble where time matters (timers of the server, publishers and
+  subscribers on a Hub, the in-memory transport), or use
+  `leakcheck.WaitBlocked` to know that a goroutine waits in a given function
+  before they interrupt it. `time.Sleep` remains for fake time inside a
+  bubble, for pacing a sender or simulating a slow operation, and inside
+  helpers that poll a condition up to a deadline; none decides an outcome.
 - `readme_test.go` checks the README's code snippets.
+
+## Lifecycle contract matrix
+
+The rows are the scenarios L1–L16 of the otfabric/engineering lifecycle
+standard; each cell names the test that asserts the row's invariant for
+the type, or n/a and why. They run with `make test`. The
+`TestLifecycle_*` tests synchronise with channels or `testing/synctest`;
+a `time.Sleep` in a bubble only advances its fake time.
+Columns: **Client** (`Client`, `ReportSubscription`), **Server**,
+**goose** (`Publisher`, `Subscriber`, `Subscription`), **sv** (the same),
+**l2** (`Hub`/`HubPort`, `Demux`/`DemuxPort`, the raw transports),
+**rsession** (`Transport`). Each test is in its column's package (the
+root package for Client and Server); the `TestLifecycle_*` tests are in
+`lifecycle_matrix_test.go` and `<package>/lifecycle_test.go`.
+
+| | Client | Server | goose | sv | l2 | rsession |
+|---|---|---|---|---|---|---|
+| L1 Close twice | `TestClientClose_DisablesAndReleasesRCB`, `TestReportSubscriptionClose_QuietPeer` | `TestLifecycle_ServerCloseTwice` | `TestLifecycle_CloseTwice` | `TestLifecycle_CloseTwice` | `TestLifecycle_CloseTwice` | `TestTransport_CloseContract` |
+| L2 Concurrent Close | `TestLifecycle_ConcurrentClose` | `TestLifecycle_ConcurrentClose` (Close and Shutdown) | `TestLifecycle_ConcurrentClose` | `TestLifecycle_ConcurrentClose` | `TestLifecycle_ConcurrentCloseDuringRecv` | `TestTransport_CloseContract` |
+| L3 Close during a blocked read | `TestLifecycle_ClientCloseDuringPendingRead`, `TestOverflowBlock_FullQueueBlocksDispatchUntilClose`, `TestReportSubscription_ClosedWhenAssociationEnds`, `TestClient_DoneAndErr` | `TestServerShutdown_TCP`, `TestServerShutdown_AcceptAfterShutdownIsNotServed`, `TestServer_AcceptBackoff` (accept loop) | n/a: `Subscriber.Close` does not end `Run`; closing the transport does (l2 column) | `TestSubscriberClose_StopsRunOnQuietTransport` | `TestLifecycle_ConcurrentCloseDuringRecv`; raw: `TestRawTransportCloseAndCancel` (skips without an interface off darwin) | `TestRecvContextAndClose` |
+| L4 Close during a write | `TestConcurrent_ManyWritesThenClose` | `TestServerClose_ConcurrentWithRequests` | `TestLifecycle_PublisherCloseDuringRun` | `TestLifecycle_PublisherCloseDuringRun` | n/a: `HubPort.Send` copies the frame for each port under the hub's lock; there is no shared stream | `TestTransport_CloseContract` |
+| L5 Close during the handshake | `TestLifecycle_DialCancelDuringHandshake`, `TestDialDialerHonoursContext`, `TestChaosDialerHandshakeFaults` | `TestLifecycle_ShutdownFromOnConnect`; the COTP handshake is go-mms's (`iso.Listener`) | n/a: no handshake | n/a: no handshake | n/a: no handshake | n/a: datagrams, no handshake |
+| L6 Cancel a pending request | `TestLifecycle_CancelledRequestReleasesItsSlot`, `TestConcurrent_ContextCancelReleasesInflightReads` | n/a: no request is pending on the server side | n/a: no request/response | n/a: no request/response | n/a: no request/response | n/a: no request/response |
+| L7 Late response | `TestLifecycle_CancelledRequestReleasesItsSlot` (completes no other request; the count is go-mms's) | n/a | n/a | n/a | n/a | n/a |
+| L8 Response after reconnect | n/a: no reconnect | n/a: no reconnect | n/a: no reconnect | n/a: no reconnect | n/a: no reconnect | n/a: no reconnect |
+| L9 Callback calls a public method | `TestReportOnOverflow_MayCloseItsSubscription` | `TestLifecycle_ControlHandlerCallsServerMethods` | `TestLifecycle_HandlerCallsPublicMethods` | `TestLifecycle_OnASDUCallsPublicMethods` | n/a: no callbacks | `TestLifecycle_OnRejectCallsPublicMethods` |
+| L10 Callback calls Close | `TestReportOnOverflow_MayCloseItsSubscription` | `TestServerShutdown_FromOnDisconnect`, `TestLifecycle_ShutdownFromOnConnect` | `TestClose_FromHandler`, `TestClose_FromAnotherGoroutineWaitsForHandler` | `TestLifecycle_OnASDUClosesSubscriber` | n/a: no callbacks | `TestClose_FromOnReject` |
+| L11 Slow callback | `TestOverflowBlock_FullQueueBlocksDispatchUntilClose` (OverflowBlock holds the dispatch, as documented) | `TestLifecycle_SlowControlHandlerHoldsOnlyItsAssociation` | `TestLifecycle_SlowHandlerHoldsOnlyItsSubscription` | n/a: `OnASDU` runs on the receive goroutine by contract; the queue is L12 | n/a: no callbacks | n/a: `OnReject` runs on the receive goroutine and must not block, by contract |
+| L12 Queue at capacity | `TestReportSubscription_StatsCountDrops`, `TestOverflowBlock_FullQueueBlocksDispatchUntilClose` | `TestServer_MaxConnections`, `TestChaos_BRCBOverflowAcrossReconnect` | `TestSubscriberOnlyStateChangesAndOverflow`, `TestMaxStreams_Boundaries` | `TestSubscriberSimulationAndChannels` (QueueDrops), `TestMaxStreams_Boundaries` | `TestHubOverflow` | `TestQueueFull` |
+| L13 Concurrent sessions | n/a: one association | `TestChaos_URCBReservationRace`, `TestChaosHostileClientsAgainstSCLModel` | n/a: no sessions | n/a: no sessions | n/a: no sessions | n/a: no sessions |
+| L14 Failure during construction | `TestLifecycle_SubscribeReportFailureRollsBack`, `TestLifecycle_DialCancelDuringHandshake` | n/a: `NewServer` opens nothing and starts no goroutine; `ListenAndServe` takes the caller's listener | `TestPublisherValidation`, `TestSubscriberValidation` | `TestPublisherConfigErrors`, `TestSubscriberEventsAndValidation` | `TestOpenUnknownInterface` | `TestLifecycle_OpenFailureAfterBindReleasesSocket`, `TestOpenConfigErrors` |
+| L15 Shutdown(ctx) | n/a: no Shutdown; `Close(ctx)` bounds its remote cleanup (`TestClientClose_QuietPeerBounds`) | `TestServerShutdown_WaitsForConnectionGoroutines`, `TestServerShutdown_TCP`, `TestServerShutdown_WithHooks`, `TestListenAndServe_ReturnsAfterConnections` | n/a: no Shutdown | n/a: no Shutdown | n/a: no Shutdown | n/a: no Shutdown |
+| L16 Close racing reconnect | n/a: no reconnect | n/a: no reconnect | n/a: no reconnect | n/a: no reconnect | n/a: no reconnect | n/a: no reconnect |
+
+Goroutines left by any of these tests fail the package: root, goose, sv,
+l2 and rsession end their `TestMain` with `internal/leakcheck`.
 
 ## Coverage policy
 

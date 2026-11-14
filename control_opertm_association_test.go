@@ -17,7 +17,7 @@ func servedClient(t *testing.T, srv *Server) (*Client, <-chan struct{}) {
 	t.Helper()
 	sctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	served := make(chan struct{})
 	go func() {
 		defer close(served)

@@ -136,7 +136,7 @@ func TestSelect_SBOResponseShapes(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			clientT, serverT := loopbackPair()
+			clientT, serverT := loopbackPair(t)
 			go func() { _ = srv.Serve(ctx, serverT) }()
 			mmsClient, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
 			if err != nil {
@@ -192,7 +192,7 @@ func TestSelect_NilValue(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(ctx, serverT) }()
 	mmsClient, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
 	if err != nil {

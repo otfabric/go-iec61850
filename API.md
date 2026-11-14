@@ -56,6 +56,8 @@ Wraps an existing `go-mms` client with IEC 61850 semantics.
 func (c *Client) Close(ctx context.Context) error
 func (c *Client) Abort(ctx context.Context) error
 func (c *Client) MMS() *mms.Client
+func (c *Client) Done() <-chan struct{} // closed when the association has ended
+func (c *Client) Err() error            // why it ended; nil while it is up
 ```
 
 `Close` refuses new requests and closes every report subscription
@@ -64,6 +66,13 @@ RCBs the subscriptions enabled and releases the URCBs they reserved,
 until `ctx` ends and for 5 seconds at the latest, and closes the MMS
 connection of a client made with `Dial`. `Abort` closes the
 subscriptions locally and sends nothing.
+
+When the association ends without `Close` (the server concludes or
+aborts it, or the connection is lost), `Done` is closed and every report
+subscription is closed: a consumer ranging over `Reports` stops. `Err`
+then matches `ErrClosed` and the go-mms error (for example
+`mms.ErrClosed`); a new request or subscription is refused with
+`ErrClosed`, and `Close` returns without waiting for the server.
 
 ### DialOptions
 
@@ -79,8 +88,13 @@ type DialOptions struct {
     MaxTPDULength int          // COTP TPDU size proposed; 0 → 1024, 65531 → omitted
     Dialer func(ctx context.Context, network, addr string) (net.Conn, error) // passed to iso.WithDialer; nil: net.Dialer
     Clock  Clock // stamps control T; nil: SystemClock (see Clock)
+    FileLimits FileLimits // ReadFile and DownloadFile; zero fields: defaults (see Files)
 }
 ```
+
+`Metrics` (or `MMS.Metrics`) is called under a recover: a call that does
+not return normally is logged with its stack at error level and loses
+that event.
 
 `Dialer` opens the TCP connection (once per attempt, network `"tcp"`, the
 address given to `Dial`) in place of a zero `net.Dialer`: use it for a
@@ -127,7 +141,8 @@ type ClientOptions struct {
     Strictness StrictnessOptions
     Cache      CacheStrategy
     IEDName    string
-    Clock      Clock // stamps control T; nil: SystemClock
+    Clock      Clock      // stamps control T; nil: SystemClock
+    FileLimits FileLimits // ReadFile and DownloadFile; zero fields: defaults (see Files)
 }
 ```
 
@@ -523,8 +538,22 @@ type SubscribeReportOptions struct {
     ReserveURCB    bool
     LD             string
     RCBItemID      string
+    MaxSegmentBytes int           // buffered segments of one report; 0: DefaultMaxSegmentBytes (64 MiB)
+    SegmentTimeout  time.Duration // first to last segment; 0: DefaultSegmentTimeout (60 s)
 }
 ```
+
+A segmented report (SubSeqNum, MoreSegmentsFollow) is buffered until its
+last segment. A partial report whose segments grow beyond
+`MaxSegmentBytes` (as estimated from the decoded values), whose last
+segment has not arrived `SegmentTimeout` after its first, that has more
+than 65536 segments, or that a segment of another report interrupts is
+dropped, its segments released, and counted in
+`Stats().PartialReportsDropped`.
+
+`OnOverflow` is called under a recover: a call that does not return
+normally is logged with its stack at error level and counted in
+`Stats().CallbacksRecovered`, and the subscription goes on.
 
 ### ReportSubscription
 
@@ -533,7 +562,17 @@ type ReportSubscription struct { /* unexported */ }
 
 func (s *ReportSubscription) Reports() <-chan *ReportIndication
 func (s *ReportSubscription) Close() error
+func (s *ReportSubscription) Stats() ReportSubscriptionStats
+
+type ReportSubscriptionStats struct {
+    ReportsDropped        uint64 // the Reports channel was full (not with OverflowBlock)
+    PartialReportsDropped uint64 // segmented reports given up before their last segment
+    CallbacksRecovered    uint64 // OnOverflow calls that did not return normally
+}
 ```
+
+`Reports` is closed by `Close`, by `Client.Close` and `Client.Abort`,
+and when the association ends.
 
 ### ReportIndication
 
@@ -839,7 +878,23 @@ func (c *Client) DeleteFile(ctx context.Context, fileName string) error
 func (c *Client) RenameFile(ctx context.Context, currentName, newName string) error
 func (c *Client) ObtainFile(ctx context.Context, sourceFile, destinationFile string) error
 func (c *Client) GetFileAttributes(ctx context.Context, fileName string) (*FileEntry, error)
+
+type FileLimits struct {
+    MaxSize        int64 // ReadFile; 0: DefaultMaxFileSize (256 MiB)
+    SizeTolerance  int64 // beyond the size FileOpen announced; 0: DefaultFileSizeTolerance (64 MiB)
+    MaxEmptyChunks int   // consecutive FileRead answers without data; 0: DefaultMaxEmptyFileChunks (64)
+}
 ```
+
+`ReadFile` holds at most `FileLimits.MaxSize` bytes: a file announced
+larger is refused before it is read, and a server that sends more is
+stopped. `ReadFile` and `DownloadFile` stop when the server sends more
+than `SizeTolerance` bytes beyond the size it announced at FileOpen, or
+more than `MaxEmptyChunks` answers in a row without data that announce
+more. They close the file on the server whenever they stop. A limit
+error matches `ErrLimitExceeded`. The limits are set in
+`DialOptions.FileLimits` or `ClientOptions.FileLimits`; zero or less is
+the default.
 
 ### FileEntry
 
@@ -1179,7 +1234,17 @@ type MSVCBUpdate struct {
 ```go
 func NewServer(model *servermodel.Model, opts ServerOptions) (*Server, error)
 func NewServerModelFromSCL(s *scl.SCL, iedName, apName string) (*servermodel.Model, error)
+func NewServerModelFromSCLWithOptions(s *scl.SCL, iedName, apName string, o ServerModelOptions) (*servermodel.Model, error)
+
+type ServerModelOptions struct {
+    InstanceDomainNames bool
+    MaxExpandedNodes    int // DO, SDO, DA, BDA instances; 0: scl.DefaultMaxExpandedNodes (33,554,432)
+}
 ```
+
+The expansion of the type templates into the model stops at
+`MaxExpandedNodes` instances; the model is then not built, and the error
+matches `ErrLimitExceeded` and `scl.ErrLimitExceeded`.
 
 An SCL value outside the range of its basic type (an INT8 of 300, a
 FLOAT32 of 1e300, also one per setting group) is a warning in
@@ -1210,6 +1275,7 @@ type ServerOptions struct {
     NewReportBuffer func(ldName, rcbItemID string) ReportBuffer
     MMS          mms.ServerOptions // incl. AssociationTimeout
     Clock        Clock // stamps t, TimeOfEntry, journal, LActTm, GOOSE T, SV refrTm; nil: SystemClock
+    MaxConnections int // served at once by ListenAndServe; 0: DefaultMaxConnections (1024)
 }
 
 type ServerIdentity struct {
@@ -1237,7 +1303,36 @@ func (s *Server) EnableGOOSE(opts GOOSEOptions) (*GOOSEEngine, error)
 func (s *Server) GOOSEEngine() *GOOSEEngine
 func (s *Server) EnableSV(opts SVOptions) (*SVEngine, error)
 func (s *Server) SVEngine() *SVEngine
+func (s *Server) Stats() ServerStats
+
+type ServerStats struct {
+    Connections        int    // served by ListenAndServe now
+    ConnectionsRefused uint64 // closed at once because MaxConnections were served
+    CallbacksRecovered uint64 // calls of application code that did not return normally
+}
 ```
+
+`ListenAndServe` serves at most `MaxConnections` connections at once; a
+connection accepted beyond it is closed at once, before `OnConnect` and
+the association, and counted in `ConnectionsRefused`. After a temporary
+accept error it waits 5 ms, doubling up to 1 s, before it accepts again.
+It returns after the connection goroutines it started have returned
+(their `OnDisconnect` included): when `ctx` ends, after `Shutdown`, and
+after an accept error that is not temporary, which first ends the
+connections it serves.
+
+The server calls application code under a recover: `OnConnect`,
+`OnDisconnect`, the `FileProvider`, `Authenticate`, `Metrics` and a
+`JournalProvider` set in `MMS`, the `ControlHandler` and
+`SettingGroupHandler` callbacks, and the code a variable read or write
+reaches (report buffers, `Clock`). A call that does not return normally
+is logged with its stack at error level and counted in
+`CallbacksRecovered`; the request is answered with an error
+(object-access-denied for a read or write, a service error for a file or
+journal service, a rejected association for `Authenticate`, a refused
+control service), a connection hook or `Metrics` call loses that event,
+and the connection, the other associations and the process go on. Code
+registered directly on `Server.MMS()` is called by go-mms as it is.
 
 ### ServiceCapabilities
 
@@ -1317,8 +1412,10 @@ The report engine follows IEC 61850-7-2 §17.2 per association:
 
 ```go
 const DefaultSelectTimeout = 30 * time.Second
+const DefaultMaxOperDelay = 24 * time.Hour
 
 func (s *Server) RegisterControl(ldName, doRef string, ctlModel CtlModel, handler ControlHandler) error
+func (s *Server) CancelTimeActivatedOperate(ldName, doRef string) (bool, error)
 
 type ControlHandler struct {
     SelectTimeout time.Duration // zero: CF sboTimeout, else DefaultSelectTimeout
@@ -1334,6 +1431,7 @@ type ControlHandler struct {
     Interlocking   string           // CILO LN ("CILO1" or "LD/CILO1"): EnaCls gates close, EnaOpn open
     Synchrocheck   string           // RSYN LN: the Operate waits for Rel.stVal TRUE
     Process        *ProcessResponse // opt-in process response of the default operate
+    MaxOperDelay   time.Duration    // furthest operTm ahead; zero: DefaultMaxOperDelay
 }
 
 type ProcessResponse struct {
@@ -1372,6 +1470,15 @@ follows the selection. A callback refuses with an error: its
 and 27 give temporarily-unavailable and the others object-access-denied.
 Control writes to objects without a registration get object-access-denied.
 `ControlRequest.Operation` is `"select"`, `"operate"` or `"cancel"`.
+
+An Operate whose `OperTm` is more than `MaxOperDelay` ahead (24 hours by
+default) is refused with AddCause time-limit-over (16) and
+object-access-denied, and the control stays as it was.
+`CancelTimeActivatedOperate` ends a time activated operate that waits for
+its operTm as a Cancel of its client would: the operate is not carried
+out, no termination is sent, and the control returns to Unselected. It
+reports whether such an operate was waiting; a control that is not
+registered is `ErrNotFound`.
 
 Check conditions (IEC 61850-7-2 20.2.1, 20.5.2.7; 7-4 CILO, RSYN). The
 interlocking check is an operative test: it runs at SelectWithValue and at
@@ -1656,6 +1763,14 @@ type SubscriptionConfig struct {
     OnlyStateChanges bool
     Handler          func(Event) // instead of the channel
     QueueSize        int         // default 256
+    MaxStreams       int         // streams supervised; 0: DefaultMaxStreams (4096)
+}
+
+const DefaultMaxStreams = 4096
+
+type SubscriptionCounters struct {
+    StreamsRefused     uint64 // frames of a new stream beyond MaxStreams
+    CallbacksRecovered uint64 // Handler calls that did not return normally
 }
 
 func NewSubscriber(t Transport, cfg SubscriberConfig) (*Subscriber, error)
@@ -1663,8 +1778,10 @@ func (s *Subscriber) Subscribe(cfg SubscriptionConfig) (*Subscription, error)
 func (s *Subscriber) Run(ctx context.Context) error
 func (s *Subscriber) HandleFrame(raw []byte)
 func (s *Subscriber) Close() error
+func (s *Subscriber) CallbacksRecovered() uint64 // OnDecodeError and Metrics calls
 func (sub *Subscription) Events() <-chan Event
 func (sub *Subscription) Supervision() []Supervision
+func (sub *Subscription) Counters() SubscriptionCounters
 func (sub *Subscription) Close() error
 
 type EventKind int // EventMessage, EventTimeout, EventStNumGap, EventSqNumGap,
@@ -1755,6 +1872,11 @@ type ControlBlock struct {
 type Member struct { Ref, FC string; Type mms.TypeSpec }
 
 func ControlBlocksFromSCL(doc *scl.SCL) ([]ControlBlock, error)
+func ControlBlocksFromSCLWithOptions(doc *scl.SCL, opts SCLOptions) ([]ControlBlock, error)
+
+type SCLOptions struct {
+    MaxExpandedNodes int // all IEDs together; 0: scl.DefaultMaxExpandedNodes
+}
 func ControlBlockFromSCL(doc *scl.SCL, iedName, ldInst, cbName string) (*ControlBlock, error)
 func (cb *ControlBlock) MemberTypes() []mms.TypeSpec
 func (cb *ControlBlock) DefaultValues() []*mms.Value
@@ -1769,7 +1891,7 @@ type Metrics interface {
     FrameSent(gocbRef string, retransmission bool)
     SendError(gocbRef string, err error)
     FrameReceived(gocbRef string)
-    FrameDropped(reason string)
+    FrameDropped(reason string) // "decode", "simulation", "filtered", "streams"
     Event(gocbRef string, kind EventKind, dropped bool)
 }
 type NopMetrics struct{}
@@ -1970,6 +2092,12 @@ type SubscriptionConfig struct {
     OnASDU           func(*Sample) // or:
     SampleQueue      int           // Samples() channel
     EventQueue       int           // default 256
+    MaxStreams       int           // streams supervised; 0: DefaultMaxStreams (4096)
+}
+const DefaultMaxStreams = 4096
+type SubscriptionCounters struct {
+    StreamsRefused     uint64 // ASDUs of a new stream beyond MaxStreams
+    CallbacksRecovered uint64 // OnASDU calls that did not return normally
 }
 type StreamKey struct { Src MAC; AppID uint16; SvID string }
 type Sample struct {
@@ -2012,11 +2140,21 @@ func (s *Subscriber) Run(ctx context.Context) error
 func (s *Subscriber) HandleFrame(raw []byte)
 func (s *Subscriber) CheckTimeouts()
 func (s *Subscriber) Close() error
+func (s *Subscriber) CallbacksRecovered() uint64 // OnDecodeError and Metrics calls
 func (sub *Subscription) Events() <-chan Event
 func (sub *Subscription) Samples() <-chan Sample
 func (sub *Subscription) Stats() []Stats
+func (sub *Subscription) Counters() SubscriptionCounters
 func (sub *Subscription) Close() error
 ```
+
+A subscription supervises at most `MaxStreams` streams; an ASDU of a new
+stream beyond them is dropped, counted in `StreamsRefused` and reported
+to `Metrics.FrameDropped("streams")`. `OnASDU`, `OnDecodeError` and the
+`Metrics` methods are called under a recover: a call that does not
+return normally is logged with its stack at error level and counted, and
+the subscriber goes on. The GOOSE subscriber does the same for frames
+and its `Handler`.
 
 ### SCL binding
 
@@ -2040,6 +2178,11 @@ type OptFlds struct { RefreshTime, SampleSynchronized, SampleRate, DataSet, Secu
 type Member struct { Ref, FC string; Kinds []Kind }
 
 func ControlBlocksFromSCL(doc *scl.SCL) ([]ControlBlock, error)
+func ControlBlocksFromSCLWithOptions(doc *scl.SCL, opts SCLOptions) ([]ControlBlock, error)
+
+type SCLOptions struct {
+    MaxExpandedNodes int // all IEDs together; 0: scl.DefaultMaxExpandedNodes
+}
 func ControlBlockFromSCL(doc *scl.SCL, iedName, ldInst, cbName string) (*ControlBlock, error)
 func (cb *ControlBlock) PublisherConfig() (PublisherConfig, error)
 func (cb *ControlBlock) SubscriptionConfig() SubscriptionConfig
@@ -2060,7 +2203,7 @@ type Metrics interface {
     FrameSent(svID string, asdus int)
     SendError(svID string, err error)
     ASDUReceived(svID string)
-    FrameDropped(reason string)
+    FrameDropped(reason string) // "decode", "simulation", "filtered", "streams"
     Event(svID string, kind EventKind, dropped bool)
 }
 type NopMetrics struct{}
@@ -2164,10 +2307,22 @@ type ParseOptions struct {
     ValidateSemantic bool         // run semantic validation after parsing
     Strict           bool         // return error if any diagnostic has error severity
     Kind             DocumentKind // override document kind detection
-    MaxDiagnostics   int          // truncate diagnostics (0 = unlimited)
+    MaxDiagnostics   int          // most diagnostics kept; 0: all
     AssumeSCLNamespace bool       // read an SCL root without namespace as the IEC namespace
+    MaxBytes          int64       // largest document; 0: DefaultMaxBytes (1 GiB)
+    MaxDepth          int         // deepest element nesting; 0: DefaultMaxDepth (1024)
+    MaxDiagnosticName int         // longest name quoted in a diagnostic; 0: DefaultMaxDiagnosticName (256 bytes)
 }
+
+var ErrLimitExceeded = errors.New("scl: limit exceeded")
 ```
+
+A document beyond `MaxBytes` or `MaxDepth` is refused with an error that
+wraps `scl.ErrLimitExceeded`; `ParseFileOpts` checks the size of the
+file before it reads it. Once `MaxDiagnostics` diagnostics are held,
+parsing and semantic validation add no further one. The limits are
+listed in [scl/README.md](scl/README.md#limits) and
+[SECURITY.md](SECURITY.md#limits).
 
 The SCL schema requires the IEC namespace (`http://www.iec.ch/61850/2003/SCL`)
 on the root element, so a bare `<SCL>` is refused by default. With
@@ -2555,7 +2710,12 @@ type FlatRow struct {
 }
 
 func Flatten(s *SCL) []FlatRow
+func FlattenWithOptions(s *SCL, opts FlattenOptions) ([]FlatRow, []Diagnostic)
 func WriteCSV(w io.Writer, rows []FlatRow) error
+
+type FlattenOptions struct {
+    MaxExpandedNodes int // rows of the type expansion; 0: DefaultMaxExpandedNodes (33,554,432)
+}
 func PrintTree(w io.Writer, s *SCL) error
 
 type DataSetRow struct {
@@ -2595,6 +2755,11 @@ type ConnectedAPRow struct {
 
 func ExportConnectedAPs(s *SCL) []ConnectedAPRow
 ```
+
+The type expansion of `Flatten` stops after `DefaultMaxExpandedNodes`
+rows, the last with the status `expansion-limit`; `FlattenWithOptions`
+sets another limit and also returns an error diagnostic
+`expansion-limit` naming the logical node where it stopped.
 
 ### Lookup helpers
 
@@ -2789,6 +2954,7 @@ Sentinel errors are package-level variables tested with `errors.Is()`:
 | `ErrNotControllable` | Target data object's ctlModel is status-only |
 | `ErrGOOSE` | Server GOOSE engine failure (see [GOOSE.md](GOOSE.md)) |
 | `ErrSV` | Server SV engine failure (see [SV.md](SV.md)) |
+| `ErrLimitExceeded` | An input or a peer's answer went beyond a limit of the package (`FileLimits`, `ServerModelOptions.MaxExpandedNodes`); see [SECURITY.md](SECURITY.md#limits) |
 
 ### Typed errors
 

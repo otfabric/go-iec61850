@@ -22,11 +22,14 @@ import (
 // panicked: an internal error, LastApplError Error 1 (Unknown).
 var errHandlerPanic = errors.New("panic in ControlHandler callback")
 
-// callControlHandler invokes fn, recovering from any panic and converting it
-// to an error so that a misbehaving application callback cannot crash the server.
-func callControlHandler(fn func(context.Context, ControlRequest) error, ctx context.Context, req ControlRequest) (err error) {
+// callControlHandler invokes fn under a recover: a call that does not
+// return normally is logged with its stack and counted by g (see
+// [callbackGuard]) and gives an error, so that the control service is
+// refused and the server keeps serving.
+func callControlHandler(g *callbackGuard, fn func(context.Context, ControlRequest) error, ctx context.Context, req ControlRequest) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
+			_ = g.recovered("ControlHandler", r, "ref", req.Ref, "operation", req.Operation)
 			err = &ControlError{
 				Ref:       req.Ref,
 				Operation: req.Operation,
@@ -155,7 +158,17 @@ type ControlHandler struct {
 	// operate (no OnOperate): see [ProcessResponse]. Nil mirrors ctlVal
 	// into stVal.
 	Process *ProcessResponse
+
+	// MaxOperDelay bounds a time activated operate: an Operate whose
+	// operTm is further than this in the future is refused with AddCause
+	// time-limit-over, and the control stays as it was. Zero or less
+	// means [DefaultMaxOperDelay].
+	MaxOperDelay time.Duration
 }
+
+// DefaultMaxOperDelay is the default [ControlHandler.MaxOperDelay]: an
+// operTm at most 24 hours ahead is accepted.
+const DefaultMaxOperDelay = 24 * time.Hour
 
 // ControlRequest contains the decoded parameters from a client
 // control command (Operate, Select, or Cancel).
@@ -733,7 +746,7 @@ func (s *Server) doSelect(ctx context.Context, reg *controlRegistration, req Con
 		}
 	}
 	if reg.handler.OnSelect != nil {
-		if err := callControlHandler(reg.handler.OnSelect, ctx, req); err != nil {
+		if err := callControlHandler(s.cb, reg.handler.OnSelect, ctx, req); err != nil {
 			return release(err)
 		}
 	}
@@ -789,6 +802,11 @@ func (s *Server) operate(ctx context.Context, reg *controlRegistration, req Cont
 		return newControlRefusal(req, "operate", AddCauseInconsistentParameters, fmt.Errorf("%w: invalid origin", ErrOperateFailed))
 	}
 	now := time.Now()
+	if maxDelay := reg.maxOperDelay(); !req.OperTm.IsZero() && req.OperTm.Sub(now) > maxDelay {
+		s.logger.Warn("iec61850: operate denied: operTm beyond MaxOperDelay", "ref", req.Ref, "operTm", req.OperTm, "max", maxDelay)
+		return newControlRefusal(req, "operate", AddCauseTimeLimit,
+			fmt.Errorf("%w: operTm more than %v ahead", ErrOperateFailed, maxDelay))
+	}
 	reg.mu.Lock()
 	released := s.expireLocked(reg, now)
 	switch {
@@ -892,7 +910,7 @@ func (s *Server) startTravel(ctx context.Context, reg *controlRegistration, req 
 // runOperate calls OnOperate, or applies the default operate.
 func (s *Server) runOperate(ctx context.Context, reg *controlRegistration, req ControlRequest) error {
 	if reg.handler.OnOperate != nil {
-		return callControlHandler(reg.handler.OnOperate, ctx, req)
+		return callControlHandler(s.cb, reg.handler.OnOperate, ctx, req)
 	}
 	s.defaultOperate(ctx, reg, req)
 	return nil
@@ -1029,7 +1047,7 @@ func (s *Server) runExecuteAndTerminate(reqCtx, life context.Context, reg *contr
 			execCtx, stop = context.WithTimeout(reqCtx, d)
 		}
 		stopAfter := context.AfterFunc(life, stop)
-		err = callControlHandler(execute, execCtx, creq)
+		err = callControlHandler(s.cb, execute, execCtx, creq)
 		if err != nil && errors.Is(execCtx.Err(), context.DeadlineExceeded) && addCauseOf(err) == AddCauseUnknown {
 			// IEC 61850-7-2 20.3.3: operTimeout passed, CmdTerm- with
 			// AddCause time-limit-over.
@@ -1105,7 +1123,7 @@ func (s *Server) cancel(ctx context.Context, reg *controlRegistration, req Contr
 	s.afterRelease(ctx, reg, released)
 
 	if reg.handler.OnCancel != nil {
-		if err := callControlHandler(reg.handler.OnCancel, ctx, req); err != nil {
+		if err := callControlHandler(s.cb, reg.handler.OnCancel, ctx, req); err != nil {
 			return err
 		}
 	}
@@ -1127,6 +1145,47 @@ func (s *Server) cancel(ctx context.Context, reg *controlRegistration, req Contr
 	reg.mu.Unlock()
 	s.syncStSeld(ctx, reg)
 	return nil
+}
+
+// maxOperDelay is the handler's MaxOperDelay, or the default.
+func (reg *controlRegistration) maxOperDelay() time.Duration {
+	if reg.handler.MaxOperDelay > 0 {
+		return reg.handler.MaxOperDelay
+	}
+	return DefaultMaxOperDelay
+}
+
+// CancelTimeActivatedOperate ends the time activated operate of the
+// control ldName/doRef that waits for its operTm, as a Cancel of the
+// client that sent it would: the operate is not carried out, OnOperate
+// is not called, no termination is sent, and the control returns to
+// Unselected. It reports whether such an operate was waiting. A control
+// that is not registered is an error wrapping [ErrNotFound].
+//
+// It lets the application end an activation the client that sent it
+// does not cancel, for example before a planned outage.
+func (s *Server) CancelTimeActivatedOperate(ldName, doRef string) (bool, error) {
+	s.controlMu.RLock()
+	reg := s.controls[ldName+"/"+doRef]
+	s.controlMu.RUnlock()
+	if reg == nil {
+		return false, fmt.Errorf("iec61850: cancel time activated operate %s/%s: %w: no registered control", ldName, doRef, ErrNotFound)
+	}
+	reg.mu.Lock()
+	if reg.state != ctlWaitActivation {
+		reg.mu.Unlock()
+		return false, nil
+	}
+	if reg.abort != nil {
+		// Ends the goroutine that waits for operTm.
+		close(reg.abort)
+		reg.abort = nil
+	}
+	s.unselectLocked(reg)
+	reg.mu.Unlock()
+	s.logger.Info("iec61850: time activated operate cancelled by the application", "ld", ldName, "do", doRef)
+	s.syncStSeld(context.Background(), reg)
+	return true, nil
 }
 
 // --- defaults ------------------------------------------------------------
@@ -1394,7 +1453,7 @@ func (s *Server) installSBONormalReadHandler(ldName, doRef string, reg *controlR
 		return mms.NewVisibleString(""), nil
 	}
 
-	if err := s.mms.SetVariableRead(ldName, sboItemID, readFn); err != nil {
+	if err := s.mms.SetVariableRead(ldName, sboItemID, s.cb.read(ldName, sboItemID, readFn)); err != nil {
 		s.logger.Warn("iec61850: installSBOReadHandler: variable not found",
 			"domain", ldName, "itemID", sboItemID, "err", err)
 	}

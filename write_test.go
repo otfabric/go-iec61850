@@ -71,7 +71,7 @@ func setupWritableLoopback(t *testing.T) *Client {
 		}
 	}
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() {
 		_ = srv.Serve(ctx, serverT)
 	}()

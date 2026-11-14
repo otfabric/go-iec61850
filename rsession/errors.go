@@ -13,7 +13,8 @@ import (
 // test against them. Decoder failures are [*DecodeError] values that
 // unwrap to [ErrMalformed] or [ErrUnsupported]; verification failures
 // wrap [ErrUnsecured], [ErrUnknownKey], [ErrAuthentication] or
-// [ErrReplay].
+// [ErrReplay]; a datagram from a sender outside Config.AllowedSenders
+// is refused with an error that wraps [ErrSenderNotAllowed].
 var (
 	// ErrMalformed indicates a datagram that is not a well-formed SPDU:
 	// a wrong transport header, a length that runs past the datagram,
@@ -38,9 +39,15 @@ var (
 	ErrAuthentication = errors.New("rsession: authentication failed")
 
 	// ErrReplay indicates an SPDU whose number was already accepted
-	// from the same sender under the same key, or is older than the
+	// from the same sender under the same key (under the same key from
+	// any sender with Config.SingleSenderPerKey), or is older than the
 	// replay window.
 	ErrReplay = errors.New("rsession: replayed SPDU")
+
+	// ErrSenderNotAllowed indicates a datagram from a source address
+	// outside Config.AllowedSenders. It is refused before it is decoded
+	// or verified.
+	ErrSenderNotAllowed = errors.New("rsession: sender not allowed")
 
 	// ErrNoKey indicates that the key provider has no current key to
 	// secure an SPDU with.

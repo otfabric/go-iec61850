@@ -130,7 +130,7 @@ func setupSGCBClientLoopback(t *testing.T) *Client {
 		}
 	}
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(ctx, serverT) }()
 	mmsClient, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
 	if err != nil {

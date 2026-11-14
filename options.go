@@ -56,6 +56,9 @@ type DialOptions struct {
 	// Metrics, when non-nil, receives the MMS request and connection
 	// events of the client (see [mms.Metrics]). It is a convenience field
 	// equivalent to MMS.Metrics, which takes precedence when both are set.
+	// Either is called under a recover: a call that does not return
+	// normally is logged with its stack at error level and loses that
+	// event.
 	Metrics mms.Metrics
 
 	// MaxTPDULength is the COTP TPDU size proposed in the connection
@@ -82,6 +85,10 @@ type DialOptions struct {
 	// Clock stamps the T member of control commands (see
 	// [ClientOptions.Clock]). Nil is [SystemClock].
 	Clock Clock
+
+	// FileLimits bounds the file services of the client (see
+	// [ClientOptions.FileLimits]). The zero value uses the defaults.
+	FileLimits FileLimits
 }
 
 // ClientOptions configures an IEC 61850 client created via [NewClient]
@@ -109,6 +116,62 @@ type ClientOptions struct {
 	// per-call OperateParams.TQuality or CancelParams.TQuality
 	// overrides the clock's quality.
 	Clock Clock
+
+	// FileLimits bounds what [Client.ReadFile] and [Client.DownloadFile]
+	// accept from the server. The zero value uses the defaults.
+	FileLimits FileLimits
+}
+
+// Defaults of [FileLimits].
+const (
+	// DefaultMaxFileSize is the size of the largest file [Client.ReadFile]
+	// reads into memory: 256 MiB.
+	DefaultMaxFileSize int64 = 256 << 20
+
+	// DefaultFileSizeTolerance is how many bytes more than the size the
+	// server announced when it opened the file a file read accepts:
+	// 64 MiB.
+	DefaultFileSizeTolerance int64 = 64 << 20
+
+	// DefaultMaxEmptyFileChunks is the number of consecutive FileRead
+	// answers without data that announce more data a file read accepts.
+	DefaultMaxEmptyFileChunks = 64
+)
+
+// FileLimits bounds the file services of a [Client]. A field that is
+// zero or less uses its default. A read that goes beyond a limit is
+// given up with an error that wraps [ErrLimitExceeded], and the file is
+// closed on the server (FileClose).
+type FileLimits struct {
+	// MaxSize is the size of the largest file [Client.ReadFile] reads
+	// into memory; zero or less means [DefaultMaxFileSize]. A file whose
+	// announced size is larger is refused before it is read. It does not
+	// apply to [Client.DownloadFile], which streams.
+	MaxSize int64
+
+	// SizeTolerance is how many bytes more than the size announced when
+	// the file was opened [Client.ReadFile] and [Client.DownloadFile]
+	// accept; zero or less means [DefaultFileSizeTolerance].
+	SizeTolerance int64
+
+	// MaxEmptyChunks is the number of consecutive FileRead answers that
+	// carry no data and announce more (MoreFollows) a read accepts; zero
+	// or less means [DefaultMaxEmptyFileChunks].
+	MaxEmptyChunks int
+}
+
+// resolved returns the limits with the defaults filled in.
+func (l FileLimits) resolved() FileLimits {
+	if l.MaxSize <= 0 {
+		l.MaxSize = DefaultMaxFileSize
+	}
+	if l.SizeTolerance <= 0 {
+		l.SizeTolerance = DefaultFileSizeTolerance
+	}
+	if l.MaxEmptyChunks <= 0 {
+		l.MaxEmptyChunks = DefaultMaxEmptyFileChunks
+	}
+	return l
 }
 
 // CacheStrategy controls client-side caching of IEC 61850 model
