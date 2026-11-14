@@ -1,13 +1,11 @@
+# Called by pr.yml on every pull request that is not documentation only;
+# dispatch it to run CI on a branch without a pull request.
 name: CI
 run-name: "CI (${{ github.event_name }}) on ${{ github.ref_name }} by @${{ github.actor }}"
 
 on:
-  push:
-    branches: ["**"]
-    paths-ignore: ["**/*.md"]
-  pull_request:
-    branches: ["**"]
-    paths-ignore: ["**/*.md"]
+  workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -23,7 +21,8 @@ jobs:
       test-exclude-regex: "/example(s)?($|/)"
       codecov-name: go-iec61850
       go-versions: '["1.26", "1.27"]'
-      policy-version: v1.5.0
+      # otfabric-policy runs in docs.yml, on every pull request and push to main.
+      run-policy: false
       # The shared default (v2.1.6) predates Go 1.26; the version `make lint` is checked with.
       golangci-lint-version: v2.15.0
     secrets: inherit
@@ -38,7 +37,8 @@ jobs:
       coverage-min: "90"
       run-codecov: false
       go-versions: '["1.26", "1.27"]'
-      policy-version: v1.5.0
+      # otfabric-policy runs in docs.yml, on every pull request and push to main.
+      run-policy: false
       # The shared default (v2.1.6) predates Go 1.26; the version `make lint` is checked with.
       golangci-lint-version: v2.15.0
     secrets: inherit
@@ -53,7 +53,8 @@ jobs:
       run-govulncheck: true
       run-codecov: false
       go-versions: '["1.26", "1.27"]'
-      policy-version: v1.5.0
+      # otfabric-policy runs in docs.yml, on every pull request and push to main.
+      run-policy: false
       # The shared default (v2.1.6) predates Go 1.26; the version `make lint` is checked with.
       golangci-lint-version: v2.15.0
     secrets: inherit

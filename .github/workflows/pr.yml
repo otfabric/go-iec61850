@@ -1,0 +1,62 @@
+# The pull request gate (otfabric/.github PR workflow). Every pull request
+# runs this, with no path filter: Docs and Policy of the library, sclparse
+# and sclgen always; CI (the three modules, the per-package coverage gate with
+# raw sockets, generated SCL code) and interop (IEC 61850 against four
+# independent stacks, GOOSE and SV, R-GOOSE and R-SV) unless the change is
+# documentation only (pr-changes.yml); then "OT Fabric Required Checks", the
+# only check a ruleset requires. A branch push runs nothing, and the merge to
+# main runs docs.yml only. Releases test the release commit in full.
+name: PR
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+# A new revision cancels the run of the previous one. Release, nightly fuzz
+# and dispatched runs are in groups of their own.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    uses: otfabric/.github/.github/workflows/pr-changes.yml@5f38cddf04d1dda8e45f0cffa7c1be2b448b8b79 # v3.7.0 once tagged
+    with:
+      # TestREADMESnippets (readme_test.go) checks the README's Go blocks.
+      code-paths: |
+        README.md
+
+  docs:
+    uses: ./.github/workflows/docs.yml
+    secrets: inherit
+
+  ci:
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  interop:
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/interop.yml
+
+  required:
+    name: OT Fabric Required Checks
+    needs: [changes, docs, ci, interop]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: otfabric/.github/actions/required-gate@5f38cddf04d1dda8e45f0cffa7c1be2b448b8b79 # v3.7.0 once tagged
+        with:
+          needs: ${{ toJSON(needs) }}
+          required: changes docs
+          required-for-code: ci interop

@@ -20,6 +20,23 @@ How to run each test tier. What the tests show per feature is in
 | SCL corpus | `make corpus` | `IEC61850_SCL_CORPUS`: a checkout of the private otfabric/iec61850-scl-corpus | local only (the corpus is private) |
 | Generated code | `make scl-check-generate` | nothing | `ci.yml`, `generated` job |
 
+## When CI runs
+
+| Event | Workflow | What runs |
+|---|---|---|
+| Pull request | `pr.yml` | `docs.yml` (docsync of the library, sclparse and sclgen; otfabric-policy) always; `ci.yml` and `interop.yml` unless every changed file is documentation; then `OT Fabric Required Checks` |
+| Push to a branch | none | nothing; dispatch `ci.yml` or `interop.yml` to test a branch without a pull request |
+| Push to `main` | `docs.yml` | docsync and otfabric-policy; the merged commit was tested as the pull request's merge commit |
+| Nightly, by hand | `fuzz.yml`, `self-interop.yml` | 5 minutes per Fuzz target; this commit against the latest published go-iec61850 |
+| Release | `release.yml` | the shared release workflows test the release commit again |
+
+Documentation means an added or modified `*.md` file outside `.github/`,
+`testdata/` and `vendor/`, other than `AGENTS.md`, `CLAUDE.md` and
+`README.md` (`TestREADMESnippets` reads it). A deleted or renamed document,
+or any other file, runs everything. `OT Fabric Required Checks` fails unless
+every job that applies succeeded, the nested modules' included; its summary
+lists them.
+
 `make check` is the pre-commit set: it formats, tidies, then runs vet, lint,
 `vuln`, tests, race and coverage. It does not run `coverage-pkg-check`, `e2e`,
 `fuzz` or interop.
