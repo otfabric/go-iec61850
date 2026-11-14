@@ -335,6 +335,7 @@ func TestWriteInterceptor_NonRCB_ReportsEnabled(t *testing.T) {
 	model := testReportSCL()
 	srv := newTestServer(t, model)
 	srv.EnableReports()
+	t.Cleanup(srv.Close)
 
 	ctx := context.Background()
 	// Simulate what the DA Write handler does: store the value first, then

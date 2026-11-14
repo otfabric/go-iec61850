@@ -14,7 +14,7 @@ Use `errors.Is(err, iec61850.ErrXxx)` for category classification.
 
 | Sentinel | When returned |
 |----------|---------------|
-| `ErrClosed` | Operation attempted after the client was closed or aborted |
+| `ErrClosed` | Operation attempted after the client was closed or aborted, or after its association ended (`Client.Err` matches it then, with the go-mms error) |
 | `ErrNotFound` | Requested IEC 61850 object, logical device, or logical node not found |
 | `ErrInvalidReference` | The supplied object reference string is malformed |
 | `ErrInvalidFunctionalConstraint` | Unknown or invalid FC string |
@@ -36,6 +36,7 @@ Use `errors.Is(err, iec61850.ErrXxx)` for category classification.
 | `ErrNotControllable` | Target data object has no controllable model |
 | `ErrGOOSE` | Server GOOSE engine: already enabled, no transport, engine stopped, GoCB without address |
 | `ErrSV` | Server SV engine: already enabled, no transport, engine stopped, MSVCB sample not encodable |
+| `ErrLimitExceeded` | A limit of the package was reached: `ReadFile` beyond `FileLimits.MaxSize`, `ReadFile` or `DownloadFile` beyond `FileLimits.SizeTolerance` over the announced size or after more than `FileLimits.MaxEmptyChunks` empty answers, a server model beyond `ServerModelOptions.MaxExpandedNodes` (which also matches `scl.ErrLimitExceeded`). See [SECURITY.md](SECURITY.md#limits) |
 
 ### Server write refusals
 
@@ -128,12 +129,22 @@ below. See [GOOSE.md](GOOSE.md#r-goose-and-r-sv-over-udp).
 | `ErrUnsecured` | SPDU without key ID and signature, refused without `Insecure` |
 | `ErrUnknownKey` | SPDU under a key ID the key provider does not hold |
 | `ErrAuthentication` | Signature missing, of the wrong length or algorithm, or not verifying |
-| `ErrReplay` | SPDU number already accepted, or older than the replay window, for that sender and key |
+| `ErrReplay` | SPDU number already accepted, or older than the replay window, for that sender and key (for that key whatever the sender with `Config.SingleSenderPerKey`) |
+| `ErrSenderNotAllowed` | SPDU from a source address outside `Config.AllowedSenders`, refused before verification |
 | `ErrNoKey` | The key provider has no current key to send with |
 | `ErrInvalidKey` | Key ID 0, key material shorter than 16 octets, or an unsupported MAC algorithm |
 | `ErrInvalidFrame` | Frame passed to `Transport.Send` is not a GOOSE or SV frame of the transport's kind |
 | `ErrLimitExceeded` | SPDU larger than 65507 octets, or an APDU longer than 65535 |
 | `ErrUnsupportedPlatform` | Multicast socket options requested on a platform other than Linux, macOS or a BSD |
+
+### Package `scl`
+
+Parse failures are errors with text, and problems in a document are
+`Diagnostic` values (see [API.md](API.md#scl-diagnostics)). One sentinel:
+
+| Sentinel | Meaning |
+|----------|---------|
+| `ErrLimitExceeded` | A document beyond `ParseOptions.MaxBytes` or `ParseOptions.MaxDepth` (the parse is refused), or a type expansion beyond `FlattenOptions.MaxExpandedNodes` or the model limit of `ServerModelOptions`, `goose.SCLOptions` or `sv.SCLOptions`. See [scl/README.md](scl/README.md#limits) |
 
 ### Transport sentinels
 

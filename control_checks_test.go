@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/otfabric/go-mms"
@@ -323,35 +324,37 @@ func TestSpec_7_2_Table54_InterlockHookCauses(t *testing.T) {
 // without synchronism), IEC 61850-7-4 RSYN Rel: the Operate waits up to
 // SynchroTimeout for the release.
 func TestSpec_7_4_RSYN_Release(t *testing.T) {
-	const limit = 150 * time.Millisecond
-	srv := checksServer(t, checksCF{}, CtlModelDirectEnhanced, ControlHandler{Synchrocheck: "RSYN1", SynchroTimeout: limit})
-	c := controlClient(t, srv)
-	ctx := waitCtx(t)
-	ref := mustParseRef(t, ctlPos)
-	sy := CheckSynchroCheck
+	synctest.Test(t, func(t *testing.T) {
+		const limit = 150 * time.Millisecond
+		srv := checksServer(t, checksCF{}, CtlModelDirectEnhanced, ControlHandler{Synchrocheck: "RSYN1", SynchroTimeout: limit})
+		c := controlClient(t, srv)
+		ctx := waitCtx(t)
+		ref := mustParseRef(t, ctlPos)
+		sy := CheckSynchroCheck
 
-	start := time.Now()
-	laeCause(t, "no release", c.Operate(ctx, ref, posParams(1, true, sy)), AddCauseBlockedBySynchrocheck)
-	if d := time.Since(start); d < limit {
-		t.Errorf("refused after %v, before the time limit %v", d, limit)
-	}
-	// The release comes within the limit.
-	released := make(chan struct{})
-	go func() {
-		defer close(released)
-		time.Sleep(50 * time.Millisecond)
-		setStVal(srv, "RSYN1.Rel", mms.NewBoolean(true))
-	}()
-	term, err := c.OperateWait(ctx, ref, posParams(2, true, sy))
-	<-released
-	if err != nil || !term.Positive() {
-		t.Fatalf("released OperateWait = %+v, %v", term, err)
-	}
-	// Without synchrocheck the RSYN is not consulted.
-	setStVal(srv, "RSYN1.Rel", mms.NewBoolean(false))
-	if _, err := c.OperateWait(ctx, ref, posParams(3, true, 0)); err != nil {
-		t.Errorf("OperateWait without Check: %v", err)
-	}
+		start := time.Now()
+		laeCause(t, "no release", c.Operate(ctx, ref, posParams(1, true, sy)), AddCauseBlockedBySynchrocheck)
+		if d := time.Since(start); d < limit {
+			t.Errorf("refused after %v, before the time limit %v", d, limit)
+		}
+		// The release comes within the limit.
+		released := make(chan struct{})
+		go func() {
+			defer close(released)
+			time.Sleep(50 * time.Millisecond) // fake time: within the limit of 150 ms
+			setStVal(srv, "RSYN1.Rel", mms.NewBoolean(true))
+		}()
+		term, err := c.OperateWait(ctx, ref, posParams(2, true, sy))
+		<-released
+		if err != nil || !term.Positive() {
+			t.Fatalf("released OperateWait = %+v, %v", term, err)
+		}
+		// Without synchrocheck the RSYN is not consulted.
+		setStVal(srv, "RSYN1.Rel", mms.NewBoolean(false))
+		if _, err := c.OperateWait(ctx, ref, posParams(3, true, 0)); err != nil {
+			t.Errorf("OperateWait without Check: %v", err)
+		}
+	})
 }
 
 // SynchroTimeout zero checks the RSYN release once; CheckSynchro's

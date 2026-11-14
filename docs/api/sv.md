@@ -108,6 +108,12 @@ const DefaultMaxBurst = 16
 DefaultMaxBurst is the default number of frames a late publisher sends back-to-back to catch up with its schedule before it skips samples.
 
 ```go
+const DefaultMaxStreams = 4096
+```
+
+DefaultMaxStreams is the default of SubscriptionConfig.MaxStreams. A merging unit publishes a few streams; a subscription without filters on the process bus of the largest substations sees some hundreds. The default is well above that, and it bounds the supervision state (and the timeout scan of every SupervisionInterval) of a subscription for streams it never asked for.
+
+```go
 const DefaultNominalFrequency = 50.0
 ```
 
@@ -484,6 +490,16 @@ func ControlBlocksFromSCL(doc *scl.SCL) ([]ControlBlock, error)
 ```
 
 ControlBlocksFromSCL returns every SV control block of every IED access point with a Server in doc. Blocks that cannot be resolved are skipped and reported in the returned error (which wraps ErrSCL); the blocks that could be resolved are returned regardless.
+
+The models of all IEDs of doc together expand the type templates to at most [scl.DefaultMaxExpandedNodes](https://pkg.go.dev/github.com/otfabric/go-iec61850/scl#DefaultMaxExpandedNodes) data objects and attributes; beyond that the IEDs not yet read are left out and the error wraps [scl.ErrLimitExceeded](https://pkg.go.dev/github.com/otfabric/go-iec61850/scl#ErrLimitExceeded) too. [ControlBlocksFromSCLWithOptions](#func-controlblocksfromsclwithoptions) sets another limit.
+
+#### func ControlBlocksFromSCLWithOptions
+
+```go
+func ControlBlocksFromSCLWithOptions(doc *scl.SCL, opts SCLOptions) ([]ControlBlock, error)
+```
+
+ControlBlocksFromSCLWithOptions is [ControlBlocksFromSCL](#func-controlblocksfromscl) with options.
 
 #### func (ControlBlock) PublisherConfig
 
@@ -894,8 +910,10 @@ type Metrics interface {
 	ASDUReceived(svID string)
 
 	// FrameDropped is called for a received frame discarded before
-	// reaching a subscription. reason is "decode", "simulation" or
-	// "filtered".
+	// reaching a subscription. reason is "decode", "simulation",
+	// "filtered", or "streams" (a subscription that supervises
+	// SubscriptionConfig.MaxStreams streams dropped an ASDU of a new
+	// stream).
 	FrameDropped(reason string)
 
 	// Event is called for every subscriber event, including events
@@ -1301,6 +1319,21 @@ func (q Quality) Value() *mms.Value
 
 Value returns q as the MMS quality BitString of IEC 61850-8-1 (bit 0 first, i.e. in the most significant bit of the first octet): 13 bits, or 14 when the derived bit is set.
 
+### type SCLOptions
+
+```go
+type SCLOptions struct {
+	// MaxExpandedNodes is the number of data objects and data
+	// attributes (DO, SDO, DA and BDA, each counted once per place in a
+	// model) the models of all IEDs of the document together may
+	// expand the type templates to; zero or less means
+	// [scl.DefaultMaxExpandedNodes].
+	MaxExpandedNodes int
+}
+```
+
+SCLOptions control [ControlBlocksFromSCLWithOptions](#func-controlblocksfromsclwithoptions).
+
 ### type Sample
 
 ```go
@@ -1465,6 +1498,9 @@ type Subscriber struct {
 	// done is closed by Close: it ends Run, also while its Recv waits
 	// on a transport that delivers nothing.
 
+	// recovered counts OnDecodeError and Metrics calls that did not
+	// return normally.
+
 	// Receive-goroutine state.
 
 }
@@ -1479,6 +1515,14 @@ func NewSubscriber(t Transport, cfg SubscriberConfig) (*Subscriber, error)
 ```
 
 NewSubscriber returns a subscriber reading from t. t may be nil when frames are fed with HandleFrame only.
+
+#### func (Subscriber) CallbacksRecovered
+
+```go
+func (s *Subscriber) CallbacksRecovered() uint64
+```
+
+CallbacksRecovered returns the number of OnDecodeError and Metrics calls of the subscriber that did not return normally.
 
 #### func (Subscriber) CheckTimeouts
 
@@ -1546,6 +1590,11 @@ type SubscriberConfig struct {
 
 	// OnDecodeError, when non-nil, is called for every frame with EtherType
 	// 0x88BA that fails to decode.
+	//
+	// A call of OnDecodeError or of a Metrics method that does not
+	// return normally is recovered: it is logged at error level with its
+	// stack and counted in [Subscriber.CallbacksRecovered], and the
+	// subscriber goes on.
 	OnDecodeError func(raw []byte, err error)
 
 	// Now is the clock (default time.Now).
@@ -1565,7 +1614,12 @@ SubscriberConfig configures a [Subscriber](#type-subscriber).
 
 ```go
 type Subscription struct {
-	// contains filtered or unexported fields
+
+	// refused counts ASDUs of new streams dropped at MaxStreams;
+	// refusedLogged records that the first one was logged.
+
+	// recovered counts OnASDU calls that did not return normally.
+
 }
 ```
 
@@ -1578,6 +1632,14 @@ func (sub *Subscription) Close() error
 ```
 
 Close removes the subscription and closes its channels.
+
+#### func (Subscription) Counters
+
+```go
+func (sub *Subscription) Counters() SubscriptionCounters
+```
+
+Counters returns the counters of the subscription as a whole.
 
 #### func (Subscription) Events
 
@@ -1645,7 +1707,10 @@ type SubscriptionConfig struct {
 	// OnASDU, when non-nil, is called synchronously for every accepted
 	// ASDU on the receive goroutine. The [Sample] and the slices it
 	// references are only valid during the call; copy what you keep.
-	// This path does not allocate.
+	// This path does not allocate. A call that does not return normally
+	// is recovered: it is logged at error level with its stack and
+	// counted in SubscriptionCounters.CallbacksRecovered, and OnASDU is
+	// called with the next ASDU.
 	OnASDU func(s *Sample)
 
 	// SampleQueue, when positive and OnASDU is nil, delivers accepted
@@ -1657,10 +1722,38 @@ type SubscriptionConfig struct {
 	// EventQueue is the capacity of the event channel (default
 	// [DefaultEventQueue]). Events are dropped when it is full.
 	EventQueue int
+
+	// MaxStreams bounds the streams the subscription supervises; zero
+	// means [DefaultMaxStreams]. While the subscription supervises
+	// MaxStreams streams, an ASDU of a stream it has not seen is
+	// dropped: it is counted in SubscriptionCounters.StreamsRefused and
+	// reported to Metrics.FrameDropped with the reason "streams". A
+	// stream seen once keeps its entry until the subscription is closed;
+	// no stream is replaced by a new one.
+	MaxStreams int
 }
 ```
 
 SubscriptionConfig selects and supervises one or more SV streams. Zero-valued filters match anything.
+
+### type SubscriptionCounters
+
+```go
+type SubscriptionCounters struct {
+	// StreamsRefused counts ASDUs dropped because they belong to a
+	// stream not seen before while the subscription supervises
+	// MaxStreams streams.
+	StreamsRefused uint64
+
+	// CallbacksRecovered counts OnASDU calls that did not return
+	// normally. Each is logged at error level with its stack; the ASDU
+	// is not delivered again, and OnASDU goes on receiving the
+	// following ASDUs.
+	CallbacksRecovered uint64
+}
+```
+
+SubscriptionCounters are the counters of a subscription as a whole; [Stats](#type-stats) has those of each stream.
 
 ### type Transport
 

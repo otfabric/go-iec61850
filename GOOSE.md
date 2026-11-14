@@ -199,6 +199,15 @@ stream, modelled on LGOS: `Status` (`waiting`, `ok`, `timeout`,
 (messages, state changes, duplicates, out-of-order, gaps, restarts,
 timeouts, invalid frames, dropped events).
 
+A subscription supervises at most `MaxStreams` streams
+(`goose.DefaultMaxStreams`, 4096, when zero). While it supervises that
+many, a frame of a stream it has not seen is dropped, counted in
+`Subscription.Counters().StreamsRefused` and reported to
+`Metrics.FrameDropped("streams")`; the streams already supervised keep
+their state and are never replaced. A subscription without filters
+(monitor mode) sees every stream of its network; raise `MaxStreams` for
+a network with more streams than the default.
+
 Events are delivered on a channel (`QueueSize`, default 256; when full,
 events are dropped and counted) or to a `Handler` callback;
 `OnlyStateChanges` suppresses retransmissions. `Subscription.Close` and
@@ -208,6 +217,13 @@ the subscriptions and does not stop `Run`; end `Run` with its context or
 by closing the transport. `HandleFrame` feeds raw
 frames from an external source. Undecodable frames go to
 `SubscriberConfig.OnDecodeError`.
+
+A `Handler` call that does not return normally is recovered: it is
+logged at error level with its stack, counted in
+`Subscription.Counters().CallbacksRecovered`, and the `Handler` receives
+the following events. The same holds for `OnDecodeError` and the
+`Metrics` methods, counted in `Subscriber.CallbacksRecovered()` (a
+publisher's `Metrics` calls are logged only).
 
 ## Transports
 
@@ -279,13 +295,24 @@ sub, _ := goose.NewSubscriber(rx, goose.SubscriberConfig{})
   `KeyProvider` unless `Insecure` is set. A receiver refuses unsecured
   SPDUs (unless `Insecure`), SPDUs under unknown keys, SPDUs whose
   signature does not verify, and replays: per sender and key, an SPDU
-  number already accepted or more than 64 below the highest. A restarted
+  number already accepted or more than 64 below the highest. The window
+  is kept per sender address, which the signature does not cover: an
+  SPDU that verified is accepted once more from each address the
+  receiver has no window for. `Config.AllowedSenders` (address prefixes;
+  other senders are refused before verification and counted as
+  `NotAllowed`) and `Config.SingleSenderPerKey` (one window per key ID
+  whatever the address, for a key used by one publisher) close that;
+  set one of them, and filter subscriptions on the publisher with
+  `Src: rsession.SourceMAC(publisherIP)`. A restarted
   publisher is refused until the key changes, unless the receiver sets
   `ReplayResetAfter` or the publisher continues from a persisted
   `NextSPDUNumber` (`InitialSPDUNumber`). Refusals are counted in
   `Transport.Stats` and reported to `Config.OnReject`, which runs on the
   receive goroutine; it may call `Transport.Close`, which then returns
-  without waiting for that goroutine.
+  without waiting for that goroutine. A call of `OnReject` or of the
+  `KeyProvider` there that does not return normally is recovered,
+  logged with its stack and counted (`Stats.CallbacksRecovered`); the
+  datagram is dropped.
 - **Keys** come from a `KeyProvider` (`CurrentKey` to send, `LookupKey` to
   verify); `KeyRing` is a static one that can hold the old and the new
   key during a change. Key distribution (IEC 62351-9 GDOI) is the
@@ -421,7 +448,7 @@ type Metrics interface {
     FrameSent(gocbRef string, retransmission bool)
     SendError(gocbRef string, err error)
     FrameReceived(gocbRef string)
-    FrameDropped(reason string) // "decode", "simulation", "filtered"
+    FrameDropped(reason string) // "decode", "simulation", "filtered", "streams"
     Event(gocbRef string, kind goose.EventKind, dropped bool)
 }
 ```
@@ -437,7 +464,12 @@ Embed `goose.NopMetrics` to implement only some methods. See
   `GOOSE_TEST_IFACE` elsewhere, e.g. a macOS host-only bridge member
   interface.
 - Fuzz targets: `FuzzDecode`, `FuzzDecodeData`, `FuzzDecodePDU`,
-  `FuzzEncodeFixedLength` (seeded with Annex A.3 fixed-length vectors).
+  `FuzzEncodeFixedLength` (seeded with Annex A.3 fixed-length vectors),
+  `FuzzSubscriberHandleFrame` (the subscriber's stream limit and the
+  streams and events it reports for one frame).
+- Benchmarks: `BenchmarkDecode` and `BenchmarkSubscriber` (decode,
+  filter and supervision for 1, 8 and 32 interleaved streams), run with
+  `go test -run '^$' -bench . -benchmem ./goose`.
 - Interop: `interop/goose_test.go` against libiec61850, dscsystems, iec61850-rust and cbsigma
   publishers and subscribers on a Docker bridge (see
   [INTEROP.md](INTEROP.md)).

@@ -68,7 +68,7 @@ func setupDataSetLoopback(t *testing.T) *Client {
 		t.Fatalf("register NVL: %v", err)
 	}
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() {
 		_ = srv.Serve(ctx, serverT)
 	}()
@@ -392,7 +392,7 @@ func TestGetDataSet_Cached(t *testing.T) {
 		t.Fatalf("register NVL: %v", err)
 	}
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(ctx, serverT) }()
 
 	mmsClient, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
@@ -462,7 +462,7 @@ func TestGetDataSet_CachedMutationSafe(t *testing.T) {
 		t.Fatalf("register NVL: %v", err)
 	}
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(ctx, serverT) }()
 	mmsClient, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
 	if err != nil {
@@ -575,7 +575,7 @@ func TestCreateDataSet_CrossLDMember(t *testing.T) {
 		t.Fatalf("register variable LD2: %v", err)
 	}
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(ctx, serverT) }()
 
 	mmsClient, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
@@ -637,7 +637,7 @@ func TestCreateDataSet_CrossLDRawDomainID(t *testing.T) {
 		t.Fatalf("register variable LD2: %v", err)
 	}
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(ctx, serverT) }()
 
 	mmsClient, err := mms.NewClient(ctx, clientT, mms.DialOptions{})

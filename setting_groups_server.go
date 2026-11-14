@@ -29,7 +29,11 @@ var errSGHandlerRecovered = errors.New("SettingGroupHandler callback ended abnor
 func (e *SettingGroupEngine) callSGHandler(ctx context.Context, name string, fn func(context.Context, string, uint8) error, ld string, sg uint8) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			e.logger.Error("iec61850: SettingGroupHandler callback recovered", "callback", name, "ld", ld, "group", sg, "recovered", r)
+			if e.cb != nil {
+				_ = e.cb.recovered("SettingGroupHandler."+name, r, "ld", ld, "group", sg)
+			} else {
+				e.logger.Error("iec61850: SettingGroupHandler callback recovered", "callback", name, "ld", ld, "group", sg, "recovered", r)
+			}
 			err = fmt.Errorf("%w: %s: %v", errSGHandlerRecovered, name, r)
 		}
 	}()
@@ -122,6 +126,10 @@ type SettingGroupEngine struct {
 	// setLive changes an active (FC=SG) setting with notification of
 	// reports, logs and GOOSE; nil stores without notification.
 	setLive func(ctx context.Context, key string, val *mms.Value)
+
+	// cb logs (with the stack) and counts a handler call that did not
+	// return normally; nil logs it with logger.
+	cb *callbackGuard
 
 	// connActive reports whether an MMS association is still open; nil
 	// treats every owner as connected.
@@ -647,6 +655,7 @@ func (e *SettingGroupEngine) GetEditSettingGroup(ldName string) uint8 {
 func (s *Server) EnableSettingGroups(handler SettingGroupHandler) {
 	engine := newSettingGroupEngine(s.store, s.logger)
 	engine.clock = s.clock
+	engine.cb = s.cb
 
 	for i := range s.model.LogicalDevices {
 		ld := &s.model.LogicalDevices[i]

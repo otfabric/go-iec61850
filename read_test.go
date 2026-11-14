@@ -210,7 +210,7 @@ func TestRead_LNLevel(t *testing.T) {
 		t.Fatalf("register variable: %v", err)
 	}
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() {
 		_ = srv.Serve(ctx, serverT)
 	}()

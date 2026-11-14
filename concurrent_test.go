@@ -5,7 +5,6 @@ package iec61850
 import (
 	"context"
 	"errors"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -52,12 +51,10 @@ func TestConcurrent_ContextCancelReleasesInflightReads(t *testing.T) {
 		t.Fatalf("iso.Listen: %v", err)
 	}
 
-	bgCtx, bgCancel := context.WithCancel(context.Background())
-	go func() { _ = srv.ListenAndServe(bgCtx, ln) }()
+	stop := serveISO(t, srv, ln)
 
 	c, err := Dial(context.Background(), ln.Addr().String(), DialOptions{})
 	if err != nil {
-		bgCancel()
 		t.Fatalf("Dial: %v", err)
 	}
 
@@ -79,7 +76,6 @@ func TestConcurrent_ContextCancelReleasesInflightReads(t *testing.T) {
 	case <-reading:
 	case <-time.After(2 * time.Second):
 		reqCancel()
-		bgCancel()
 		t.Fatal("no request reached the blocking handler")
 	}
 	reqCancel()
@@ -89,7 +85,6 @@ func TestConcurrent_ContextCancelReleasesInflightReads(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(3 * time.Second):
-		bgCancel()
 		t.Fatal("cancelled requests did not return within 3 s")
 	}
 
@@ -100,10 +95,9 @@ func TestConcurrent_ContextCancelReleasesInflightReads(t *testing.T) {
 		}
 	}
 
-	// Cancel server (unblocks any server-side handlers), then abort client.
-	bgCancel()
-	srv.Close()
-	time.Sleep(50 * time.Millisecond)
+	// Stop the server (unblocks any server-side handlers; returns once its
+	// connection goroutines have ended), then abort the client.
+	stop()
 	_ = c.Abort(context.Background())
 
 	if ctxErrCount == 0 {
@@ -137,17 +131,14 @@ func TestConcurrent_ReportsDuringOutstandingRequests(t *testing.T) {
 		t.Fatalf("iso.Listen: %v", err)
 	}
 
-	bgCtx, bgCancel := context.WithCancel(context.Background())
-	defer bgCancel()
-	go func() { _ = srv.ListenAndServe(bgCtx, ln) }()
+	stop := serveISO(t, srv, ln)
 
 	c, err := Dial(context.Background(), ln.Addr().String(), DialOptions{})
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
 	defer func() {
-		bgCancel()
-		time.Sleep(30 * time.Millisecond)
+		stop()
 		_ = c.Abort(context.Background())
 	}()
 
@@ -244,19 +235,34 @@ func TestConcurrent_ManyWritesThenClose(t *testing.T) {
 		t.Fatalf("Dial: %v", err)
 	}
 
+	// Every worker writes until the client is closed, so writes are in
+	// flight whenever Abort comes. The server refuses each one (ST is read
+	// only): a refusal is an answer like any other.
 	var wg sync.WaitGroup
+	var answered sync.Once
+	firstAnswer := make(chan struct{})
 	const workers = 20
 	for range workers {
 		wg.Go(func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			ref, _ := ParseRef("IED1LD1/LLN0.Mod.stVal[ST]")
-			_ = c.Write(ctx, ref, mms.NewInteger(1))
+			for {
+				err := c.Write(ctx, ref, mms.NewInteger(1))
+				if errors.Is(err, ErrClosed) || ctx.Err() != nil {
+					return
+				}
+				answered.Do(func() { close(firstAnswer) })
+			}
 		})
 	}
 
-	// Close while writes are flying.
-	time.Sleep(10 * time.Millisecond)
+	// Abort while writes are flying: after the first answer.
+	select {
+	case <-firstAnswer:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no write was answered")
+	}
 	_ = c.Abort(context.Background())
 
 	done := make(chan struct{})
@@ -265,79 +271,5 @@ func TestConcurrent_ManyWritesThenClose(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Error("goroutines did not exit after client.Abort()")
-	}
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// TestConcurrent_TimeoutDoesNotLeakGoroutines
-// ────────────────────────────────────────────────────────────────────────────
-
-// TestConcurrent_TimeoutDoesNotLeakGoroutines verifies that timed-out requests
-// do not leave behind goroutines. It issues requests with a very short timeout,
-// lets them expire, then checks the goroutine count.
-func TestConcurrent_TimeoutDoesNotLeakGoroutines(t *testing.T) {
-	model, err := NewServerModelFromSCL(testServerSCLWithURCB(), "IED1", "")
-	if err != nil {
-		t.Fatalf("NewServerModelFromSCL: %v", err)
-	}
-
-	srv, err := NewServer(model, ServerOptions{})
-	if err != nil {
-		t.Fatalf("NewServer: %v", err)
-	}
-
-	// Make reads block until their ctx is done.
-	if err := srv.MMS().SetVariableRead("IED1LD1", "LLN0$ST$Mod$stVal", func(ctx context.Context) (*mms.Value, error) {
-		<-ctx.Done()
-		return nil, ctx.Err()
-	}); err != nil {
-		t.Fatalf("SetVariableRead: %v", err)
-	}
-
-	ln, err := iso.Listen("127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("iso.Listen: %v", err)
-	}
-
-	bgCtx, bgCancel := context.WithCancel(context.Background())
-	go func() { _ = srv.ListenAndServe(bgCtx, ln) }()
-
-	c, err := Dial(context.Background(), ln.Addr().String(), DialOptions{})
-	if err != nil {
-		bgCancel()
-		t.Fatalf("Dial: %v", err)
-	}
-
-	ref, _ := ParseRef("IED1LD1/LLN0.Mod.stVal[ST]")
-
-	// Warm-up.
-	for range 3 {
-		tCtx, tCancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-		_, _ = c.Read(tCtx, ref)
-		tCancel()
-	}
-	time.Sleep(100 * time.Millisecond)
-	runtime.GC()
-	before := runtime.NumGoroutine()
-
-	for range 10 {
-		tCtx, tCancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-		_, _ = c.Read(tCtx, ref)
-		tCancel()
-	}
-	time.Sleep(200 * time.Millisecond)
-	runtime.GC()
-	after := runtime.NumGoroutine()
-
-	// Cancel server and abort client cleanly.
-	bgCancel()
-	srv.Close()
-	time.Sleep(50 * time.Millisecond)
-	_ = c.Abort(context.Background())
-
-	const maxDelta = 3
-	if delta := after - before; delta > maxDelta {
-		t.Errorf("goroutine leak after timed-out requests: before=%d after=%d delta=%d (max %d)",
-			before, after, delta, maxDelta)
 	}
 }

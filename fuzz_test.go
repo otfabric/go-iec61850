@@ -76,15 +76,33 @@ func FuzzDecodeQuality(f *testing.F) {
 	f.Add([]byte{0x00})
 	f.Add([]byte{})
 
+	// Every bit string decodes; bit i of the quality is bit i of the
+	// string (MSB first) for the first 13 conveyed bits and clear beyond
+	// them; the quality re-encodes to itself.
 	f.Fuzz(func(t *testing.T, data []byte) {
-		v := mms.NewBitString(data)
-		q, err := DecodeQuality(v)
-		if err != nil {
-			return
+		lengths := []int{len(data) * 8}
+		if len(data) > 0 {
+			lengths = append(lengths, len(data)*8-int(data[0]%8))
 		}
-		_ = q.String()
-		_ = q.Validity()
-		_ = q.IsGood()
+		for _, bitLen := range lengths {
+			q, err := DecodeQuality(mms.NewBitStringWithLength(data, bitLen))
+			if err != nil {
+				t.Fatalf("bit string of %d bits: %v", bitLen, err)
+			}
+			for i := range 16 {
+				want := i < qualityBitLength && i < bitLen && data[i/8]&(0x80>>(i%8)) != 0
+				if got := q&(1<<i) != 0; got != want {
+					t.Fatalf("% x (%d bits): quality bit %d = %v, want %v", data, bitLen, i, got, want)
+				}
+			}
+			back, err := DecodeQuality(EncodeQuality(q))
+			if err != nil || back != q {
+				t.Fatalf("EncodeQuality(%#x) decodes to %#x, %v", uint16(q), uint16(back), err)
+			}
+			_ = q.String()
+			_ = q.Validity()
+			_ = q.IsGood()
+		}
 	})
 }
 
@@ -179,8 +197,47 @@ func FuzzDecodeReportIndication(f *testing.F) {
 		trgOps, entryID, inclBits, vals []byte,
 	) {
 		values := makeReport(rptID, optFldsBits, seqNum, subSeqNum, confRev, trgOps, entryID, inclBits, vals)
-		_, _ = decodeReportIndication(values, logger)
+		ri, err := decodeReportIndication(values, logger)
+		checkReportIndication(t, values, ri, err)
+		if err == nil && ri.RptID != rptID {
+			t.Fatalf("RptID %q, want %q", ri.RptID, rptID)
+		}
 	})
+}
+
+// checkReportIndication asserts what holds for any decode of values: an
+// error is a *ReportError, and an accepted report has one value per set
+// inclusion bit, one data reference and one reason code per value when
+// its OptFlds announce them, and no more members than values received.
+func checkReportIndication(t *testing.T, values []*mms.Value, ri *ReportIndication, err error) {
+	t.Helper()
+	if err != nil {
+		var re *ReportError
+		if !errors.As(err, &re) || ri != nil {
+			t.Fatalf("error %T %v with report %v: want a *ReportError and no report", err, err, ri != nil)
+		}
+		return
+	}
+	members := 0
+	for _, in := range ri.Inclusion {
+		if in {
+			members++
+		}
+	}
+	if len(ri.Values) != members || members > len(values) {
+		t.Fatalf("%d inclusion bits set, %d values decoded, %d values received", members, len(ri.Values), len(values))
+	}
+	if ri.OptFlds.Has(OptFldDataRef) != (ri.DataReferences != nil) || (ri.DataReferences != nil && len(ri.DataReferences) != members) {
+		t.Fatalf("OptFlds %v: %d data references for %d members", ri.OptFlds, len(ri.DataReferences), members)
+	}
+	if ri.OptFlds.Has(OptFldReasonCode) != (ri.ReasonCodes != nil) || (ri.ReasonCodes != nil && len(ri.ReasonCodes) != members) {
+		t.Fatalf("OptFlds %v: %d reason codes for %d members", ri.OptFlds, len(ri.ReasonCodes), members)
+	}
+	for i, v := range ri.Values {
+		if v == nil {
+			t.Fatalf("value %d is nil", i)
+		}
+	}
 }
 
 // FuzzDecodeOptFlds exercises the OptFlds bit-string decoder with arbitrary bytes.
@@ -193,12 +250,35 @@ func FuzzDecodeOptFlds(f *testing.F) {
 	f.Add([]byte{0x00, 0x00, 0x00})
 
 	f.Fuzz(func(t *testing.T, data []byte) {
+		// The strict decoder refuses fewer than 10 bits; an accepted value
+		// has only the nine OptFlds bits (wire bits 1..9), equals what the
+		// lenient decoder returns, and re-encodes to itself.
 		v := mms.NewBitString(data)
 		opts := decodeOptFlds(v)
 		for bit := OptFlds(1); bit < 1<<15; bit <<= 1 {
 			_ = opts.Has(bit)
 		}
-		_, _ = decodeOptFldsStrict(v)
+		strict, err := decodeOptFldsStrict(v)
+		if (err != nil) != (len(data) < 2) {
+			t.Fatalf("% x: strict error %v", data, err)
+		}
+		if err != nil {
+			if opts != 0 {
+				t.Fatalf("% x: lenient %v after a strict error", data, opts)
+			}
+			return
+		}
+		if strict != opts || strict >= 1<<9 {
+			t.Fatalf("% x: strict %#x, lenient %#x", data, uint16(strict), uint16(opts))
+		}
+		for wire := 1; wire <= 9; wire++ {
+			if got, want := strict&(1<<(wire-1)) != 0, data[wire/8]&(0x80>>(wire%8)) != 0; got != want {
+				t.Fatalf("% x: wire bit %d decoded %v, want %v", data, wire, got, want)
+			}
+		}
+		if back := decodeOptFlds(encodeOptFlds(strict)); back != strict {
+			t.Fatalf("encodeOptFlds(%#x) decodes to %#x", uint16(strict), uint16(back))
+		}
 	})
 }
 
@@ -211,6 +291,9 @@ func FuzzDecodeTrgOps(f *testing.F) {
 	f.Add([]byte{0x01, 0x02})
 
 	f.Fuzz(func(t *testing.T, data []byte) {
+		// The strict decoder refuses an empty string; an accepted value
+		// has only the five trigger bits (wire bits 1..5), equals what the
+		// lenient decoder returns, and re-encodes to itself.
 		v := mms.NewBitString(data)
 		ops := decodeTrgOps(v)
 		_ = ops.Has(TrgOpDataChanged)
@@ -218,7 +301,27 @@ func FuzzDecodeTrgOps(f *testing.F) {
 		_ = ops.Has(TrgOpDataUpdate)
 		_ = ops.Has(TrgOpIntegrity)
 		_ = ops.Has(TrgOpGI)
-		_, _ = decodeTrgOpsStrict(v)
+		strict, err := decodeTrgOpsStrict(v)
+		if (err != nil) != (len(data) == 0) {
+			t.Fatalf("% x: strict error %v", data, err)
+		}
+		if err != nil {
+			if ops != 0 {
+				t.Fatalf("% x: lenient %v after a strict error", data, ops)
+			}
+			return
+		}
+		if strict != ops || strict >= 1<<5 {
+			t.Fatalf("% x: strict %#x, lenient %#x", data, uint8(strict), uint8(ops))
+		}
+		for wire := 1; wire <= 5; wire++ {
+			if got, want := strict&(1<<(wire-1)) != 0, data[0]&(0x80>>wire) != 0; got != want {
+				t.Fatalf("% x: wire bit %d decoded %v, want %v", data, wire, got, want)
+			}
+		}
+		if back := decodeTrgOps(encodeTrgOps(strict)); back != strict {
+			t.Fatalf("encodeTrgOps(%#x) decodes to %#x", uint8(strict), uint8(back))
+		}
 	})
 }
 
@@ -251,7 +354,12 @@ func FuzzDecodeReportIndication_NilValues(f *testing.F) {
 				}
 			}
 		}
-		_, _ = decodeReportIndication(values, logger)
+		ri, err := decodeReportIndication(values, logger)
+		checkReportIndication(t, values, ri, err)
+		// RptID, OptFlds and the one member's value are required.
+		if (values[0] == nil || values[1] == nil || values[9] == nil) && err == nil {
+			t.Fatalf("nil mask %03b %03b %03b: report accepted without RptID, OptFlds or its value", nilMask1, nilMask2, nilMask3)
+		}
 	})
 }
 

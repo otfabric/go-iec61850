@@ -45,6 +45,8 @@ few goroutines of its own:
 | Goroutine | Started by | Stops when |
 |---|---|---|
 | Report subscription watcher | `Client.SubscribeReport` (`report.go`) | the subscription's context ends |
+| Association watch, one per client | the first `SubscribeReport` | the association ends (it then closes every subscription), or `Close` / `Abort` |
+| Segment timer, one per partial segmented report | its first segment | its last segment, `SegmentTimeout` (the partial report is dropped), or the subscription closes |
 
 Model browsing is optionally cached in memory (`CacheStrategy`); concurrent
 fetches share one request through `singleflight`.
@@ -57,8 +59,8 @@ notifies the report, journal, GOOSE and SV engines.
 
 | Goroutine | Started by | Stops when |
 |---|---|---|
-| Accept loop | `ListenAndServe`, in the caller's goroutine | context ends, or `Shutdown` closes the listener |
-| Connection | accept loop (`Server.Serve`) | the connection closes |
+| Accept loop | `ListenAndServe`, in the caller's goroutine | context ends, `Shutdown` closes the listener, or an accept error that is not temporary; it returns after its connection goroutines |
+| Connection, at most `MaxConnections` from the accept loop | accept loop (`Server.Serve`) | the connection closes |
 | Integrity timer, one per RCB with integrity | enabling the RCB (a BRCB: its valid DatSet) | RCB disabled or engine stopped |
 | BufTm timer, one per pending report | first notification of a buffer time | expiry, purge, GI, integrity or engine stop |
 | Report delivery, one per enabled RCB with a client | RptEna=TRUE | RCB disabled, association lost or engine stopped |
@@ -81,6 +83,15 @@ Lifecycle:
   `ctx` ends first the remaining connections are aborted and `Shutdown`
   returns the context's error. `ListenAndServe` then returns
   `mms.ErrServerClosed`.
+- `ListenAndServe` returns after the connection goroutines it started have
+  returned. When its context ends or an accept error is not temporary, it
+  first ends the associations it serves; a temporary accept error is
+  retried after a pause of 5 ms doubling up to 1 s.
+- Application code (hooks, providers, handlers, `Metrics`, and what a
+  variable read or write reaches) runs under a recover on the connection
+  goroutines: a call that does not return normally is logged with its
+  stack, counted in `Stats().CallbacksRecovered` and answered with the
+  service's error; the connection and the process go on.
 
 The model is immutable after construction.
 

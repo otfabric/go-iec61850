@@ -208,7 +208,7 @@ func (s *Server) interlockTest(ctx context.Context, reg *controlRegistration, re
 		}
 	}
 	if h := reg.handler.CheckInterlock; h != nil {
-		if err := callControlHandler(h, ctx, req); err != nil {
+		if err := callControlHandler(s.cb, h, ctx, req); err != nil {
 			return checkRefusal(req, AddCauseBlockedByInterlocking, "interlocking", err)
 		}
 	}
@@ -290,7 +290,7 @@ func (s *Server) synchroTest(ctx context.Context, reg *controlRegistration, req 
 		tick.Stop()
 	}
 	if h := reg.handler.CheckSynchro; h != nil {
-		if err := callControlHandler(h, ctx, req); err != nil {
+		if err := callControlHandler(s.cb, h, ctx, req); err != nil {
 			return fail("synchrocheck", err)
 		}
 	}

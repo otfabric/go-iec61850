@@ -4,35 +4,28 @@ package iec61850
 
 import (
 	"context"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/otfabric/go-mms"
+
+	"github.com/otfabric/go-iec61850/internal/leakcheck"
 )
 
 // Chaos and race tests for the per-association report engine
 // (IEC 61850-7-2 §17.2.1, §17.2.4.4/5, §17.2.3.2.3.6). Run with -race.
 
-// checkGoroutines fails t when, after f and a settle period, more
-// goroutines run than before.
+// checkGoroutines fails t when a goroutine started while f ran is still
+// running after f returned (internal/leakcheck: by goroutine, no
+// tolerance; goroutines that are ending get leakcheck.Wait).
 func checkGoroutines(t *testing.T, f func()) {
 	t.Helper()
-	before := runtime.NumGoroutine()
+	base := leakcheck.Take()
 	f()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		n := runtime.NumGoroutine()
-		if n <= before {
-			return
-		}
-		if time.Now().After(deadline) {
-			buf := make([]byte, 1<<20)
-			t.Fatalf("goroutine leak: %d before, %d after\n%s", before, n, buf[:runtime.Stack(buf, true)])
-		}
-		time.Sleep(20 * time.Millisecond)
+	if leaked := base.Leaked(leakcheck.Wait); len(leaked) > 0 {
+		t.Fatal(leakcheck.Report(leaked))
 	}
 }
 

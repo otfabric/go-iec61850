@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -84,6 +85,28 @@ type Config struct {
 	// forgotten first.
 	MaxSenders int
 
+	// AllowedSenders, when not empty, lists the source addresses that
+	// datagrams are accepted from. A datagram from any other address is
+	// refused before it is decoded or verified: it is counted in
+	// Stats.NotAllowed and reported to OnReject with an error that wraps
+	// [ErrSenderNotAllowed]. An IPv4 sender matches an IPv4 prefix
+	// (also one written as an IPv4-mapped IPv6 prefix). Empty accepts
+	// every sender.
+	//
+	// The replay window is kept per sender address (see
+	// SingleSenderPerKey): without AllowedSenders or SingleSenderPerKey,
+	// an SPDU that verified is accepted once more from each source
+	// address the transport has no window for.
+	AllowedSenders []netip.Prefix
+
+	// SingleSenderPerKey keeps one replay window per session identifier
+	// and key ID, whatever the source address: an SPDU number accepted
+	// under a key is refused from every address. Set it when every key
+	// ID is used by one publisher only; publishers that share a key
+	// would refuse each other's SPDUs. False keeps one window per sender
+	// address, session identifier and key ID.
+	SingleSenderPerKey bool
+
 	// Queue is the receive queue length; zero means [DefaultQueue].
 	// Frames that do not fit are dropped and counted.
 	Queue int
@@ -102,6 +125,12 @@ type Config struct {
 	// receive goroutine and must not block. It may call
 	// [Transport.Close], which then returns without waiting for the
 	// receive goroutine: that goroutine ends when OnReject returns.
+	//
+	// A call of OnReject or of the [KeyProvider] on the receive
+	// goroutine that does not return normally is recovered: it is
+	// logged at error level with its stack, the datagram is dropped and
+	// counted in Stats.CallbacksRecovered, and the transport goes on
+	// receiving.
 	OnReject func(from netip.AddrPort, err error)
 
 	// Logger receives transport diagnostics. Nil disables logging.
@@ -124,6 +153,14 @@ type Stats struct {
 	AuthFailed  uint64 // SPDUs whose signature did not verify
 	Replayed    uint64 // SPDUs refused by the replay window
 	OtherErrors uint64 // receive errors of the socket
+
+	// NotAllowed counts datagrams refused because their source address
+	// is outside Config.AllowedSenders.
+	NotAllowed uint64
+
+	// CallbacksRecovered counts datagrams dropped because OnReject or
+	// the KeyProvider did not return normally on the receive goroutine.
+	CallbacksRecovered uint64
 }
 
 var _ l2.SourceReceiver = (*Transport)(nil)
@@ -152,7 +189,11 @@ type Transport struct {
 
 	sent, sendErrors, received, dropped, ignored           atomic.Uint64
 	malformed, unsecured, unknownKey, authFailed, replayed atomic.Uint64
-	otherErrors                                            atomic.Uint64
+	otherErrors, notAllowed, callbacksRecovered            atomic.Uint64
+
+	// allowed is Config.AllowedSenders with IPv4-mapped prefixes
+	// unmapped; empty accepts every sender.
+	allowed []netip.Prefix
 
 	closed    chan struct{}
 	closeOnce sync.Once
@@ -186,6 +227,11 @@ func Open(cfg Config) (*Transport, error) {
 	if cfg.Queue < 0 || cfg.MaxSenders < 0 || cfg.ReplayResetAfter < 0 {
 		return nil, configErr("Queue/MaxSenders/ReplayResetAfter", "negative")
 	}
+	allowed, err := allowedPrefixes(cfg.AllowedSenders)
+	if err != nil {
+		return nil, err
+	}
+	t.allowed = allowed
 	if cfg.Queue == 0 {
 		cfg.Queue = DefaultQueue
 	}
@@ -328,6 +374,7 @@ func (t *Transport) Stats() Stats {
 		Dropped: t.dropped.Load(), Ignored: t.ignored.Load(), Malformed: t.malformed.Load(),
 		Unsecured: t.unsecured.Load(), UnknownKey: t.unknownKey.Load(), AuthFailed: t.authFailed.Load(),
 		Replayed: t.replayed.Load(), OtherErrors: t.otherErrors.Load(),
+		NotAllowed: t.notAllowed.Load(), CallbacksRecovered: t.callbacksRecovered.Load(),
 	}
 }
 
@@ -489,15 +536,70 @@ func (t *Transport) readLoop() {
 			t.logger.Warn("rsession: receive failed", "error", err)
 			continue
 		}
-		t.handle(buf[:n], from)
+		t.handleRecovered(buf[:n], from)
 	}
+}
+
+// handleRecovered is [Transport.handle] for the receive goroutine: a
+// call of application code (OnReject, the KeyProvider) that does not
+// return normally is logged with its stack and counted, the datagram is
+// dropped, and receiving goes on.
+func (t *Transport) handleRecovered(b []byte, from netip.AddrPort) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.callbacksRecovered.Add(1)
+			t.logger.Error("rsession: callback recovered", "from", from, "value", r, "stack", string(debug.Stack()))
+		}
+	}()
+	t.handle(b, from)
+}
+
+// allowedPrefixes validates Config.AllowedSenders and unmaps
+// IPv4-mapped IPv6 prefixes, so that they match the unmapped IPv4
+// sender addresses the transport compares with.
+func allowedPrefixes(in []netip.Prefix) ([]netip.Prefix, error) {
+	out := make([]netip.Prefix, 0, len(in))
+	for _, p := range in {
+		if !p.IsValid() {
+			return nil, configErr("AllowedSenders", "invalid prefix %v", p)
+		}
+		if a := p.Addr(); a.Is4In6() {
+			if p.Bits() < 96 {
+				return nil, configErr("AllowedSenders", "%v covers more than IPv4-mapped addresses", p)
+			}
+			p = netip.PrefixFrom(a.Unmap(), p.Bits()-96)
+		}
+		out = append(out, p.Masked())
+	}
+	return out, nil
+}
+
+// senderAllowed reports whether addr (unmapped) is in one of the
+// allowed prefixes, or whether every sender is allowed.
+func (t *Transport) senderAllowed(addr netip.Addr) bool {
+	if len(t.allowed) == 0 {
+		return true
+	}
+	for _, p := range t.allowed {
+		if p.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
 
 // handle verifies one datagram and queues its frames.
 func (t *Transport) handle(b []byte, from netip.AddrPort) {
+	if !t.senderAllowed(from.Addr().Unmap()) {
+		t.reject(from, fmt.Errorf("%w: %v", ErrSenderNotAllowed, from))
+		return
+	}
 	s, key, err := Verify(b, VerifyOptions{Keys: t.cfg.Keys, AllowUnsecured: t.cfg.Insecure})
 	if err == nil && key != nil {
-		k := streamKey{addr: from.Addr().Unmap(), si: s.SI, keyID: key.ID}
+		k := streamKey{si: s.SI, keyID: key.ID}
+		if !t.cfg.SingleSenderPerKey {
+			k.addr = from.Addr().Unmap()
+		}
 		if !t.guard.accept(k, s.Number, t.cfg.Now()) {
 			err = fmt.Errorf("%w: SPDU number %d from %v", ErrReplay, s.Number, from)
 		}
@@ -541,6 +643,8 @@ func (t *Transport) reject(from netip.AddrPort, err error) {
 		t.authFailed.Add(1)
 	case errors.Is(err, ErrReplay):
 		t.replayed.Add(1)
+	case errors.Is(err, ErrSenderNotAllowed):
+		t.notAllowed.Add(1)
 	default:
 		t.malformed.Add(1)
 	}

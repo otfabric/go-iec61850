@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/otfabric/go-mms"
@@ -367,167 +368,176 @@ func runPair(t *testing.T, pcfg PublisherConfig, scfg SubscriptionConfig) (*Publ
 
 func TestPublisherRateAndSequence(t *testing.T) {
 	t.Parallel()
-	var mu sync.Mutex
-	var cnts []uint16
-	p, sub, stop := runPair(t, pubConfig(), SubscriptionConfig{SvID: "MU01", Layout: LELayout, OnASDU: func(s *Sample) {
-		mu.Lock()
-		cnts = append(cnts, s.ASDU.SmpCnt)
-		mu.Unlock()
-	}})
-	time.Sleep(300 * time.Millisecond)
-	stop()
-	st := p.State()
-	if st.Samples < 600 || st.Frames != st.Samples || st.Rate != 4000 {
-		t.Fatalf("publisher state %+v", st)
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	if len(cnts) < 600 {
-		t.Fatalf("received %d samples", len(cnts))
-	}
-	for i := 1; i < len(cnts); i++ {
-		if cnts[i] != (cnts[i-1]+1)%4000 && st.Skipped == 0 {
-			t.Fatalf("smpCnt %d after %d", cnts[i], cnts[i-1])
+	synctest.Test(t, func(t *testing.T) {
+		var mu sync.Mutex
+		var cnts []uint16
+		p, sub, stop := runPair(t, pubConfig(), SubscriptionConfig{SvID: "MU01", Layout: LELayout, OnASDU: func(s *Sample) {
+			mu.Lock()
+			cnts = append(cnts, s.ASDU.SmpCnt)
+			mu.Unlock()
+		}})
+		time.Sleep(300 * time.Millisecond) // fake time: 1200 sample periods
+		synctest.Wait()                    // every sample sent is delivered
+		stop()
+		st := p.State()
+		// In the bubble the clock moves only when every goroutine waits:
+		// the publisher sends every sample period on time.
+		if st.Samples < 1200 || st.Samples > 1201 || st.Frames != st.Samples || st.Rate != 4000 || st.Skipped != 0 {
+			t.Fatalf("publisher state %+v", st)
 		}
-	}
-	// A skip moves smpCnt on, so the subscriber counts it as lost at the
-	// next frame. Samples skipped after the last frame sent (a loaded host,
-	// just before stop) have no next frame: Lost is the gaps the subscriber
-	// saw, at most what the publisher skipped.
-	ss := sub.Stats()[0]
-	gaps := uint64(0)
-	for i := 1; i < len(cnts); i++ {
-		gaps += uint64((int(cnts[i]) - int(cnts[i-1]) - 1 + 4000) % 4000)
-	}
-	if ss.Lost != gaps || ss.Lost > st.Skipped || ss.Duplicates != 0 || ss.OutOfOrder != 0 {
-		t.Errorf("subscriber stats %+v (smpCnt gaps %d, publisher skipped %d)", ss, gaps, st.Skipped)
-	}
+		mu.Lock()
+		defer mu.Unlock()
+		if uint64(len(cnts)) != st.Samples {
+			t.Fatalf("received %d samples, %d sent", len(cnts), st.Samples)
+		}
+		for i := 1; i < len(cnts); i++ {
+			if cnts[i] != (cnts[i-1]+1)%4000 && st.Skipped == 0 {
+				t.Fatalf("smpCnt %d after %d", cnts[i], cnts[i-1])
+			}
+		}
+		// A skip moves smpCnt on, so the subscriber counts it as lost at the
+		// next frame. Samples skipped after the last frame sent (a loaded host,
+		// just before stop) have no next frame: Lost is the gaps the subscriber
+		// saw, at most what the publisher skipped.
+		ss := sub.Stats()[0]
+		gaps := uint64(0)
+		for i := 1; i < len(cnts); i++ {
+			gaps += uint64((int(cnts[i]) - int(cnts[i-1]) - 1 + 4000) % 4000)
+		}
+		if ss.Lost != gaps || ss.Lost > st.Skipped || ss.Duplicates != 0 || ss.OutOfOrder != 0 {
+			t.Errorf("subscriber stats %+v (smpCnt gaps %d, publisher skipped %d)", ss, gaps, st.Skipped)
+		}
+	})
 }
 
 func TestPublisherBatchingWrapAndSource(t *testing.T) {
 	t.Parallel()
-	cfg := pubConfig()
-	cfg.SmpRate, cfg.SmpMod, cfg.NoASDU, cfg.SmpCntWrap = 2000, SmpPerSec, 8, 10
-	cfg.RefrTm, cfg.SendSmpRate, cfg.SendSmpMod = true, true, true
-	cfg.GmIdentity = &[8]byte{1}
-	cfg.Layout = nil
-	cfg.Source = func(info SampleInfo, dst []byte) []byte {
-		var s LESample
-		s.Current[0].Value = int32(info.Index)
-		return s.Append(dst)
-	}
-	var mu sync.Mutex
-	var frames []int
-	var lastIdx int32 = -1
-	var mono = true
-	_, sub, stop := runPair(t, cfg, SubscriptionConfig{SmpCntWrap: 10, OnASDU: func(s *Sample) {
+	synctest.Test(t, func(t *testing.T) {
+		cfg := pubConfig()
+		cfg.SmpRate, cfg.SmpMod, cfg.NoASDU, cfg.SmpCntWrap = 2000, SmpPerSec, 8, 10
+		cfg.RefrTm, cfg.SendSmpRate, cfg.SendSmpMod = true, true, true
+		cfg.GmIdentity = &[8]byte{1}
+		cfg.Layout = nil
+		cfg.Source = func(info SampleInfo, dst []byte) []byte {
+			var s LESample
+			s.Current[0].Value = int32(info.Index)
+			return s.Append(dst)
+		}
+		var mu sync.Mutex
+		var frames []int
+		var lastIdx int32 = -1
+		var mono = true
+		_, sub, stop := runPair(t, cfg, SubscriptionConfig{SmpCntWrap: 10, OnASDU: func(s *Sample) {
+			mu.Lock()
+			defer mu.Unlock()
+			if s.Index == 0 {
+				frames = append(frames, len(s.Frame.PDU.ASDUs))
+			}
+			a := s.ASDU
+			if !a.HasRefrTm || !a.HasSmpRate || a.SmpRate != 2000 || !a.HasSmpMod || !a.HasGmIdentity {
+				t.Errorf("optional fields %+v", a)
+			}
+			var le LESample
+			_ = DecodeLE(a.Sample, &le)
+			if le.Current[0].Value != lastIdx+1 {
+				mono = false
+			}
+			lastIdx = le.Current[0].Value
+			if int(a.SmpCnt) != int(le.Current[0].Value)%10 {
+				t.Errorf("smpCnt %d for index %d", a.SmpCnt, le.Current[0].Value)
+			}
+		}})
+		time.Sleep(200 * time.Millisecond) // fake time: 50 frames of 8 ASDUs
+		stop()
 		mu.Lock()
 		defer mu.Unlock()
-		if s.Index == 0 {
-			frames = append(frames, len(s.Frame.PDU.ASDUs))
+		if len(frames) < 20 {
+			t.Fatalf("frames %d", len(frames))
 		}
-		a := s.ASDU
-		if !a.HasRefrTm || !a.HasSmpRate || a.SmpRate != 2000 || !a.HasSmpMod || !a.HasGmIdentity {
-			t.Errorf("optional fields %+v", a)
+		for _, n := range frames {
+			if n != 8 {
+				t.Fatalf("frame with %d ASDUs", n)
+			}
 		}
-		var le LESample
-		_ = DecodeLE(a.Sample, &le)
-		if le.Current[0].Value != lastIdx+1 {
-			mono = false
+		if st := sub.Stats()[0]; st.Lost != 0 && mono {
+			t.Errorf("lost %d with a monotonic source", st.Lost)
 		}
-		lastIdx = le.Current[0].Value
-		if int(a.SmpCnt) != int(le.Current[0].Value)%10 {
-			t.Errorf("smpCnt %d for index %d", a.SmpCnt, le.Current[0].Value)
-		}
-	}})
-	time.Sleep(200 * time.Millisecond)
-	stop()
-	mu.Lock()
-	defer mu.Unlock()
-	if len(frames) < 20 {
-		t.Fatalf("frames %d", len(frames))
-	}
-	for _, n := range frames {
-		if n != 8 {
-			t.Fatalf("frame with %d ASDUs", n)
-		}
-	}
-	if st := sub.Stats()[0]; st.Lost != 0 && mono {
-		t.Errorf("lost %d with a monotonic source", st.Lost)
-	}
+	})
 }
 
 func TestPublisherUpdateEnableSynch(t *testing.T) {
 	t.Parallel()
-	cfg := pubConfig()
-	cfg.SmpRate = 1000
-	cfg.Disabled = true
-	var mu sync.Mutex
-	var last LESample
-	var synch uint8
-	var n int
-	p, _, stop := runPair(t, cfg, SubscriptionConfig{OnASDU: func(s *Sample) {
+	synctest.Test(t, func(t *testing.T) {
+		cfg := pubConfig()
+		cfg.SmpRate = 1000
+		cfg.Disabled = true
+		var mu sync.Mutex
+		var last LESample
+		var synch uint8
+		var n int
+		p, _, stop := runPair(t, cfg, SubscriptionConfig{OnASDU: func(s *Sample) {
+			mu.Lock()
+			defer mu.Unlock()
+			_ = DecodeLE(s.ASDU.Sample, &last)
+			synch = s.ASDU.SmpSynch
+			n++
+		}})
+		defer stop()
+		time.Sleep(30 * time.Millisecond) // fake time: 30 sample periods
 		mu.Lock()
-		defer mu.Unlock()
-		_ = DecodeLE(s.ASDU.Sample, &last)
-		synch = s.ASDU.SmpSynch
-		n++
-	}})
-	defer stop()
-	time.Sleep(30 * time.Millisecond)
-	mu.Lock()
-	if n != 0 {
-		t.Fatalf("disabled publisher sent %d", n)
-	}
-	mu.Unlock()
-	if p.State().Enabled {
-		t.Fatal("enabled")
-	}
+		if n != 0 {
+			t.Fatalf("disabled publisher sent %d", n)
+		}
+		mu.Unlock()
+		if p.State().Enabled {
+			t.Fatal("enabled")
+		}
 
-	var s LESample
-	s.Current[2] = Point{Value: 42, Q: QualityTest}
-	vals, _ := LELayout.Decode(s.Append(nil))
-	if err := p.Update(vals); err != nil {
-		t.Fatal(err)
-	}
-	p.SetSmpSynch(SmpSynchGlobal)
-	p.SetSimulation(false)
-	p.SetEnabled(true)
-	waitFor(t, func() bool {
+		var s LESample
+		s.Current[2] = Point{Value: 42, Q: QualityTest}
+		vals, _ := LELayout.Decode(s.Append(nil))
+		if err := p.Update(vals); err != nil {
+			t.Fatal(err)
+		}
+		p.SetSmpSynch(SmpSynchGlobal)
+		p.SetSimulation(false)
+		p.SetEnabled(true)
+		waitFor(t, func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return n > 5 && last.Current[2].Value == 42 && synch == SmpSynchGlobal
+		})
+		s.Current[2].Value = 43
+		if err := p.UpdateSample(s.Append(nil)); err != nil {
+			t.Fatal(err)
+		}
+		waitFor(t, func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return last.Current[2].Value == 43
+		})
+		if err := p.UpdateSample([]byte{1}); !errors.Is(err, ErrInvalidValue) {
+			t.Errorf("short sample: %v", err)
+		}
+		if err := p.Update([]*mms.Value{mms.NewInteger(1)}); !errors.Is(err, ErrInvalidValue) {
+			t.Errorf("bad values: %v", err)
+		}
+		p.SetEnabled(false)
+		synctest.Wait() // what was sent before has been delivered
 		mu.Lock()
-		defer mu.Unlock()
-		return n > 5 && last.Current[2].Value == 42 && synch == SmpSynchGlobal
-	})
-	s.Current[2].Value = 43
-	if err := p.UpdateSample(s.Append(nil)); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, func() bool {
+		before := n
+		mu.Unlock()
+		time.Sleep(30 * time.Millisecond) // fake time: 30 sample periods
 		mu.Lock()
-		defer mu.Unlock()
-		return last.Current[2].Value == 43
+		after := n
+		mu.Unlock()
+		if after != before {
+			t.Errorf("sent %d samples while disabled", after-before)
+		}
+		if st := p.State(); st.Enabled || st.SmpSynch != SmpSynchGlobal {
+			t.Errorf("state %+v", st)
+		}
 	})
-	if err := p.UpdateSample([]byte{1}); !errors.Is(err, ErrInvalidValue) {
-		t.Errorf("short sample: %v", err)
-	}
-	if err := p.Update([]*mms.Value{mms.NewInteger(1)}); !errors.Is(err, ErrInvalidValue) {
-		t.Errorf("bad values: %v", err)
-	}
-	p.SetEnabled(false)
-	time.Sleep(20 * time.Millisecond)
-	mu.Lock()
-	before := n
-	mu.Unlock()
-	time.Sleep(30 * time.Millisecond)
-	mu.Lock()
-	after := n
-	mu.Unlock()
-	if after != before {
-		t.Errorf("sent %d samples while disabled", after-before)
-	}
-	if st := p.State(); st.Enabled || st.SmpSynch != SmpSynchGlobal {
-		t.Errorf("state %+v", st)
-	}
 }
 
 func waitFor(t *testing.T, cond func() bool) {

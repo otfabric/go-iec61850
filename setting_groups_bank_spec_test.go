@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/otfabric/go-mms"
@@ -159,48 +160,50 @@ func TestSpec_6_9_5_4_4_SGroupValuesFillBanks(t *testing.T) {
 // selected group's values into the active buffer, FC=SG, and sets ActSG
 // and LActTm (16.2.2.7).
 func TestSpec_7_2_16_3_2_SelectActiveSGSwitchesBank(t *testing.T) {
-	srv := sgFixtureServer(t, SettingGroupHandler{})
-	c := controlClient(t, srv)
-	ctx := waitCtx(t)
+	synctest.Test(t, func(t *testing.T) {
+		srv := sgFixtureServer(t, SettingGroupHandler{})
+		c := controlClient(t, srv)
+		ctx := waitCtx(t)
 
-	if got := activeFloat(t, c, refStrVal); got != 600 {
-		t.Fatalf("group 1 StrVal = %v", got)
-	}
-	before, err := c.GetSettingGroupInfo(ctx, sgFixtureLD)
-	if err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(5 * time.Millisecond)
-	for _, step := range []struct {
-		sg         uint8
-		str, tmMul float64
-		opDl       int64
-	}{
-		{2, 800, 1.5, 500},
-		{3, 500, 1.5, 100},
-		{1, 600, 1.5, 300},
-	} {
-		if err := c.SelectActiveSG(ctx, sgFixtureLD, step.sg); err != nil {
-			t.Fatalf("SelectActiveSG %d: %v", step.sg, err)
+		if got := activeFloat(t, c, refStrVal); got != 600 {
+			t.Fatalf("group 1 StrVal = %v", got)
 		}
-		if got := activeFloat(t, c, refStrVal); got != step.str {
-			t.Errorf("group %d StrVal = %v, want %v", step.sg, got, step.str)
+		before, err := c.GetSettingGroupInfo(ctx, sgFixtureLD)
+		if err != nil {
+			t.Fatal(err)
 		}
-		if got := activeFloat(t, c, refTmMult); got != step.tmMul {
-			t.Errorf("group %d TmMult = %v, want %v", step.sg, got, step.tmMul)
+		time.Sleep(5 * time.Millisecond) // fake time: LActTm moves on
+		for _, step := range []struct {
+			sg         uint8
+			str, tmMul float64
+			opDl       int64
+		}{
+			{2, 800, 1.5, 500},
+			{3, 500, 1.5, 100},
+			{1, 600, 1.5, 300},
+		} {
+			if err := c.SelectActiveSG(ctx, sgFixtureLD, step.sg); err != nil {
+				t.Fatalf("SelectActiveSG %d: %v", step.sg, err)
+			}
+			if got := activeFloat(t, c, refStrVal); got != step.str {
+				t.Errorf("group %d StrVal = %v, want %v", step.sg, got, step.str)
+			}
+			if got := activeFloat(t, c, refTmMult); got != step.tmMul {
+				t.Errorf("group %d TmMult = %v, want %v", step.sg, got, step.tmMul)
+			}
+			v, err := c.GetActiveSGValue(ctx, refOpDl)
+			if err != nil || intOf(t, v.MMS()) != step.opDl {
+				t.Errorf("group %d OpDlTmms = %v, %v; want %d", step.sg, v, err, step.opDl)
+			}
+			info, err := c.GetSettingGroupInfo(ctx, sgFixtureLD)
+			if err != nil || info.ActSG != step.sg {
+				t.Fatalf("SGCB = %+v, %v", info, err)
+			}
+			if !info.LActTm.Time.After(before.LActTm.Time) {
+				t.Errorf("LActTm %v not after %v", info.LActTm.Time, before.LActTm.Time)
+			}
 		}
-		v, err := c.GetActiveSGValue(ctx, refOpDl)
-		if err != nil || intOf(t, v.MMS()) != step.opDl {
-			t.Errorf("group %d OpDlTmms = %v, %v; want %d", step.sg, v, err, step.opDl)
-		}
-		info, err := c.GetSettingGroupInfo(ctx, sgFixtureLD)
-		if err != nil || info.ActSG != step.sg {
-			t.Fatalf("SGCB = %+v, %v", info, err)
-		}
-		if !info.LActTm.Time.After(before.LActTm.Time) {
-			t.Errorf("LActTm %v not after %v", info.LActTm.Time, before.LActTm.Time)
-		}
-	}
+	})
 }
 
 // IEC 61850-7-2 16.2.2.5, 16.3.3.1: SelectEditSG copies the group's

@@ -6,6 +6,7 @@ import (
 	"context"
 	"log/slog"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/otfabric/go-mms"
@@ -279,32 +280,35 @@ func TestReportEngine_GI_Disabled(t *testing.T) {
 }
 
 func TestReportEngine_IntegrityPeriod(t *testing.T) {
-	model := testReportSCL()
-	model.LogicalDevices[0].LogicalNodes[0].Reports[0].IntgPd = 50
-	model.LogicalDevices[0].LogicalNodes[0].Reports[0].TrgOps.Period = true
+	synctest.Test(t, func(t *testing.T) {
+		model := testReportSCL()
+		model.LogicalDevices[0].LogicalNodes[0].Reports[0].IntgPd = 50
+		model.LogicalDevices[0].LogicalNodes[0].Reports[0].TrgOps.Period = true
 
-	srv := newTestServer(t, model)
-	engine := srv.EnableReports()
-	defer engine.Stop()
+		srv := newTestServer(t, model)
+		engine := srv.EnableReports()
+		defer engine.Stop()
 
-	ctx := context.Background()
+		ctx := context.Background()
 
-	if err := engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "RptEna", mms.NewBoolean(true)); err != nil {
-		t.Fatalf("enable: %v", err)
-	}
+		if err := engine.HandleRCBWrite(ctx, "LD1", "LLN0$BR$brcb01", "RptEna", mms.NewBoolean(true)); err != nil {
+			t.Fatalf("enable: %v", err)
+		}
 
-	rt := engine.rcbs["LD1/LLN0$BR$brcb01"]
+		rt := engine.rcbs["LD1/LLN0$BR$brcb01"]
 
-	// Wait for at least one integrity period to fire.
-	time.Sleep(150 * time.Millisecond)
+		// Three integrity periods of 50 ms pass.
+		time.Sleep(150 * time.Millisecond) // fake time
+		synctest.Wait()
 
-	rt.mu.Lock()
-	entries := rt.entryID
-	rt.mu.Unlock()
+		rt.mu.Lock()
+		entries := rt.entryID
+		rt.mu.Unlock()
 
-	if entries == 0 {
-		t.Error("expected at least one integrity entry to have been generated")
-	}
+		if entries == 0 {
+			t.Error("expected at least one integrity entry to have been generated")
+		}
+	})
 }
 
 func TestReportEngine_BufferedQueue(t *testing.T) {

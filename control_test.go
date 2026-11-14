@@ -283,7 +283,7 @@ func setupControlLoopback(t *testing.T) *Client {
 	register("GGIO1$CO$SPCSO2$SBO", mms.TypeSpec{Type: mms.ValueTypeVisibleString}, mms.NewVisibleString(""))
 	register("GGIO1$CO$SPCSO3$SBO", mms.TypeSpec{Type: mms.ValueTypeInteger, Size: 8}, mms.NewInteger(1))
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(ctx, serverT) }()
 
 	mmsClient, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
@@ -937,7 +937,7 @@ func TestControlHandler_PanicContainment(t *testing.T) {
 		panic("test panic in control callback")
 	}
 
-	err := callControlHandler(panicHandler, ctx, req)
+	err := callControlHandler(nil, panicHandler, ctx, req)
 	if err == nil {
 		t.Fatal("expected error from panicking handler, got nil")
 	}
@@ -963,7 +963,7 @@ func TestControlHandler_PanicContainment_Select(t *testing.T) {
 		panic("panic in OnSelect")
 	}
 
-	err := callControlHandler(panicFn, ctx, req)
+	err := callControlHandler(nil, panicFn, ctx, req)
 	if err == nil {
 		t.Fatal("expected error from panicking OnSelect, got nil")
 	}

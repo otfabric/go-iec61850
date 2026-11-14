@@ -61,8 +61,13 @@ func FuzzDecode(f *testing.F) {
 	})
 }
 
-// FuzzSubscriber feeds arbitrary frames to a subscriber: it must never
-// panic, whatever the frame and stream state.
+// FuzzSubscriber feeds arbitrary frames to a subscriber whose stream
+// state carries over from input to input, and each input twice to a
+// fresh subscriber. On the fresh one, a frame the decoder refuses creates
+// no stream; an accepted frame counts each of its ASDUs once per feed, in
+// at most as many streams as it has ASDUs, each stream counted as one
+// frame on the first feed, with no more invalid, duplicate or
+// out-of-order ASDUs than ASDUs.
 func FuzzSubscriber(f *testing.F) {
 	f.Add(fuzzSeedFrame(f, 1))
 	f.Add(fuzzSeedFrame(f, 4))
@@ -75,6 +80,53 @@ func FuzzSubscriber(f *testing.F) {
 		s.HandleFrame(b)
 		s.CheckTimeouts()
 		drainEvents(sub)
+
+		fs, err := NewSubscriber(nil, SubscriberConfig{AcceptSimulation: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = fs.Close() }()
+		fsub, err := fs.Subscribe(SubscriptionConfig{Layout: LELayout})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fr Frame
+		decErr := DecodeInto(&fr, b, DefaultLimits)
+		fs.HandleFrame(b)
+		first := fsub.Stats()
+		if decErr != nil {
+			if len(first) != 0 {
+				t.Fatalf("frame refused by the decoder (%v) created %d streams", decErr, len(first))
+			}
+			return
+		}
+		n := uint64(len(fr.PDU.ASDUs))
+		var total uint64
+		for _, st := range first {
+			total += st.ASDUs
+			if st.Frames != 1 {
+				t.Fatalf("stream %v: Frames = %d after one frame", st.Stream, st.Frames)
+			}
+			if st.Invalid+st.Duplicates+st.OutOfOrder > st.ASDUs {
+				t.Fatalf("stream %v: %d invalid, %d duplicate, %d out of order of %d ASDUs",
+					st.Stream, st.Invalid, st.Duplicates, st.OutOfOrder, st.ASDUs)
+			}
+		}
+		if total != n || uint64(len(first)) > n {
+			t.Fatalf("%d ASDUs in %d streams counted for a frame of %d ASDUs", total, len(first), n)
+		}
+		fs.HandleFrame(b)
+		second := fsub.Stats()
+		if len(second) != len(first) {
+			t.Fatalf("the same frame again: %d streams, then %d", len(first), len(second))
+		}
+		for i := range second {
+			if second[i].Stream != first[i].Stream || second[i].ASDUs != 2*first[i].ASDUs {
+				t.Fatalf("stream %v: %d ASDUs after the frame twice, %d after once",
+					second[i].Stream, second[i].ASDUs, first[i].ASDUs)
+			}
+		}
+		drainEvents(fsub)
 	})
 }
 

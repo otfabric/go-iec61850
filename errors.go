@@ -87,6 +87,12 @@ var (
 	// ErrNotControllable indicates that the target data object's
 	// ctlModel is status-only and does not support control.
 	ErrNotControllable = errors.New("iec61850: not controllable")
+
+	// ErrLimitExceeded indicates that an input or a peer's answer went
+	// beyond a limit of this package, for example [FileLimits.MaxSize]
+	// for [Client.ReadFile]. The limits and their defaults are listed in
+	// SECURITY.md.
+	ErrLimitExceeded = errors.New("iec61850: limit exceeded")
 )
 
 // ReferenceError is a typed error for malformed or invalid IEC 61850

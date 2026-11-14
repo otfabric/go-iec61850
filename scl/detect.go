@@ -56,8 +56,10 @@ const iecNamespace = "http://www.iec.ch/61850/2003/SCL"
 // DecodeElement), and stops immediately. The full document is never
 // parsed.
 func DetectVersion(data []byte) (VersionInfo, error) {
-	dec := newDecoder(data)
+	return detectVersion(newDecoder(data))
+}
 
+func detectVersion(dec *xml.Decoder) (VersionInfo, error) {
 	for {
 		tok, err := dec.Token()
 		if err == io.EOF {
@@ -92,7 +94,12 @@ func newDecoder(data []byte) *xml.Decoder {
 // newDecoderNS is newDecoder with a default namespace for elements that
 // declare none (xml.Decoder.DefaultSpace); "" keeps them unqualified.
 func newDecoderNS(data []byte, defaultSpace string) *xml.Decoder {
-	dec := xml.NewDecoder(bytes.NewReader(data))
+	return newReaderDecoder(bytes.NewReader(data), defaultSpace)
+}
+
+// newReaderDecoder is newDecoderNS for a document read from r.
+func newReaderDecoder(r io.Reader, defaultSpace string) *xml.Decoder {
+	dec := xml.NewDecoder(r)
 	dec.DefaultSpace = defaultSpace
 	dec.CharsetReader = func(label string, input io.Reader) (io.Reader, error) {
 		switch strings.ToLower(strings.ReplaceAll(label, "-", "")) {
@@ -104,14 +111,36 @@ func newDecoderNS(data []byte, defaultSpace string) *xml.Decoder {
 	return dec
 }
 
-// DetectFile is a convenience wrapper that reads a file and detects
-// its SCL schema version.
+// DetectFile detects the SCL schema version of a file, as
+// [DetectVersion] does for data. It reads the file up to the root
+// element only, and at most [DefaultMaxBytes] of it.
 func DetectFile(path string) (VersionInfo, error) {
-	data, err := os.ReadFile(filepath.Clean(path)) // the caller names the file to read
+	f, err := os.Open(filepath.Clean(path)) // the caller names the file to read
 	if err != nil {
 		return VersionInfo{}, fmt.Errorf("scl: read %q: %w", path, err)
 	}
-	return DetectVersion(data)
+	defer func() { _ = f.Close() }()
+	r := &readErr{r: io.LimitReader(f, DefaultMaxBytes)}
+	vi, err := detectVersion(newReaderDecoder(r, ""))
+	if err != nil && r.err != nil {
+		return VersionInfo{}, fmt.Errorf("scl: read %q: %w", path, r.err)
+	}
+	return vi, err
+}
+
+// readErr passes on the reads of r and keeps the first error other than
+// io.EOF, so that a read error is reported as one.
+type readErr struct {
+	r   io.Reader
+	err error
+}
+
+func (e *readErr) Read(p []byte) (int, error) {
+	n, err := e.r.Read(p)
+	if err != nil && err != io.EOF && e.err == nil {
+		e.err = err
+	}
+	return n, err
 }
 
 func extractVersionInfo(se xml.StartElement) VersionInfo {
@@ -210,16 +239,33 @@ const xsiNamespace = "http://www.w3.org/2001/XMLSchema-instance"
 // xsi:type="tP_IP">, as some engineering tools write it, the later
 // xsi:type would replace the address type. No SCL binding reads an xsi
 // attribute.
-func decodeSCL(data []byte, defaultSpace string, v any) error {
-	return xml.NewTokenDecoder(dropXSI{newDecoderNS(data, defaultSpace)}).Decode(v)
+//
+// Elements nested deeper than maxDepth, skipped ones included, end the
+// decode with an error that wraps [ErrLimitExceeded].
+func decodeSCL(data []byte, defaultSpace string, maxDepth int, v any) error {
+	return xml.NewTokenDecoder(&dropXSI{d: newDecoderNS(data, defaultSpace), maxDepth: maxDepth}).Decode(v)
 }
 
 // dropXSI passes on the tokens of d without attributes in the XML Schema
-// instance namespace.
-type dropXSI struct{ d *xml.Decoder }
+// instance namespace, and counts the element depth: every token of the
+// document passes here, also those of elements the decoder skips.
+type dropXSI struct {
+	d        *xml.Decoder
+	depth    int
+	maxDepth int
+}
 
-func (f dropXSI) Token() (xml.Token, error) {
+func (f *dropXSI) Token() (xml.Token, error) {
 	t, err := f.d.Token()
+	switch t.(type) {
+	case xml.StartElement:
+		f.depth++
+		if f.depth > f.maxDepth {
+			return nil, fmt.Errorf("%w: elements nested more than %d deep (ParseOptions.MaxDepth)", ErrLimitExceeded, f.maxDepth)
+		}
+	case xml.EndElement:
+		f.depth--
+	}
 	if se, ok := t.(xml.StartElement); ok {
 		kept := make([]xml.Attr, 0, len(se.Attr))
 		for _, a := range se.Attr {

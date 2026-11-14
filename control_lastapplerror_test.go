@@ -13,6 +13,7 @@ import (
 
 	"github.com/otfabric/go-mms"
 
+	"github.com/otfabric/go-iec61850/internal/leakcheck"
 	"github.com/otfabric/go-iec61850/scl"
 )
 
@@ -59,7 +60,7 @@ func controlClient(t *testing.T, srv *Server) *Client {
 	t.Helper()
 	sctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(sctx, serverT) }()
 	mc, err := mms.NewClient(context.Background(), clientT, mms.DialOptions{})
 	if err != nil {
@@ -192,12 +193,11 @@ func TestOperateWait_ClosedAndInvalid(t *testing.T) {
 		_, err := c.OperateWait(ctx, ref, params)
 		done <- err
 	}()
-	waitFor(t, func() bool {
-		c.ctlMu.Lock()
-		defer c.ctlMu.Unlock()
-		return len(c.ctlWaiters) == 1
-	})
-	time.Sleep(50 * time.Millisecond) // let the operate write complete
+	// The operate write has been answered once OperateWait waits for the
+	// termination.
+	if !leakcheck.WaitBlocked("iec61850.(*Client).OperateWait", 5*time.Second) {
+		t.Fatal("OperateWait does not wait for the termination")
+	}
 	_ = c.Close(ctx)
 	if err := <-done; !errors.Is(err, ErrClosed) {
 		t.Errorf("OperateWait after Close = %v, want ErrClosed", err)
@@ -229,7 +229,9 @@ func TestOperateWait_ConnectionLost(t *testing.T) {
 		_, err := c.OperateWait(ctx, ref, params)
 		done <- err
 	}()
-	time.Sleep(commandTerminationDelay + 100*time.Millisecond)
+	if !leakcheck.WaitBlocked("iec61850.(*Client).OperateWait", 5*time.Second) {
+		t.Fatal("OperateWait does not wait for the termination")
+	}
 	_ = c.mmsClient.Abort(ctx)
 	if err := <-done; !errors.Is(err, ErrClosed) {
 		t.Errorf("OperateWait after the server closed = %v, want ErrClosed", err)

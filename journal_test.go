@@ -115,7 +115,7 @@ func setupJournalLoopback(t *testing.T) *Client {
 		t.Fatalf("register domain: %v", err)
 	}
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() {
 		_ = srv.Serve(ctx, serverT)
 	}()
@@ -343,7 +343,7 @@ func TestReadJournalAfter_SameTimestamp(t *testing.T) {
 		t.Fatalf("register domain: %v", err)
 	}
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(ctx, serverT) }()
 
 	mmsClient, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
@@ -471,7 +471,7 @@ func setupPaginatingJournal(t *testing.T, pageSize int) *Client {
 		t.Fatalf("register domain: %v", err)
 	}
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(ctx, serverT) }()
 
 	mmsClient, err := mms.NewClient(ctx, clientT, mms.DialOptions{})

@@ -16,6 +16,7 @@ import (
 	"github.com/otfabric/go-mms"
 
 	"github.com/otfabric/go-iec61850/goose"
+	"github.com/otfabric/go-iec61850/internal/leakcheck"
 	"github.com/otfabric/go-iec61850/l2"
 	"github.com/otfabric/go-iec61850/rsession"
 	"github.com/otfabric/go-iec61850/sv"
@@ -72,6 +73,7 @@ func TestGOOSEOverUDP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = sub.Close() }()
 	var mu sync.Mutex
 	var got []*goose.Frame
 	_, err = sub.Subscribe(goose.SubscriptionConfig{
@@ -312,7 +314,9 @@ func TestRecvContextAndClose(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() { _, err := tr.Recv(context.Background()); done <- err }()
-	time.Sleep(10 * time.Millisecond)
+	if !leakcheck.WaitBlocked("rsession.(*Transport).Recv", 5*time.Second) {
+		t.Fatal("Recv did not block")
+	}
 	_ = tr.Close()
 	if err := <-done; !errors.Is(err, rsession.ErrClosed) {
 		t.Fatalf("blocked Recv: %v", err)

@@ -3,10 +3,12 @@
 package iec61850
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"sort"
 	"time"
 )
@@ -56,6 +58,15 @@ func (c *Client) ListFiles(ctx context.Context, pattern string) ([]FileEntry, er
 
 // ReadFile reads an entire file from the server and returns its contents.
 //
+// The file is held in memory, so ReadFile reads at most
+// [FileLimits.MaxSize] bytes ([DefaultMaxFileSize] by default): a file
+// whose announced size is larger is refused before it is read, and a
+// server that sends more is stopped. A server that sends more than
+// [FileLimits.SizeTolerance] bytes beyond the size it announced, or more
+// than [FileLimits.MaxEmptyChunks] consecutive answers without data, is
+// stopped too. The error then wraps [ErrLimitExceeded] and the file is
+// closed on the server.
+//
 // For large files, prefer [Client.DownloadFile] which streams to an
 // [io.Writer] without buffering the entire file in memory.
 func (c *Client) ReadFile(ctx context.Context, fileName string) ([]byte, *FileEntry, error) {
@@ -66,19 +77,15 @@ func (c *Client) ReadFile(ctx context.Context, fileName string) ([]byte, *FileEn
 		return nil, nil, fmt.Errorf("iec61850: read file: %w: empty file name", ErrInvalidArgument)
 	}
 
-	data, openResult, err := c.mmsClient.DownloadFile(ctx, fileName)
+	limits := c.opts.FileLimits.resolved()
+	var buf bytes.Buffer
+	entry, err := c.readFile(ctx, "read file", fileName, &buf, limits, limits.MaxSize)
 	if err != nil {
-		return nil, nil, fmt.Errorf("iec61850: read file %q: %w", fileName, err)
+		return nil, nil, err
 	}
 
-	entry := &FileEntry{
-		Name:         fileName,
-		Size:         openResult.Size,
-		LastModified: openResult.LastModified,
-	}
-
-	c.logger.Debug("iec61850: read file", "name", fileName, "size", len(data))
-	return data, entry, nil
+	c.logger.Debug("iec61850: read file", "name", fileName, "size", buf.Len())
+	return buf.Bytes(), entry, nil
 }
 
 // DownloadFile streams a file from the server to the provided writer.
@@ -87,7 +94,12 @@ func (c *Client) ReadFile(ctx context.Context, fileName string) ([]byte, *FileEn
 //
 // The returned [FileEntry] contains the file metadata (size, timestamp).
 // The actual number of bytes written may differ from FileEntry.Size if
-// the server reports an approximate size.
+// the server reports an approximate size: up to
+// [FileLimits.SizeTolerance] bytes more are accepted
+// ([DefaultFileSizeTolerance] by default). A server that sends more, or
+// more than [FileLimits.MaxEmptyChunks] consecutive answers without
+// data, is stopped: the error wraps [ErrLimitExceeded] and the file is
+// closed on the server. What was written to w until then stays written.
 func (c *Client) DownloadFile(ctx context.Context, fileName string, w io.Writer) (*FileEntry, error) {
 	if err := c.checkOpen(); err != nil {
 		return nil, err
@@ -98,35 +110,72 @@ func (c *Client) DownloadFile(ctx context.Context, fileName string, w io.Writer)
 	if w == nil {
 		return nil, fmt.Errorf("iec61850: download file %q: %w: nil writer", fileName, ErrInvalidArgument)
 	}
+	return c.readFile(ctx, "download file", fileName, w, c.opts.FileLimits.resolved(), 0)
+}
 
+// readFile opens fileName, copies its chunks to w within limits, and
+// closes it. maxSize, when positive, bounds the file in total (ReadFile);
+// a file announced larger is not read. A FileClose error after a complete
+// read returns the entry with the error; any other error returns no
+// entry.
+func (c *Client) readFile(ctx context.Context, op, fileName string, w io.Writer, limits FileLimits, maxSize int64) (*FileEntry, error) {
 	openResult, err := c.mmsClient.FileOpen(ctx, fileName)
 	if err != nil {
-		return nil, fmt.Errorf("iec61850: download file %q: open: %w", fileName, err)
+		return nil, fmt.Errorf("iec61850: %s %q: open: %w", op, fileName, err)
 	}
 
 	closeAndWrap := func(primary error) error {
 		closeErr := c.mmsClient.FileClose(ctx, openResult.FrsmID)
 		if closeErr != nil {
-			return errors.Join(primary, fmt.Errorf("iec61850: download file %q: close: %w", fileName, closeErr))
+			return errors.Join(primary, fmt.Errorf("iec61850: %s %q: close: %w", op, fileName, closeErr))
 		}
 		return primary
 	}
 
+	announced := max(openResult.Size, 0)
+	if maxSize > 0 && announced > maxSize {
+		return nil, closeAndWrap(fmt.Errorf("iec61850: %s %q: %w: announced size %d bytes, limit %d",
+			op, fileName, ErrLimitExceeded, announced, maxSize))
+	}
+	allowed := int64(math.MaxInt64)
+	if announced <= math.MaxInt64-limits.SizeTolerance {
+		allowed = announced + limits.SizeTolerance
+	}
+
 	var totalWritten int64
+	empty := 0
 	for {
 		chunk, readErr := c.mmsClient.FileRead(ctx, openResult.FrsmID)
 		if readErr != nil {
-			return nil, closeAndWrap(fmt.Errorf("iec61850: download file %q: read: %w", fileName, readErr))
+			return nil, closeAndWrap(fmt.Errorf("iec61850: %s %q: read: %w", op, fileName, readErr))
 		}
 
-		if len(chunk.Data) > 0 {
+		if len(chunk.Data) == 0 {
+			if chunk.MoreFollows {
+				empty++
+				if empty > limits.MaxEmptyChunks {
+					return nil, closeAndWrap(fmt.Errorf("iec61850: %s %q: %w: more than %d consecutive answers without data",
+						op, fileName, ErrLimitExceeded, limits.MaxEmptyChunks))
+				}
+			}
+		} else {
+			empty = 0
+			size := totalWritten + int64(len(chunk.Data))
+			if maxSize > 0 && size > maxSize {
+				return nil, closeAndWrap(fmt.Errorf("iec61850: %s %q: %w: more than %d bytes",
+					op, fileName, ErrLimitExceeded, maxSize))
+			}
+			if size > allowed {
+				return nil, closeAndWrap(fmt.Errorf("iec61850: %s %q: %w: more than %d bytes beyond the announced size %d",
+					op, fileName, ErrLimitExceeded, limits.SizeTolerance, announced))
+			}
 			n, writeErr := w.Write(chunk.Data)
 			totalWritten += int64(n)
 			if writeErr != nil {
-				return nil, closeAndWrap(fmt.Errorf("iec61850: download file %q: write: %w", fileName, writeErr))
+				return nil, closeAndWrap(fmt.Errorf("iec61850: %s %q: write: %w", op, fileName, writeErr))
 			}
 			if n != len(chunk.Data) {
-				return nil, closeAndWrap(fmt.Errorf("iec61850: download file %q: %w", fileName, io.ErrShortWrite))
+				return nil, closeAndWrap(fmt.Errorf("iec61850: %s %q: %w", op, fileName, io.ErrShortWrite))
 			}
 		}
 
@@ -135,21 +184,16 @@ func (c *Client) DownloadFile(ctx context.Context, fileName string, w io.Writer)
 		}
 	}
 
-	if err := c.mmsClient.FileClose(ctx, openResult.FrsmID); err != nil {
-		return &FileEntry{
-			Name:         fileName,
-			Size:         openResult.Size,
-			LastModified: openResult.LastModified,
-		}, fmt.Errorf("iec61850: download file %q: close: %w", fileName, err)
-	}
-
 	entry := &FileEntry{
 		Name:         fileName,
 		Size:         openResult.Size,
 		LastModified: openResult.LastModified,
 	}
+	if err := c.mmsClient.FileClose(ctx, openResult.FrsmID); err != nil {
+		return entry, fmt.Errorf("iec61850: %s %q: close: %w", op, fileName, err)
+	}
 
-	c.logger.Debug("iec61850: download file", "name", fileName, "bytes", totalWritten)
+	c.logger.Debug("iec61850: "+op, "name", fileName, "bytes", totalWritten)
 	return entry, nil
 }
 

@@ -17,7 +17,7 @@ func setupCachedLoopback(t *testing.T, strategy CacheStrategy) (*Client, *callCo
 	cc := &callCounter{}
 	srv := setupTestServer(t)
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 
 	go func() {
 		_ = srv.Serve(ctx, serverT)

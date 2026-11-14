@@ -302,7 +302,7 @@ func TestRespGate(t *testing.T) {
 	default:
 		t.Fatal("a nil gate is not idle")
 	}
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	g := newRespGate()
 	gt := &gatedTransport{Transport: serverT, gate: g}
 	if gt.RemoteAddr() != nil || gt.TLSConnectionState() != nil || gt.Unwrap() != serverT {
@@ -393,7 +393,7 @@ func (tlsStateTransport) TLSConnectionState() *tls.ConnectionState {
 // TestRespGate_ForwardsRemoteAddr: the wrapped transport keeps the
 // optional interfaces go-mms uses for logging and authentication.
 func TestRespGate_ForwardsRemoteAddr(t *testing.T) {
-	_, serverT := loopbackPair()
+	_, serverT := loopbackPair(t)
 	gt := &gatedTransport{Transport: tlsStateTransport{remoteAddrTransport{serverT}}, gate: newRespGate()}
 	if a := gt.RemoteAddr(); a == nil || a.String() != "peer" {
 		t.Errorf("RemoteAddr = %v", a)
@@ -466,13 +466,12 @@ func TestChaos_BufTmConcurrentChanges(t *testing.T) {
 				}
 			})
 		}
+		// The run lasts 100 rounds of GI and enable/disable; the writers
+		// change values meanwhile. The pause paces the rounds against
+		// BufTm and does not decide the outcome.
 		wg.Go(func() {
-			for {
-				select {
-				case <-stop:
-					return
-				default:
-				}
+			defer close(stop)
+			for range 100 {
 				_ = c.TriggerGI(ctx, "LD1", specBRCB)
 				_ = engine.HandleRCBWrite(ctx, "LD1", specURCB, "RptEna", mms.NewBoolean(true))
 				_ = engine.HandleRCBWrite(ctx, "LD1", specURCB, "GI", mms.NewBoolean(true))
@@ -480,8 +479,6 @@ func TestChaos_BufTmConcurrentChanges(t *testing.T) {
 				time.Sleep(2 * time.Millisecond)
 			}
 		})
-		time.Sleep(300 * time.Millisecond)
-		close(stop)
 		wg.Wait()
 
 		rt := engine.rcbs["LD1/"+specBRCB]

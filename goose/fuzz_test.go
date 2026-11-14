@@ -76,7 +76,11 @@ func FuzzDecode(f *testing.F) {
 	})
 }
 
-// FuzzDecodeData checks the allData decoder against arbitrary input.
+// FuzzDecodeData checks the allData decoder against arbitrary input:
+// an error is a *DecodeError for invalid data or a limit, an accepted
+// value has no more elements than the input has TLV headers and stays
+// within DefaultLimits, and it re-encodes to an encoding that decodes and
+// re-encodes to itself.
 func FuzzDecodeData(f *testing.F) {
 	for _, v := range []*mms.Value{
 		mms.NewBoolean(true), mms.NewFloat(2.5), mms.NewArray([]*mms.Value{mms.NewInteger(1)}),
@@ -90,15 +94,63 @@ func FuzzDecodeData(f *testing.F) {
 	f.Add([]byte{0x85, 9, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
 	f.Add(append([]byte{0x8a, 35, 'a', 'b', 'c'}, make([]byte, 32)...))
 	f.Add([]byte{0x87, 4, 0x3f, 0x80, 0, 0})
+	f.Add([]byte{0x8c, 6, '0', '0', '0', '0', 0xff, 0xff}) // TimeOfDay: ms field beyond a day, last day
 	f.Fuzz(func(t *testing.T, b []byte) {
 		v, err := DecodeData(b)
 		if err != nil {
+			var de *DecodeError
+			if !errors.As(err, &de) || (!errors.Is(err, ErrInvalidData) && !errors.Is(err, ErrLimitExceeded)) {
+				t.Fatalf("error %T %v: want a *DecodeError for invalid data or a limit", err, err)
+			}
 			return
 		}
-		if _, err := EncodeData(v); err != nil {
-			t.Logf("decoded value not re-encodable: %v", err)
+		n, depth := dataShape(v)
+		if n > len(b)/2 {
+			t.Fatalf("%d elements from %d octets (each needs a 2-octet header)", n, len(b))
+		}
+		if n > DefaultLimits.MaxElements || depth > DefaultLimits.MaxDepth {
+			t.Fatalf("%d elements, depth %d: beyond DefaultLimits", n, depth)
+		}
+		enc, err := EncodeData(v)
+		if err != nil {
+			// The decoder accepts a TimeOfDay whose millisecond field
+			// exceeds a day; its sum with the day count can lie beyond
+			// what the encoder writes. Any other value re-encodes.
+			if !errors.Is(err, ErrInvalidValue) {
+				t.Fatalf("decoded value does not re-encode: %v", err)
+			}
+			return
+		}
+		v2, err := DecodeData(enc)
+		if err != nil {
+			t.Fatalf("re-decode: %v", err)
+		}
+		enc2, err := EncodeData(v2)
+		if err != nil || !bytes.Equal(enc, enc2) {
+			t.Fatalf("encoding not stable: % x / % x (%v)", enc, enc2, err)
 		}
 	})
+}
+
+// dataShape returns the number of Data elements in v (containers
+// included) and its nesting depth (a scalar has depth 1).
+func dataShape(v *mms.Value) (elements, depth int) {
+	var elems []*mms.Value
+	switch v.Type() {
+	case mms.ValueTypeStructure:
+		elems, _ = v.Structure()
+	case mms.ValueTypeArray:
+		elems, _ = v.ArrayElements()
+	default:
+		return 1, 1
+	}
+	elements, depth = 1, 1
+	for _, e := range elems {
+		n, d := dataShape(e)
+		elements += n
+		depth = max(depth, d+1)
+	}
+	return elements, depth
 }
 
 // FuzzDecodePDU checks the goosePdu decoder on its own (no Ethernet

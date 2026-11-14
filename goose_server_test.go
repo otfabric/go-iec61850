@@ -61,7 +61,7 @@ func newGOOSEFixture(t *testing.T, opts GOOSEOptions) *gooseFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(sctx, serverT) }()
 	mc, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
 	if err != nil {

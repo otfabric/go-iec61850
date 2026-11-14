@@ -49,13 +49,13 @@ func buildLCBFields(l *LogDef, ldName, lnName string) []rcbField {
 // the r/w components go through the write interceptor (the journal
 // engine applies the IEC 61850-8-1 §17.3.4.3 rules); the read-only
 // components and the whole structure answer object-access-denied.
-func registerLCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, l *LogDef) error {
+func registerLCB(srv Registrar, vs *ValueStore, ldName, lnName string, l *LogDef) error {
 	return registerCtrlBlock(srv, vs, ldName, LCBItemID(lnName, l.Name), "LCB", buildLCBFields(l, ldName, lnName), LCBWritableFields)
 }
 
 // registerLGGroup registers the "LN$LG" FC-group variable. ok is false
 // when the LN has no LCBs.
-func registerLGGroup(srv *mms.Server, vs *ValueStore, ldName string, ln *LogicalNode) (mms.TypeSpecElement, func(context.Context) (*mms.Value, error), bool, error) {
+func registerLGGroup(srv Registrar, vs *ValueStore, ldName string, ln *LogicalNode) (mms.TypeSpecElement, func(context.Context) (*mms.Value, error), bool, error) {
 	names := make([]string, len(ln.Logs))
 	structs := make([]func() (mms.TypeSpec, func(context.Context) (*mms.Value, error)), len(ln.Logs))
 	for i := range ln.Logs {

@@ -257,10 +257,11 @@ func NewPublisher(t Transport, cfg PublisherConfig) (*Publisher, error) {
 	if cfg.Src.IsZero() {
 		cfg.Src = t.HardwareAddr()
 	}
+	logger := orDiscard(cfg.Logger).With("gocbRef", cfg.GocbRef)
 	p := &Publisher{
 		t:       t,
-		logger:  orDiscard(cfg.Logger).With("gocbRef", cfg.GocbRef),
-		metrics: orNop(cfg.Metrics),
+		logger:  logger,
+		metrics: guardMetrics(cfg.Metrics, logger, nil),
 		cfg:     cfg,
 		stNum:   cfg.InitialStNum - 1,
 		enabled: true,

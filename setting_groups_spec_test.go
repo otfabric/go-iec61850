@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/otfabric/go-mms"
@@ -99,25 +100,28 @@ func TestSpec_7_2_16_3_3_1_EditReservation(t *testing.T) {
 // IEC 61850-7-2 16.2.2.8 / 16.3.3.1: the reservation ends ResvTms seconds
 // after SelectEditSG without a ConfirmEditSGValues.
 func TestSpec_7_2_16_2_2_8_ResvTmsExpires(t *testing.T) {
-	srv := sgSpecServer(t, 1, SettingGroupHandler{})
-	a, b := controlClient(t, srv), controlClient(t, srv)
-	ctx := waitCtx(t)
-	if err := a.SelectEditSG(ctx, "LD1", 1); err != nil {
-		t.Fatal(err)
-	}
-	if err := b.SelectEditSG(ctx, "LD1", 1); dataAccessCode(err) != mms.DataAccessErrorTemporarilyUnavailable {
-		t.Fatalf("B before ResvTms = %v", err)
-	}
-	time.Sleep(1500 * time.Millisecond)
-	if info, err := b.GetSettingGroupInfo(ctx, "LD1"); err != nil || info.EditSG != 0 {
-		t.Fatalf("after ResvTms: %+v %v", info, err)
-	}
-	if err := b.SelectEditSG(ctx, "LD1", 2); err != nil {
-		t.Fatalf("B after ResvTms: %v", err)
-	}
-	if err := a.ConfirmEditSG(ctx, "LD1"); dataAccessCode(err) != mms.DataAccessErrorTemporarilyUnavailable {
-		t.Errorf("A confirm after expiry = %v", err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		srv := sgSpecServer(t, 1, SettingGroupHandler{})
+		a, b := controlClient(t, srv), controlClient(t, srv)
+		ctx := waitCtx(t)
+		if err := a.SelectEditSG(ctx, "LD1", 1); err != nil {
+			t.Fatal(err)
+		}
+		if err := b.SelectEditSG(ctx, "LD1", 1); dataAccessCode(err) != mms.DataAccessErrorTemporarilyUnavailable {
+			t.Fatalf("B before ResvTms = %v", err)
+		}
+		time.Sleep(1500 * time.Millisecond) // fake time: beyond ResvTms of 1 s
+		synctest.Wait()                     // the ResvTms timer has run
+		if info, err := b.GetSettingGroupInfo(ctx, "LD1"); err != nil || info.EditSG != 0 {
+			t.Fatalf("after ResvTms: %+v %v", info, err)
+		}
+		if err := b.SelectEditSG(ctx, "LD1", 2); err != nil {
+			t.Fatalf("B after ResvTms: %v", err)
+		}
+		if err := a.ConfirmEditSG(ctx, "LD1"); dataAccessCode(err) != mms.DataAccessErrorTemporarilyUnavailable {
+			t.Errorf("A confirm after expiry = %v", err)
+		}
+	})
 }
 
 // IEC 61850-7-2 16.2.2.5: with EditSG = 0, SetEditSGValue and

@@ -9,8 +9,7 @@ import (
 	raw "github.com/otfabric/go-iec61850/scl/internal/raw/v17"
 )
 
-func convertV17(r *raw.SCL) (*SCL, []Diagnostic, error) {
-	var diags []Diagnostic
+func convertV17(r *raw.SCL, diags *diagSink) (*SCL, error) {
 
 	s := &SCL{
 		Header: Header{
@@ -27,16 +26,16 @@ func convertV17(r *raw.SCL) (*SCL, []Diagnostic, error) {
 		s.Communication = convComm17(r.Communication)
 	}
 	for _, ied := range r.IED {
-		s.IEDs = append(s.IEDs, convIED17(ied, &diags))
+		s.IEDs = append(s.IEDs, convIED17(ied, diags))
 	}
 	if r.DataTypeTemplates != nil {
-		s.DataTypeTemplates = convDTT17(r.DataTypeTemplates, &diags)
+		s.DataTypeTemplates = convDTT17(r.DataTypeTemplates, diags)
 	}
 
-	return s, diags, nil
+	return s, nil
 }
 
-func convIED17(r raw.IED, diags *[]Diagnostic) IED {
+func convIED17(r raw.IED, diags *diagSink) IED {
 	ied := IED{
 		Name:         r.Name,
 		Desc:         r.Desc,
@@ -55,7 +54,7 @@ func convIED17(r raw.IED, diags *[]Diagnostic) IED {
 	return ied
 }
 
-func convAP17(r raw.AccessPoint, diags *[]Diagnostic) AccessPoint {
+func convAP17(r raw.AccessPoint, diags *diagSink) AccessPoint {
 	ap := AccessPoint{Name: r.Name}
 	if r.Server != nil {
 		srv := &Server{}
@@ -70,7 +69,7 @@ func convAP17(r raw.AccessPoint, diags *[]Diagnostic) AccessPoint {
 	return ap
 }
 
-func convLD17(r raw.LDevice, diags *[]Diagnostic) LDevice {
+func convLD17(r raw.LDevice, diags *diagSink) LDevice {
 	ld := LDevice{Inst: r.Inst, LdName: r.LdName, Desc: r.Desc}
 	ln0 := convLN017(r.LN0, diags)
 	ld.LN0 = &ln0
@@ -83,7 +82,7 @@ func convLD17(r raw.LDevice, diags *[]Diagnostic) LDevice {
 	return ld
 }
 
-func convLN017(r raw.LN0, diags *[]Diagnostic) LN {
+func convLN017(r raw.LN0, diags *diagSink) LN {
 	ln := LN{LNClass: r.LnClass, Inst: r.Inst, LNType: r.LnType, Desc: r.Desc}
 	for _, doi := range r.DOI {
 		ln.DOIs = append(ln.DOIs, convDOI17(doi))
@@ -123,7 +122,7 @@ func convLN017(r raw.LN0, diags *[]Diagnostic) LN {
 	return ln
 }
 
-func convLN17(r raw.LN, _ *[]Diagnostic) LN {
+func convLN17(r raw.LN, _ *diagSink) LN {
 	ln := LN{
 		Prefix:  r.Prefix,
 		LNClass: r.LnClass,
@@ -224,7 +223,7 @@ func convRC17(r raw.ReportControl) ReportControl {
 	return rc
 }
 
-func convDTT17(r *raw.DataTypeTemplates, _ *[]Diagnostic) DataTypeTemplates {
+func convDTT17(r *raw.DataTypeTemplates, _ *diagSink) DataTypeTemplates {
 	var dtt DataTypeTemplates
 	for _, lnt := range r.LNodeType {
 		t := LNodeType{ID: lnt.Id, LNClass: lnt.LnClass, Desc: lnt.Desc}

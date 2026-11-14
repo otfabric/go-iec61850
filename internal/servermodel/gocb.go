@@ -269,13 +269,13 @@ func cbStruct(vs *ValueStore, fields []rcbField, ldName, cbItem string) (mms.Typ
 // reject them); the value is stored only when the interceptor accepts
 // or is absent. Other attributes and whole-structure writes are
 // rejected with object-access-denied.
-func registerGoCB(srv *mms.Server, vs *ValueStore, ldName, lnName string, g *GoCBDef) error {
+func registerGoCB(srv Registrar, vs *ValueStore, ldName, lnName string, g *GoCBDef) error {
 	return registerCtrlBlock(srv, vs, ldName, GoCBItemID(lnName, g.Name), "GoCB", buildGoCBFields(g, ldName, lnName), GoCBWritableFields)
 }
 
 // registerCtrlBlock registers a GoCB or SvCB structure and its
 // attributes (see registerGoCB). kind names the block in errors.
-func registerCtrlBlock(srv *mms.Server, vs *ValueStore, ldName, cbItem, kind string, fields []rcbField, writable map[string]bool) error {
+func registerCtrlBlock(srv Registrar, vs *ValueStore, ldName, cbItem, kind string, fields []rcbField, writable map[string]bool) error {
 	denied := &mms.DataAccessError{Code: mms.DataAccessErrorObjectAccessDenied}
 	for _, f := range fields {
 		item := cbItem + "$" + f.suffix
@@ -346,7 +346,7 @@ func registerCtrlBlock(srv *mms.Server, vs *ValueStore, ldName, cbItem, kind str
 // registerGOGroup registers the "LN$GO" FC-group variable and returns
 // its TypeSpec element and read function for the LN structure. ok is
 // false when the LN has no GoCBs.
-func registerGOGroup(srv *mms.Server, vs *ValueStore, ldName string, ln *LogicalNode) (mms.TypeSpecElement, func(context.Context) (*mms.Value, error), bool, error) {
+func registerGOGroup(srv Registrar, vs *ValueStore, ldName string, ln *LogicalNode) (mms.TypeSpecElement, func(context.Context) (*mms.Value, error), bool, error) {
 	names := make([]string, len(ln.GoCBs))
 	structs := make([]func() (mms.TypeSpec, func(context.Context) (*mms.Value, error)), len(ln.GoCBs))
 	for i := range ln.GoCBs {
@@ -361,7 +361,7 @@ func registerGOGroup(srv *mms.Server, vs *ValueStore, ldName string, ln *Logical
 
 // registerFCGroup registers the "LN$<fc>" FC-group variable of control
 // blocks. ok is false when there are none.
-func registerFCGroup(srv *mms.Server, ldName, lnName, fc string, names []string, structs []func() (mms.TypeSpec, func(context.Context) (*mms.Value, error))) (mms.TypeSpecElement, func(context.Context) (*mms.Value, error), bool, error) {
+func registerFCGroup(srv Registrar, ldName, lnName, fc string, names []string, structs []func() (mms.TypeSpec, func(context.Context) (*mms.Value, error))) (mms.TypeSpecElement, func(context.Context) (*mms.Value, error), bool, error) {
 	if len(names) == 0 {
 		return mms.TypeSpecElement{}, nil, false, nil
 	}

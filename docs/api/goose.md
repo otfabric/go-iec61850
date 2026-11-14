@@ -77,6 +77,12 @@ const (
 
 Default retransmission parameters (IEC 61850-8-1 Annex C leaves the values to configuration; these match common SCL MinTime/MaxTime defaults).
 
+```go
+const DefaultMaxStreams = 4096
+```
+
+DefaultMaxStreams is the default of SubscriptionConfig.MaxStreams. A subscription without filters (monitor mode) sees every GOOSE stream of its network; the largest substations publish a few thousand streams in all, so the default is above that, and it bounds the supervision state a subscription keeps for streams it never asked for.
+
 ## Variables
 
 ```go
@@ -349,6 +355,16 @@ func ControlBlocksFromSCL(doc *scl.SCL) ([]ControlBlock, error)
 ```
 
 ControlBlocksFromSCL returns every GOOSE control block of every IED access point with a Server in doc. Blocks that cannot be resolved are skipped and reported in the returned error (which wraps ErrSCL); the blocks that could be resolved are returned regardless.
+
+The models of all IEDs of doc together expand the type templates to at most [scl.DefaultMaxExpandedNodes](https://pkg.go.dev/github.com/otfabric/go-iec61850/scl#DefaultMaxExpandedNodes) data objects and attributes; beyond that the IEDs not yet read are left out and the error wraps [scl.ErrLimitExceeded](https://pkg.go.dev/github.com/otfabric/go-iec61850/scl#ErrLimitExceeded) too. [ControlBlocksFromSCLWithOptions](#func-controlblocksfromsclwithoptions) sets another limit.
+
+#### func ControlBlocksFromSCLWithOptions
+
+```go
+func ControlBlocksFromSCLWithOptions(doc *scl.SCL, opts SCLOptions) ([]ControlBlock, error)
+```
+
+ControlBlocksFromSCLWithOptions is [ControlBlocksFromSCL](#func-controlblocksfromscl) with options.
 
 #### func (ControlBlock) DefaultValues
 
@@ -678,7 +694,9 @@ type Metrics interface {
 
 	// FrameDropped is called for a received frame that was discarded
 	// before reaching a subscription. reason is one of "decode",
-	// "simulation", "filtered".
+	// "simulation", "filtered", or "streams" (a subscription that
+	// supervises SubscriptionConfig.MaxStreams streams dropped the frame
+	// of a new stream).
 	FrameDropped(reason string)
 
 	// Event is called for every subscriber event, including events
@@ -1000,6 +1018,21 @@ type PublisherState struct {
 
 PublisherState is a snapshot of a publisher's sequence state.
 
+### type SCLOptions
+
+```go
+type SCLOptions struct {
+	// MaxExpandedNodes is the number of data objects and data
+	// attributes (DO, SDO, DA and BDA, each counted once per place in a
+	// model) the models of all IEDs of the document together may
+	// expand the type templates to; zero or less means
+	// [scl.DefaultMaxExpandedNodes].
+	MaxExpandedNodes int
+}
+```
+
+SCLOptions control [ControlBlocksFromSCLWithOptions](#func-controlblocksfromsclwithoptions).
+
 ### type Status
 
 ```go
@@ -1051,7 +1084,10 @@ StreamKey identifies one received GOOSE stream.
 
 ```go
 type Subscriber struct {
-	// contains filtered or unexported fields
+
+	// recovered counts OnDecodeError and Metrics calls that did not
+	// return normally.
+
 }
 ```
 
@@ -1064,6 +1100,14 @@ func NewSubscriber(t Transport, cfg SubscriberConfig) (*Subscriber, error)
 ```
 
 NewSubscriber returns a subscriber reading from t. Call [Subscriber.Run](#func-subscriber-run) to start receiving.
+
+#### func (Subscriber) CallbacksRecovered
+
+```go
+func (s *Subscriber) CallbacksRecovered() uint64
+```
+
+CallbacksRecovered returns the number of OnDecodeError and Metrics calls of the subscriber that did not return normally.
 
 #### func (Subscriber) Close
 
@@ -1120,6 +1164,11 @@ type SubscriberConfig struct {
 
 	// OnDecodeError, when non-nil, is called with frames that are not
 	// valid GOOSE (non-GOOSE EtherTypes are ignored silently).
+	//
+	// A call of OnDecodeError or of a Metrics method that does not
+	// return normally is recovered: it is logged at error level with its
+	// stack and counted in [Subscriber.CallbacksRecovered], and the
+	// subscriber goes on.
 	OnDecodeError func(raw []byte, err error)
 
 	// Now returns the current time; nil uses [time.Now].
@@ -1133,6 +1182,11 @@ SubscriberConfig configures a [Subscriber](#type-subscriber).
 
 ```go
 type Subscription struct {
+
+	// refused counts frames of new streams dropped at MaxStreams;
+	// refusedLogged records that the first one was logged.
+
+	// recovered counts Handler calls that did not return normally.
 
 	// handlerID identifies the goroutine that calls the Handler, so that
 	// a Close called from the Handler does not wait for itself.
@@ -1151,6 +1205,14 @@ func (sub *Subscription) Close() error
 Close removes the subscription, stops its timers and closes the event channel. With a Handler it returns after the events still queued have been handed to the Handler and the Handler's goroutine has ended.
 
 Close may be called from the Handler. It then returns without waiting for its own goroutine: the events still queued are handed to the Handler after the current call returns, and the goroutine ends then. A Close from another goroutine waits for that. Close is safe to call more than once and from multiple goroutines.
+
+#### func (Subscription) Counters
+
+```go
+func (sub *Subscription) Counters() SubscriptionCounters
+```
+
+Counters returns the counters of the subscription as a whole.
 
 #### func (Subscription) Events
 
@@ -1205,18 +1267,48 @@ type SubscriptionConfig struct {
 
 	// Handler, when non-nil, is called for every event on a dedicated
 	// goroutine, in order. Otherwise events are read from
-	// [Subscription.Events].
+	// [Subscription.Events]. A call that does not return normally is
+	// recovered: it is logged at error level with its stack and counted
+	// in SubscriptionCounters.CallbacksRecovered, and the Handler is
+	// called with the next event.
 	Handler func(Event)
 
 	// QueueSize bounds the event queue (default 256). When full, events
 	// are dropped and counted in Supervision.DroppedEvents.
 	QueueSize int
+
+	// MaxStreams bounds the streams the subscription supervises; zero
+	// means [DefaultMaxStreams]. While the subscription supervises
+	// MaxStreams streams, a frame of a stream it has not seen is
+	// dropped: it is counted in SubscriptionCounters.StreamsRefused and
+	// reported to Metrics.FrameDropped with the reason "streams". A
+	// stream seen once keeps its entry until the subscription is closed;
+	// no stream is replaced by a new one.
+	MaxStreams int
 }
 ```
 
 SubscriptionConfig selects and validates GOOSE messages.
 
 Filters with a zero value match everything; a subscription without any filter receives every GOOSE frame (monitor mode). Validation fields with a zero value are not checked.
+
+### type SubscriptionCounters
+
+```go
+type SubscriptionCounters struct {
+	// StreamsRefused counts frames dropped because they belong to a
+	// stream not seen before while the subscription supervises
+	// MaxStreams streams.
+	StreamsRefused uint64
+
+	// CallbacksRecovered counts events whose Handler call did not
+	// return normally. Each is logged at error level with its stack;
+	// the Handler goes on receiving the following events.
+	CallbacksRecovered uint64
+}
+```
+
+SubscriptionCounters are the counters of a subscription as a whole; [Supervision](#type-supervision) has those of each stream.
 
 ### type Supervision
 

@@ -108,6 +108,11 @@ func TestSettingGroupHandler_CallbackIsRecovered(t *testing.T) {
 			srv.Close() // the log is complete
 			if out := logged.String(); !strings.Contains(out, tc.name) || !strings.Contains(out, reason) {
 				t.Errorf("log = %q, want the callback name %q and the recovered value", out, tc.name)
+			} else if !strings.Contains(out, "setting_groups_handler_recover_test.go") {
+				t.Errorf("log = %q, want the stack of the callback", out)
+			}
+			if got := srv.Stats().CallbacksRecovered; got != 1 {
+				t.Errorf("Stats().CallbacksRecovered = %d, want 1", got)
 			}
 		})
 	}

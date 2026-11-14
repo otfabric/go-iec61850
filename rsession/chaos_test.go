@@ -10,11 +10,11 @@ import (
 	"math/rand"
 	"net"
 	"net/netip"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/otfabric/go-iec61850/internal/leakcheck"
 	"github.com/otfabric/go-iec61850/rsession"
 )
 
@@ -177,7 +177,7 @@ func chaosRotation(t *testing.T, seed int64, n int) {
 // with Send and Recv; after Close both return ErrClosed; the receive
 // goroutine is gone.
 func TestTransport_CloseContract(t *testing.T) {
-	before := runtime.NumGoroutine()
+	leakcheck.Check(t)
 	for range 20 {
 		recv, err := rsession.Open(rsession.Config{SI: rsession.SIGOOSE, LocalAddr: loopback, Insecure: true})
 		if err != nil {
@@ -189,6 +189,8 @@ func TestTransport_CloseContract(t *testing.T) {
 		}
 		frame := gooseFrame(t)
 		var wg sync.WaitGroup
+		var firstRecv sync.Once
+		received := make(chan struct{}) // closed by the first Recv that returns a frame
 		for range 4 {
 			wg.Go(func() {
 				for {
@@ -208,10 +210,12 @@ func TestTransport_CloseContract(t *testing.T) {
 						}
 						return
 					}
+					firstRecv.Do(func() { close(received) })
 				}
 			})
 		}
-		time.Sleep(2 * time.Millisecond)
+		// Close once frames flow: Send and Recv are running.
+		<-received
 		wg.Go(func() { _ = recv.Close() })
 		wg.Go(func() { _ = send.Close() })
 		_ = recv.Close()
@@ -226,13 +230,5 @@ func TestTransport_CloseContract(t *testing.T) {
 		if err := send.Send(frame); !errors.Is(err, rsession.ErrClosed) {
 			t.Fatalf("Send after Close: %v", err)
 		}
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	for runtime.NumGoroutine() > before {
-		if time.Now().After(deadline) {
-			buf := make([]byte, 1<<20)
-			t.Fatalf("goroutine leak: %d before, %d after\n%s", before, runtime.NumGoroutine(), buf[:runtime.Stack(buf, true)])
-		}
-		time.Sleep(10 * time.Millisecond)
 	}
 }

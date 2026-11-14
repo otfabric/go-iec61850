@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/otfabric/go-mms"
@@ -520,18 +521,20 @@ func TestSpec_7_2_17_2_3_2_3_6_BuffersWhileDisabled(t *testing.T) {
 // TestSpec_7_2_17_2_2_16_ReplayPreservesTimeOfEntry: TimeOfEntry is the
 // creation time of the entry, also on replay (§17.2.3.2.2.9) (RPT-09).
 func TestSpec_7_2_17_2_2_16_ReplayPreservesTimeOfEntry(t *testing.T) {
-	srv, _ := newSpecServer(t)
-	ctx := context.Background()
-	before := time.Now().Truncate(time.Millisecond)
-	srv.SetValue(ctx, specModKey, mms.NewInteger(1))
-	after := time.Now()
-	time.Sleep(1100 * time.Millisecond)
-	c := dialLoopback(t, ctx, srv)
-	sub := subscribeRCB(t, c, "rpt_brcb01", specBRCB, true)
-	r := recvReport(t, sub)
-	if r.Timestamp.Before(before) || r.Timestamp.After(after) {
-		t.Errorf("TimeOfEntry = %v, want within [%v, %v]", r.Timestamp, before, after)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		srv, _ := newSpecServer(t)
+		ctx := context.Background()
+		before := time.Now().Truncate(time.Millisecond)
+		srv.SetValue(ctx, specModKey, mms.NewInteger(1))
+		after := time.Now()
+		time.Sleep(1100 * time.Millisecond) // fake time: the replay is more than a second later
+		c := dialLoopback(t, ctx, srv)
+		sub := subscribeRCB(t, c, "rpt_brcb01", specBRCB, true)
+		r := recvReport(t, sub)
+		if r.Timestamp.Before(before) || r.Timestamp.After(after) {
+			t.Errorf("TimeOfEntry = %v, want within [%v, %v]", r.Timestamp, before, after)
+		}
+	})
 }
 
 // TestSpec_7_2_17_2_3_2_3_6_ReplayThenLiveSqNumContiguous: buffered
@@ -733,32 +736,34 @@ func TestSpec_7_2_17_2_2_13_GI(t *testing.T) {
 // combined into one report; a second notification of the same member
 // sends the pending report first (RPT-14).
 func TestSpec_7_2_17_2_2_9_BufTmAggregates(t *testing.T) {
-	srv, _ := newSpecServer(t)
-	ctx := context.Background()
-	c := dialLoopback(t, ctx, srv)
-	if err := c.SetReportControlBlock(ctx, "LD1", specURCB, RCBUpdate{
-		Fields: RCBFieldDatSet | RCBFieldBufTm, DatSet: "LD1/LLN0$dsTwo", BufTm: 300,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	sub := subscribeRCB(t, c, "rpt_urcb01", specURCB, true)
-	srv.SetValue(ctx, specModKey, mms.NewInteger(1))
-	time.Sleep(20 * time.Millisecond)
-	srv.SetValue(ctx, specBehKey, mms.NewInteger(2))
-	r := recvReport(t, sub)
-	if len(r.Values) != 2 || !r.Inclusion[0] || !r.Inclusion[1] {
-		t.Fatalf("aggregated report inclusion = %v values = %d", r.Inclusion, len(r.Values))
-	}
-	expectNoReport(t, sub, 500*time.Millisecond)
-
-	srv.SetValue(ctx, specModKey, mms.NewInteger(3))
-	srv.SetValue(ctx, specModKey, mms.NewInteger(4))
-	for _, want := range []int64{3, 4} {
-		r := recvReport(t, sub)
-		if v, _ := r.Values[0].Int64(); v != want || len(r.Values) != 1 {
-			t.Errorf("report values = %v, want [%d]", r.Values, want)
+	synctest.Test(t, func(t *testing.T) {
+		srv, _ := newSpecServer(t)
+		ctx := context.Background()
+		c := dialLoopback(t, ctx, srv)
+		if err := c.SetReportControlBlock(ctx, "LD1", specURCB, RCBUpdate{
+			Fields: RCBFieldDatSet | RCBFieldBufTm, DatSet: "LD1/LLN0$dsTwo", BufTm: 300,
+		}); err != nil {
+			t.Fatal(err)
 		}
-	}
+		sub := subscribeRCB(t, c, "rpt_urcb01", specURCB, true)
+		srv.SetValue(ctx, specModKey, mms.NewInteger(1))
+		time.Sleep(20 * time.Millisecond) // fake time: within BufTm of 300 ms
+		srv.SetValue(ctx, specBehKey, mms.NewInteger(2))
+		r := recvReport(t, sub)
+		if len(r.Values) != 2 || !r.Inclusion[0] || !r.Inclusion[1] {
+			t.Fatalf("aggregated report inclusion = %v values = %d", r.Inclusion, len(r.Values))
+		}
+		expectNoReport(t, sub, 500*time.Millisecond)
+
+		srv.SetValue(ctx, specModKey, mms.NewInteger(3))
+		srv.SetValue(ctx, specModKey, mms.NewInteger(4))
+		for _, want := range []int64{3, 4} {
+			r := recvReport(t, sub)
+			if v, _ := r.Values[0].Int64(); v != want || len(r.Values) != 1 {
+				t.Errorf("report values = %v, want [%d]", r.Values, want)
+			}
+		}
+	})
 }
 
 // TestSpec_7_2_17_2_3_2_3_3_IntegrityBufferedWhileDisabled: integrity

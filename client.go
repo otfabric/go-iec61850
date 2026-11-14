@@ -14,18 +14,6 @@ import (
 	"github.com/otfabric/go-mms/transport/iso"
 )
 
-// Client is an IEC 61850 MMS client that wraps [mms.Client] with
-// IEC 61850 semantics.
-//
-// A Client is created via [Dial] (which establishes a new connection)
-// or [NewClient] (which wraps an existing [mms.Client]).
-//
-// Close is idempotent: calling it multiple times is safe.
-//
-// Concurrency: the Client is safe for concurrent use from multiple
-// goroutines. It synchronizes its own state (cache, subscriptions,
-// segmented report buffers, connection lifecycle) and delegates MMS
-// wire-level concurrency to the underlying [mms.Client].
 // clientState tracks the connection lifecycle.
 type clientState int
 
@@ -35,6 +23,23 @@ const (
 	clientClosed                     // fully shut down
 )
 
+// Client is an IEC 61850 MMS client that wraps [mms.Client] with
+// IEC 61850 semantics.
+//
+// A Client is created via [Dial] (which establishes a new connection)
+// or [NewClient] (which wraps an existing [mms.Client]).
+//
+// Close is idempotent: calling it multiple times is safe.
+//
+// When the association ends (the server concludes or aborts it, or the
+// connection is lost), [Client.Done] is closed, [Client.Err] says why,
+// and the report subscriptions are closed: their Reports channels are
+// closed. Requests then fail; a new association needs a new Client.
+//
+// Concurrency: the Client is safe for concurrent use from multiple
+// goroutines. It synchronizes its own state (cache, subscriptions,
+// segmented report buffers, connection lifecycle) and delegates MMS
+// wire-level concurrency to the underlying [mms.Client].
 type Client struct {
 	mu     sync.RWMutex
 	state  clientState
@@ -53,6 +58,11 @@ type Client struct {
 	reportOnce sync.Once
 	reportMu   sync.RWMutex
 	reportSubs map[string][]*ReportSubscription
+	// watchStop ends the goroutine that closes the subscriptions when the
+	// association ends; watchDone is closed when it has returned. Both
+	// are set with the first subscription (initReportDispatch).
+	watchStop chan struct{}
+	watchDone chan struct{}
 
 	// Control model reports (control_termination.go).
 	ctlMu      sync.Mutex
@@ -74,7 +84,9 @@ type Client struct {
 }
 
 // dialMMSOptions returns MMS dial options with Logger filled from the
-// IEC logger when MMS.Logger is unset (mirrors NewServer behaviour).
+// IEC logger when MMS.Logger is unset (mirrors NewServer behaviour). The
+// Metrics run under a recover, as those of a server: a call that does not
+// return normally is logged with its stack and loses that event.
 func dialMMSOptions(opts DialOptions, logger *slog.Logger) mms.DialOptions {
 	mmsOpts := opts.MMS
 	if mmsOpts.Logger == nil {
@@ -83,6 +95,7 @@ func dialMMSOptions(opts DialOptions, logger *slog.Logger) mms.DialOptions {
 	if mmsOpts.Metrics == nil {
 		mmsOpts.Metrics = opts.Metrics
 	}
+	mmsOpts.Metrics = guardMetrics(mmsOpts.Metrics, &callbackGuard{logger: logger})
 	return mmsOpts
 }
 
@@ -132,6 +145,7 @@ func Dial(ctx context.Context, addr string, opts DialOptions) (*Client, error) {
 		Cache:      opts.Cache,
 		IEDName:    opts.IEDName,
 		Clock:      opts.Clock,
+		FileLimits: opts.FileLimits,
 	}
 	var cache *modelCache
 	if copts.Cache != CacheNone {
@@ -200,8 +214,10 @@ func NewClient(mmsClient *mms.Client, opts ClientOptions) (*Client, error) {
 // subscription cleanup runs: every subscription is closed locally (its
 // Reports channel is closed), then the RCBs the subscriptions enabled
 // are disabled and the URCBs they reserved are released. The remote
-// cleanup ends when ctx ends, and after 5 seconds at the latest, so
-// Close returns also when the server does not answer.
+// cleanup ends when ctx ends, and after 5 seconds at the latest. The
+// Conclude of a client made by [Dial] ends the same way, after which the
+// connection is closed, so Close returns also when the server does not
+// answer.
 // Remote cleanup errors during this phase are logged at Debug level
 // because the connection may already be half-closed.
 //
@@ -217,6 +233,7 @@ func (c *Client) Close(ctx context.Context) error {
 
 	c.logger.Info("iec61850: closing")
 
+	c.stopAssociationWatch()
 	c.closeAllSubscriptions(ctx, true)
 	c.closeControlWaiters()
 
@@ -225,10 +242,18 @@ func (c *Client) Close(ctx context.Context) error {
 	c.mu.Unlock()
 
 	if c.ownsClient && c.mmsClient != nil {
-		return c.mmsClient.Close(ctx)
+		cctx, cancel := context.WithTimeout(ctx, closeConcludeTimeout)
+		defer cancel()
+		return c.mmsClient.Close(cctx)
 	}
 	return nil
 }
+
+// closeConcludeTimeout bounds the Conclude that [Client.Close] sends for a
+// client made by [Dial]: a server answers it once its outstanding
+// requests are answered, and one that does not is left with the
+// connection closed.
+const closeConcludeTimeout = 5 * time.Second
 
 // Abort performs a hard, immediate abort of the connection without
 // graceful shutdown. Use this for emergency teardown or protocol
@@ -255,6 +280,7 @@ func (c *Client) Abort(ctx context.Context) error {
 
 	c.logger.Info("iec61850: aborting")
 
+	c.stopAssociationWatch()
 	c.closeAllSubscriptions(ctx, false)
 	c.closeControlWaiters()
 
@@ -266,6 +292,66 @@ func (c *Client) Abort(ctx context.Context) error {
 		return c.mmsClient.Abort(ctx)
 	}
 	return nil
+}
+
+// Done returns a channel that is closed when the association of the
+// client has ended: after [Client.Close] or [Client.Abort] of a client
+// made by [Dial], when the server concludes or aborts the association, or
+// when the connection is lost. For a client made by [NewClient] it is the
+// association of the [mms.Client] it wraps ([mms.Client.Done]), which
+// Close and Abort of this Client do not end.
+//
+// When the association ends, the report subscriptions are closed (their
+// Reports channels are closed) as by Abort: nothing is sent.
+func (c *Client) Done() <-chan struct{} {
+	return c.mmsClient.Done()
+}
+
+// Err returns nil while the association is up. After [Client.Done] is
+// closed it returns why the association ended; the error matches
+// [ErrClosed] and [mms.ErrClosed] ([errors.Is]) and wraps the cause go-mms
+// reports ([mms.Client.Err]).
+func (c *Client) Err() error {
+	err := c.mmsClient.Err()
+	if err == nil {
+		return nil
+	}
+	return associationEndedError{err}
+}
+
+// associationEndedError is the error of [Client.Err]: it reads as the
+// go-mms error and also matches [ErrClosed].
+type associationEndedError struct{ err error }
+
+func (e associationEndedError) Error() string   { return "iec61850: association ended: " + e.err.Error() }
+func (e associationEndedError) Unwrap() []error { return []error{ErrClosed, e.err} }
+
+// watchAssociation runs from the first subscription until Close or Abort:
+// when the association ends, it closes the subscriptions locally (their
+// Reports channels are closed). It sends nothing: the association is
+// gone.
+func (c *Client) watchAssociation(stop <-chan struct{}, done chan<- struct{}) {
+	defer close(done)
+	select {
+	case <-c.mmsClient.Done():
+		c.logger.Info("iec61850: association ended, closing report subscriptions", "error", c.mmsClient.Err())
+		c.closeAllSubscriptions(context.Background(), false)
+	case <-stop:
+	}
+}
+
+// stopAssociationWatch ends the goroutine of watchAssociation, if it was
+// started, and waits for it.
+func (c *Client) stopAssociationWatch() {
+	c.reportMu.Lock()
+	stop, done := c.watchStop, c.watchDone
+	c.watchStop = nil
+	c.reportMu.Unlock()
+	if stop == nil {
+		return
+	}
+	close(stop)
+	<-done
 }
 
 // checkOpen returns [ErrClosed] if the client is closing or closed.

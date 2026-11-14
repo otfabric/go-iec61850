@@ -64,7 +64,7 @@ func newRCBWriteRecorder(t *testing.T) (*Client, *rcbWriteRecorder) {
 			t.Fatalf("register %s: %v", name, err)
 		}
 	}
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(ctx, serverT) }()
 	mmsClient, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
 	if err != nil {

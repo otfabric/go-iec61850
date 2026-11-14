@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"sync"
@@ -224,12 +225,45 @@ type SubscriptionConfig struct {
 
 	// Handler, when non-nil, is called for every event on a dedicated
 	// goroutine, in order. Otherwise events are read from
-	// [Subscription.Events].
+	// [Subscription.Events]. A call that does not return normally is
+	// recovered: it is logged at error level with its stack and counted
+	// in SubscriptionCounters.CallbacksRecovered, and the Handler is
+	// called with the next event.
 	Handler func(Event)
 
 	// QueueSize bounds the event queue (default 256). When full, events
 	// are dropped and counted in Supervision.DroppedEvents.
 	QueueSize int
+
+	// MaxStreams bounds the streams the subscription supervises; zero
+	// means [DefaultMaxStreams]. While the subscription supervises
+	// MaxStreams streams, a frame of a stream it has not seen is
+	// dropped: it is counted in SubscriptionCounters.StreamsRefused and
+	// reported to Metrics.FrameDropped with the reason "streams". A
+	// stream seen once keeps its entry until the subscription is closed;
+	// no stream is replaced by a new one.
+	MaxStreams int
+}
+
+// DefaultMaxStreams is the default of SubscriptionConfig.MaxStreams. A
+// subscription without filters (monitor mode) sees every GOOSE stream
+// of its network; the largest substations publish a few thousand
+// streams in all, so the default is above that, and it bounds the
+// supervision state a subscription keeps for streams it never asked for.
+const DefaultMaxStreams = 4096
+
+// SubscriptionCounters are the counters of a subscription as a whole;
+// [Supervision] has those of each stream.
+type SubscriptionCounters struct {
+	// StreamsRefused counts frames dropped because they belong to a
+	// stream not seen before while the subscription supervises
+	// MaxStreams streams.
+	StreamsRefused uint64
+
+	// CallbacksRecovered counts events whose Handler call did not
+	// return normally. Each is logged at error level with its stack;
+	// the Handler goes on receiving the following events.
+	CallbacksRecovered uint64
 }
 
 // SubscriberConfig configures a [Subscriber].
@@ -245,6 +279,11 @@ type SubscriberConfig struct {
 
 	// OnDecodeError, when non-nil, is called with frames that are not
 	// valid GOOSE (non-GOOSE EtherTypes are ignored silently).
+	//
+	// A call of OnDecodeError or of a Metrics method that does not
+	// return normally is recovered: it is logged at error level with its
+	// stack and counted in [Subscriber.CallbacksRecovered], and the
+	// subscriber goes on.
 	OnDecodeError func(raw []byte, err error)
 
 	// Now returns the current time; nil uses [time.Now].
@@ -262,6 +301,10 @@ type Subscriber struct {
 	mu     sync.RWMutex
 	subs   []*Subscription
 	closed bool
+
+	// recovered counts OnDecodeError and Metrics calls that did not
+	// return normally.
+	recovered atomic.Uint64
 }
 
 // NewSubscriber returns a subscriber reading from t. Call
@@ -279,8 +322,14 @@ func NewSubscriber(t Transport, cfg SubscriberConfig) (*Subscriber, error) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	return &Subscriber{t: t, cfg: cfg, logger: orDiscard(cfg.Logger), metrics: orNop(cfg.Metrics)}, nil
+	s := &Subscriber{t: t, cfg: cfg, logger: orDiscard(cfg.Logger)}
+	s.metrics = guardMetrics(cfg.Metrics, s.logger, &s.recovered)
+	return s, nil
 }
+
+// CallbacksRecovered returns the number of OnDecodeError and Metrics
+// calls of the subscriber that did not return normally.
+func (s *Subscriber) CallbacksRecovered() uint64 { return s.recovered.Load() }
 
 // Subscribe adds a subscription.
 func (s *Subscriber) Subscribe(cfg SubscriptionConfig) (*Subscription, error) {
@@ -289,6 +338,12 @@ func (s *Subscriber) Subscribe(cfg SubscriptionConfig) (*Subscription, error) {
 	}
 	if cfg.QueueSize == 0 {
 		cfg.QueueSize = 256
+	}
+	if cfg.MaxStreams < 0 {
+		return nil, configErr("MaxStreams", "negative")
+	}
+	if cfg.MaxStreams == 0 {
+		cfg.MaxStreams = DefaultMaxStreams
 	}
 	cfg.AppIDs = slices.Clone(cfg.AppIDs)
 	cfg.Members = slices.Clone(cfg.Members)
@@ -310,7 +365,7 @@ func (s *Subscriber) Subscribe(cfg SubscriptionConfig) (*Subscription, error) {
 		sub.wg.Go(func() {
 			sub.handlerID.Store(goid.ID())
 			for ev := range sub.events {
-				cfg.Handler(ev)
+				sub.callHandler(ev)
 			}
 		})
 	}
@@ -364,7 +419,7 @@ func (s *Subscriber) HandleFrameFrom(raw []byte, from netip.AddrPort) {
 		s.metrics.FrameDropped("decode")
 		s.logger.Debug("goose: decode failed", "error", err)
 		if s.cfg.OnDecodeError != nil {
-			s.cfg.OnDecodeError(raw, err)
+			s.callOnDecodeError(raw, err)
 		}
 		return
 	}
@@ -415,6 +470,12 @@ type Subscription struct {
 	mu      sync.Mutex
 	streams map[StreamKey]*stream
 	closed  bool
+	// refused counts frames of new streams dropped at MaxStreams;
+	// refusedLogged records that the first one was logged.
+	refused       uint64
+	refusedLogged bool
+	// recovered counts Handler calls that did not return normally.
+	recovered atomic.Uint64
 
 	events    chan Event
 	done      chan struct{}
@@ -459,6 +520,40 @@ func (sub *Subscription) Supervision() []Supervision {
 		return slices.Compare(a.Stream.Src[:], b.Stream.Src[:])
 	})
 	return out
+}
+
+// Counters returns the counters of the subscription as a whole.
+func (sub *Subscription) Counters() SubscriptionCounters {
+	sub.mu.Lock()
+	refused := sub.refused
+	sub.mu.Unlock()
+	return SubscriptionCounters{StreamsRefused: refused, CallbacksRecovered: sub.recovered.Load()}
+}
+
+// callHandler hands ev to the Handler. A call that does not return
+// normally is logged with its stack and counted; the next event is
+// handed to the Handler as usual.
+func (sub *Subscription) callHandler(ev Event) {
+	defer func() {
+		if r := recover(); r != nil {
+			sub.recovered.Add(1)
+			sub.s.logger.Error("goose: Handler callback recovered", "gocbRef", ev.State.Stream.GocbRef,
+				"kind", ev.Kind.String(), "value", r, "stack", string(debug.Stack()))
+		}
+	}()
+	sub.cfg.Handler(ev)
+}
+
+// callOnDecodeError calls OnDecodeError and recovers a call that does
+// not return normally.
+func (s *Subscriber) callOnDecodeError(raw []byte, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.recovered.Add(1)
+			s.logger.Error("goose: OnDecodeError callback recovered", "value", r, "stack", string(debug.Stack()))
+		}
+	}()
+	s.cfg.OnDecodeError(raw, err)
 }
 
 // Close removes the subscription, stops its timers and closes the event
@@ -550,6 +645,18 @@ func (sub *Subscription) process(f *Frame, now time.Time) {
 	key := StreamKey{Src: f.Src, AppID: f.AppID, GocbRef: f.PDU.GocbRef}
 	st := sub.streams[key]
 	if st == nil {
+		if len(sub.streams) >= sub.cfg.MaxStreams {
+			// No stream is replaced: the streams supervised keep
+			// their state, the frame of the new one is dropped.
+			sub.refused++
+			if !sub.refusedLogged {
+				sub.refusedLogged = true
+				sub.s.logger.Warn("goose: subscription supervises MaxStreams streams, frames of further streams are dropped",
+					"maxStreams", sub.cfg.MaxStreams, "gocbRef", key.GocbRef, "src", key.Src.String())
+			}
+			sub.s.metrics.FrameDropped("streams")
+			return
+		}
 		st = &stream{sup: Supervision{Stream: key, ConfRevNum: sub.cfg.ConfRev}}
 		sub.streams[key] = st
 	}

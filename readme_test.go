@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	iec61850 "github.com/otfabric/go-iec61850"
@@ -284,33 +285,36 @@ func TestREADMESnippetsRun(t *testing.T) {
 		t.Errorf("serve: %v", err)
 	}
 
-	run := func(name string, a, b func(context.Context) error) {
-		rctx, rcancel := context.WithTimeout(ctx, 300*time.Millisecond)
-		defer rcancel()
-		errs := make(chan error, 2)
-		go func() { errs <- a(rctx) }()
-		go func() { errs <- b(rctx) }()
-		for range 2 {
-			if err := <-errs; err != nil && !errors.Is(err, context.DeadlineExceeded) {
-				t.Errorf("%s: %v", name, err)
+	// GOOSE and SV run over Hubs in a synctest bubble: 300 ms of fake time.
+	synctest.Test(t, func(t *testing.T) {
+		run := func(name string, a, b func(context.Context) error) {
+			rctx, rcancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+			defer rcancel()
+			errs := make(chan error, 2)
+			go func() { errs <- a(rctx) }()
+			go func() { errs <- b(rctx) }()
+			for range 2 {
+				if err := <-errs; err != nil && !errors.Is(err, context.DeadlineExceeded) {
+					t.Errorf("%s: %v", name, err)
+				}
 			}
 		}
-	}
-	gh := goose.NewHub()
-	run("GOOSE",
-		func(ctx context.Context) error { return subscribeGOOSE(ctx, gh.NewPort(goose.MAC{}), doc) },
-		func(ctx context.Context) error {
-			time.Sleep(50 * time.Millisecond) // let the subscriber start
-			return publishGOOSE(ctx, gh.NewPort(goose.MAC{}), doc)
-		})
-	if gh.Stats().Delivered == 0 {
-		t.Error("GOOSE: nothing delivered")
-	}
-	sh := sv.NewHub()
-	run("SV",
-		func(ctx context.Context) error { return subscribeSV(ctx, sh.NewPort(sv.MAC{}), doc) },
-		func(ctx context.Context) error { return publishSV(ctx, sh.NewPort(sv.MAC{}), doc) })
-	if sh.Stats().Delivered < 100 {
-		t.Errorf("SV: %d frames delivered", sh.Stats().Delivered)
-	}
+		gh := goose.NewHub()
+		run("GOOSE",
+			func(ctx context.Context) error { return subscribeGOOSE(ctx, gh.NewPort(goose.MAC{}), doc) },
+			func(ctx context.Context) error {
+				synctest.Wait() // the subscriber waits for a frame
+				return publishGOOSE(ctx, gh.NewPort(goose.MAC{}), doc)
+			})
+		if gh.Stats().Delivered == 0 {
+			t.Error("GOOSE: nothing delivered")
+		}
+		sh := sv.NewHub()
+		run("SV",
+			func(ctx context.Context) error { return subscribeSV(ctx, sh.NewPort(sv.MAC{}), doc) },
+			func(ctx context.Context) error { return publishSV(ctx, sh.NewPort(sv.MAC{}), doc) })
+		if sh.Stats().Delivered < 100 {
+			t.Errorf("SV: %d frames delivered", sh.Stats().Delivered)
+		}
+	})
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/otfabric/go-mms"
@@ -601,39 +602,42 @@ func TestSubscriberOnlyStateChangesAndOverflow(t *testing.T) {
 
 func TestSubscriberTimeoutAndRecovery(t *testing.T) {
 	t.Parallel()
-	var mu sync.Mutex
-	var got []Event
-	h := newSubHarness(t, SubscriptionConfig{Handler: func(e Event) { mu.Lock(); got = append(got, e); mu.Unlock() }}, SubscriberConfig{})
-	h.feed(func(f *Frame) { f.PDU.TimeAllowedToLive = 20 })
-	waitFor(t, func() bool {
+	synctest.Test(t, func(t *testing.T) {
+		var mu sync.Mutex
+		var got []Event
+		h := newSubHarness(t, SubscriptionConfig{Handler: func(e Event) { mu.Lock(); got = append(got, e); mu.Unlock() }}, SubscriberConfig{})
+		h.feed(func(f *Frame) { f.PDU.TimeAllowedToLive = 20 })
+		waitFor(t, func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return len(got) >= 4
+		})
+		h.seq(2, 0)
+		waitFor(t, func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return len(got) >= 6
+		})
 		mu.Lock()
-		defer mu.Unlock()
-		return len(got) >= 4
+		k := kinds(got)
+		mu.Unlock()
+		if !eqKinds(k, EventSupervision, EventMessage, EventTimeout, EventSupervision, EventSupervision, EventMessage) {
+			t.Fatalf("events %v", k)
+		}
+		if got[3].State.Status != StatusTimeout || got[3].Frame != nil || got[4].State.Status != StatusOK {
+			t.Errorf("statuses %v %v", got[3].State.Status, got[4].State.Status)
+		}
+		if s := h.sub.Supervision()[0]; s.Timeouts != 1 {
+			t.Errorf("timeouts %d", s.Timeouts)
+		}
+		// TAL 0 disables supervision timer.
+		h.feed(func(f *Frame) { f.PDU.StNum = 3; f.PDU.TimeAllowedToLive = 0 })
+		time.Sleep(30 * time.Millisecond) // fake time: beyond the earlier TAL of 20 ms
+		synctest.Wait()
+		if s := h.sub.Supervision()[0]; s.Timeouts != 1 || s.Status != StatusOK {
+			t.Errorf("after TAL 0: %+v", s)
+		}
 	})
-	h.seq(2, 0)
-	waitFor(t, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return len(got) >= 6
-	})
-	mu.Lock()
-	k := kinds(got)
-	mu.Unlock()
-	if !eqKinds(k, EventSupervision, EventMessage, EventTimeout, EventSupervision, EventSupervision, EventMessage) {
-		t.Fatalf("events %v", k)
-	}
-	if got[3].State.Status != StatusTimeout || got[3].Frame != nil || got[4].State.Status != StatusOK {
-		t.Errorf("statuses %v %v", got[3].State.Status, got[4].State.Status)
-	}
-	if s := h.sub.Supervision()[0]; s.Timeouts != 1 {
-		t.Errorf("timeouts %d", s.Timeouts)
-	}
-	// TAL 0 disables supervision timer.
-	h.feed(func(f *Frame) { f.PDU.StNum = 3; f.PDU.TimeAllowedToLive = 0 })
-	time.Sleep(30 * time.Millisecond)
-	if s := h.sub.Supervision()[0]; s.Timeouts != 1 || s.Status != StatusOK {
-		t.Errorf("after TAL 0: %+v", s)
-	}
 }
 
 func waitFor(t *testing.T, cond func() bool) {

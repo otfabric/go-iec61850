@@ -171,7 +171,7 @@ func TestServerOptions_ConnectionHooks(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 
 	done := make(chan error, 1)
 	go func() {
@@ -240,7 +240,7 @@ func TestServer_IdentifyRoundTrip(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 
 	go func() {
 		_ = srv.Serve(ctx, serverT)
@@ -280,7 +280,7 @@ func TestServer_StatusRoundTrip(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 
 	go func() {
 		_ = srv.Serve(ctx, serverT)

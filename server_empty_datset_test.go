@@ -38,7 +38,7 @@ func TestServer_AllowEmptyReportDatSet(t *testing.T) {
 	srv.EnableReports()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(ctx, serverT) }()
 	mc, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
 	if err != nil {

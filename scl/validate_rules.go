@@ -12,21 +12,28 @@ import "fmt"
 // numeric attributes, whose absence cannot be told from their zero value.
 // A parsed document without a Header element is reported too
 // (missing-element, from [DocumentMetadata.HasHeader]); a model built in
-// code has no metadata and is not checked for it.
+// code has no metadata and is not checked for it. A name quoted in a
+// diagnostic is cut to [DefaultMaxDiagnosticName] bytes.
 func ValidateRequired(s *SCL) []Diagnostic {
+	sink := newDiagSink(0, DefaultMaxDiagnosticName)
+	validateRequiredInto(s, sink)
+	return sink.diags
+}
+
+// validateRequiredInto runs [ValidateRequired] into sink.
+func validateRequiredInto(s *SCL, sink *diagSink) {
 	if s == nil {
-		return nil
+		return
 	}
-	var diags []Diagnostic
 	if s.Metadata != nil && !s.Metadata.HasHeader {
-		diags = append(diags, Diagnostic{
+		sink.add(Diagnostic{
 			Severity: DiagError, Code: "missing-element", Path: "SCL",
 			Message: "SCL has no Header element (required by the SCL schema)",
 		})
 	}
 	need := func(path, elem, attr, value string) {
 		if value == "" {
-			diags = append(diags, Diagnostic{
+			sink.add(Diagnostic{
 				Severity: DiagError, Code: "missing-attribute", Path: path,
 				Message: fmt.Sprintf("%s has no %s (required by the SCL schema)", elem, attr),
 			})
@@ -34,7 +41,7 @@ func ValidateRequired(s *SCL) []Diagnostic {
 	}
 	at := func(name string, i int) string {
 		if name != "" {
-			return name
+			return sink.name(name)
 		}
 		return fmt.Sprintf("#%d", i+1)
 	}
@@ -114,7 +121,7 @@ func ValidateRequired(s *SCL) []Diagnostic {
 					lnBody(np, ln0)
 				}
 				for m, ln := range ld.LNs {
-					np := fmt.Sprintf("%s/LN[%s%s%s]", lp, ln.Prefix, at(ln.LNClass, m), ln.Inst)
+					np := fmt.Sprintf("%s/LN[%s%s%s]", lp, sink.name(ln.Prefix), at(ln.LNClass, m), sink.name(ln.Inst))
 					need(np, "LN", "lnClass", ln.LNClass)
 					need(np, "LN", "lnType", ln.LNType)
 					lnBody(np, &ln)
@@ -157,7 +164,6 @@ func ValidateRequired(s *SCL) []Diagnostic {
 	for i, et := range t.EnumTypes {
 		need("EnumType["+at(et.ID, i)+"]", "EnumType", "id", et.ID)
 	}
-	return diags
 }
 
 // ValidateKind reports content a document of the given kind must have
@@ -166,26 +172,32 @@ func ValidateRequired(s *SCL) []Diagnostic {
 // (vendor CIDs also carry their client IEDs, so CID is not limited); an
 // SSD specifies a substation. KindUnknown and KindSCD add nothing.
 func ValidateKind(s *SCL, kind DocumentKind) []Diagnostic {
+	sink := newDiagSink(0, DefaultMaxDiagnosticName)
+	validateKindInto(s, kind, sink)
+	return sink.diags
+}
+
+// validateKindInto runs [ValidateKind] into sink.
+func validateKindInto(s *SCL, kind DocumentKind, sink *diagSink) {
 	if s == nil {
-		return nil
+		return
 	}
-	var diags []Diagnostic
 	switch kind {
 	case KindICD, KindIID, KindCID:
 		if len(s.IEDs) == 0 {
-			diags = append(diags, Diagnostic{
+			sink.add(Diagnostic{
 				Severity: DiagError, Code: "kind-content", Path: "SCL",
 				Message: fmt.Sprintf("a %s file describes an IED, but this one has no IED section", kind),
 			})
 		} else if kind != KindCID && len(s.IEDs) > 1 {
-			diags = append(diags, Diagnostic{
+			sink.add(Diagnostic{
 				Severity: DiagWarning, Code: "kind-content", Path: "SCL",
 				Message: fmt.Sprintf("a %s file describes one IED, but this one has %d", kind, len(s.IEDs)),
 			})
 		}
 	case KindSSD:
 		if len(s.Substations) == 0 {
-			diags = append(diags, Diagnostic{
+			sink.add(Diagnostic{
 				Severity: DiagWarning, Code: "kind-content", Path: "SCL",
 				Message: "an SSD file specifies a substation, but this one has no Substation section",
 			})
@@ -193,5 +205,4 @@ func ValidateKind(s *SCL, kind DocumentKind) []Diagnostic {
 	case KindSCD, KindUnknown:
 		// An SCD may be any part of a system; an unknown kind has no rule.
 	}
-	return diags
 }

@@ -44,8 +44,11 @@ type FlatRow struct {
 	// (DO or SDO type not found), "unresolved-datype" (Struct DA or BDA
 	// whose DAType is missing) and "type-cycle" (an SDO or BDA that
 	// refers back to a type being expanded). Such a row is the stub of
-	// the branch that could not be expanded. Arrays (count attribute)
-	// are flattened as a single element; the count is not expanded.
+	// the branch that could not be expanded. "expansion-limit" marks
+	// the row where the expansion stopped at its limit
+	// ([FlattenOptions.MaxExpandedNodes]); no row follows it. Arrays
+	// (count attribute) are flattened as a single element; the count is
+	// not expanded.
 	Status string
 }
 
@@ -56,26 +59,55 @@ type FlatRow struct {
 // Type resolution uses the DataTypeTemplates to expand LNodeType →
 // DOType → DA/SDO chains. Attributes whose types cannot be resolved
 // are still emitted with available metadata.
+//
+// The expansion stops after [DefaultMaxExpandedNodes] nodes; the last
+// row then has the status "expansion-limit". [FlattenWithOptions] sets
+// another limit and reports it as a diagnostic.
 func Flatten(s *SCL) []FlatRow {
-	lntIndex := make(map[string]*LNodeType, len(s.DataTypeTemplates.LNodeTypes))
+	rows, _ := FlattenWithOptions(s, FlattenOptions{})
+	return rows
+}
+
+// FlattenOptions control [FlattenWithOptions].
+type FlattenOptions struct {
+	// MaxExpandedNodes is the number of nodes the expansion may
+	// produce; zero or less means [DefaultMaxExpandedNodes]. A node is
+	// one DO, SDO, DA or BDA at one place of the expanded model (a type
+	// referenced from n places counts n times), or the stub row of a
+	// branch that cannot be expanded.
+	MaxExpandedNodes int
+}
+
+// FlattenWithOptions is [Flatten] with options. When the expansion
+// reaches opts.MaxExpandedNodes it stops: the rows expanded so far are
+// returned, the last with the status "expansion-limit", together with
+// an error diagnostic with code "expansion-limit" that names the
+// logical node where the expansion stopped. The diagnostics are empty
+// otherwise.
+func FlattenWithOptions(s *SCL, opts FlattenOptions) ([]FlatRow, []Diagnostic) {
+	max := opts.MaxExpandedNodes
+	if max <= 0 {
+		max = DefaultMaxExpandedNodes
+	}
+	f := &flattener{
+		lntIndex: make(map[string]*LNodeType, len(s.DataTypeTemplates.LNodeTypes)),
+		dotIndex: make(map[string]*DOType, len(s.DataTypeTemplates.DOTypes)),
+		datIndex: make(map[string]*DAType, len(s.DataTypeTemplates.DATypes)),
+		left:     max,
+		max:      max,
+	}
 	for i := range s.DataTypeTemplates.LNodeTypes {
 		lnt := &s.DataTypeTemplates.LNodeTypes[i]
-		lntIndex[lnt.ID] = lnt
+		f.lntIndex[lnt.ID] = lnt
 	}
-
-	dotIndex := make(map[string]*DOType, len(s.DataTypeTemplates.DOTypes))
 	for i := range s.DataTypeTemplates.DOTypes {
 		dot := &s.DataTypeTemplates.DOTypes[i]
-		dotIndex[dot.ID] = dot
+		f.dotIndex[dot.ID] = dot
 	}
-
-	datIndex := make(map[string]*DAType, len(s.DataTypeTemplates.DATypes))
 	for i := range s.DataTypeTemplates.DATypes {
 		dat := &s.DataTypeTemplates.DATypes[i]
-		datIndex[dat.ID] = dat
+		f.datIndex[dat.ID] = dat
 	}
-
-	var rows []FlatRow
 
 	for _, ied := range s.IEDs {
 		for _, ap := range ied.AccessPoints {
@@ -83,148 +115,185 @@ func Flatten(s *SCL) []FlatRow {
 				continue
 			}
 			for _, ld := range ap.Server.LDevices {
-				flattenLD(&rows, ied.Name, ap.Name, ld, lntIndex, dotIndex, datIndex)
+				f.flattenLD(ied.Name, ap.Name, ld)
+				if f.stopped {
+					return f.rows, []Diagnostic{f.limitDiagnostic()}
+				}
 			}
 		}
 	}
 
-	return rows
+	return f.rows, nil
 }
 
-func flattenLD(rows *[]FlatRow, iedName, apName string, ld LDevice,
-	lntIndex map[string]*LNodeType, dotIndex map[string]*DOType, datIndex map[string]*DAType) {
+// flattener is the state of one [FlattenWithOptions] call.
+type flattener struct {
+	lntIndex map[string]*LNodeType
+	dotIndex map[string]*DOType
+	datIndex map[string]*DAType
+	rows     []FlatRow
 
+	left    int  // nodes the expansion may still produce
+	max     int  // the limit, for the diagnostic
+	stopped bool // the limit was reached; nothing more is expanded
+	at      FlatRow
+}
+
+// take counts one node and reports whether the expansion may go on.
+// When the limit is reached it appends the "expansion-limit" stub row
+// for row and stops the expansion.
+func (f *flattener) take(row FlatRow) bool {
+	if f.stopped {
+		return false
+	}
+	if f.left == 0 {
+		f.stopped = true
+		row.Status = "expansion-limit"
+		f.at = row
+		f.rows = append(f.rows, row)
+		return false
+	}
+	f.left--
+	return true
+}
+
+func (f *flattener) limitDiagnostic() Diagnostic {
+	sink := newDiagSink(1, DefaultMaxDiagnosticName)
+	return Diagnostic{
+		Severity: DiagError,
+		Code:     "expansion-limit",
+		Path:     fmt.Sprintf("IED[%s]/LD[%s]/LN[%s]", sink.name(f.at.IED), sink.name(f.at.LD), sink.name(f.at.LN)),
+		Message: fmt.Sprintf("%v: the type templates expand to more than %d nodes (FlattenOptions.MaxExpandedNodes); the rows end here",
+			ErrLimitExceeded, f.max),
+	}
+}
+
+func (f *flattener) flattenLD(iedName, apName string, ld LDevice) {
 	if ld.LN0 != nil {
-		flattenLN(rows, iedName, apName, ld.Inst, *ld.LN0, lntIndex, dotIndex, datIndex)
+		f.flattenLN(iedName, apName, ld.Inst, *ld.LN0)
 	}
 	for _, ln := range ld.LNs {
-		flattenLN(rows, iedName, apName, ld.Inst, ln, lntIndex, dotIndex, datIndex)
+		if f.stopped {
+			return
+		}
+		f.flattenLN(iedName, apName, ld.Inst, ln)
 	}
 }
 
-func flattenLN(rows *[]FlatRow, iedName, apName, ldInst string, ln LN,
-	lntIndex map[string]*LNodeType, dotIndex map[string]*DOType, datIndex map[string]*DAType) {
-
+func (f *flattener) flattenLN(iedName, apName, ldInst string, ln LN) {
 	lnName := ln.Prefix + ln.LNClass + ln.Inst
+	base := FlatRow{IED: iedName, AccessPoint: apName, LD: ldInst, LN: lnName}
 
-	lnt, ok := lntIndex[ln.LNType]
+	lnt, ok := f.lntIndex[ln.LNType]
 	if !ok {
-		*rows = append(*rows, FlatRow{
-			IED: iedName, AccessPoint: apName,
-			LD: ldInst, LN: lnName,
-			Status: "unresolved-lntype",
-		})
+		if f.take(base) {
+			row := base
+			row.Status = "unresolved-lntype"
+			f.rows = append(f.rows, row)
+		}
 		return
 	}
 
 	for _, do := range lnt.DOs {
-		dot, ok := dotIndex[do.Type]
+		row := base
+		row.Path, row.Desc = do.Name, do.Desc
+		if !f.take(row) {
+			return
+		}
+		dot, ok := f.dotIndex[do.Type]
 		if !ok {
-			*rows = append(*rows, FlatRow{
-				IED: iedName, AccessPoint: apName,
-				LD: ldInst, LN: lnName,
-				Path: do.Name, Desc: do.Desc,
-				Status: "unresolved-dotype",
-			})
+			row.Status = "unresolved-dotype"
+			f.rows = append(f.rows, row)
 			continue
 		}
 
-		flattenDOType(rows, iedName, apName, ldInst, lnName, do.Name, dot, dotIndex, datIndex)
+		visited := map[string]bool{dot.ID: true}
+		f.flattenDOTypeRec(base, do.Name, dot, visited)
 	}
 }
 
-func flattenDOType(rows *[]FlatRow, iedName, apName, ldInst, lnName, prefix string,
-	dot *DOType, dotIndex map[string]*DOType, datIndex map[string]*DAType) {
-
-	visited := map[string]bool{dot.ID: true}
-	flattenDOTypeRec(rows, iedName, apName, ldInst, lnName, prefix, dot, dotIndex, datIndex, visited)
-}
-
-func flattenDOTypeRec(rows *[]FlatRow, iedName, apName, ldInst, lnName, prefix string,
-	dot *DOType, dotIndex map[string]*DOType, datIndex map[string]*DAType, visitedDO map[string]bool) {
-
+func (f *flattener) flattenDOTypeRec(base FlatRow, prefix string, dot *DOType, visitedDO map[string]bool) {
 	for _, da := range dot.DAs {
-		flattenDA(rows, iedName, apName, ldInst, lnName, prefix, da, dot.CDC, datIndex)
+		f.flattenDA(base, prefix, da, dot.CDC)
+		if f.stopped {
+			return
+		}
 	}
 
 	for _, sdo := range dot.SDOs {
-		row := FlatRow{
-			IED: iedName, AccessPoint: apName,
-			LD: ldInst, LN: lnName,
-			Path: prefix + "." + sdo.Name, Desc: sdo.Desc,
+		row := base
+		row.Path, row.Desc = prefix+"."+sdo.Name, sdo.Desc
+		if !f.take(row) {
+			return
 		}
 		if visitedDO[sdo.Type] {
 			row.Status = "type-cycle"
-			*rows = append(*rows, row)
+			f.rows = append(f.rows, row)
 			continue
 		}
-		subDOT, ok := dotIndex[sdo.Type]
+		subDOT, ok := f.dotIndex[sdo.Type]
 		if !ok {
 			row.Status = "unresolved-dotype"
-			*rows = append(*rows, row)
+			f.rows = append(f.rows, row)
 			continue
 		}
 		visitedDO[sdo.Type] = true
-		flattenDOTypeRec(rows, iedName, apName, ldInst, lnName, prefix+"."+sdo.Name, subDOT, dotIndex, datIndex, visitedDO)
+		f.flattenDOTypeRec(base, prefix+"."+sdo.Name, subDOT, visitedDO)
 		delete(visitedDO, sdo.Type)
+		if f.stopped {
+			return
+		}
 	}
 }
 
-func flattenDA(rows *[]FlatRow, iedName, apName, ldInst, lnName, prefix string,
-	da DA, cdc string, datIndex map[string]*DAType) {
+func (f *flattener) flattenDA(base FlatRow, prefix string, da DA, cdc string) {
+	row := base
+	row.Path, row.FC, row.BType, row.CDC, row.Desc = prefix+"."+da.Name, da.FC, da.BType, cdc, da.Desc
+	if !f.take(row) {
+		return
+	}
 
-	path := prefix + "." + da.Name
-
-	status := ""
 	if da.BType == "Struct" {
-		dat, ok := datIndex[da.Type]
+		dat, ok := f.datIndex[da.Type]
 		if ok {
 			visited := make(map[string]bool)
 			visited[da.Type] = true
-			flattenDATypeRec(rows, iedName, apName, ldInst, lnName, path, da.FC, cdc, dat, datIndex, visited)
+			f.flattenDATypeRec(base, row.Path, da.FC, cdc, dat, visited)
 			return
 		}
-		status = "unresolved-datype"
+		row.Status = "unresolved-datype"
 	}
 
-	*rows = append(*rows, FlatRow{
-		IED: iedName, AccessPoint: apName,
-		LD: ldInst, LN: lnName,
-		Path: path, FC: da.FC,
-		BType: da.BType, CDC: cdc,
-		Desc: da.Desc, Status: status,
-	})
+	f.rows = append(f.rows, row)
 }
 
-func flattenDATypeRec(rows *[]FlatRow, iedName, apName, ldInst, lnName, prefix, fc, cdc string,
-	dat *DAType, datIndex map[string]*DAType, visitedDA map[string]bool) {
-
+func (f *flattener) flattenDATypeRec(base FlatRow, prefix, fc, cdc string, dat *DAType, visitedDA map[string]bool) {
 	for _, bda := range dat.BDAs {
-		path := prefix + "." + bda.Name
+		row := base
+		row.Path, row.FC, row.BType, row.CDC, row.Desc = prefix+"."+bda.Name, fc, bda.BType, cdc, bda.Desc
+		if !f.take(row) {
+			return
+		}
 
-		status := ""
 		if bda.BType == "Struct" {
-			subDAT, ok := datIndex[bda.Type]
+			subDAT, ok := f.datIndex[bda.Type]
 			switch {
 			case visitedDA[bda.Type]:
-				status = "type-cycle"
+				row.Status = "type-cycle"
 			case ok:
 				visitedDA[bda.Type] = true
-				flattenDATypeRec(rows, iedName, apName, ldInst, lnName, path, fc, cdc, subDAT, datIndex, visitedDA)
+				f.flattenDATypeRec(base, row.Path, fc, cdc, subDAT, visitedDA)
 				delete(visitedDA, bda.Type)
+				if f.stopped {
+					return
+				}
 				continue
 			default:
-				status = "unresolved-datype"
+				row.Status = "unresolved-datype"
 			}
 		}
 
-		*rows = append(*rows, FlatRow{
-			IED: iedName, AccessPoint: apName,
-			LD: ldInst, LN: lnName,
-			Path: path, FC: fc,
-			BType: bda.BType, CDC: cdc,
-			Desc: bda.Desc, Status: status,
-		})
+		f.rows = append(f.rows, row)
 	}
 }
 

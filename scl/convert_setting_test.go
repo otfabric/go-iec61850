@@ -16,50 +16,51 @@ import (
 // Before the fix numOfSGs="256" became 0 and actSG="257" became 1
 // without any diagnostic.
 func TestConvSettingControlBounds(t *testing.T) {
-	var diags []Diagnostic
-	sc := convSettingControl(255, 255, math.MaxUint16, &diags)
-	if len(diags) != 0 || sc.NumOfSGs != 255 || sc.ActSG != 255 || sc.ResvTms != math.MaxUint16 {
-		t.Fatalf("max values: %+v %v", sc, diags)
+	sink := newDiagSink(0, 0)
+	sc := convSettingControl(255, 255, math.MaxUint16, sink)
+	if len(sink.diags) != 0 || sc.NumOfSGs != 255 || sc.ActSG != 255 || sc.ResvTms != math.MaxUint16 {
+		t.Fatalf("max values: %+v %v", sc, sink.diags)
 	}
-	sc = convSettingControl(256, 257, 5, &diags)
+	sc = convSettingControl(256, 257, 5, sink)
 	if sc.NumOfSGs != 0 || sc.ActSG != 0 || sc.ResvTms != 5 {
 		t.Errorf("out of range values not left zero: %+v", sc)
 	}
-	if len(diags) != 2 {
-		t.Fatalf("diagnostics: %v", diags)
+	if len(sink.diags) != 2 {
+		t.Fatalf("diagnostics: %v", sink.diags)
 	}
 	for i, attr := range []string{"numOfSGs", "actSG"} {
-		d := diags[i]
+		d := sink.diags[i]
 		if d.Severity != DiagError || d.Code != "invalid-setting-control" || d.Path != "LN0.SettingControl@"+attr {
 			t.Errorf("diag %d: %+v", i, d)
 		}
 	}
-	diags = nil
-	convSettingControl(math.MaxUint32, 1, 0, &diags)
-	if len(diags) != 1 {
-		t.Errorf("max uint32: %v", diags)
+	sink = newDiagSink(0, 0)
+	convSettingControl(math.MaxUint32, 1, 0, sink)
+	if len(sink.diags) != 1 {
+		t.Errorf("max uint32: %v", sink.diags)
 	}
 }
 
 // TestConvLN0SettingControlRange runs every schema version's LN0
 // converter with an out-of-range numOfSGs.
 func TestConvLN0SettingControlRange(t *testing.T) {
-	for name, conv := range map[string]func(*[]Diagnostic) LN{
-		"v17": func(d *[]Diagnostic) LN {
+	for name, conv := range map[string]func(*diagSink) LN{
+		"v17": func(d *diagSink) LN {
 			return convLN017(raw17.LN0{LnClass: "LLN0", SettingControl: &raw17.SettingControl{NumOfSGs: 256, ActSG: 1}}, d)
 		},
-		"2007B": func(d *[]Diagnostic) LN {
+		"2007B": func(d *diagSink) LN {
 			return convLN0B(rawb.LN0{LnClass: "LLN0", SettingControl: &rawb.SettingControl{NumOfSGs: 256, ActSG: 1, ResvTms: 9}}, d)
 		},
-		"2007B4": func(d *[]Diagnostic) LN {
+		"2007B4": func(d *diagSink) LN {
 			return convLN0B4(rawb4.LN0{LnClass: "LLN0", SettingControl: &rawb4.SettingControl{NumOfSGs: 256, ActSG: 1, ResvTms: 9}}, d)
 		},
-		"2007C5": func(d *[]Diagnostic) LN {
+		"2007C5": func(d *diagSink) LN {
 			return convLN02007c5(rawc5.LN0{LnClass: "LLN0", SettingControl: &rawc5.SettingControl{NumOfSGs: 256, ActSG: 1, ResvTms: 9}}, d)
 		},
 	} {
-		var diags []Diagnostic
-		ln := conv(&diags)
+		sink := newDiagSink(0, 0)
+		ln := conv(sink)
+		diags := sink.diags
 		if ln.SettingControl == nil || ln.SettingControl.NumOfSGs != 0 || ln.SettingControl.ActSG != 1 {
 			t.Errorf("%s: %+v", name, ln.SettingControl)
 		}

@@ -8,9 +8,12 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/otfabric/go-mms"
+
+	"github.com/otfabric/go-iec61850/internal/leakcheck"
 )
 
 // --- Type tests ---
@@ -274,7 +277,7 @@ func setupRCBLoopback(t *testing.T) (*Client, *sync.Mutex, map[string]*mms.Value
 	registerAttrs("LLN0$BR$brcb01", brcbAttrs)
 	registerAttrs("LLN0$RP$urcb01", urcbAttrs)
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() {
 		_ = srv.Serve(ctx, serverT)
 	}()
@@ -659,7 +662,7 @@ func setupReportLoopback(t *testing.T) (*Client, *mms.Server) {
 		t.Fatalf("register domain: %v", err)
 	}
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() {
 		_ = srv.Serve(ctx, serverT)
 	}()
@@ -1128,16 +1131,20 @@ func TestSubscribeReport_OverflowCallback(t *testing.T) {
 	client, srv := setupReportLoopback(t)
 	ctx := context.Background()
 
-	var callbackCount int
-	var callbackMu sync.Mutex
-
+	// The value of each report is its index.
+	index := func(ri *ReportIndication) uint64 {
+		if len(ri.Values) != 1 {
+			return 99
+		}
+		n, _ := ri.Values[0].Uint64()
+		return n
+	}
+	overflowed := make(chan uint64, 8)
 	sub, err := client.SubscribeReport(ctx, "cbRpt", SubscribeReportOptions{
 		QueueSize:      1,
 		OverflowPolicy: OverflowCallback,
-		OnOverflow: func(_ *ReportIndication) {
-			callbackMu.Lock()
-			callbackCount++
-			callbackMu.Unlock()
+		OnOverflow: func(ri *ReportIndication) {
+			overflowed <- index(ri)
 		},
 	})
 	if err != nil {
@@ -1161,13 +1168,21 @@ func TestSubscribeReport_OverflowCallback(t *testing.T) {
 		})
 	}
 
-	time.Sleep(200 * time.Millisecond)
-
-	callbackMu.Lock()
-	if callbackCount == 0 {
-		t.Log("no overflow callbacks (timing dependent)")
+	// Nobody reads Reports: report 0 fills the queue of one, reports 1 to
+	// 4 overflow, in order.
+	for want := uint64(1); want <= 4; want++ {
+		select {
+		case got := <-overflowed:
+			if got != want {
+				t.Fatalf("OnOverflow with report %d, want %d", got, want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("OnOverflow not called for report %d", want)
+		}
 	}
-	callbackMu.Unlock()
+	if ri := <-sub.Reports(); index(ri) != 0 {
+		t.Errorf("queued report %d, want 0", index(ri))
+	}
 }
 
 // --- Report timestamp decode tests ---
@@ -1788,8 +1803,9 @@ func TestOverflowBlock_CloseDoesNotPanic(t *testing.T) {
 		sub.deliver(&ReportIndication{RptID: "rptBlock"}, discardLogger())
 	}()
 
-	// Give the goroutine time to start blocking.
-	time.Sleep(10 * time.Millisecond)
+	if !leakcheck.WaitBlocked("iec61850.(*ReportSubscription).deliver", 5*time.Second) {
+		t.Fatal("deliver did not block on the full queue")
+	}
 
 	// Close must unblock the sender without panicking.
 	if err := sub.Close(); err != nil {
@@ -1932,27 +1948,35 @@ func TestSetRCBBufMax(t *testing.T) {
 // TestSenderLoop_NothingToSend verifies that the delivery goroutine
 // with no entries to send idles and ends when its session stops.
 func TestSenderLoop_NothingToSend(t *testing.T) {
-	re := &ReportEngine{logger: discardLogger(), stopCh: make(chan struct{})}
-	var sc mms.ServerConn
-	rt := &rcbRuntime{rcbItemID: "LLN0$BR$brcb01", buffered: true, buf: NewMemoryReportBuffer(0, 0)}
-	stop, wake := make(chan struct{}), make(chan struct{}, 1)
-	rt.sendStop = stop
-	rt.enabled = true
-	wake <- struct{}{}
+	synctest.Test(t, func(t *testing.T) {
+		re := &ReportEngine{logger: discardLogger(), stopCh: make(chan struct{})}
+		var sc mms.ServerConn
+		rt := &rcbRuntime{rcbItemID: "LLN0$BR$brcb01", buffered: true, buf: NewMemoryReportBuffer(0, 0)}
+		stop, wake := make(chan struct{}), make(chan struct{}, 1)
+		rt.sendStop = stop
+		rt.enabled = true
+		wake <- struct{}{}
 
-	done := make(chan struct{})
-	re.wg.Add(1)
-	go func() {
-		defer close(done)
-		re.senderLoop(rt, &sc, nil, stop, wake)
-	}()
-	time.Sleep(50 * time.Millisecond)
-	close(stop)
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("senderLoop did not end after its session stopped")
-	}
+		done := make(chan struct{})
+		re.wg.Add(1)
+		go func() {
+			defer close(done)
+			re.senderLoop(rt, &sc, nil, stop, wake)
+		}()
+		synctest.Wait() // the loop has taken the wake-up, found nothing and waits
+		select {
+		case <-done:
+			t.Fatal("senderLoop ended while its session runs")
+		default:
+		}
+		close(stop)
+		synctest.Wait()
+		select {
+		case <-done:
+		default:
+			t.Fatal("senderLoop did not end after its session stopped")
+		}
+	})
 }
 
 // countingBuffer is a ReportBuffer that is not a MemoryReportBuffer.

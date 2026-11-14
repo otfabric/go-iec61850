@@ -42,7 +42,7 @@ returns false for all levels, so log arguments are never evaluated.
 | `Debug` | Detailed protocol flow: MMS requests/responses, cache hits/misses, report decoding steps, browse tree construction, dataset reads, file operations |
 | `Info` | Lifecycle events: connection established, subscription created, server started, control operations completed, setting group changes |
 | `Warn` | Recoverable issues: report overflow (dropped), best-effort cleanup failures, unexpected server behavior, journal overflow |
-| `Error` | Failures that affect correctness: decode errors, registration failures, control rejections |
+| `Error` | Failures that affect correctness: decode errors, registration failures, control rejections, and every call of application code that did not return normally (with its stack) |
 
 ### Structured attributes
 
@@ -58,6 +58,8 @@ level=WARN msg="iec61850: dial failed, retrying" addr=10.0.0.1:102 attempt=1 bac
 level=INFO msg="goose: subscription created" gocbRef=IED1LD0/LLN0$GO$gcb1 dst=01:0c:cd:01:00:01 appIDs=[1]
 level=WARN msg="goose: timeAllowedToLive expired" gocbRef=IED1LD0/LLN0$GO$gcb1 src=00:11:22:33:44:55
 level=WARN msg="sv: publisher behind schedule, samples skipped" skipped=3
+level=ERROR msg="iec61850: callback did not return normally" callback=FileProvider.Open value=... stack="goroutine 42 [running]: ..."
+level=WARN msg="iec61850: connection refused: MaxConnections served" max=1024
 ```
 
 Messages are prefixed with the package (`iec61850:`, `goose:`, `sv:`,
@@ -113,7 +115,7 @@ implementation (`PublisherConfig.Metrics`, `SubscriberConfig.Metrics`,
 | `FrameSent(gocbRef, retransmission)` | a frame was put on the wire |
 | `SendError(gocbRef, err)` | the transport rejected a frame |
 | `FrameReceived(gocbRef)` | a GOOSE frame was decoded |
-| `FrameDropped(reason)` | a frame was dropped: `decode`, `simulation`, `filtered` |
+| `FrameDropped(reason)` | a frame was dropped: `decode`, `simulation`, `filtered`, `streams` (a subscription at `MaxStreams` dropped a frame of a new stream) |
 | `Event(gocbRef, kind, dropped)` | a subscription event was produced (dropped when the queue was full) |
 
 Sampled Values publishers and subscribers report to an `sv.Metrics`
@@ -125,7 +127,7 @@ Sampled Values publishers and subscribers report to an `sv.Metrics`
 | `FrameSent(svID, asdus)` | a frame with `asdus` samples was put on the wire |
 | `SendError(svID, err)` | the transport rejected a frame |
 | `ASDUReceived(svID)` | an ASDU was decoded and accepted |
-| `FrameDropped(reason)` | a frame was dropped: `decode`, `simulation`, `filtered` |
+| `FrameDropped(reason)` | a frame was dropped: `decode`, `simulation`, `filtered`, `streams` (a subscription at `MaxStreams` dropped an ASDU of a new stream) |
 | `Event(svID, kind, dropped)` | a subscription event was produced (dropped when the queue was full) |
 
 Embed `goose.NopMetrics` (or `sv.NopMetrics`) to implement a subset; a nil `Metrics` costs
@@ -143,6 +145,30 @@ confirmed request with service, duration and error, `ObserveConnection`
 when an association is established, rejected or ends. Embed
 `mms.NopMetrics` to implement a subset. Dial retries are logged at Warn
 (`iec61850: dial failed, retrying` with `addr`, `attempt`, `backoff`, `error`).
+
+### Counters
+
+| Snapshot | Counts |
+|----------|--------|
+| `Server.Stats()` | `Connections` served by `ListenAndServe` now, `ConnectionsRefused` beyond `MaxConnections`, `CallbacksRecovered` (server hooks, providers, handlers and metrics that did not return normally) |
+| `ReportSubscription.Stats()` | `ReportsDropped` (queue full), `PartialReportsDropped` (segmented reports given up: `MaxSegmentBytes`, `SegmentTimeout`, 65536 segments, interrupted), `CallbacksRecovered` (`OnOverflow`) |
+| `goose.Subscription.Counters()`, `sv.Subscription.Counters()` | `StreamsRefused` (beyond `MaxStreams`), `CallbacksRecovered` (`Handler`, `OnASDU`) |
+| `goose.Subscriber.CallbacksRecovered()`, `sv.Subscriber.CallbacksRecovered()` | `OnDecodeError` and `Metrics` calls that did not return normally |
+| `rsession.Transport.Stats()` | `NotAllowed` (sender outside `AllowedSenders`) and `CallbacksRecovered` (`OnReject`, `KeyProvider`), with the other refusals |
+
+## Application code that does not return normally
+
+The library calls application code under a recover on its own goroutines
+and those of go-mms: server hooks, providers, handlers and `Metrics`,
+`OnOverflow`, the GOOSE `Handler`, `OnASDU`, `OnDecodeError`, subscriber
+and publisher `Metrics`, `rsession` `OnReject` and `KeyProvider`. A call
+that does not return normally is logged at error level with the value
+it ended with (`value`) and its `stack` (the server and client also name
+the `callback`, the GOOSE and SV metrics guards the `hook`), and counted
+in the snapshots above. The request is answered with the
+service's error, or the frame is dropped; the connection, the
+subscription and the process go on. A `slog.Handler` given as `Logger`
+is called as it is.
 
 ## Tracing
 

@@ -256,10 +256,19 @@ func TestDialRetry(t *testing.T) {
 	addr := l.Addr().String()
 	_ = l.Close()
 
+	// The server starts listening once the first attempt has failed.
 	srv := newChaosServer(t)
 	ctx := t.Context()
+	firstRetry := make(chan struct{})
+	var once sync.Once
+	served := make(chan struct{})
 	go func() {
-		time.Sleep(150 * time.Millisecond)
+		defer close(served)
+		select {
+		case <-firstRetry:
+		case <-ctx.Done():
+			return
+		}
 		ln, err := iso.Listen(addr)
 		if err != nil {
 			t.Errorf("listen: %v", err)
@@ -267,12 +276,16 @@ func TestDialRetry(t *testing.T) {
 		}
 		_ = srv.ListenAndServe(ctx, ln)
 	}()
+	t.Cleanup(func() { <-served }) // t.Context ends before the cleanups run
 	dctx, dcancel := context.WithTimeout(ctx, 5*time.Second)
 	defer dcancel()
 	var retries atomic.Int32
 	c, err := Dial(dctx, addr, DialOptions{Retry: mms.RetryPolicy{
 		MaxAttempts: 20, InitialBackoff: 20 * time.Millisecond, MaxBackoff: 100 * time.Millisecond,
-		OnRetry: func(int, error, time.Duration) { retries.Add(1) },
+		OnRetry: func(int, error, time.Duration) {
+			retries.Add(1)
+			once.Do(func() { close(firstRetry) })
+		},
 	}})
 	if err != nil {
 		t.Fatalf("dial with retry: %v", err)

@@ -12,7 +12,59 @@ SCL is an XML schema defined in IEC 61850-6 used to describe the configuration o
 
 This package parses SCD, ICD, CID, and IID file formats into a Go-native model that can be queried, flattened for CLI/CSV output, or used for runtime validation against a live server.
 
+## Constants
+
+```go
+const (
+	// DefaultMaxBytes is the largest document [ParseBytes],
+	// [ParseFileOpts], [Parse] and [ParseWithOptions] read: 1 GiB.
+	// Substation configuration documents are a few hundred megabytes
+	// at the most.
+	DefaultMaxBytes int64 = 1 << 30
+
+	// DefaultMaxDepth is the deepest element nesting a document may
+	// have, the root element being at depth 1, and also for content
+	// that is skipped (unknown elements, the content of Private): 1024.
+	// The SCL schema nests its elements about a dozen levels deep.
+	DefaultMaxDepth = 1024
+
+	// DefaultMaxExpandedNodes is the number of data object and data
+	// attribute instances (DO, SDO, DA and BDA, each counted once per
+	// place in the model it is expanded to) one expansion of the type
+	// templates of a document may produce: 33,554,432. The vendor
+	// documents of the test data expand to at most 20 nodes per KiB of
+	// XML and to about 32,000 nodes for their largest IED; this is more
+	// than a document of [DefaultMaxBytes] gives at that density, and
+	// more than a thousand such IEDs.
+	DefaultMaxExpandedNodes = 1 << 25
+
+	// DefaultMaxDiagnosticName is the longest name, in bytes, that a
+	// diagnostic quotes from the document; a longer one is cut at a
+	// character boundary and ends with "…". Names of the SCL schema
+	// are at most 64 characters long.
+	DefaultMaxDiagnosticName = 256
+)
+```
+
+Defaults of the limits of [ParseOptions](#type-parseoptions) and [FlattenOptions](#type-flattenoptions). Each applies when its option is zero; an option raises or lowers it.
+
+## Variables
+
+```go
+var ErrLimitExceeded = errors.New("scl: limit exceeded")
+```
+
+ErrLimitExceeded is wrapped by the error of a parse whose document goes beyond a limit of [ParseOptions](#type-parseoptions) ([ParseOptions.MaxBytes](#func-parseoptions-maxbytes), [ParseOptions.MaxDepth](#func-parseoptions-maxdepth)), and by the error or diagnostic of a type expansion that goes beyond DefaultMaxExpandedNodes or the limit given in its options ([FlattenOptions.MaxExpandedNodes](#func-flattenoptions-maxexpandednodes)). Test it with [errors.Is](https://pkg.go.dev/errors#Is). SECURITY.md lists every limit and its default.
+
 ## Functions
+
+### func FlattenWithOptions
+
+```go
+func FlattenWithOptions(s *SCL, opts FlattenOptions) ([]FlatRow, []Diagnostic)
+```
+
+FlattenWithOptions is [Flatten](#func-flatten) with options. When the expansion reaches opts.MaxExpandedNodes it stops: the rows expanded so far are returned, the last with the status "expansion-limit", together with an error diagnostic with code "expansion-limit" that names the logical node where the expansion stopped. The diagnostics are empty otherwise.
 
 ### func Generate
 
@@ -372,6 +424,8 @@ Validate performs semantic validation on an SCL model beyond basic parsing. It c
 
 Deprecated: Use \[validate.All] from the scl/validate package for pass-based validation with a shared index. This function is kept for convenience but may not cover all checks that the pass-based validator provides.
 
+A name quoted in a diagnostic is cut to DefaultMaxDiagnosticName bytes.
+
 #### func ValidateKind
 
 ```go
@@ -386,7 +440,7 @@ ValidateKind reports content a document of the given kind must have (IEC 61850-6
 func ValidateRequired(s *SCL) []Diagnostic
 ```
 
-ValidateRequired reports required attributes that are missing or empty. The attributes are those the IEC 61850-6 SCL schemas (specs/, 2007B4) declare use="required" with a type that cannot be empty (tName, tID, a pattern requiring a first character, an enumeration). Left out: Header id (xs:normalizedString, may be empty), LN inst (empty on LN0) and numeric attributes, whose absence cannot be told from their zero value. A parsed document without a Header element is reported too (missing-element, from [DocumentMetadata.HasHeader](#func-documentmetadata-hasheader)); a model built in code has no metadata and is not checked for it.
+ValidateRequired reports required attributes that are missing or empty. The attributes are those the IEC 61850-6 SCL schemas (specs/, 2007B4) declare use="required" with a type that cannot be empty (tName, tID, a pattern requiring a first character, an enumeration). Left out: Header id (xs:normalizedString, may be empty), LN inst (empty on LN0) and numeric attributes, whose absence cannot be told from their zero value. A parsed document without a Header element is reported too (missing-element, from [DocumentMetadata.HasHeader](#func-documentmetadata-hasheader)); a model built in code has no metadata and is not checked for it. A name quoted in a diagnostic is cut to DefaultMaxDiagnosticName bytes.
 
 ### type DocumentKind
 
@@ -526,8 +580,11 @@ type FlatRow struct {
 	// (DO or SDO type not found), "unresolved-datype" (Struct DA or BDA
 	// whose DAType is missing) and "type-cycle" (an SDO or BDA that
 	// refers back to a type being expanded). Such a row is the stub of
-	// the branch that could not be expanded. Arrays (count attribute)
-	// are flattened as a single element; the count is not expanded.
+	// the branch that could not be expanded. "expansion-limit" marks
+	// the row where the expansion stopped at its limit
+	// ([FlattenOptions.MaxExpandedNodes]); no row follows it. Arrays
+	// (count attribute) are flattened as a single element; the count is
+	// not expanded.
 	Status string
 }
 ```
@@ -543,6 +600,23 @@ func Flatten(s *SCL) []FlatRow
 Flatten expands an SCL model into a flat list of rows, one per data attribute. Each row represents a leaf data attribute with its full path through the IEC 61850 hierarchy.
 
 Type resolution uses the DataTypeTemplates to expand LNodeType → DOType → DA/SDO chains. Attributes whose types cannot be resolved are still emitted with available metadata.
+
+The expansion stops after DefaultMaxExpandedNodes nodes; the last row then has the status "expansion-limit". [FlattenWithOptions](#func-flattenwithoptions) sets another limit and reports it as a diagnostic.
+
+### type FlattenOptions
+
+```go
+type FlattenOptions struct {
+	// MaxExpandedNodes is the number of nodes the expansion may
+	// produce; zero or less means [DefaultMaxExpandedNodes]. A node is
+	// one DO, SDO, DA or BDA at one place of the expanded model (a type
+	// referenced from n places counts n times), or the stub row of a
+	// branch that cannot be expanded.
+	MaxExpandedNodes int
+}
+```
+
+FlattenOptions control [FlattenWithOptions](#func-flattenwithoptions).
 
 ### type GOOSEService
 
@@ -804,9 +878,29 @@ type ParseOptions struct {
 	// or content.
 	Kind DocumentKind
 
-	// MaxDiagnostics, when > 0, truncates the diagnostic list
-	// to at most this many entries.
+	// MaxDiagnostics, when > 0, is the most diagnostics a parse
+	// returns: once the list holds this many, parsing and semantic
+	// validation add no further one (the first ones are kept, in the
+	// order they are found). Zero keeps every diagnostic.
 	MaxDiagnostics int
+
+	// MaxBytes is the largest document read; zero or less means
+	// [DefaultMaxBytes]. A larger document is refused with an error
+	// that wraps [ErrLimitExceeded]; it is never read in part.
+	MaxBytes int64
+
+	// MaxDepth is the deepest element nesting accepted, the root
+	// element being at depth 1, also for content that is skipped
+	// (unknown elements, Private content); zero or less means
+	// [DefaultMaxDepth]. A deeper document is refused with an error that
+	// wraps [ErrLimitExceeded].
+	MaxDepth int
+
+	// MaxDiagnosticName is the longest name, in bytes, that a
+	// diagnostic quotes from the document; zero or less means
+	// [DefaultMaxDiagnosticName]. A longer name is cut at a character
+	// boundary and ends with "…".
+	MaxDiagnosticName int
 
 	// AssumeSCLNamespace, when true, reads an SCL root element without a
 	// namespace as if it declared the IEC 61850-6 namespace
@@ -931,13 +1025,15 @@ ParseBytes parses raw SCL XML bytes and returns a [Result](#type-result) contain
 
 It detects the schema version from the root element, dispatches to the correct versioned raw type for unmarshalling, and converts the result into the normalized [SCL](#type-scl) model.
 
+The limits of opts (MaxBytes, MaxDepth, MaxDiagnostics, MaxDiagnosticName) apply; a document beyond MaxBytes or MaxDepth is refused with an error that wraps ErrLimitExceeded.
+
 #### func ParseFileOpts
 
 ```go
 func ParseFileOpts(path string, opts ParseOptions) (*Result, error)
 ```
 
-ParseFileOpts reads and parses an SCL file, using the file extension to infer [DocumentKind](#type-documentkind) when not specified in opts.
+ParseFileOpts reads and parses an SCL file, using the file extension to infer [DocumentKind](#type-documentkind) when not specified in opts. A file larger than [ParseOptions.MaxBytes](#func-parseoptions-maxbytes) is refused before it is read.
 
 #### func ParseFileWithOptions
 
@@ -955,7 +1051,7 @@ Deprecated: Use [ParseFileOpts](#func-parsefileopts) directly.
 func ParseWithOptions(r io.Reader, opts ParseOptions) (*Result, error)
 ```
 
-ParseWithOptions is a compatibility wrapper around [ParseBytes](#func-parsebytes).
+ParseWithOptions is a compatibility wrapper around [ParseBytes](#func-parsebytes). It reads at most [ParseOptions.MaxBytes](#func-parseoptions-maxbytes) from r: a longer document is refused with an error that wraps ErrLimitExceeded.
 
 Deprecated: Use [ParseBytes](#func-parsebytes) directly.
 
@@ -1003,7 +1099,7 @@ SCL is the root element of an SCL configuration file.
 func Parse(r io.Reader) (*SCL, error)
 ```
 
-Parse reads an SCL XML document from r and returns the parsed model. For richer output, use [ParseBytes](#func-parsebytes).
+Parse reads an SCL XML document from r and returns the parsed model. A document larger than DefaultMaxBytes is refused with an error that wraps ErrLimitExceeded. For richer output, use [ParseBytes](#func-parsebytes).
 
 #### func ParseFile
 
@@ -1011,7 +1107,7 @@ Parse reads an SCL XML document from r and returns the parsed model. For richer 
 func ParseFile(path string) (*SCL, error)
 ```
 
-ParseFile reads and parses an SCL XML file from the given path. For richer output, use [ParseFileOpts](#func-parsefileopts).
+ParseFile reads and parses an SCL XML file from the given path, with the default limits of [ParseOptions](#type-parseoptions). For richer output, use [ParseFileOpts](#func-parsefileopts).
 
 #### func (SCL) FindDAType
 
@@ -1361,7 +1457,7 @@ VersionInfo holds the detected schema version information extracted from the roo
 func DetectFile(path string) (VersionInfo, error)
 ```
 
-DetectFile is a convenience wrapper that reads a file and detects its SCL schema version.
+DetectFile detects the SCL schema version of a file, as [DetectVersion](#func-detectversion) does for data. It reads the file up to the root element only, and at most DefaultMaxBytes of it.
 
 #### func DetectVersion
 

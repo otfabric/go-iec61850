@@ -385,7 +385,7 @@ func TestReadMultiple_MixedDomains(t *testing.T) {
 		t.Fatalf("register LD2 var: %v", err)
 	}
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(ctx, serverT) }()
 
 	mmsClient, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
@@ -458,7 +458,7 @@ func TestReadMultiple_MixedDomainPartialError(t *testing.T) {
 		t.Fatalf("register var: %v", err)
 	}
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(ctx, serverT) }()
 
 	mmsClient, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
@@ -545,7 +545,7 @@ func TestWriteMultiple_MixedDomains(t *testing.T) {
 		}
 	}
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(ctx, serverT) }()
 
 	mmsClient, err := mms.NewClient(ctx, clientT, mms.DialOptions{})

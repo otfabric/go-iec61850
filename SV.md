@@ -228,6 +228,18 @@ for ev := range sub.Events() { … }             // gaps, timeouts, …
   ASDU of a stream was accepted the non-simulated ASDUs of that stream
   are dropped (metrics reason `simulation`), as for GOOSE (7-4 LPHD.Sim),
   so the real and simulated counters are not interleaved.
+- A subscription supervises at most `MaxStreams` streams
+  (`sv.DefaultMaxStreams`, 4096, when zero). While it supervises that
+  many, an ASDU of a stream it has not seen is dropped, counted in
+  `Subscription.Counters().StreamsRefused` and reported to
+  `Metrics.FrameDropped("streams")`; the streams already supervised keep
+  their state and are never replaced.
+- An `OnASDU` call that does not return normally is recovered: it is
+  logged at error level with its stack, counted in
+  `Subscription.Counters().CallbacksRecovered`, and `OnASDU` receives the
+  following ASDUs. The same holds for `OnDecodeError` and the `Metrics`
+  methods, counted in `Subscriber.CallbacksRecovered()` (a publisher's
+  `Metrics` calls are logged only).
 - `HandleFrame` and `CheckTimeouts` drive the subscriber without a
   transport (e.g. from a pcap).
 - `Close` ends `Run`, also while `Run` waits for a frame on a transport
@@ -252,7 +264,11 @@ svTr, _ := d.Port(l2.EtherTypeSV)
 
 Over UDP/IP, `rsession.Open(rsession.Config{SI: rsession.SISV, ...})`
 returns a `Transport` that carries the same frames as R-SV; see
-[GOOSE.md](GOOSE.md#r-goose-and-r-sv-over-udp).
+[GOOSE.md](GOOSE.md#r-goose-and-r-sv-over-udp), also for
+`Config.AllowedSenders` and `Config.SingleSenderPerKey`, which keep a
+verified SPDU from being accepted again from another source address, and
+filter subscriptions on the publisher with
+`Src: rsession.SourceMAC(publisherIP)`.
 
 ## SCL binding
 
@@ -343,7 +359,7 @@ the server, `ErrSV` wraps `EnableSV` failures. See [ERRORS.md](ERRORS.md).
 
 `PublisherConfig.Metrics` and `SubscriberConfig.Metrics` take an
 `sv.Metrics` (`FrameSent`, `SendError`, `ASDUReceived`, `FrameDropped`
-with reason `decode`, `simulation` or `filtered`, `Event`);
+with reason `decode`, `simulation`, `filtered` or `streams`, `Event`);
 `sv.NopMetrics` can be embedded. Loggers receive transport and pacing
 warnings.
 
@@ -381,7 +397,8 @@ to zero allocations.
   either delivered once or counted lost, and every duplicate and late
   frame is reported; `TestChaosMutation` flips bits in every frame.
 - Fuzz targets: `FuzzDecode` (round trip and `Decode`/`DecodeInto`
-  agreement), `FuzzSubscriber`.
+  agreement), `FuzzSubscriber`, `FuzzSubscriberHandleFrame` (the
+  subscriber's stream limit and the ASDUs it delivers for one frame).
 - Raw transport tests run on `lo` on Linux as root (CI does) and on
   `GOOSE_TEST_IFACE` elsewhere (package `l2`).
 - Interop: see [INTEROP.md](INTEROP.md).

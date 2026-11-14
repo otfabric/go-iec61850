@@ -173,7 +173,7 @@ func TestBRCB_ClientServerRoundTrip(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() {
 		_ = srv.Serve(ctx, serverT)
 	}()

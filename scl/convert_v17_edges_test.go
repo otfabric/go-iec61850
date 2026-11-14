@@ -9,7 +9,7 @@ import (
 )
 
 func TestConvV17_PrivateSMVSettingControl(t *testing.T) {
-	var diags []Diagnostic
+	diags := newDiagSink(0, 0)
 	ap := convAP17(raw.AccessPoint{
 		Name: "AP1",
 		Private: []raw.Private{{
@@ -45,7 +45,7 @@ func TestConvV17_PrivateSMVSettingControl(t *testing.T) {
 				}},
 			}},
 		},
-	}, &diags)
+	}, diags)
 
 	if len(ap.Private) != 1 || ap.Private[0].Type != "vendor" {
 		t.Fatalf("AP private: %+v", ap.Private)

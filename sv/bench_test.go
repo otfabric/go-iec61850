@@ -43,12 +43,17 @@ func BenchmarkDecodeInto(b *testing.B) {
 }
 
 func BenchmarkAppendFrame(b *testing.B) {
-	f, _ := Decode(benchFrame(b, 1))
+	f, err := Decode(benchFrame(b, 1))
+	if err != nil {
+		b.Fatal(err)
+	}
 	buf := make([]byte, 0, 256)
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		f.PDU.ASDUs[0].SmpCnt = uint16(i)
-		buf, _ = AppendFrame(buf[:0], f)
+		if buf, err = AppendFrame(buf[:0], f); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 

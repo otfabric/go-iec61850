@@ -152,7 +152,7 @@ func setupFileLoopback(t *testing.T) (*Client, *memFileProvider) {
 		FileProvider: fp,
 	})
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() {
 		_ = srv.Serve(ctx, serverT)
 	}()

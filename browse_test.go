@@ -70,12 +70,21 @@ func (t *chanTransport) Close() error {
 	return nil
 }
 
-func loopbackPair() (clientTransport, serverTransport mms.Transport) {
+// loopbackPair returns the two ends of an in-memory transport. With a
+// test, both ends are closed when the test ends, which ends the MMS client
+// and server goroutines that read them.
+func loopbackPair(tb ...testing.TB) (clientTransport, serverTransport mms.Transport) {
 	c2s := make(chan []byte, 16)
 	s2c := make(chan []byte, 16)
 	cGone, sGone := make(chan struct{}), make(chan struct{})
 	cl := &chanTransport{send: c2s, recv: s2c, gone: cGone, peerGone: sGone}
 	sr := &chanTransport{send: s2c, recv: c2s, gone: sGone, peerGone: cGone}
+	for _, t := range tb {
+		t.Cleanup(func() {
+			_ = cl.Close()
+			_ = sr.Close()
+		})
+	}
 	return cl, sr
 }
 
@@ -140,7 +149,7 @@ func setupLoopback(t *testing.T) *Client {
 	ctx := context.Background()
 
 	srv := setupTestServer(t)
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 
 	go func() {
 		_ = srv.Serve(ctx, serverT)
@@ -786,7 +795,7 @@ func TestTree_FCCollision(t *testing.T) {
 		}
 	}
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(ctx, serverT) }()
 
 	mmsClient, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
@@ -877,7 +886,7 @@ func TestListChildren_FCCollision_MergedView(t *testing.T) {
 		}
 	}
 
-	clientT, serverT := loopbackPair()
+	clientT, serverT := loopbackPair(t)
 	go func() { _ = srv.Serve(ctx, serverT) }()
 
 	mmsClient, err := mms.NewClient(ctx, clientT, mms.DialOptions{})
