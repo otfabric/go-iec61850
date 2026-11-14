@@ -946,3 +946,5 @@ CI runs them as root. Releases are cut by the `release.yml` workflow;
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](./LICENSE).
+
+<!-- Disposable pilot change: README.md is in code-paths (never merged). -->
