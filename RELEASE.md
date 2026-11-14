@@ -1,5 +1,30 @@
 # go-iec61850 Releases
 
+## v1.23.0
+
+**Date:** 2026-11-14
+**Previous release:** v1.22.0
+
+Moves to go-mms v1.11.0 (was v1.10.0), which bounds the associations an MMS server holds, recovers the application code it calls on its own goroutines and bounds the TSDUs of `transport/iso`. A `Server` passes its `MaxConnections` to go-mms as that association bound, so every connection `ListenAndServe` serves can still associate. No exported identifier is added, removed or changed.
+
+### Breaking
+
+- **Associations a server holds.** go-mms v1.11.0 bounds the associations of an MMS server, at 100 by default. `NewServer` passes `ServerOptions.MaxConnections` (default 1024) as that bound when `ServerOptions.MMS.MaxAssociations` is zero, so the connections `ListenAndServe` serves associate as before. Connections given to `Server.Serve` count against it too, where they had no bound: with every slot held, the AARQ of one more is answered with AARE rejected-transient, and its `Serve` returns an error that matches go-mms `ErrLimitReached`. To keep v1.22.0's behaviour, set `ServerOptions.MMS.MaxAssociations` to `math.MaxInt`.
+- **Application code go-mms calls.** go-mms recovers the application code it calls on its own goroutines, logs it at Error level with its stack (`mms: callback did not return normally`) and goes on. The handlers, providers, `Authenticate` and `Metrics` of a `Server` already ran under go-iec61850's own recovery; what changes is the code go-iec61850 does not wrap, such as a `RawHook` and the callbacks of the `tls.Config` of a `transport/iso` `Listener`, which now close that connection instead of ending the process. To get the old behaviour back, end the process in the callback itself (go-mms RELEASE.md, v1.11.0).
+- **PDU and TSDU sizes over `transport/iso`.** A connection carries TSDUs of up to the larger of 65,539 octets and the MMS PDU size plus 64 octets; a longer received TSDU ends the connection. Before, go-cotp's 4 MiB applied. `Dial` sizes the transport from `DialOptions.MMS.MaxPDUSize` (65,000 when zero), so a client keeps any size it sets. A `Listener` carries 65,475 octets, so a server configured with `MMS.MaxPDUSize` above that negotiates 65,475 over it; its reports are still segmented by the configured size (KNOWN_LIMITATIONS.md), so keep `MaxPDUSize` at or below 65,475 there. A server that needs larger PDUs serves a `Transport` of its own over go-cotp (go-mms RELEASE.md, v1.11.0).
+
+### Changed
+
+- **go-mms v1.11.0** (was v1.10.0). Besides the above, a Confirmed-Request larger than the negotiated PDU size is answered from its invokeID alone, and `DialOptions.MMS` takes go-mms's new `ReportQueue` and the ceilings of the `*All` helpers (go-mms RELEASE.md, v1.11.0).
+- **`scl/cmd/sclgen` and `scl/cmd/sclparse`** are built on go-iec61850 v1.22.0 (was v1.20.1).
+- **Documentation.** SECURITY.md has a row for the association bound; API.md and the `ServerOptions.MaxConnections` doc comment say that it bounds associations too; KNOWN_LIMITATIONS.md names the PDU size of a `Listener`; `docs/api` is regenerated.
+
+### Tests
+
+- `TestServer_MaxConnectionsBoundsAssociations`: with the default options a server holds 101 associations at once, with `MaxConnections` 150 it holds 150, and an `MMS.MaxAssociations` of 2 refuses the third association. The first two cases fail with go-mms v1.11.0 when `MaxConnections` is not passed on.
+
+---
+
 ## v1.22.0
 
 **Date:** 2026-11-14

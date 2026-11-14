@@ -1365,6 +1365,11 @@ It returns after the connection goroutines it started have returned
 after an accept error that is not temporary, which first ends the
 connections it serves.
 
+`MaxConnections` is also the bound on the associations the server holds
+at a time, those of connections given to `Serve` included: `NewServer`
+passes it to go-mms as `MMS.MaxAssociations` when that is zero. Set
+`MMS.MaxAssociations` for another bound (`math.MaxInt` for none).
+
 The server calls application code under a recover: `OnConnect`,
 `OnDisconnect`, the `FileProvider`, `Authenticate`, `Metrics` and a
 `JournalProvider` set in `MMS`, the `ControlHandler` and

@@ -68,7 +68,10 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   - Segmentation uses the server's configured MMS `MaxPDUSize` (default
     65000), not the size negotiated with each client, which go-mms does
     not expose per connection. A data set member whose value does not fit
-    one PDU is not reported.
+    one PDU is not reported. Over a `transport/iso` `Listener` go-mms
+    negotiates at most 65,475 octets (go-mms v1.11.0), so keep `MaxPDUSize`
+    at or below that there: a report segment above it is larger than the
+    connection carries.
   - Association loss is detected when `Server.Serve` returns, when a
     report cannot be sent, and by a one-second check of the go-mms
     connection list; a connection served by `mms.Server` directly can keep
