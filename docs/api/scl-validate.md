@@ -8,7 +8,7 @@ import "github.com/otfabric/go-iec61850/scl/validate"
 
 Package validate provides semantic validation of a parsed SCL model.
 
-Validation is split into independent passes that each check a specific aspect of the model. All passes accept the normalized [scl.SCL](https://pkg.go.dev/github.com/otfabric/go-iec61850/scl#SCL) model and a shared [index.Index](https://pkg.go.dev/github.com/otfabric/go-iec61850/scl/index#Index).
+Validation is split into independent passes that each check a specific aspect of the model. All passes accept the normalized [scl.SCL](https://pkg.go.dev/github.com/otfabric/go-iec61850/scl#SCL) model and a shared [index.Index](https://pkg.go.dev/github.com/otfabric/go-iec61850/scl/index#Index). A diagnostic quotes each name of the document cut to [scl.DefaultMaxDiagnosticName](https://pkg.go.dev/github.com/otfabric/go-iec61850/scl#DefaultMaxDiagnosticName) bytes.
 
 ## Functions
 

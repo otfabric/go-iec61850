@@ -240,9 +240,13 @@ type controlRegistration struct {
 	state   controlState
 	sel     controlSelection
 	selTime time.Time
-	gen     uint64      // selection generation, for the deselect timer
-	timer   *time.Timer // deselect timer (sboTimeout)
-	abort   chan struct{}
+	// selTimeout is the select timeout fixed when the selection was made
+	// (readyLocked): a later write of CF sboTimeout applies to later
+	// selections only.
+	selTimeout time.Duration
+	gen        uint64      // selection generation, for the deselect timer
+	timer      *time.Timer // deselect timer (sboTimeout)
+	abort      chan struct{}
 
 	stMu sync.Mutex // serializes stSeld updates
 }
@@ -590,7 +594,7 @@ func (s *Server) expireLocked(reg *controlRegistration, now time.Time) bool {
 	if s.releaseLostLocked(reg) {
 		return true
 	}
-	if reg.state == ctlReady && now.Sub(reg.selTime) > s.effectiveSelectTimeout(reg) {
+	if reg.state == ctlReady && now.Sub(reg.selTime) > s.selectionTimeoutLocked(reg) {
 		s.unselectLocked(reg)
 		return true
 	}
@@ -630,6 +634,7 @@ func (s *Server) connLost(conn *mms.ServerConn) bool {
 func (s *Server) unselectLocked(reg *controlRegistration) {
 	reg.state = ctlUnselected
 	reg.sel = controlSelection{}
+	reg.selTimeout = 0
 	reg.gen++
 	if reg.timer != nil {
 		reg.timer.Stop()
@@ -637,17 +642,30 @@ func (s *Server) unselectLocked(reg *controlRegistration) {
 	}
 }
 
+// selectionTimeoutLocked is the select timeout of the current selection:
+// the value fixed by readyLocked, so that the deselect timer and
+// expireLocked agree and a CF sboTimeout write by any association does
+// not shorten a selection that was already made. Must be called with
+// reg.mu held.
+func (s *Server) selectionTimeoutLocked(reg *controlRegistration) time.Duration {
+	if reg.selTimeout > 0 {
+		return reg.selTimeout
+	}
+	return s.effectiveSelectTimeout(reg)
+}
+
 // readyLocked enters Ready with the selection and arms the deselect
 // timer. Must be called with reg.mu held.
 func (s *Server) readyLocked(reg *controlRegistration, now time.Time) {
 	reg.state = ctlReady
 	reg.selTime = now
+	reg.selTimeout = s.effectiveSelectTimeout(reg)
 	reg.gen++
 	if reg.timer != nil {
 		reg.timer.Stop()
 	}
 	gen := reg.gen
-	reg.timer = time.AfterFunc(s.effectiveSelectTimeout(reg), func() {
+	reg.timer = time.AfterFunc(reg.selTimeout, func() {
 		reg.mu.Lock()
 		if reg.gen != gen || reg.state != ctlReady {
 			reg.mu.Unlock()

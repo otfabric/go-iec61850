@@ -140,12 +140,13 @@ func Dial(ctx context.Context, addr string, opts DialOptions) (*Client, error) {
 	}
 
 	copts := ClientOptions{
-		Logger:     opts.Logger,
-		Strictness: opts.Strictness,
-		Cache:      opts.Cache,
-		IEDName:    opts.IEDName,
-		Clock:      opts.Clock,
-		FileLimits: opts.FileLimits,
+		Logger:        opts.Logger,
+		Strictness:    opts.Strictness,
+		Cache:         opts.Cache,
+		IEDName:       opts.IEDName,
+		Clock:         opts.Clock,
+		FileLimits:    opts.FileLimits,
+		JournalLimits: opts.JournalLimits,
 	}
 	var cache *modelCache
 	if copts.Cache != CacheNone {

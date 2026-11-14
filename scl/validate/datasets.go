@@ -30,10 +30,14 @@ func Datasets(s *scl.SCL, idx *index.Index) []scl.Diagnostic {
 				continue
 			}
 			for _, ld := range ap.Server.LDevices {
+				ldPath := "IED[" + q(ied.Name) + "]/LD[" + q(ld.Inst) + "]"
 				checkDS := func(ln *scl.LN) {
-					lnPath := fmt.Sprintf("IED[%s]/LD[%s]/LN[%s%s%s]", ied.Name, ld.Inst, ln.Prefix, ln.LNClass, ln.Inst)
+					if len(ln.DataSets) == 0 {
+						return
+					}
+					lnPath := ldPath + "/LN[" + q(ln.Prefix+ln.LNClass+ln.Inst) + "]"
 					for _, ds := range ln.DataSets {
-						dsPath := lnPath + "/DS[" + ds.Name + "]"
+						dsPath := lnPath + "/DS[" + q(ds.Name) + "]"
 						for fi, fcda := range ds.FCDAs {
 							if fcda.LDInst == "" || fcda.LNClass == "" {
 								continue
@@ -44,7 +48,7 @@ func Datasets(s *scl.SCL, idx *index.Index) []scl.Diagnostic {
 								diags = append(diags, scl.Diagnostic{
 									Severity: scl.DiagWarning, Code: "unresolved-fcda",
 									Path:    path,
-									Message: fmt.Sprintf("LDevice %q not found in IED %q", fcda.LDInst, ied.Name),
+									Message: fmt.Sprintf("LDevice %q not found in IED %q", q(fcda.LDInst), q(ied.Name)),
 								})
 								continue
 							}
@@ -77,7 +81,7 @@ func resolveFCDA(fcs *fcIndex, iedName string, f *scl.FCDA) (scl.Diagnostic, boo
 	}
 	ln := idx.FindLN(iedName, f.LDInst, f.Prefix, f.LNClass, f.LNInst)
 	if ln == nil {
-		return unresolved("LN %s%s%s not found in LDevice %q", f.Prefix, f.LNClass, f.LNInst, f.LDInst)
+		return unresolved("LN %s not found in LDevice %q", q(f.Prefix+f.LNClass+f.LNInst), q(f.LDInst))
 	}
 	if f.DOName == "" {
 		return scl.Diagnostic{}, false
@@ -101,7 +105,7 @@ func resolveFCDA(fcs *fcIndex, iedName string, f *scl.FCDA) (scl.Diagnostic, boo
 		}
 	}
 	if doType == "" {
-		return unresolved("data object %q not in LNodeType %q", path[0], lnt.ID)
+		return unresolved("data object %q not in LNodeType %q", q(path[0]), q(lnt.ID))
 	}
 	dot := idx.FindDOType(doType)
 	i := 1
@@ -119,7 +123,7 @@ func resolveFCDA(fcs *fcIndex, iedName string, f *scl.FCDA) (scl.Diagnostic, boo
 		if da != nil && i >= nDO {
 			if f.FC != "" && !fcMatches(da.FC, f.FC) {
 				return scl.Diagnostic{Severity: scl.DiagWarning, Code: "fcda-fc-mismatch",
-					Message: fmt.Sprintf("data attribute %q has FC %s, FCDA says %s", path[i], da.FC, f.FC)}, true
+					Message: fmt.Sprintf("data attribute %q has FC %s, FCDA says %s", q(path[i]), q(da.FC), q(f.FC))}, true
 			}
 			return resolveBDAs(idx, da.Type, path[i+1:])
 		}
@@ -134,14 +138,14 @@ func resolveFCDA(fcs *fcIndex, iedName string, f *scl.FCDA) (scl.Diagnostic, boo
 			if i >= nDO {
 				what = "data attribute"
 			}
-			return unresolved("%s %q not in DOType %q", what, path[i], dot.ID)
+			return unresolved("%s %q not in DOType %q", what, q(path[i]), q(dot.ID))
 		}
 		dot = idx.FindDOType(next)
 	}
 	// The FCDA selects every attribute of the (S)DO with fc.
-	if dot != nil && f.FC != "" && !fcs.doHasFC(dot, f.FC, 0) {
+	if dot != nil && f.FC != "" && !fcs.doHasFC(dot, f.FC) {
 		return scl.Diagnostic{Severity: scl.DiagWarning, Code: "fcda-fc-mismatch",
-			Message: fmt.Sprintf("data object %q has no attribute with FC %s", strings.Join(path, "."), f.FC)}, true
+			Message: fmt.Sprintf("data object %q has no attribute with FC %s", q(strings.Join(path, ".")), q(f.FC))}, true
 	}
 	return scl.Diagnostic{}, false
 }
@@ -162,7 +166,7 @@ func resolveBDAs(idx *index.Index, typ string, names []string) (scl.Diagnostic, 
 		}
 		if !found {
 			return scl.Diagnostic{Severity: scl.DiagWarning, Code: "unresolved-fcda",
-				Message: fmt.Sprintf("attribute %q not in DAType %q", name, dat.ID)}, true
+				Message: fmt.Sprintf("attribute %q not in DAType %q", q(name), q(dat.ID))}, true
 		}
 	}
 	return scl.Diagnostic{}, false
@@ -182,58 +186,116 @@ func fcMatches(daFC, fc string) bool {
 // passes report) count as holding the FC.
 const maxSDODepth = 16
 
-// fcIndex answers doHasFC for one Datasets call. It remembers each answer
-// per DOType, FC and SDO level, so that a DOType is walked at most once
-// per FC and level however many SDO paths lead to it: the cost is linear
-// in the size of the type graph.
+// fcIndex answers doHasFC for one Datasets call. It computes the set of
+// FCs below each DOType and SDO level once, whatever FC is asked and
+// however many SDO paths lead to it: the cost is linear in the size of
+// the type graph, and does not grow with the number of FCs the FCDAs of
+// the document name.
 type fcIndex struct {
 	idx   *index.Index
-	memo  map[fcKey]bool
-	steps int // doHasFC calls, for tests
+	memo  map[fcKey]*fcSet
+	steps int // fcSetOf calls, for tests
 }
 
-// fcKey is an fcIndex entry: DOType dot, FC fc, depth SDO levels below
-// the data object of the FCDA.
+// fcKey is an fcIndex entry: DOType dot, depth SDO levels below the data
+// object of the FCDA.
 type fcKey struct {
 	dot   *scl.DOType
-	fc    string
 	depth int
 }
 
-func newFCIndex(idx *index.Index) *fcIndex {
-	return &fcIndex{idx: idx, memo: make(map[fcKey]bool)}
+// fcWords is the size of an fcSet: one bit per FC name of one or two
+// upper-case letters (26 + 26*26 names).
+const fcWords = (26 + 26*26 + 63) / 64
+
+// fcSet is a set of FCs of the SCL tFCEnum: the FCs of IEC 61850-7-2
+// Table 2 and the extension FCs of SCL 2007C5 (tExtensionFCEnum, one or
+// two upper-case letters). any marks a set that holds every FC (an SDO
+// of an undefined type, or levels below maxSDODepth).
+type fcSet struct {
+	bits [fcWords]uint64
+	any  bool
 }
 
-// doHasFC reports whether dot (or one of its SDOs) has a DA with FC fc. An
-// SDO of a type the document does not define may hold one, and levels
-// below maxSDODepth are not followed: both count as found.
-func (m *fcIndex) doHasFC(dot *scl.DOType, fc string, depth int) bool {
+// fcBit returns the bit of fc in an fcSet, or false when fc is not a
+// name of one or two upper-case letters.
+func fcBit(fc string) (int, bool) {
+	up := func(c byte) bool { return c >= 'A' && c <= 'Z' }
+	switch {
+	case len(fc) == 1 && up(fc[0]):
+		return int(fc[0] - 'A'), true
+	case len(fc) == 2 && up(fc[0]) && up(fc[1]):
+		return 26 + int(fc[0]-'A')*26 + int(fc[1]-'A'), true
+	}
+	return 0, false
+}
+
+func (s *fcSet) add(fc string) {
+	if b, ok := fcBit(fc); ok {
+		s.bits[b/64] |= 1 << (b % 64)
+	}
+}
+
+func (s *fcSet) has(fc string) bool {
+	if s.any {
+		return true
+	}
+	b, ok := fcBit(fc)
+	return ok && s.bits[b/64]&(1<<(b%64)) != 0
+}
+
+func newFCIndex(idx *index.Index) *fcIndex {
+	return &fcIndex{idx: idx, memo: make(map[fcKey]*fcSet)}
+}
+
+// doHasFC reports whether dot (or one of its SDOs) has a DA with FC fc
+// (as fcMatches compares them). An SDO of a type the document does not
+// define may hold one, and levels below maxSDODepth are not followed:
+// both count as found. An fc that is no FC name of the SCL schema is
+// found only there: no DA of the schema has it.
+func (m *fcIndex) doHasFC(dot *scl.DOType, fc string) bool {
+	s := m.fcSetOf(dot, 0)
+	if s.has(fc) {
+		return true
+	}
+	return (fc == "SG" || fc == "SE") && (s.has("SG") || s.has("SE"))
+}
+
+// allFCs is the set of the levels below maxSDODepth.
+var allFCs = &fcSet{any: true}
+
+// fcSetOf returns the FCs of the DAs of dot and of the DOTypes below its
+// SDOs.
+func (m *fcIndex) fcSetOf(dot *scl.DOType, depth int) *fcSet {
 	m.steps++
 	if depth > maxSDODepth {
-		return true // cycles are reported elsewhere; do not guess
+		return allFCs // cycles are reported elsewhere; do not guess
 	}
-	k := fcKey{dot, fc, depth}
-	if r, ok := m.memo[k]; ok {
-		return r
+	k := fcKey{dot, depth}
+	if s, ok := m.memo[k]; ok {
+		return s
 	}
-	r := m.walkFC(dot, fc, depth)
-	m.memo[k] = r
-	return r
-}
-
-// walkFC looks for fc in the DAs of dot, then below its SDOs.
-func (m *fcIndex) walkFC(dot *scl.DOType, fc string, depth int) bool {
+	s := &fcSet{}
 	for _, da := range dot.DAs {
-		if fcMatches(da.FC, fc) {
-			return true
-		}
+		s.add(da.FC)
 	}
 	for _, sdo := range dot.SDOs {
-		if t := m.idx.FindDOType(sdo.Type); t == nil || m.doHasFC(t, fc, depth+1) {
-			return true // an unresolved SDO type may hold it
+		if s.any {
+			break
+		}
+		t := m.idx.FindDOType(sdo.Type)
+		if t == nil {
+			s.any = true // an unresolved SDO type may hold any FC
+			break
+		}
+		sub := m.fcSetOf(t, depth+1)
+		s.any = sub.any
+		for w := range s.bits {
+			s.bits[w] |= sub.bits[w]
 		}
 	}
-	return false
+	m.memo[k] = s
+	return s
 }
 
 // stripIndex removes an array index "(n)" from an FCDA name element.

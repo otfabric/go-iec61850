@@ -58,7 +58,8 @@ type GOOSEOptions struct {
 // The GoCB attributes are served over MMS under the GO functional
 // constraint: GoEna, GoID and DatSet are writable (GoID and DatSet only
 // while GoEna is false; every DatSet write increments ConfRev, 7-2
-// 18.2.1.6), all other attributes are read-only. GoID and DatSet are
+// 18.2.1.6, and one that would take it past 4294967295 is refused),
+// all other attributes are read-only. GoID and DatSet are
 // writable as in IEC 61850-7-2 Table 42, although the 8-1 Table 73
 // mapping lists them read-only.
 //
@@ -428,13 +429,17 @@ func (e *GOOSEEngine) handleWrite(storeKey string, val *mms.Value) (bool, error)
 		if def == nil {
 			return true, &mms.DataAccessError{Code: mms.DataAccessErrorObjectValueInvalid}
 		}
+		// 7-2 18.2.1.6: ConfRev is incremented also when DatSet is set
+		// to the same value. ConfRev is INT32U: once it would pass
+		// 4294967295 the write is refused, so the GoCB stays enablable.
+		cr, _ := rt.get("ConfRev").Uint64()
+		if cr >= math.MaxUint32 {
+			return true, &mms.DataAccessError{Code: mms.DataAccessErrorObjectValueInvalid}
+		}
 		// The GoCB and the PDU carry the ObjectReference of the dataset
 		// (8-1 Table 73, 18.1.2.5.2), also when written by its bare
 		// name.
 		e.s.store.Set(storeKey, mms.NewVisibleString(servermodel.QualifiedDatSet(rt.ldName, ln.Name, def.Name)))
-		// 7-2 18.2.1.6: ConfRev is incremented also when DatSet is set
-		// to the same value.
-		cr, _ := rt.get("ConfRev").Uint64()
 		e.s.store.Set(rt.key("ConfRev"), mms.NewUnsigned(cr+1))
 		if err := rt.resolveLocked(); err != nil {
 			e.logger.Warn("iec61850: GoCB DatSet unusable", "gocbRef", rt.ref(), "error", err)

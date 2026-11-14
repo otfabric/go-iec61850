@@ -93,7 +93,14 @@ Lifecycle:
   stack, counted in `Stats().CallbacksRecovered` and answered with the
   service's error; the connection and the process go on.
 
-The model is immutable after construction.
+The model is immutable after construction. `NewServerModelFromSCL` (and
+the `goose` and `sv` `ControlBlocksFromSCL`) build it from one set of
+lookups of the document (type templates by ID, IEDs, GSE and SMV
+addresses), shared by all its access points. The type expansion is
+bounded by node count (`MaxExpandedNodes`, report control block
+instances included) and by type reference depth (`scl.DefaultMaxTypeDepth`,
+64); beyond either the model is refused with an error that matches
+`ErrLimitExceeded` and `scl.ErrLimitExceeded`.
 
 ## GOOSE and Sampled Values
 
@@ -106,7 +113,9 @@ Publishers and subscribers are driven by `Run(ctx)` in the caller's goroutine
 | Supervision (`sv`) | `sv.Subscriber.Run` | `Run` returns |
 | Demultiplexer (`l2`) | `l2.NewDemux` | `Demux.Close`; the Demux owns its transport and closes it |
 
-`l2.Demux` lets GOOSE and SV share one interface by EtherType.
+`l2.Demux` lets GOOSE and SV share one interface by EtherType. Its
+per-port queues are bounded by frame count (`DefaultDemuxQueue`, 4096),
+not by octets.
 
 ## Platform backends
 

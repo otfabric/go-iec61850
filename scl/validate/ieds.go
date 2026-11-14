@@ -21,7 +21,7 @@ func IEDs(s *scl.SCL, idx *index.Index) []scl.Diagnostic {
 				continue
 			}
 			for _, ld := range ap.Server.LDevices {
-				ldPath := fmt.Sprintf("IED[%s]/LD[%s]", ied.Name, ld.Inst)
+				ldPath := "IED[" + q(ied.Name) + "]/LD[" + q(ld.Inst) + "]"
 				if ld.LN0 != nil {
 					diags = append(diags, checkLN(idx, ldPath, ld.LN0)...)
 				}
@@ -37,14 +37,14 @@ func IEDs(s *scl.SCL, idx *index.Index) []scl.Diagnostic {
 
 func checkLN(idx *index.Index, ldPath string, ln *scl.LN) []scl.Diagnostic {
 	var diags []scl.Diagnostic
-	lnPath := fmt.Sprintf("%s/LN[%s%s%s]", ldPath, ln.Prefix, ln.LNClass, ln.Inst)
+	lnPath := ldPath + "/LN[" + q(ln.Prefix+ln.LNClass+ln.Inst) + "]"
 
 	lnt := idx.FindLNodeType(ln.LNType)
 	if lnt == nil {
 		diags = append(diags, scl.Diagnostic{
 			Severity: scl.DiagError, Code: "missing-lnodetype",
 			Path:    lnPath,
-			Message: fmt.Sprintf("references LNodeType %q which does not exist", ln.LNType),
+			Message: fmt.Sprintf("references LNodeType %q which does not exist", q(ln.LNType)),
 		})
 	} else if lnt.LNClass != ln.LNClass {
 		// SCL.xsd LNodeTypeKey is (@id, @lnClass); the keyrefs
@@ -58,6 +58,6 @@ func checkLN(idx *index.Index, ldPath string, ln *scl.LN) []scl.Diagnostic {
 func lnClassMismatch(lnPath string, ln *scl.LN, typeClass string) scl.Diagnostic {
 	return scl.Diagnostic{
 		Severity: scl.DiagError, Code: "lnclass-mismatch", Path: lnPath,
-		Message: fmt.Sprintf("lnClass %q references LNodeType %q of lnClass %q (SCL key LNodeTypeKey)", ln.LNClass, ln.LNType, typeClass),
+		Message: fmt.Sprintf("lnClass %q references LNodeType %q of lnClass %q (SCL key LNodeTypeKey)", q(ln.LNClass), q(ln.LNType), q(typeClass)),
 	}
 }

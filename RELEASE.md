@@ -1,5 +1,63 @@
 # go-iec61850 Releases
 
+## v1.22.0
+
+**Date:** 2026-11-14
+**Previous release:** v1.21.0
+
+Exported identifiers are added; none is removed or changed. New limits bound what a peer, a client or a file can make the library hold or produce, each with a default above what a real substation uses and, where it is a policy, an option that changes it; SECURITY.md lists them with the reason for each default. go-mms moves to v1.10.0, go-cotp to v1.4.1, go-tpkt to v1.2.1.
+
+### Breaking
+
+The defaults below refuse input that this library accepted before. Each names the option that changes it, or says that there is none.
+
+- **Journal reads.** `ReadJournalAll` and `ReadJournalAfterAll` stop at 1,000,000 entries or an estimated 256 MiB of entries (entry IDs, tags and decoded values) with an error that matches `ErrLimitExceeded`, and refuse a page whose last entry is a cursor already used (`JournalLimits.MaxEntries`, `JournalLimits.MaxBytes` in `DialOptions` or `ClientOptions`; a negative value removes a limit).
+- **Integrity period.** A non-zero IntgPd below 100 ms written to a BRCB, URCB or LCB, by an MMS client or through `ReportEngine.HandleRCBWrite` or `JournalEngine.HandleLCBWrite`, is refused with object-value-invalid. IntgPd 0 is accepted and the periods of the model (SCL) are not checked (`ServerOptions.MinIntegrityPeriod`; a negative value removes the minimum).
+- **SV sample rate.** Enabling an MSVCB (SvEna TRUE or `SVEngine.SetEnabled`) whose SmpRate and SmpMod select more than 96000 samples/s, or more than the rate configured in SCL when that is higher, is refused with object-value-invalid. SmpRate and SmpMod writes are not refused on their own (`SVOptions.MaxSamplesPerSecond`; a negative value removes the bound).
+- **ConfRev of a GoCB or MSVCB.** A GoCB DatSet write or an MSVCB change that would take ConfRev past 4294967295 is refused with object-value-invalid and changes nothing, so the control block can still be enabled; before, the write was taken and enabling then failed. No option: ConfRev is INT32U.
+- **SCL type depth.** `NewServerModelFromSCL`, the `goose` and `sv` `ControlBlocksFromSCL` and `scl.Flatten` follow at most 64 type references on one path (a DO's DOType, each SDO's DOType, each Struct DA's or BDA's DAType). Beyond it the model is refused with an error that matches `scl.ErrLimitExceeded` (and `ErrLimitExceeded` for the server model), and `scl.Flatten` ends with an `expansion-limit` row (`scl.FlattenOptions.MaxTypeDepth`; the server model and `ControlBlocksFromSCL` use `scl.DefaultMaxTypeDepth`). Report control block instances (one per instance of an indexed ReportControl) now count against `MaxExpandedNodes`, and `scl.Flatten` counts one more node per 256 bytes of a row's path.
+- **SV identifiers.** An `svID` or `datSet` longer than 129 octets (VisibleString129, IEC 61850-9-2 Table 14; the new `sv.MaxIDLength`) is refused on decode with `ErrInvalidPDU`, on encode with `ErrInvalidValue` and by `NewPublisher` with `ErrInvalidConfig`. No option.
+- **SV subscriber limits.** A zero field of `sv.SubscriberConfig.Limits` takes its `DefaultLimits` value; before, only an all-zero `Limits` took the defaults and a zero field of a partly set one meant no limit. Set a large value for a field that should not bound.
+- **R-GOOSE and R-SV SPDU numbers.** A sender that has sent SPDU number 0xffffffff under a key refuses to send more under it: `Transport.Send` fails with an error that matches `ErrLimitExceeded` until a key with another ID is current, and numbering goes on at 0. Rotate keys well before 2^32 SPDUs (about 10 days of an R-SV stream at 4800 SPDUs/s). Unsecured SPDUs still wrap. A receiver compares SPDU numbers as plain 32-bit unsigned values and no longer wraps: a number more than 2^31 below the highest accepted one is old, not ahead, and a sender that wraps under one key is refused until the key changes (or after `Config.ReplayResetAfter` of silence, when set). No option.
+- **SGCB components.** NumOfSG, LActTm and ResvTms are read-only (IEC 61850-7-2 Table 36): a write gets object-access-denied. A write of an SGCB component with a value of the wrong type gets type-inconsistent. Both hold also when `EnableSettingGroups` was not called. No option.
+- **FC=SE group reads.** A read of an FC=SE FC-group or data object (`LN$SE`, `LN$SE$DO`) without a selected edit group gets a negative response, as attribute reads did (IEC 61850-7-2 16.2.2.5). A read of the bare LN name is answered as before (KNOWN_LIMITATIONS.md). No option.
+
+### Added
+
+- `JournalLimits`, `DefaultMaxJournalEntries`, `DefaultMaxJournalBytes`; `DialOptions.JournalLimits`, `ClientOptions.JournalLimits`.
+- `ServerOptions.MinIntegrityPeriod`, `DefaultMinIntegrityPeriod`.
+- `SVOptions.MaxSamplesPerSecond`, `DefaultSVMaxSamplesPerSecond`.
+- `scl`: `FlattenOptions.MaxTypeDepth`, `DefaultMaxTypeDepth`.
+- `sv`: `MaxIDLength`.
+
+### Fixed
+
+- **Select timeout.** A selection keeps the select timeout in force when it was made; a later CF sboTimeout write, by any association, applies to later selections only. Before, the deselect timer and the expiry check could use different values.
+- **`OperateWait`** matches a CommandTermination to its operate by the ctlNum its Oper carries when several operates of one control are in flight; a termination without a ctlNum any waiter sent goes to the oldest waiter, as before. `OperateWait` fixes the ctlNum before it sends the operate.
+- **Segmented reports.** The `MaxSegmentBytes` estimate counts object identifiers (8 bytes per arc), bit strings and boolean arrays at their decoded size, with 256 bytes per value.
+- **Report decoding.** The client's report decoder refuses an inclusion bit string that announces more bits than its octets hold (`*ReportError`).
+- **Cached item list.** Callers that share one fetch of a logical device's items each get their own copy.
+- **`ReadJournal` and `ReadJournalAfter`** put the client's `IEDName` before the logical device name, as the other services do.
+- **GOOSE simulated frames.** A simulated frame that a subscription with `AcceptSimulation` false drops no longer creates a stream, so it takes none of the `MaxStreams` slots.
+- **`rsession.Verify`** refuses a key from the `KeyProvider` whose ID differs from the SPDU's, whose ID is 0 or whose material is shorter than `MinKeySize`; the error matches `ErrUnknownKey` and `ErrInvalidKey`.
+
+### Changed
+
+- **`Tree` and `TreeWithOptions`** build the model of each logical device in one pass over its name list, in time linear in the number of names, and return the context's error when it ends while they build.
+- **SCL model building.** `NewServerModelFromSCL` finds LNodeTypes by map lookup, and the `goose` and `sv` `ControlBlocksFromSCL` build the lookups of the document once instead of once per access point.
+- **SCL validation and index.** `scl/index` and `scl/validate` diagnostics quote document names cut to 256 bytes at a character boundary, as parse diagnostics do. `validate.Datasets` checks FCDA functional constraints in time linear in the type graph, whatever FCs the document names.
+- **`l2.Demux`** documents that its per-port queues are bounded by frame count, not by octets.
+- **`sclparse detect`** reads at most 1 GiB of the file, the library's default document limit. **`sclgen` check** fails on a checked-in file the generator does not produce.
+- **go-mms v1.10.0** (was v1.9.4). For a `Server`, through `ServerOptions.MMS`: server writes are bounded by `WriteTimeout` (default 10 s), the named variable lists peers define are bounded, and one association holds at most 32 open files (`MaxOpenFiles`). The client completes a confirmed request only from its own response (go-mms RELEASE.md, v1.10.0).
+- **go-cotp v1.4.1** (was v1.4.0) and **go-tpkt v1.2.1** (was v1.2.0, indirect). A TPKT packet longer than the negotiated TPDU size is refused from its header, before it is read (go-cotp and go-tpkt RELEASE.md).
+- **Documentation.** SECURITY.md has rows for the new limits; API.md, ERRORS.md, KNOWN_LIMITATIONS.md, ARCHITECTURE.md, GOOSE.md, SV.md, `scl/README.md` and ADR 0001 (an addendum on the replay window) describe the above.
+
+### Tests
+
+- A test at and past every new limit; regression tests for each fix above, the select timeout and the termination matching among them; linear-cost tests for the tree build, `ControlBlocksFromSCL` per access point and the FCDA check.
+
+---
+
 ## v1.21.0
 
 **Date:** 2026-11-14

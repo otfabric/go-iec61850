@@ -15,15 +15,15 @@ func Topology(s *scl.SCL, idx *index.Index) []scl.Diagnostic {
 	var diags []scl.Diagnostic
 
 	for _, sub := range s.Substations {
-		subPath := fmt.Sprintf("Substation[%s]", sub.Name)
+		subPath := "Substation[" + q(sub.Name) + "]"
 		diags = append(diags, checkLNodes(idx, subPath, sub.LNodes)...)
 
 		for _, vl := range sub.VoltageLevels {
-			vlPath := subPath + "/VoltageLevel[" + vl.Name + "]"
+			vlPath := subPath + "/VoltageLevel[" + q(vl.Name) + "]"
 			diags = append(diags, checkLNodes(idx, vlPath, vl.LNodes)...)
 
 			for _, bay := range vl.Bays {
-				bayPath := vlPath + "/Bay[" + bay.Name + "]"
+				bayPath := vlPath + "/Bay[" + q(bay.Name) + "]"
 				diags = append(diags, checkLNodes(idx, bayPath, bay.LNodes)...)
 			}
 		}
@@ -38,14 +38,13 @@ func checkLNodes(idx *index.Index, parentPath string, lnodes []scl.LNode) []scl.
 		if ln.IEDName == "" || ln.IEDName == "None" {
 			continue
 		}
-		lnPath := fmt.Sprintf("%s/LNode[%s/%s/%s%s%s]",
-			parentPath, ln.IEDName, ln.LDInst, ln.Prefix, ln.LNClass, ln.LNInst)
+		lnPath := parentPath + "/LNode[" + q(ln.IEDName) + "/" + q(ln.LDInst) + "/" + q(ln.Prefix+ln.LNClass+ln.LNInst) + "]"
 
 		if idx.FindIED(ln.IEDName) == nil {
 			diags = append(diags, scl.Diagnostic{
 				Severity: scl.DiagError, Code: "unresolved-topology-lnode",
 				Path:    lnPath,
-				Message: fmt.Sprintf("references IED %q which does not exist", ln.IEDName),
+				Message: fmt.Sprintf("references IED %q which does not exist", q(ln.IEDName)),
 			})
 			continue
 		}
@@ -53,7 +52,7 @@ func checkLNodes(idx *index.Index, parentPath string, lnodes []scl.LNode) []scl.
 			diags = append(diags, scl.Diagnostic{
 				Severity: scl.DiagError, Code: "unresolved-topology-lnode",
 				Path:    lnPath,
-				Message: fmt.Sprintf("references LDevice %q which does not exist in IED %q", ln.LDInst, ln.IEDName),
+				Message: fmt.Sprintf("references LDevice %q which does not exist in IED %q", q(ln.LDInst), q(ln.IEDName)),
 			})
 			continue
 		}
@@ -63,8 +62,8 @@ func checkLNodes(idx *index.Index, parentPath string, lnodes []scl.LNode) []scl.
 				diags = append(diags, scl.Diagnostic{
 					Severity: scl.DiagWarning, Code: "unresolved-topology-lnode",
 					Path: lnPath,
-					Message: fmt.Sprintf("LN %s%s%s not found in IED %q LD %q",
-						ln.Prefix, ln.LNClass, ln.LNInst, ln.IEDName, ln.LDInst),
+					Message: fmt.Sprintf("LN %s not found in IED %q LD %q",
+						q(ln.Prefix+ln.LNClass+ln.LNInst), q(ln.IEDName), q(ln.LDInst)),
 				})
 			}
 		}

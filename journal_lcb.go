@@ -391,6 +391,11 @@ func (e *JournalEngine) HandleLCBWrite(_ context.Context, ldName, lcbItem, attr 
 				return lcbError(mms.DataAccessErrorObjectValueInvalid, rt, "DatSet %q names no data set", s)
 			}
 		}
+	case "IntgPd":
+		// ServerOptions.MinIntegrityPeriod bounds a non-zero IntgPd.
+		if u, ok := val.Uint32(); ok && u != 0 && u < e.minIntgPd {
+			return lcbError(mms.DataAccessErrorObjectValueInvalid, rt, "IntgPd %d ms is below the minimum %d ms", u, e.minIntgPd)
+		}
 	}
 	e.store.Set(rt.key(attr), val)
 	e.loadLocked(rt)

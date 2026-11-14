@@ -334,6 +334,23 @@ func compareDir(generated, checked string) error {
 	if err != nil {
 		return err
 	}
+	produced := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			produced[e.Name()] = true
+		}
+	}
+	// A file in the checked-in output that the generator does not
+	// produce (left over from an older generator) is out of date too.
+	checkedEntries, err := os.ReadDir(checked)
+	if err != nil {
+		return fmt.Errorf("checked-in output: %w", err)
+	}
+	for _, e := range checkedEntries {
+		if !e.IsDir() && !produced[e.Name()] {
+			return fmt.Errorf("file %s: not produced by the generator", e.Name())
+		}
+	}
 	for _, e := range entries {
 		if e.IsDir() {
 			continue

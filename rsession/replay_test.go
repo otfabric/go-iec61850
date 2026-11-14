@@ -41,17 +41,22 @@ func TestReplayWindow(t *testing.T) {
 	}
 }
 
+// TestReplayWrap: numbers are not compared across a wrap. A sender does
+// not wrap under one key (Transport.Send refuses), so 0 after 0xffffffff
+// is an old number under the same key.
 func TestReplayWrap(t *testing.T) {
 	g := newReplayGuard(0, 0)
 	k := streamKey{si: SIGOOSE, keyID: 1}
 	now := time.Unix(0, 0)
-	for _, n := range []uint32{0xfffffffe, 0xffffffff, 0, 1} {
+	for _, n := range []uint32{0xfffffffe, 0xffffffff} {
 		if !g.accept(k, n, now) {
-			t.Fatalf("accept(%#x) across the wrap", n)
+			t.Fatalf("accept(%#x)", n)
 		}
 	}
-	if g.accept(k, 0xffffffff, now) {
-		t.Fatal("duplicate across the wrap accepted")
+	for _, n := range []uint32{0, 1, 0xffffffff} {
+		if g.accept(k, n, now) {
+			t.Fatalf("accept(%#x) under the same key after 0xffffffff", n)
+		}
 	}
 }
 

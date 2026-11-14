@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"slices"
 	"strings"
 
 	"github.com/otfabric/go-mms"
@@ -92,12 +94,13 @@ func (c *Client) unwatchLastApplError(w *lastApplErrorWatch) {
 
 // terminationWaiter waits for the CommandTermination of one operate.
 type terminationWaiter struct {
-	ref string
-	ch  chan *CommandTermination // buffered 1; closed when the client closes
+	ref    string
+	ctlNum uint8                    // ctlNum of the operate
+	ch     chan *CommandTermination // buffered 1; closed when the client closes
 }
 
-func (c *Client) addTerminationWaiter(key, ref string) (*terminationWaiter, error) {
-	w := &terminationWaiter{ref: ref, ch: make(chan *CommandTermination, 1)}
+func (c *Client) addTerminationWaiter(key, ref string, ctlNum uint8) (*terminationWaiter, error) {
+	w := &terminationWaiter{ref: ref, ctlNum: ctlNum, ch: make(chan *CommandTermination, 1)}
 	c.ctlMu.Lock()
 	defer c.ctlMu.Unlock()
 	if c.ctlClosed {
@@ -195,8 +198,22 @@ func (c *Client) handleControlReport(report *mms.InformationReportIndication) bo
 		c.logger.Debug("iec61850: CommandTermination without a waiter", "oper", key)
 		return true
 	}
-	w := ws[0]
-	c.ctlWaiters[key] = ws[1:]
+	// The Oper of the termination carries the ctlNum of the operate it
+	// ends (IEC 61850-8-1 20.9.2): with several OperateWait of the same
+	// control in flight, the waiter with that ctlNum is served. A
+	// termination without a decodable ctlNum, or with one no waiter
+	// sent, goes to the oldest waiter.
+	idx := 0
+	if n, ok := operCtlNum(report.Values[operIdx]); ok {
+		for i, cand := range ws {
+			if cand.ctlNum == n {
+				idx = i
+				break
+			}
+		}
+	}
+	w := ws[idx]
+	c.ctlWaiters[key] = append(ws[:idx:idx], ws[idx+1:]...)
 	if len(c.ctlWaiters[key]) == 0 {
 		delete(c.ctlWaiters, key)
 	}
@@ -209,6 +226,31 @@ func (c *Client) handleControlReport(report *mms.InformationReportIndication) bo
 	}
 	w.ch <- &CommandTermination{Ref: w.ref, Oper: report.Values[operIdx], LastApplError: lae}
 	return true
+}
+
+// operCtlNum returns the ctlNum of a reported Oper structure: ctlVal,
+// operTm when present (a UtcTime), origin (a structure), then ctlNum
+// (IEC 61850-8-1 Table 85).
+func operCtlNum(oper *mms.Value) (uint8, bool) {
+	if oper == nil {
+		return 0, false
+	}
+	members, ok := oper.Structure()
+	if !ok || len(members) < 3 || slices.Contains(members, nil) {
+		return 0, false
+	}
+	i := 1
+	if members[i].Type() == mms.ValueTypeUTCTime {
+		i++
+	}
+	if i+1 >= len(members) || members[i].Type() != mms.ValueTypeStructure || members[i+1].Type() != mms.ValueTypeUnsigned {
+		return 0, false
+	}
+	u, ok := members[i+1].Uint64()
+	if !ok || u > math.MaxUint8 {
+		return 0, false
+	}
+	return uint8(u), true
 }
 
 func cntrlObjOf(e *LastApplError) string {
@@ -241,7 +283,10 @@ func (c *Client) OperateWait(ctx context.Context, ref Ref, params OperateParams)
 	}
 	c.initReportDispatch()
 	key := controlKey(string(domainID), string(itemID))
-	w, err := c.addTerminationWaiter(key, ref.String())
+	// Fix the ctlNum now, so the termination can be matched to it.
+	params.CtlNum = c.sequenceCtlNum(ref, params.CtlNum, params.CtlNumSet)
+	params.CtlNumSet = true
+	w, err := c.addTerminationWaiter(key, ref.String(), params.CtlNum)
 	if err != nil {
 		return nil, err
 	}

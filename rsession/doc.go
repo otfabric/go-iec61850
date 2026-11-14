@@ -43,6 +43,16 @@
 // than the [ReplayWindow]. Refusals are counted ([Transport.Stats]) and
 // reported to [Config.OnReject].
 //
+// SPDU numbers do not repeat under one key. A receiver compares them as
+// plain 32-bit unsigned numbers, without wrap-around: a number below the
+// window is refused (until [Config.ReplayResetAfter] of silence, when
+// set). A sender that has sent SPDU number 0xffffffff under a key refuses
+// to send more under it ([ErrLimitExceeded]) until a key with another ID
+// is current, and numbering goes on at 0 under the new key, which starts
+// new windows at the receivers. Key IDs are not to be reused for new key
+// material. Rotate keys well before 2^32 SPDUs: an R-SV stream of 4800
+// SPDUs per second uses them up in about 10 days.
+//
 // The replay window is kept per sender address, which the signature does
 // not cover, so an SPDU that verified is accepted once more from each
 // source address the receiver has no window for (also after a sender's

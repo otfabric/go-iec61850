@@ -53,19 +53,19 @@ func Addresses(s *scl.SCL, _ *index.Index) []scl.Diagnostic {
 		diags = append(diags, scl.Diagnostic{Severity: sev, Code: code, Path: path, Message: fmt.Sprintf(format, args...)})
 	}
 	for _, sn := range s.Communication.SubNetworks {
-		snPath := fmt.Sprintf("SubNetwork[%s]", sn.Name)
+		snPath := "SubNetwork[" + q(sn.Name) + "]"
 		seen := map[string]string{} // "MAC/APPID" -> first path
 		for _, cap := range sn.ConnectedAPs {
-			capPath := snPath + "/ConnectedAP[" + cap.IEDName + "/" + cap.APName + "]"
+			capPath := snPath + "/ConnectedAP[" + q(cap.IEDName) + "/" + q(cap.APName) + "]"
 			checkPs(add, capPath+"/Address", cap.Address, "")
 			for _, g := range cap.GSEs {
-				p := capPath + "/GSE[" + g.LDInst + "/" + g.CBName + "]"
+				p := capPath + "/GSE[" + q(g.LDInst) + "/" + q(g.CBName) + "]"
 				if mac, app, ok := checkPs(add, p+"/Address", g.Address, "GOOSE"); ok {
 					dupAddress(add, seen, p, mac, app)
 				}
 			}
 			for _, v := range cap.SMVs {
-				p := capPath + "/SMV[" + v.LDInst + "/" + v.CBName + "]"
+				p := capPath + "/SMV[" + q(v.LDInst) + "/" + q(v.CBName) + "]"
 				if mac, app, ok := checkPs(add, p+"/Address", v.Address, "SV"); ok {
 					dupAddress(add, seen, p, mac, app)
 				}
@@ -95,14 +95,14 @@ func checkPs(add addFunc, path string, ps []scl.P, service string) (mac [6]byte,
 	for _, p := range ps {
 		v := strings.TrimSpace(p.Value)
 		if types[p.Type] {
-			add(scl.DiagWarning, "duplicate-p-type", path, "P type %q given more than once", p.Type)
+			add(scl.DiagWarning, "duplicate-p-type", path, "P type %q given more than once", q(p.Type))
 		}
 		types[p.Type] = true
 		format := func(pattern string) {
-			add(scl.DiagWarning, "address-format", path, "%s %q does not match the SCL pattern %s", p.Type, p.Value, pattern)
+			add(scl.DiagWarning, "address-format", path, "%s %q does not match the SCL pattern %s", q(p.Type), q(p.Value), pattern)
 		}
 		invalid := func(why string) {
-			add(scl.DiagError, "invalid-address", path, "%s %q: %s", p.Type, p.Value, why)
+			add(scl.DiagError, "invalid-address", path, "%s %q: %s", q(p.Type), q(p.Value), why)
 		}
 		switch p.Type {
 		case "MAC-Address":
@@ -186,7 +186,7 @@ func parseMAC(v string) ([6]byte, error) {
 	for i, s := range parts {
 		b, err := strconv.ParseUint(s, 16, 8)
 		if err != nil {
-			return m, fmt.Errorf("octet %q is not hexadecimal", s)
+			return m, fmt.Errorf("octet %q is not hexadecimal", q(s))
 		}
 		m[i] = byte(b)
 	}

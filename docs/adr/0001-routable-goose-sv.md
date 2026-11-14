@@ -129,8 +129,14 @@ configurable.
   unsecured SPDUs unless `AllowUnsecured` is set.
 - **Replay.** The receiver keeps, per sender address, SI and key ID, the
   highest SPDU number accepted and a 64-entry window below it (as IPsec
-  does, RFC 4303 3.4.3), with serial number arithmetic (RFC 1982) for the
-  wrap. A duplicate or an SPDU older than the window is refused. A new key
+  does, RFC 4303 3.4.3), comparing SPDU numbers as plain 32-bit unsigned
+  values. A duplicate or an SPDU older than the window is refused. The
+  sender does not wrap its number under one key: after SPDU number
+  0xffffffff `Transport.Send` refuses with `ErrLimitExceeded` until a key
+  with another ID is current, as an IPsec sender must not cycle its
+  sequence counter under one SA (RFC 4303 3.3.3, applied by analogy; 90-5
+  does not say). libiec61850's RSession increments its 32-bit number
+  without a bound and keeps no replay window. A new key
   starts a new window. A restarted publisher starts below its old numbers
   and is refused until the key changes, unless the receiver sets
   `ReplayResetAfter` (accept a lower number after that much silence) or the
@@ -143,6 +149,10 @@ configurable.
   off by default: `AllowedSenders` (address prefixes; other senders are
   refused before verification) and `SingleSenderPerKey` (one window per SI
   and key ID, whatever the address, for a key used by one publisher).
+  Addendum (v1.22.0): the window no longer uses serial number arithmetic
+  (v1.21.0 and before), under which a number more than 2^31 below the
+  highest accepted one counted as ahead; a number below the window is now
+  always old. The sender stops at 0xffffffff per key, as above.
   Subscriptions over a transport should also filter on the publisher with
   `Src: SourceMAC(publisher address)`.
 - **Rejections** are counted (`Transport.Stats`) and reported to

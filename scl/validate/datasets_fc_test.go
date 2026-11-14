@@ -40,13 +40,13 @@ func TestDatasets_FCWalkIsLinear(t *testing.T) {
 		idx, root := fanOutTypes(fanOut, d)
 		budget := 1 + (maxSDODepth+1)*fanOut*d
 		m := newFCIndex(idx)
-		if m.doHasFC(root, "MX", 0) {
+		if m.doHasFC(root, "MX") {
 			t.Fatalf("depth %d: FC MX found, the types have only ST", d)
 		}
 		if m.steps > budget {
 			t.Fatalf("depth %d, fan-out %d: %d steps, budget %d", d, fanOut, m.steps, budget)
 		}
-		if !newFCIndex(idx).doHasFC(root, "ST", 0) {
+		if !newFCIndex(idx).doHasFC(root, "ST") {
 			t.Fatalf("depth %d: FC ST not found", d)
 		}
 	}
@@ -60,7 +60,7 @@ func TestDatasets_FCWalkDepthLimit(t *testing.T) {
 		want  bool
 	}{{maxSDODepth, false}, {maxSDODepth + 1, true}} {
 		idx, root := fanOutTypes(1, tc.depth)
-		if got := newFCIndex(idx).doHasFC(root, "MX", 0); got != tc.want {
+		if got := newFCIndex(idx).doHasFC(root, "MX"); got != tc.want {
 			t.Errorf("chain of %d SDO levels: doHasFC(MX) = %v, want %v", tc.depth, got, tc.want)
 		}
 	}
@@ -96,7 +96,7 @@ func TestDatasets_FCWalkSameResults(t *testing.T) {
 		m := newFCIndex(idx)
 		for id, dot := range idx.DOTypes {
 			for _, fc := range fcs {
-				if got, want := m.doHasFC(dot, fc, 0), refDoHasFC(idx, dot, fc, 0); got != want {
+				if got, want := m.doHasFC(dot, fc), refDoHasFC(idx, dot, fc, 0); got != want {
 					t.Fatalf("%s: DOType %s, FC %s: %v, want %v", name, id, fc, got, want)
 				}
 			}

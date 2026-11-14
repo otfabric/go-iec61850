@@ -35,6 +35,8 @@ The publisher's Ethernet addresses and VLAN tag are not sent; frames a receiving
 
 Secured is the default: [Open](#func-open) refuses a configuration without a [KeyProvider](#type-keyprovider) unless [Config.Insecure](#func-config-insecure) is set, and a receiver refuses unsecured SPDUs unless it is set. A receiver also refuses SPDUs under keys it does not hold, SPDUs whose signature does not verify, and replays: per sender and key, an SPDU number accepted before or older than the ReplayWindow. Refusals are counted ([Transport.Stats](#func-transport-stats)) and reported to [Config.OnReject](#func-config-onreject).
 
+SPDU numbers do not repeat under one key. A receiver compares them as plain 32-bit unsigned numbers, without wrap-around: a number below the window is refused (until [Config.ReplayResetAfter](#func-config-replayresetafter) of silence, when set). A sender that has sent SPDU number 0xffffffff under a key refuses to send more under it (ErrLimitExceeded) until a key with another ID is current, and numbering goes on at 0 under the new key, which starts new windows at the receivers. Key IDs are not to be reused for new key material. Rotate keys well before 2^32 SPDUs: an R-SV stream of 4800 SPDUs per second uses them up in about 10 days.
+
 The replay window is kept per sender address, which the signature does not cover, so an SPDU that verified is accepted once more from each source address the receiver has no window for (also after a sender's window was forgotten at [Config.MaxSenders](#func-config-maxsenders), or after a restart). [Config.AllowedSenders](#func-config-allowedsenders) refuses datagrams from addresses outside the listed prefixes before they are verified; [Config.SingleSenderPerKey](#func-config-singlesenderperkey) keeps one window per key ID whatever the address, for keys that one publisher uses. Set one of them on a receiver, and filter the goose or sv subscription on the publisher with Src: [SourceMAC](#func-sourcemac) of its address.
 
 Keys come from a [KeyProvider](#type-keyprovider): the current key secures what is sent, every key it holds is accepted on receipt. [KeyRing](#type-keyring) is a static provider; key distribution (IEC 62351-9 GDOI) is outside this package.
@@ -198,7 +200,7 @@ func Verify(b []byte, opts VerifyOptions) (*SPDU, *Key, error)
 
 Verify decodes b and checks its signature. It returns the SPDU and the key that verified it (nil for an accepted unsecured SPDU).
 
-An SPDU is unsecured when its key ID is 0 (and, in version 1, its MAC algorithm is none) and it has no signature; it is refused with ErrUnsecured unless opts.AllowUnsecured. A secured SPDU is refused with ErrUnknownKey when the provider does not hold its key, with ErrUnsupported when it is encrypted or uses a MAC algorithm other than HMAC-SHA256, and with ErrAuthentication when the signature is missing, its length or algorithm does not match the key, or it does not verify. Replay is checked by [Transport](#type-transport), not here.
+An SPDU is unsecured when its key ID is 0 (and, in version 1, its MAC algorithm is none) and it has no signature; it is refused with ErrUnsecured unless opts.AllowUnsecured. A secured SPDU is refused with ErrUnknownKey when the provider does not hold its key, with ErrUnsupported when it is encrypted or uses a MAC algorithm other than HMAC-SHA256, and with ErrAuthentication when the signature is missing, its length or algorithm does not match the key, or it does not verify. A key the provider returns with another ID than the SPDU's, with ID 0 or with less than MinKeySize octets of material is not used: the SPDU is refused with an error that wraps both ErrUnknownKey and ErrInvalidKey. Replay is checked by [Transport](#type-transport), not here.
 
 ## Types
 
@@ -656,6 +658,11 @@ Stats counts transport activity.
 ```go
 type Transport struct {
 
+	// seq is the send state: the number of the next SPDU (low 32 bits)
+	// and the ID of the key whose SPDU numbers are used up (high 32
+	// bits, 0 for none). One word, so that taking a number and marking
+	// the key used up are one CompareAndSwap.
+
 	// allowed is Config.AllowedSenders with IPv4-mapped prefixes
 	// unmapped; empty accepts every sender.
 
@@ -709,7 +716,7 @@ LocalAddr returns the address the transport is bound to.
 func (t *Transport) NextSPDUNumber() uint32
 ```
 
-NextSPDUNumber returns the number the next SPDU sent will carry.
+NextSPDUNumber returns the number the next SPDU sent will carry. After the numbers of a key are used up (see [Transport.Send](#func-transport-send)) it is 0, the number the first SPDU under the next key carries.
 
 #### func (Transport) Recv
 
@@ -734,6 +741,8 @@ func (t *Transport) Send(frame []byte) error
 ```
 
 Send implements [l2.Transport](https://pkg.go.dev/github.com/otfabric/go-iec61850/l2#Transport). frame is a layer-2 GOOSE or SV frame (optionally 802.1Q tagged) of the transport's kind; its APPID, simulation bit and APDU are sent in one SPDU to Config.RemoteAddr, secured with the provider's current key. The Ethernet addresses, VLAN tag and Reserved 2 are not carried.
+
+SPDU numbers do not repeat under one key: after the SPDU numbered 0xffffffff was sent under a key, Send fails with an error wrapping ErrLimitExceeded until the provider's current key has another ID; numbering then goes on at 0 under that key. Rotate keys well before 2^32 SPDUs (about 10 days of an R-SV stream at 4800 SPDUs per second). Unsecured SPDUs (Config.Insecure without keys) wrap at 2^32.
 
 #### func (Transport) Stats
 

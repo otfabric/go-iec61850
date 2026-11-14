@@ -31,8 +31,8 @@ var (
 
 	// ErrInvalidPDU indicates a BER structure error inside the savPdu:
 	// bad tag, bad length, missing mandatory field, duplicate or
-	// out-of-order field, wrong field size, or noASDU not matching the
-	// number of ASDUs.
+	// out-of-order field, wrong field size, an svID or datSet longer
+	// than [MaxIDLength], or noASDU not matching the number of ASDUs.
 	ErrInvalidPDU = errors.New("sv: invalid PDU")
 
 	// ErrInvalidData indicates a sample that does not match its dataset

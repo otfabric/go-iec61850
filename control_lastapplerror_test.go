@@ -205,7 +205,7 @@ func TestOperateWait_ClosedAndInvalid(t *testing.T) {
 	if _, err := c.OperateWait(ctx, ref, params); !errors.Is(err, ErrClosed) {
 		t.Errorf("OperateWait on a closed client = %v", err)
 	}
-	if _, err := c.addTerminationWaiter("k", "r"); !errors.Is(err, ErrClosed) {
+	if _, err := c.addTerminationWaiter("k", "r", 0); !errors.Is(err, ErrClosed) {
 		t.Errorf("addTerminationWaiter after close = %v", err)
 	}
 }
@@ -366,8 +366,8 @@ func TestHandleControlReport_Routing(t *testing.T) {
 	// A negative termination with an undecodable LastApplError is still
 	// negative; waiters are served in order.
 	key := controlKey("LD", "GGIO1$CO$SPCSO1$Oper")
-	first, _ := c.addTerminationWaiter(key, "LD/GGIO1.SPCSO1")
-	second, _ := c.addTerminationWaiter(key, "LD/GGIO1.SPCSO1")
+	first, _ := c.addTerminationWaiter(key, "LD/GGIO1.SPCSO1", 0)
+	second, _ := c.addTerminationWaiter(key, "LD/GGIO1.SPCSO1", 0)
 	c.handleControlReport(&mms.InformationReportIndication{
 		Variables: []mms.ObjectName{laeName, oper},
 		Values:    []*mms.Value{mms.NewBoolean(true), mms.NewBoolean(true)},

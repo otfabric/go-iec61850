@@ -90,6 +90,8 @@ func ControlBlocksFromSCLWithOptions(doc *scl.SCL, opts SCLOptions) ([]ControlBl
 	var out []ControlBlock
 	var errs []error
 	budget := servermodel.NewBudget(opts.MaxExpandedNodes)
+	// The lookups of the document, built once for all its access points.
+	tmpl := servermodel.NewTemplates(doc)
 	for i := range doc.IEDs {
 		ied := &doc.IEDs[i]
 		for j := range ied.AccessPoints {
@@ -97,7 +99,7 @@ func ControlBlocksFromSCLWithOptions(doc *scl.SCL, opts SCLOptions) ([]ControlBl
 			if ap.Server == nil {
 				continue
 			}
-			cbs, err := blocksForAP(doc, ied.Name, ap.Name, budget)
+			cbs, err := blocksForAP(doc, ied.Name, ap.Name, budget, tmpl)
 			out = append(out, cbs...)
 			if err != nil {
 				errs = append(errs, err)
@@ -129,8 +131,8 @@ func ControlBlockFromSCL(doc *scl.SCL, iedName, ldInst, cbName string) (*Control
 	return nil, fmt.Errorf("%w: %w: GoCB %s/%s/%s", ErrSCL, ErrNotFound, iedName, ldInst, cbName)
 }
 
-func blocksForAP(doc *scl.SCL, iedName, apName string, budget *servermodel.Budget) ([]ControlBlock, error) {
-	model, err := servermodel.FromSCLWithOptions(doc, iedName, apName, servermodel.Options{Budget: budget})
+func blocksForAP(doc *scl.SCL, iedName, apName string, budget *servermodel.Budget, tmpl *servermodel.Templates) ([]ControlBlock, error) {
+	model, err := servermodel.FromSCLWithOptions(doc, iedName, apName, servermodel.Options{Budget: budget, Templates: tmpl})
 	if err != nil {
 		return nil, fmt.Errorf("%w: IED %s AP %s: %w", ErrSCL, iedName, apName, err)
 	}

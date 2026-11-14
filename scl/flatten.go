@@ -45,8 +45,9 @@ type FlatRow struct {
 	// whose DAType is missing) and "type-cycle" (an SDO or BDA that
 	// refers back to a type being expanded). Such a row is the stub of
 	// the branch that could not be expanded. "expansion-limit" marks
-	// the row where the expansion stopped at its limit
-	// ([FlattenOptions.MaxExpandedNodes]); no row follows it. Arrays
+	// the row where the expansion stopped at a limit
+	// ([FlattenOptions.MaxExpandedNodes], [FlattenOptions.MaxTypeDepth]);
+	// no row follows it. Arrays
 	// (count attribute) are flattened as a single element; the count is
 	// not expanded.
 	Status string
@@ -60,9 +61,10 @@ type FlatRow struct {
 // DOType → DA/SDO chains. Attributes whose types cannot be resolved
 // are still emitted with available metadata.
 //
-// The expansion stops after [DefaultMaxExpandedNodes] nodes; the last
-// row then has the status "expansion-limit". [FlattenWithOptions] sets
-// another limit and reports it as a diagnostic.
+// The expansion stops after [DefaultMaxExpandedNodes] nodes, or at a
+// type reference [DefaultMaxTypeDepth] levels deep; the last row then
+// has the status "expansion-limit". [FlattenWithOptions] sets other
+// limits and reports the stop as a diagnostic.
 func Flatten(s *SCL) []FlatRow {
 	rows, _ := FlattenWithOptions(s, FlattenOptions{})
 	return rows
@@ -74,22 +76,39 @@ type FlattenOptions struct {
 	// produce; zero or less means [DefaultMaxExpandedNodes]. A node is
 	// one DO, SDO, DA or BDA at one place of the expanded model (a type
 	// referenced from n places counts n times), or the stub row of a
-	// branch that cannot be expanded.
+	// branch that cannot be expanded. A node counts one more node for
+	// every 256 bytes of its Path, so that the rows hold about 256 bytes
+	// of path per node at the most.
 	MaxExpandedNodes int
+
+	// MaxTypeDepth is the number of type references one path of the
+	// expansion may follow (a DO's DOType, then each SDO's DOType and
+	// each Struct DA's or BDA's DAType); zero or less means
+	// [DefaultMaxTypeDepth].
+	MaxTypeDepth int
 }
 
+// flattenPathBytesPerNode is the number of bytes of a row's Path that
+// one node of [FlattenOptions.MaxExpandedNodes] pays for.
+const flattenPathBytesPerNode = 256
+
 // FlattenWithOptions is [Flatten] with options. When the expansion
-// reaches opts.MaxExpandedNodes it stops: the rows expanded so far are
-// returned, the last with the status "expansion-limit", together with
-// an error diagnostic with code "expansion-limit" that names the
-// logical node where the expansion stopped. The diagnostics are empty
-// otherwise.
+// reaches opts.MaxExpandedNodes, or a type reference deeper than
+// opts.MaxTypeDepth, it stops: the rows expanded so far are returned,
+// the last with the status "expansion-limit", together with an error
+// diagnostic with code "expansion-limit" that names the logical node
+// where the expansion stopped. The diagnostics are empty otherwise.
 func FlattenWithOptions(s *SCL, opts FlattenOptions) ([]FlatRow, []Diagnostic) {
 	max := opts.MaxExpandedNodes
 	if max <= 0 {
 		max = DefaultMaxExpandedNodes
 	}
+	maxDepth := opts.MaxTypeDepth
+	if maxDepth <= 0 {
+		maxDepth = DefaultMaxTypeDepth
+	}
 	f := &flattener{
+		maxDepth: maxDepth,
 		lntIndex: make(map[string]*LNodeType, len(s.DataTypeTemplates.LNodeTypes)),
 		dotIndex: make(map[string]*DOType, len(s.DataTypeTemplates.DOTypes)),
 		datIndex: make(map[string]*DAType, len(s.DataTypeTemplates.DATypes)),
@@ -133,38 +152,63 @@ type flattener struct {
 	datIndex map[string]*DAType
 	rows     []FlatRow
 
-	left    int  // nodes the expansion may still produce
-	max     int  // the limit, for the diagnostic
-	stopped bool // the limit was reached; nothing more is expanded
-	at      FlatRow
+	left     int  // nodes the expansion may still produce
+	max      int  // the limit, for the diagnostic
+	maxDepth int  // the type reference depth limit
+	stopped  bool // a limit was reached; nothing more is expanded
+	tooDeep  bool // the limit reached is maxDepth
+	at       FlatRow
 }
 
-// take counts one node and reports whether the expansion may go on.
-// When the limit is reached it appends the "expansion-limit" stub row
-// for row and stops the expansion.
+// take counts the nodes of row (one, and one more per
+// flattenPathBytesPerNode bytes of its path) and reports whether the
+// expansion may go on. When the limit is reached it appends the
+// "expansion-limit" stub row for row and stops the expansion.
 func (f *flattener) take(row FlatRow) bool {
 	if f.stopped {
 		return false
 	}
-	if f.left == 0 {
-		f.stopped = true
-		row.Status = "expansion-limit"
-		f.at = row
-		f.rows = append(f.rows, row)
+	n := 1 + len(row.Path)/flattenPathBytesPerNode
+	if f.left < n {
+		f.stop(row)
 		return false
 	}
-	f.left--
+	f.left -= n
 	return true
+}
+
+// deep reports whether a type reference depth levels deep may be
+// followed. Beyond the limit it appends the "expansion-limit" stub row
+// for row and stops the expansion.
+func (f *flattener) deep(row FlatRow, depth int) bool {
+	if depth <= f.maxDepth {
+		return true
+	}
+	f.tooDeep = true
+	f.stop(row)
+	return false
+}
+
+func (f *flattener) stop(row FlatRow) {
+	f.stopped = true
+	row.Status = "expansion-limit"
+	f.at = row
+	f.rows = append(f.rows, row)
 }
 
 func (f *flattener) limitDiagnostic() Diagnostic {
 	sink := newDiagSink(1, DefaultMaxDiagnosticName)
+	msg := fmt.Sprintf("%v: the type templates expand to more than %d nodes (FlattenOptions.MaxExpandedNodes); the rows end here",
+		ErrLimitExceeded, f.max)
+	if f.tooDeep {
+		msg = fmt.Sprintf("%v: the type references nest deeper than %d levels (FlattenOptions.MaxTypeDepth); the rows end here",
+			ErrLimitExceeded, f.maxDepth)
+	}
 	return Diagnostic{
 		Severity: DiagError,
 		Code:     "expansion-limit",
 		Path:     fmt.Sprintf("IED[%s]/LD[%s]/LN[%s]", sink.name(f.at.IED), sink.name(f.at.LD), sink.name(f.at.LN)),
-		Message: fmt.Sprintf("%v: the type templates expand to more than %d nodes (FlattenOptions.MaxExpandedNodes); the rows end here",
-			ErrLimitExceeded, f.max),
+		Message:  msg,
 	}
 }
 
@@ -208,13 +252,18 @@ func (f *flattener) flattenLN(iedName, apName, ldInst string, ln LN) {
 		}
 
 		visited := map[string]bool{dot.ID: true}
-		f.flattenDOTypeRec(base, do.Name, dot, visited)
+		f.flattenDOTypeRec(base, do.Name, dot, visited, 1)
+		if f.stopped {
+			return
+		}
 	}
 }
 
-func (f *flattener) flattenDOTypeRec(base FlatRow, prefix string, dot *DOType, visitedDO map[string]bool) {
+// flattenDOTypeRec expands dot, depth type references below the
+// logical node, at path prefix.
+func (f *flattener) flattenDOTypeRec(base FlatRow, prefix string, dot *DOType, visitedDO map[string]bool, depth int) {
 	for _, da := range dot.DAs {
-		f.flattenDA(base, prefix, da, dot.CDC)
+		f.flattenDA(base, prefix, da, dot.CDC, depth)
 		if f.stopped {
 			return
 		}
@@ -237,8 +286,11 @@ func (f *flattener) flattenDOTypeRec(base FlatRow, prefix string, dot *DOType, v
 			f.rows = append(f.rows, row)
 			continue
 		}
+		if !f.deep(row, depth+1) {
+			return
+		}
 		visitedDO[sdo.Type] = true
-		f.flattenDOTypeRec(base, prefix+"."+sdo.Name, subDOT, visitedDO)
+		f.flattenDOTypeRec(base, row.Path, subDOT, visitedDO, depth+1)
 		delete(visitedDO, sdo.Type)
 		if f.stopped {
 			return
@@ -246,7 +298,9 @@ func (f *flattener) flattenDOTypeRec(base FlatRow, prefix string, dot *DOType, v
 	}
 }
 
-func (f *flattener) flattenDA(base FlatRow, prefix string, da DA, cdc string) {
+// flattenDA expands da of a DOType depth type references below the
+// logical node.
+func (f *flattener) flattenDA(base FlatRow, prefix string, da DA, cdc string, depth int) {
 	row := base
 	row.Path, row.FC, row.BType, row.CDC, row.Desc = prefix+"."+da.Name, da.FC, da.BType, cdc, da.Desc
 	if !f.take(row) {
@@ -256,9 +310,12 @@ func (f *flattener) flattenDA(base FlatRow, prefix string, da DA, cdc string) {
 	if da.BType == "Struct" {
 		dat, ok := f.datIndex[da.Type]
 		if ok {
+			if !f.deep(row, depth+1) {
+				return
+			}
 			visited := make(map[string]bool)
 			visited[da.Type] = true
-			f.flattenDATypeRec(base, row.Path, da.FC, cdc, dat, visited)
+			f.flattenDATypeRec(base, row.Path, da.FC, cdc, dat, visited, depth+1)
 			return
 		}
 		row.Status = "unresolved-datype"
@@ -267,7 +324,9 @@ func (f *flattener) flattenDA(base FlatRow, prefix string, da DA, cdc string) {
 	f.rows = append(f.rows, row)
 }
 
-func (f *flattener) flattenDATypeRec(base FlatRow, prefix, fc, cdc string, dat *DAType, visitedDA map[string]bool) {
+// flattenDATypeRec expands dat, depth type references below the logical
+// node, at path prefix.
+func (f *flattener) flattenDATypeRec(base FlatRow, prefix, fc, cdc string, dat *DAType, visitedDA map[string]bool, depth int) {
 	for _, bda := range dat.BDAs {
 		row := base
 		row.Path, row.FC, row.BType, row.CDC, row.Desc = prefix+"."+bda.Name, fc, bda.BType, cdc, bda.Desc
@@ -281,8 +340,11 @@ func (f *flattener) flattenDATypeRec(base FlatRow, prefix, fc, cdc string, dat *
 			case visitedDA[bda.Type]:
 				row.Status = "type-cycle"
 			case ok:
+				if !f.deep(row, depth+1) {
+					return
+				}
 				visitedDA[bda.Type] = true
-				f.flattenDATypeRec(base, row.Path, fc, cdc, subDAT, visitedDA)
+				f.flattenDATypeRec(base, row.Path, fc, cdc, subDAT, visitedDA, depth+1)
 				delete(visitedDA, bda.Type)
 				if f.stopped {
 					return

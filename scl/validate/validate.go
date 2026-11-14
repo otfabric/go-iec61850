@@ -4,13 +4,19 @@
 //
 // Validation is split into independent passes that each check a
 // specific aspect of the model. All passes accept the normalized
-// [scl.SCL] model and a shared [index.Index].
+// [scl.SCL] model and a shared [index.Index]. A diagnostic quotes each
+// name of the document cut to [scl.DefaultMaxDiagnosticName] bytes.
 package validate
 
 import (
 	"github.com/otfabric/go-iec61850/scl"
 	"github.com/otfabric/go-iec61850/scl/index"
+	"github.com/otfabric/go-iec61850/scl/internal/diagname"
 )
+
+// q returns a name of the document as a diagnostic quotes it: cut to
+// [scl.DefaultMaxDiagnosticName] bytes.
+func q(n string) string { return diagname.Q(n) }
 
 // Options controls which validation passes are executed.
 // A zero-value Options enables all passes.

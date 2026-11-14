@@ -22,6 +22,11 @@ import (
 // runtime failure. Errors from [Server.EnableSV] wrap it.
 var ErrSV = errors.New("iec61850: SV error")
 
+// DefaultSVMaxSamplesPerSecond is the default of
+// [SVOptions.MaxSamplesPerSecond]: 96000 samples/s, the highest of the
+// IEC 61869-9 preferred sample rates (4800, 14400 and 96000 samples/s).
+const DefaultSVMaxSamplesPerSecond = 96000
+
 // SVOptions configures [Server.EnableSV].
 type SVOptions struct {
 	// Transport sends the SV frames (required). Use [sv.Open] for a
@@ -41,6 +46,18 @@ type SVOptions struct {
 	// NominalFrequency is the power system frequency for SmpPerPeriod
 	// (default 50 Hz).
 	NominalFrequency float64
+
+	// MaxSamplesPerSecond bounds the sample rate an MMS client can
+	// select through the SmpRate and SmpMod of an MSVCB, in samples per
+	// second at NominalFrequency. Enabling an MSVCB (SvEna TRUE, or
+	// [SVEngine.SetEnabled]) whose SmpRate and SmpMod give a higher
+	// rate is refused with object-value-invalid. SmpRate and SmpMod
+	// writes are not refused on their own, since a client changes them
+	// one at a time. The rate configured for the MSVCB in SCL is always
+	// allowed. Zero means
+	// [DefaultSVMaxSamplesPerSecond]; a negative value removes the
+	// bound.
+	MaxSamplesPerSecond float64
 
 	// Logger receives SV diagnostics. Nil uses the server logger.
 	Logger *slog.Logger
@@ -63,6 +80,9 @@ type SVOptions struct {
 // constraint: SvEna, MsvID, DatSet, SmpRate, OptFlds and SmpMod are
 // writable (all but SvEna only while SvEna is false; a DatSet change
 // increments ConfRev); ConfRev, DstAddress and noASDU are read-only.
+// A change that would take ConfRev past 4294967295 (INT32U) is refused,
+// and SvEna TRUE is refused while SmpRate and SmpMod select more than
+// [SVOptions.MaxSamplesPerSecond].
 // Unicast SV (USVCB) is not supported.
 type SVEngine struct {
 	s    *Server
@@ -297,6 +317,10 @@ func (rt *svcbRuntime) setEnabled(on bool) error {
 	if confRev > math.MaxUint32 || smpRate > math.MaxUint16 || noASDU > math.MaxUint16 || smpMod < 0 || smpMod > math.MaxUint16 {
 		return fmt.Errorf("%w: %s: ConfRev %d / SmpRate %d / SmpMod %d / noASDU %d out of range", ErrSV, rt.prefix, confRev, smpRate, smpMod, noASDU)
 	}
+	if !rt.rateAllowed(smpRate, smpMod) {
+		return fmt.Errorf("%w: %s: SmpRate %d / SmpMod %d exceeds %v samples/s: %w", ErrSV, rt.prefix, smpRate, smpMod, rt.maxRate(),
+			&mms.DataAccessError{Code: mms.DataAccessErrorObjectValueInvalid})
+	}
 	cfg := sv.PublisherConfig{
 		Dst:              sv.MAC(rt.def.DstAddr),
 		AppID:            rt.def.AppID,
@@ -341,6 +365,30 @@ func (rt *svcbRuntime) setEnabled(on bool) error {
 	})
 	rt.e.log.Info("iec61850: SvCB enabled", "svcbRef", rt.prefix, "svID", cfg.SvID, "leaves", len(rt.layout))
 	return nil
+}
+
+// maxRate returns the highest sample rate, in samples per second, a
+// client may select for this MSVCB: SVOptions.MaxSamplesPerSecond (or
+// its default), raised to the SCL-configured rate when that is higher.
+// A negative option means no bound (+Inf).
+func (rt *svcbRuntime) maxRate() float64 {
+	limit := rt.e.opts.MaxSamplesPerSecond
+	if limit < 0 {
+		return math.Inf(1)
+	}
+	if limit == 0 {
+		limit = DefaultSVMaxSamplesPerSecond
+	}
+	if rt.def.SmpRate > 0 {
+		limit = max(limit, sv.SamplesPerSecond(rt.def.SmpRate, sv.SmpMod(rt.def.SmpMod), rt.e.opts.NominalFrequency))
+	}
+	return limit
+}
+
+// rateAllowed reports whether SmpRate smpRate in units of SmpMod
+// smpMod stays within maxRate. The caller has range-checked both.
+func (rt *svcbRuntime) rateAllowed(smpRate uint64, smpMod int64) bool {
+	return sv.SamplesPerSecond(uint16(smpRate), sv.SmpMod(smpMod), rt.e.opts.NominalFrequency) <= rt.maxRate()
 }
 
 // notify refreshes the sample of every enabled MSVCB whose dataset
@@ -391,6 +439,9 @@ func (e *SVEngine) handleWrite(storeKey string, val *mms.Value) (bool, error) {
 		}
 	case "SmpRate":
 		// INT16U (IEC 61850-7-2 MSVCB SmpRate).
+		// The rate it gives with SmpMod is checked when SvEna is set
+		// (setEnabled): a client reconfiguring both writes them one at
+		// a time, in either order.
 		if r, _ := val.Uint64(); r == 0 || r > math.MaxUint16 {
 			return true, invalid
 		}
@@ -411,6 +462,9 @@ func (e *SVEngine) handleWrite(storeKey string, val *mms.Value) (bool, error) {
 		if qds == rt.str("DatSet") {
 			return true, nil
 		}
+		if rt.uint("ConfRev") >= math.MaxUint32 {
+			return true, invalid
+		}
 		e.s.store.Set(storeKey, mms.NewVisibleString(qds))
 		e.s.store.Set(rt.key("ConfRev"), mms.NewUnsigned(rt.uint("ConfRev")+1))
 		if err := rt.resolveLocked(); err != nil {
@@ -423,6 +477,11 @@ func (e *SVEngine) handleWrite(storeKey string, val *mms.Value) (bool, error) {
 	// 7-2 19.2.1.6: any change of the value of MsvID, DatSet, SmpMod,
 	// SmpRate or OptFlds is counted in ConfRev.
 	if !val.Equal(e.s.store.Get(storeKey)) {
+		// ConfRev is INT32U: a change that would pass it is refused, so
+		// the MSVCB stays enablable.
+		if rt.uint("ConfRev") >= math.MaxUint32 {
+			return true, invalid
+		}
 		e.s.store.Set(rt.key("ConfRev"), mms.NewUnsigned(rt.uint("ConfRev")+1))
 	}
 	e.s.store.Set(storeKey, val)

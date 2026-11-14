@@ -3,7 +3,6 @@
 package iec61850
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"time"
@@ -94,7 +93,7 @@ func (c *Client) ReadJournal(ctx context.Context, ld, journal string, start, sto
 	}
 
 	start, stop = openJournalRange(start, stop)
-	result, err := c.mmsClient.ReadJournalTimeRange(ctx, ld, journal, start, stop)
+	result, err := c.mmsClient.ReadJournalTimeRange(ctx, string(c.ldDomain(ld)), journal, start, stop)
 	if err != nil {
 		return nil, fmt.Errorf("iec61850: read journal %s/%s: %w", ld, journal, err)
 	}
@@ -141,7 +140,7 @@ func (c *Client) ReadJournalAfter(ctx context.Context, ld, journal string, after
 		return nil, fmt.Errorf("iec61850: read journal after: %w: empty journal name", ErrInvalidArgument)
 	}
 
-	result, err := c.mmsClient.ReadJournalStartAfter(ctx, ld, journal, afterTime, afterID)
+	result, err := c.mmsClient.ReadJournalStartAfter(ctx, string(c.ldDomain(ld)), journal, afterTime, afterID)
 	if err != nil {
 		return nil, fmt.Errorf("iec61850: read journal after %s/%s: %w", ld, journal, err)
 	}
@@ -159,78 +158,100 @@ func (c *Client) ReadJournalAfter(ctx context.Context, ld, journal string, after
 //
 // Entries are returned in chronological order. The stop condition is
 // MoreFollows=false from the server. Same-timestamp cursor semantics
-// are handled correctly via EntryID-based continuation.
+// are handled correctly via EntryID-based continuation. A page whose
+// last entry is a cursor already used (the pagination does not
+// advance) is refused.
 //
-// For very large journals, consider using the paginated
-// [Client.ReadJournal] / [Client.ReadJournalAfter] pair to control
-// memory usage.
+// The entries collected are bounded by [ClientOptions.JournalLimits]
+// (1,000,000 entries and an estimated 256 MiB by default): a journal
+// beyond a limit is given up with an error that wraps
+// [ErrLimitExceeded]. For very large journals, use the paginated
+// [Client.ReadJournal] / [Client.ReadJournalAfter] pair.
 func (c *Client) ReadJournalAll(ctx context.Context, ld, journal string, start, stop time.Time) ([]JournalEntry, error) {
 	first, err := c.ReadJournal(ctx, ld, journal, start, stop)
 	if err != nil {
 		return nil, err
 	}
-
-	all := first.Entries
-	if !first.MoreFollows || len(first.Entries) == 0 {
-		return all, nil
-	}
-
-	for {
-		last := all[len(all)-1]
-		prevTime := last.OccurrenceTime
-		prevID := last.EntryID
-		page, err := c.ReadJournalAfter(ctx, ld, journal, prevTime, prevID)
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, page.Entries...)
-		if !page.MoreFollows || len(page.Entries) == 0 {
-			break
-		}
-		cur := all[len(all)-1]
-		if cur.OccurrenceTime.Equal(prevTime) && bytes.Equal(cur.EntryID, prevID) {
-			return nil, fmt.Errorf("iec61850: read journal all %s/%s: pagination not advancing (stuck at same cursor)", ld, journal)
-		}
-	}
-
-	return all, nil
+	return c.readJournalPages(ctx, "read journal all", ld, journal, first)
 }
 
 // ReadJournalAfterAll reads all journal entries starting after the
 // given cursor, automatically following pagination until all entries
 // are retrieved.
 //
-// This is the paginating equivalent of [Client.ReadJournalAfter].
+// This is the paginating equivalent of [Client.ReadJournalAfter], with
+// the limits and the cursor check of [Client.ReadJournalAll].
 func (c *Client) ReadJournalAfterAll(ctx context.Context, ld, journal string, afterTime time.Time, afterID []byte) ([]JournalEntry, error) {
 	first, err := c.ReadJournalAfter(ctx, ld, journal, afterTime, afterID)
 	if err != nil {
 		return nil, err
 	}
+	return c.readJournalPages(ctx, "read journal after all", ld, journal, first)
+}
 
-	all := first.Entries
-	if !first.MoreFollows || len(first.Entries) == 0 {
-		return all, nil
-	}
+// journalCursor identifies the position after an entry: its time and
+// its EntryID.
+type journalCursor struct {
+	sec  int64 // the time in Unix seconds and nanoseconds; the location does not matter
+	nsec int
+	id   string
+}
 
+// readJournalPages collects first and the pages that follow it, within
+// the journal limits, refusing a cursor already used.
+func (c *Client) readJournalPages(ctx context.Context, op, ld, journal string, first *JournalReadResult) ([]JournalEntry, error) {
+	limits := c.opts.JournalLimits.resolved()
+	var (
+		all  []JournalEntry
+		size int64
+		seen map[journalCursor]struct{}
+	)
+	page := first
 	for {
-		last := all[len(all)-1]
-		prevTime := last.OccurrenceTime
-		prevID := last.EntryID
-		page, err := c.ReadJournalAfter(ctx, ld, journal, prevTime, prevID)
-		if err != nil {
-			return nil, err
+		if len(page.Entries) > limits.MaxEntries-len(all) {
+			return nil, fmt.Errorf("iec61850: %s %s/%s: %w: more than %d entries", op, ld, journal, ErrLimitExceeded, limits.MaxEntries)
+		}
+		for i := range page.Entries {
+			size += journalEntrySize(&page.Entries[i])
+			if size > limits.MaxBytes {
+				return nil, fmt.Errorf("iec61850: %s %s/%s: %w: entries beyond %d bytes", op, ld, journal, ErrLimitExceeded, limits.MaxBytes)
+			}
 		}
 		all = append(all, page.Entries...)
 		if !page.MoreFollows || len(page.Entries) == 0 {
-			break
+			return all, nil
 		}
-		cur := all[len(all)-1]
-		if cur.OccurrenceTime.Equal(prevTime) && bytes.Equal(cur.EntryID, prevID) {
-			return nil, fmt.Errorf("iec61850: read journal after all %s/%s: pagination not advancing (stuck at same cursor)", ld, journal)
+
+		last := all[len(all)-1]
+		cur := journalCursor{sec: last.OccurrenceTime.Unix(), nsec: last.OccurrenceTime.Nanosecond(), id: string(last.EntryID)}
+		if seen == nil {
+			seen = make(map[journalCursor]struct{})
+		}
+		if _, dup := seen[cur]; dup {
+			return nil, fmt.Errorf("iec61850: %s %s/%s: pagination not advancing (cursor %x at %s already used)",
+				op, ld, journal, last.EntryID, last.OccurrenceTime.Format(time.RFC3339Nano))
+		}
+		seen[cur] = struct{}{}
+
+		var err error
+		page, err = c.ReadJournalAfter(ctx, ld, journal, last.OccurrenceTime, last.EntryID)
+		if err != nil {
+			return nil, err
 		}
 	}
+}
 
-	return all, nil
+// journalEntrySize estimates the memory of a decoded journal entry: its
+// fixed part, its EntryID and its variables' tags and values.
+func journalEntrySize(e *JournalEntry) int64 {
+	n := int64(64 + len(e.EntryID))
+	for _, v := range e.Variables {
+		n += int64(32 + len(v.Tag))
+		if v.Value != nil {
+			n += int64(valueFootprint(v.Value.MMS(), 0))
+		}
+	}
+	return n
 }
 
 // convertJournalResult maps an MMS journal result to the IEC 61850

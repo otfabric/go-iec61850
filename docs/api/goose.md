@@ -1283,7 +1283,8 @@ type SubscriptionConfig struct {
 	// dropped: it is counted in SubscriptionCounters.StreamsRefused and
 	// reported to Metrics.FrameDropped with the reason "streams". A
 	// stream seen once keeps its entry until the subscription is closed;
-	// no stream is replaced by a new one.
+	// no stream is replaced by a new one. A simulated frame dropped
+	// because AcceptSimulation is false creates no stream.
 	MaxStreams int
 }
 ```

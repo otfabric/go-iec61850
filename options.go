@@ -5,6 +5,7 @@ package iec61850
 import (
 	"context"
 	"log/slog"
+	"math"
 	"net"
 
 	"github.com/otfabric/go-mms"
@@ -89,6 +90,11 @@ type DialOptions struct {
 	// FileLimits bounds the file services of the client (see
 	// [ClientOptions.FileLimits]). The zero value uses the defaults.
 	FileLimits FileLimits
+
+	// JournalLimits bounds what the client accumulates from a journal
+	// (see [ClientOptions.JournalLimits]). The zero value uses the
+	// defaults.
+	JournalLimits JournalLimits
 }
 
 // ClientOptions configures an IEC 61850 client created via [NewClient]
@@ -120,6 +126,11 @@ type ClientOptions struct {
 	// FileLimits bounds what [Client.ReadFile] and [Client.DownloadFile]
 	// accept from the server. The zero value uses the defaults.
 	FileLimits FileLimits
+
+	// JournalLimits bounds what [Client.ReadJournalAll] and
+	// [Client.ReadJournalAfterAll] accumulate from the server. The zero
+	// value uses the defaults.
+	JournalLimits JournalLimits
 }
 
 // Defaults of [FileLimits].
@@ -170,6 +181,54 @@ func (l FileLimits) resolved() FileLimits {
 	}
 	if l.MaxEmptyChunks <= 0 {
 		l.MaxEmptyChunks = DefaultMaxEmptyFileChunks
+	}
+	return l
+}
+
+// Defaults of [JournalLimits].
+const (
+	// DefaultMaxJournalEntries is the number of entries
+	// [Client.ReadJournalAll] and [Client.ReadJournalAfterAll] accept:
+	// 1,000,000.
+	DefaultMaxJournalEntries = 1_000_000
+
+	// DefaultMaxJournalBytes is the estimated memory of the entries
+	// [Client.ReadJournalAll] and [Client.ReadJournalAfterAll] accept:
+	// 256 MiB.
+	DefaultMaxJournalBytes int64 = 256 << 20
+)
+
+// JournalLimits bounds the entries [Client.ReadJournalAll] and
+// [Client.ReadJournalAfterAll] collect over the pages of a journal. A
+// field that is zero uses its default; a negative field means no limit.
+// A read that goes beyond a limit is given up with an error that wraps
+// [ErrLimitExceeded]. The single-page reads ([Client.ReadJournal],
+// [Client.ReadJournalAfter]) are bounded by the MMS PDU size.
+type JournalLimits struct {
+	// MaxEntries is the number of entries accepted; zero means
+	// [DefaultMaxJournalEntries].
+	MaxEntries int
+
+	// MaxBytes is the estimated memory of the entries accepted (entry
+	// IDs, tags and decoded values); zero means
+	// [DefaultMaxJournalBytes].
+	MaxBytes int64
+}
+
+// resolved returns the limits with the defaults filled in; no limit is
+// the largest value of the field.
+func (l JournalLimits) resolved() JournalLimits {
+	switch {
+	case l.MaxEntries == 0:
+		l.MaxEntries = DefaultMaxJournalEntries
+	case l.MaxEntries < 0:
+		l.MaxEntries = math.MaxInt
+	}
+	switch {
+	case l.MaxBytes == 0:
+		l.MaxBytes = DefaultMaxJournalBytes
+	case l.MaxBytes < 0:
+		l.MaxBytes = math.MaxInt64
 	}
 	return l
 }

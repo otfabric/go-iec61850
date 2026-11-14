@@ -102,8 +102,9 @@ means its default.
 | Document size (`ParseBytes`, `ParseFileOpts`, `Parse`, `ParseWithOptions`; a file's size is checked before it is read) | `DefaultMaxBytes`, 1 GiB | `ParseOptions.MaxBytes` |
 | Element nesting, also of skipped content (unknown elements, `Private`) | `DefaultMaxDepth`, 1024 | `ParseOptions.MaxDepth` |
 | Diagnostics returned; parsing and semantic validation stop adding them once the list is full | all | `ParseOptions.MaxDiagnostics` |
-| Length of a name quoted in a diagnostic (cut at a character boundary, ends with "…") | `DefaultMaxDiagnosticName`, 256 bytes | `ParseOptions.MaxDiagnosticName` |
-| Nodes of a type expansion (DO, SDO, DA, BDA at each place of the model) | `DefaultMaxExpandedNodes`, 33,554,432 | `FlattenOptions.MaxExpandedNodes`; for a server model `ServerModelOptions.MaxExpandedNodes`; for the GOOSE and SV control blocks of a document `goose.SCLOptions` and `sv.SCLOptions` |
+| Length of a name quoted in a diagnostic (cut at a character boundary, ends with "…") | `DefaultMaxDiagnosticName`, 256 bytes | `ParseOptions.MaxDiagnosticName`; `scl/index.Build` and `scl/validate` cut at the default |
+| Nodes of a type expansion (DO, SDO, DA, BDA at each place of the model; for a server model also report control block instances; for `Flatten` one more per 256 bytes of a row's path) | `DefaultMaxExpandedNodes`, 33,554,432 | `FlattenOptions.MaxExpandedNodes`; for a server model `ServerModelOptions.MaxExpandedNodes`; for the GOOSE and SV control blocks of a document `goose.SCLOptions` and `sv.SCLOptions` |
+| Type references one path of a type expansion follows (a DO's DOType, each SDO's DOType, each Struct DA's or BDA's DAType) | `DefaultMaxTypeDepth`, 64 | `FlattenOptions.MaxTypeDepth`; the server model and `ControlBlocksFromSCL` use the default |
 
 `scl.DetectFile` reads a file up to its root element only.
 
@@ -140,9 +141,11 @@ What is checked (code, severity):
 
 `scl.Flatten` keeps rows for branches it cannot expand, with `Status`
 `unresolved-lntype`, `unresolved-dotype`, `unresolved-datype` or
-`type-cycle`. It stops after `DefaultMaxExpandedNodes` nodes, the last
-row with `Status` `expansion-limit`; `scl.FlattenWithOptions` sets
-another limit and also returns an `expansion-limit` error diagnostic.
+`type-cycle`. It stops after `DefaultMaxExpandedNodes` nodes, or at a
+type reference `DefaultMaxTypeDepth` levels deep, the last row with
+`Status` `expansion-limit`; `scl.FlattenWithOptions` sets other limits
+(`MaxExpandedNodes`, `MaxTypeDepth`) and also returns an
+`expansion-limit` error diagnostic.
 
 ### Inspection and export
 

@@ -6,14 +6,16 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"unicode/utf8"
+
+	"github.com/otfabric/go-iec61850/scl/internal/diagname"
 )
 
 // ErrLimitExceeded is wrapped by the error of a parse whose document
 // goes beyond a limit of [ParseOptions] ([ParseOptions.MaxBytes],
 // [ParseOptions.MaxDepth]), and by the error or diagnostic of a type
-// expansion that goes beyond [DefaultMaxExpandedNodes] or the limit
-// given in its options ([FlattenOptions.MaxExpandedNodes]). Test it
+// expansion that goes beyond [DefaultMaxExpandedNodes],
+// [DefaultMaxTypeDepth] or the limit given in its options
+// ([FlattenOptions.MaxExpandedNodes], [FlattenOptions.MaxTypeDepth]). Test it
 // with [errors.Is]. SECURITY.md lists every limit and its default.
 var ErrLimitExceeded = errors.New("scl: limit exceeded")
 
@@ -46,7 +48,14 @@ const (
 	// diagnostic quotes from the document; a longer one is cut at a
 	// character boundary and ends with "…". Names of the SCL schema
 	// are at most 64 characters long.
-	DefaultMaxDiagnosticName = 256
+	DefaultMaxDiagnosticName = diagname.Max
+
+	// DefaultMaxTypeDepth is the number of type references one path of
+	// a type expansion may follow: 64. A data object's DOType is the
+	// first, each SDO's DOType and each Struct DA's or BDA's DAType below
+	// it one more. The common data classes of IEC 61850-7-3 and the
+	// documents of the test data nest them less than ten deep.
+	DefaultMaxTypeDepth = 64
 )
 
 // parseLimits are the limits of one parse, with the defaults applied.
@@ -119,13 +128,4 @@ func (s *diagSink) countMessage(count string, err error) string {
 	return fmt.Sprintf("invalid count %q: %v", s.name(count), err)
 }
 
-func capName(n string, max int) string {
-	if len(n) <= max {
-		return n
-	}
-	cut := max
-	for cut > 0 && !utf8.RuneStart(n[cut]) {
-		cut--
-	}
-	return n[:cut] + "…"
-}
+func capName(n string, max int) string { return diagname.Cap(n, max) }

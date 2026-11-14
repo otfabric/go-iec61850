@@ -1067,13 +1067,15 @@ func decodeReportIndication(values []*mms.Value, logger *slog.Logger) (*ReportIn
 		data, ok := v.BitString()
 		if ok {
 			bitLen, _ := v.BitStringLength()
+			if bitLen < 0 || bitLen > len(data)*8 {
+				return nil, &ReportError{
+					Message: fmt.Sprintf("inclusion bitmap announces %d bits in %d bytes", bitLen, len(data)),
+				}
+			}
 			ri.Inclusion = make([]bool, bitLen)
 			for i := range bitLen {
-				byteIdx := i / 8
-				if byteIdx < len(data) {
-					bitInByte := uint(7 - (i % 8))
-					ri.Inclusion[i] = data[byteIdx]&(1<<bitInByte) != 0
-				}
+				bitInByte := uint(7 - (i % 8))
+				ri.Inclusion[i] = data[i/8]&(1<<bitInByte) != 0
 			}
 			for _, inc := range ri.Inclusion {
 				if inc {
@@ -2119,11 +2121,20 @@ func segmentSize(ri *ReportIndication) int {
 	return n
 }
 
+// valueFootprintBase is the estimated fixed size of one decoded value:
+// the mms.Value, the Value wrapper and the pointers to them. It is an
+// upper bound of their real size on every platform
+// (TestValueFootprint_UpperBound).
+const valueFootprintBase = 256
+
 // valueFootprint estimates the memory of a decoded MMS value: a fixed
 // part and its content, members of structures and arrays included (to a
-// nesting of 64, which go-mms does not exceed).
+// nesting of 64, which go-mms does not exceed). The estimate is an upper
+// bound of what go-mms retains for every value type: variable-length
+// content is counted at its decoded size (8 bytes per object identifier
+// arc, one byte per octet otherwise).
 func valueFootprint(v *mms.Value, depth int) int {
-	const base = 96
+	const base = valueFootprintBase
 	if v == nil {
 		return 0
 	}
@@ -2138,8 +2149,14 @@ func valueFootprint(v *mms.Value, depth int) int {
 		b, _ := v.OctetString()
 		return base + len(b)
 	case mms.ValueTypeBitString:
-		bits, _ := v.BitStringLength()
-		return base + (bits+7)/8
+		b, _ := v.BitString()
+		return base + len(b)
+	case mms.ValueTypeBooleanArray:
+		b, _, _ := v.BooleanArray()
+		return base + len(b)
+	case mms.ValueTypeObjectIdentifier:
+		arcs, _ := v.ObjectIdentifier()
+		return base + 8*len(arcs)
 	case mms.ValueTypeStructure, mms.ValueTypeArray:
 		if depth >= 64 {
 			return base
