@@ -1,5 +1,19 @@
 # go-iec61850 Releases
 
+## v1.20.2
+
+**Date:** 2026-11-14
+**Previous release:** v1.20.1
+
+The go-iec61850 library code is unchanged.
+
+### Changed
+
+- go-mms v1.9.3 (was v1.9.2). It bounds counts, indexes and REAL exponents that come from a peer when they are decoded, and `TypeSpec.DefaultValue` returns nil for a type description of more than 1,048,576 values (go-mms RELEASE.md, v1.9.3).
+- `sclparse` and `sclgen` are built on go-iec61850 v1.20.1 (were on v1.20.0).
+
+---
+
 ## v1.20.1
 
 **Date:** 2026-11-13
