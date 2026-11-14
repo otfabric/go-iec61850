@@ -13,6 +13,7 @@ import (
 
 	"github.com/otfabric/go-mms"
 
+	"github.com/otfabric/go-iec61850/internal/goid"
 	"github.com/otfabric/go-iec61850/internal/servermodel"
 	"github.com/otfabric/go-iec61850/scl"
 )
@@ -90,9 +91,13 @@ type Server struct {
 
 	// hookListeners are the listeners of the hook-routing accept loop,
 	// closed by Shutdown (mms.Server only tracks its own listeners).
+	// conns are the connection goroutines that loop started and that have
+	// not returned; Shutdown waits for them. No goroutine is added once
+	// shutdown is set. All three are guarded by lnMu.
 	lnMu          sync.Mutex
 	hookListeners map[mms.TransportListener]struct{}
 	shutdown      bool
+	conns         map[*servedConn]struct{}
 
 	// bg tracks background sends (CommandTermination) stopped by Close.
 	bg backgroundTasks
@@ -100,6 +105,14 @@ type Server struct {
 	// clock stamps protocol values (ServerOptions.Clock); nil is
 	// SystemClock. Timers never use it.
 	clock Clock
+}
+
+// servedConn is one connection goroutine of [Server.ListenAndServe].
+type servedConn struct {
+	// goroutine identifies it, so that a Shutdown called from a hook that
+	// runs on it (OnConnect, OnDisconnect) does not wait for itself.
+	goroutine atomic.Uint64
+	done      chan struct{} // closed when the goroutine returns
 }
 
 // ServerOptions configures the IEC 61850 server.
@@ -509,10 +522,22 @@ func (s *Server) Close() {
 
 // Shutdown stops the server gracefully: it closes the listeners of
 // [Server.ListenAndServe], lets in-flight requests finish, concludes every
-// association (see [mms.Server.Shutdown]) and then stops the report and
-// GOOSE engines like [Server.Close]. When ctx ends first, the remaining
-// connections are aborted and ctx's error is returned.
+// association (see [mms.Server.Shutdown]), waits for the connection
+// goroutines of ListenAndServe and then stops the report and GOOSE engines
+// like [Server.Close]. When ctx ends first, the remaining connections are
+// aborted and ctx's error is returned.
 // ListenAndServe then returns [mms.ErrServerClosed].
+//
+// When Shutdown returns nil, every connection goroutine that
+// ListenAndServe started has returned: its [Server.Serve] has released
+// what the association held and its OnDisconnect hook has run. When ctx
+// ends while such a goroutine still runs (an OnDisconnect that has not
+// returned), Shutdown stops waiting, stops the engines and returns ctx's
+// error; a later Shutdown waits again. Connections the caller serves with
+// [Server.Serve] on goroutines of its own are the caller's to wait for.
+//
+// Shutdown may be called from OnConnect or OnDisconnect: it does not wait
+// for the connection goroutine it is called on.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.lnMu.Lock()
 	s.shutdown = true
@@ -521,8 +546,34 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 	s.lnMu.Unlock()
 	err := s.mms.Shutdown(ctx)
+	if werr := s.waitServedConns(ctx); err == nil {
+		err = werr
+	}
 	s.Close()
 	return err
+}
+
+// waitServedConns waits until the connection goroutines of ListenAndServe
+// have returned, except the one it is called on, or until ctx ends, when
+// it returns ctx's error.
+func (s *Server) waitServedConns(ctx context.Context) error {
+	self := goid.ID()
+	s.lnMu.Lock()
+	pending := make([]*servedConn, 0, len(s.conns))
+	for sc := range s.conns {
+		if sc.goroutine.Load() != self {
+			pending = append(pending, sc)
+		}
+	}
+	s.lnMu.Unlock()
+	for _, sc := range pending {
+		select {
+		case <-sc.done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
 }
 
 // MMS returns the underlying MMS server for advanced configuration
@@ -614,7 +665,28 @@ func (s *Server) listenAndServeWithHooks(ctx context.Context, ln mms.TransportLi
 			s.logger.Error("iec61850: accept error", "error", err)
 			return err
 		}
+		// The goroutine is registered before it starts, and none starts
+		// once Shutdown has begun: Shutdown waits for all of them.
+		sc := &servedConn{done: make(chan struct{})}
+		s.lnMu.Lock()
+		if s.shutdown {
+			s.lnMu.Unlock()
+			_ = transport.Close()
+			return mms.ErrServerClosed
+		}
+		if s.conns == nil {
+			s.conns = make(map[*servedConn]struct{})
+		}
+		s.conns[sc] = struct{}{}
+		s.lnMu.Unlock()
 		go func() {
+			sc.goroutine.Store(goid.ID())
+			defer func() {
+				s.lnMu.Lock()
+				delete(s.conns, sc)
+				s.lnMu.Unlock()
+				close(sc.done)
+			}()
 			defer func() { _ = transport.Close() }()
 			if serveErr := s.Serve(ctx, transport); serveErr != nil {
 				s.logger.Debug("iec61850: connection closed", "error", serveErr)

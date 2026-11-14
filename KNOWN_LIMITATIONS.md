@@ -109,7 +109,12 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   that ended is released when its `Server.Serve` returns (also for
   `ListenAndServe`, which serves every connection through it); for a
   connection given to `mms.Server` directly, it is released at the next
-  control service on that object, and `stSeld` stays TRUE until then. Choices where the standard is
+  control service on that object, and `stSeld` stays TRUE until then. A
+  time activated operate that still waits for its operTm when its
+  association ends is ended at the same points, as a Cancel would end it:
+  the object returns to unselected, the operate is not executed and no
+  termination is sent (the standard leaves this case to the device; the
+  operate cannot be confirmed to a client that is gone). Choices where the standard is
   ambiguous follow libiec61850; see [INTEROP.md](INTEROP.md#control-model-choices).
 - **Setting groups: value banks in memory** — the server keeps one value
   bank per setting group (IEC 61850-7-2 §16, built from SCL `Val sGroup`)
@@ -228,8 +233,9 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   substations (with voltage levels, bays, conducting equipment),
   topology LNode references, communication (sub-networks, connected APs,
   GSE/SMV addresses), and full data type templates (LNodeType, DOType,
-  DAType, EnumType). Private elements are preserved with full inner XML
-  content and vendor namespace metadata.
+  DAType, EnumType). Private elements keep their `type` and `source`
+  attributes; their content is not kept (`Private.InnerXML` is empty).
+  Vendor namespaces of the root element are kept in `DocumentMetadata`.
 - **Elements not in the normalized model** — some SCL elements are parsed
   from XML by the raw types but are not mapped into the normalized model:
   `Inputs`, `ClientLN`, `ExtRef`, `History`, `Text`, `Function`,
@@ -249,8 +255,9 @@ from a peer stack is listed in [INTEROP.md](INTEROP.md) and
   may not reproduce the exact formatting, namespace prefixes, or ordering of
   the original XML file. GSE and SMV control blocks are not serialized by
   `Generate`.
-- **Extension preservation** — vendor `Private` elements are preserved
-  losslessly (`Type`, `Source`, and full `InnerXML` content). Vendor
+- **Extension preservation** — vendor `Private` elements keep `Type` and
+  `Source`; their content is not kept (`InnerXML` is empty after
+  parsing), and `Generate` does not write `Private` elements. Vendor
   namespaces from the root element are captured in `DocumentMetadata`.
   However, vendor-specific child elements outside of `Private` (using
   custom XML namespaces) may be captured by `ExtraElements` in raw types

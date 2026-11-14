@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io/fs"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -83,7 +84,7 @@ func (p *MemoryJournalProvider) RegisterJournal(domain, journal string) {
 
 // AddEntry appends a journal entry with the given timestamp and
 // variable data. The EntryID is assigned automatically. Returns the
-// assigned EntryID.
+// assigned EntryID, a copy the caller owns.
 //
 // The provided variables are defensively copied so that later
 // mutation of the caller's slice or the values within it does not
@@ -127,7 +128,17 @@ func (p *MemoryJournalProvider) AddEntry(domain, journal string, occTime time.Ti
 		jl.entries = jl.entries[excess:]
 	}
 
-	return entryID
+	return bytes.Clone(entryID)
+}
+
+// copyJournalEntry copies a stored entry for a read result, so that a
+// caller that changes the result leaves the journal unchanged: the
+// EntryID and the Variables slice are copied; the values are shared, as an
+// [mms.Value] does not change after it is made.
+func copyJournalEntry(e mms.JournalEntry) mms.JournalEntry {
+	e.EntryID = bytes.Clone(e.EntryID)
+	e.Variables = slices.Clone(e.Variables)
+	return e
 }
 
 // EntryCount returns the number of entries in the specified journal.
@@ -157,7 +168,8 @@ func (p *MemoryJournalProvider) ListJournals(_ context.Context, domain string) (
 	return names, nil
 }
 
-// ReadTimeRange implements [mms.JournalProvider].
+// ReadTimeRange implements [mms.JournalProvider]. The entries of the
+// result are copies the caller owns.
 func (p *MemoryJournalProvider) ReadTimeRange(_ context.Context, domain, journal string, start, stop time.Time, maxEntries int) (*mms.JournalResult, error) {
 	k := journalKey{domain, journal}
 	p.mu.RLock()
@@ -176,13 +188,14 @@ func (p *MemoryJournalProvider) ReadTimeRange(_ context.Context, domain, journal
 				moreFollows = true
 				break
 			}
-			filtered = append(filtered, e)
+			filtered = append(filtered, copyJournalEntry(e))
 		}
 	}
 	return &mms.JournalResult{Entries: filtered, MoreFollows: moreFollows}, nil
 }
 
-// ReadStartAfter implements [mms.JournalProvider].
+// ReadStartAfter implements [mms.JournalProvider]. The entries of the
+// result are copies the caller owns.
 func (p *MemoryJournalProvider) ReadStartAfter(_ context.Context, domain, journal string, afterID []byte, afterTime time.Time, maxEntries int) (*mms.JournalResult, error) {
 	k := journalKey{domain, journal}
 	p.mu.RLock()
@@ -229,7 +242,7 @@ func (p *MemoryJournalProvider) ReadStartAfter(_ context.Context, domain, journa
 			moreFollows = true
 			break
 		}
-		result = append(result, e)
+		result = append(result, copyJournalEntry(e))
 	}
 	return &mms.JournalResult{Entries: result, MoreFollows: moreFollows}, nil
 }

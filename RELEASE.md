@@ -1,5 +1,37 @@
 # go-iec61850 Releases
 
+## v1.20.3
+
+**Date:** 2026-11-14
+**Previous release:** v1.20.2
+
+No exported identifier is added, removed or changed.
+
+### Fixed
+
+- **Client shutdown.** `Client.Close` closes every report subscription locally first (its `Reports` channel is closed), then disables the RCBs the subscriptions enabled and releases the URCBs they reserved; before, the closing client refused these requests of its own. The remote cleanup ends with `Close`'s context and after 5 seconds at the latest. `ReportSubscription.Close` shuts down locally first and gives its remote cleanup 5 seconds. `Client.Abort` closes the subscriptions locally and sends nothing.
+- **`OnOverflow`** runs without the subscription's lock held and may call `Close` on its subscription.
+- **Close from a callback.** `goose.Subscription.Close` and `goose.Subscriber.Close` called from a `Handler`, and `rsession.Transport.Close` called from `OnReject`, return without waiting for the goroutine they run on.
+- **`sv.Subscriber`.** `Close` ends `Run`, also while `Run` waits for a frame on a transport that delivers none; `Run` returns after its supervision goroutine has ended.
+- **`Server.Shutdown`** waits for the connection goroutines of `ListenAndServe` (their `OnDisconnect` included) and may be called from `OnConnect` or `OnDisconnect`; when its context ends first it returns the context's error.
+- **Controls.** The ctlVal of an Operate or Cancel after SelectWithValue is compared with the selected one by type and content (every bit of a bit string, every octet, every structure member). A time activated operate that still waits for operTm when its association ends is ended like a Cancel and the object returns to unselected (KNOWN_LIMITATIONS.md). The client keeps LastApplError only for controls it sent a control service to; `ReadLastApplError` gives the same answers for those.
+- **Setting groups.** `SettingGroupHandler` callbacks run under a recover, as `ControlHandler` callbacks do: a callback that ends abnormally is logged and refuses the write with object-access-denied.
+- **Writes.** A Unicode255 (MMS string) value longer than 255 characters is refused with type-inconsistent, as a VisString255 longer than 255 is.
+- **Reports.** Both report decoders (`DecodeReport` and the client's) check that the values that follow the inclusion bit string can hold the members it announces before they size the member lists; a report that does not is a `*ReportError`, as before.
+- **Owned results.** `FindPaths` results, the `ListLogicalDevices` results of concurrent callers, the EntryID `MemoryJournalProvider.AddEntry` returns and the entries of its reads are copies the caller owns.
+- **SCL.** A GSE `MinTime` or `MaxTime` that is not a number from 0 to 4294967295 ms is a model warning. An SCL value outside the range of its basic type (integers by their bit size, FLOAT32) is a model warning and the attribute keeps the default value of its type. Data set validation (`scl/validate`) checks the FC of an FCDA with a cost linear in the size of the type graph, with the same results.
+
+### Changed
+
+- Documentation: what `OverflowBlock` holds up (every confirmed service of the association while the queue is full), that the context of `SubscribeReport` is the lifetime of the subscription, the environment of the SV benchmark figures in SV.md (observed, not a guarantee), and `Private` elements of SCL (their content is not kept; KNOWN_LIMITATIONS.md said it was).
+- The release workflow builds `sclparse` after `sclgen`.
+
+### Tests
+
+- Regression tests for each fix above; the lifecycle tests use `testing/synctest` or events, no sleeps.
+
+---
+
 ## v1.20.2
 
 **Date:** 2026-11-14

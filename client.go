@@ -62,8 +62,11 @@ type Client struct {
 	ctlNums    map[string]uint8        // ctlNum of the last SelectWithValue per control
 	ctlLayouts map[string]operTmLayout // operTm in the Oper/SBOw/Cancel type
 	ctlChecks  map[string]bool         // a Check member in the Cancel type
-	ctlLAE     map[string]laeEntry     // last LastApplError per control
+	ctlLAE     map[string]laeEntry     // last LastApplError per addressed control
 	ctlLAESeq  uint64
+	// ctlAddressed are the controls (controlKey) this client sent a control
+	// service to; only their LastApplError is kept in ctlLAE.
+	ctlAddressed map[string]struct{}
 
 	// Test hooks for intercepting fetch calls (unexported, test-only).
 	fetchLDsFn   func(ctx context.Context) ([]LogicalDevice, error)
@@ -193,10 +196,14 @@ func NewClient(mmsClient *mms.Client, opts ClientOptions) (*Client, error) {
 // is responsible for closing the MMS client.
 //
 // The client transitions through open → closing → closed. During
-// the closing phase, subscription cleanup runs (disabling RCBs,
-// releasing URCBs). Remote cleanup errors during this phase are
-// logged at Debug level because the connection may already be
-// half-closed.
+// the closing phase new requests are refused with [ErrClosed] and
+// subscription cleanup runs: every subscription is closed locally (its
+// Reports channel is closed), then the RCBs the subscriptions enabled
+// are disabled and the URCBs they reserved are released. The remote
+// cleanup ends when ctx ends, and after 5 seconds at the latest, so
+// Close returns also when the server does not answer.
+// Remote cleanup errors during this phase are logged at Debug level
+// because the connection may already be half-closed.
 //
 // Close is idempotent.
 func (c *Client) Close(ctx context.Context) error {
@@ -210,7 +217,7 @@ func (c *Client) Close(ctx context.Context) error {
 
 	c.logger.Info("iec61850: closing")
 
-	c.closeAllSubscriptions()
+	c.closeAllSubscriptions(ctx, true)
 	c.closeControlWaiters()
 
 	c.mu.Lock()
@@ -230,6 +237,12 @@ func (c *Client) Close(ctx context.Context) error {
 // If the client was created via [NewClient], Abort only marks the
 // IEC 61850 layer as closed without aborting the MMS client.
 //
+// Abort closes the report subscriptions locally (their Reports channels
+// are closed) and sends nothing: RCBs are not disabled and URCB
+// reservations are not released. A server releases them when the
+// association ends; with [NewClient], where the association outlives
+// the client, use [Client.Close] or [ReportSubscription.Close] first.
+//
 // Abort is idempotent.
 func (c *Client) Abort(ctx context.Context) error {
 	c.mu.Lock()
@@ -242,7 +255,7 @@ func (c *Client) Abort(ctx context.Context) error {
 
 	c.logger.Info("iec61850: aborting")
 
-	c.closeAllSubscriptions()
+	c.closeAllSubscriptions(ctx, false)
 	c.closeControlWaiters()
 
 	c.mu.Lock()
@@ -274,22 +287,39 @@ func (c *Client) isClosing() bool {
 	return c.state == clientClosing
 }
 
-// closeAllSubscriptions closes all active report subscriptions via
-// their Close method, ensuring remote cleanup (disable RCB, release
-// URCB) runs for subscriptions that used lifecycle options.
+// closeAllSubscriptions closes all active report subscriptions: locally
+// first (every Reports channel is closed before anything is sent), then,
+// when remote is set, the remote cleanup (disable RCB, release URCB) of
+// the subscriptions that used lifecycle options, bounded by ctx and by
+// subscriptionCleanupTimeout for all of them together. The cleanup uses
+// setRCB, which is not refused while the client is closing.
 //
 // The dispatch table is nilled out first so that unregisterSubscription
-// inside sub.Close() is a safe no-op.
-func (c *Client) closeAllSubscriptions() {
+// inside closeLocal is a safe no-op.
+func (c *Client) closeAllSubscriptions(ctx context.Context, remote bool) {
 	c.reportMu.Lock()
 	subs := c.reportSubs
 	c.reportSubs = nil
 	c.reportMu.Unlock()
 
+	var closed []*ReportSubscription
 	for _, group := range subs {
 		for _, sub := range group {
-			_ = sub.Close()
+			if sub.closeLocal() {
+				closed = append(closed, sub)
+			}
 		}
+	}
+	if !remote || len(closed) == 0 {
+		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, subscriptionCleanupTimeout)
+	defer cancel()
+	for _, sub := range closed {
+		sub.remoteCleanup(ctx)
 	}
 }
 

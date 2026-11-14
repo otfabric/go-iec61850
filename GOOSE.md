@@ -201,7 +201,11 @@ timeouts, invalid frames, dropped events).
 
 Events are delivered on a channel (`QueueSize`, default 256; when full,
 events are dropped and counted) or to a `Handler` callback;
-`OnlyStateChanges` suppresses retransmissions. `HandleFrame` feeds raw
+`OnlyStateChanges` suppresses retransmissions. `Subscription.Close` and
+`Subscriber.Close` may be called from the `Handler`: they return without
+waiting for the goroutine they are called on. `Subscriber.Close` closes
+the subscriptions and does not stop `Run`; end `Run` with its context or
+by closing the transport. `HandleFrame` feeds raw
 frames from an external source. Undecodable frames go to
 `SubscriberConfig.OnDecodeError`.
 
@@ -279,7 +283,9 @@ sub, _ := goose.NewSubscriber(rx, goose.SubscriberConfig{})
   publisher is refused until the key changes, unless the receiver sets
   `ReplayResetAfter` or the publisher continues from a persisted
   `NextSPDUNumber` (`InitialSPDUNumber`). Refusals are counted in
-  `Transport.Stats` and reported to `Config.OnReject`.
+  `Transport.Stats` and reported to `Config.OnReject`, which runs on the
+  receive goroutine; it may call `Transport.Close`, which then returns
+  without waiting for that goroutine.
 - **Keys** come from a `KeyProvider` (`CurrentKey` to send, `LookupKey` to
   verify); `KeyRing` is a static one that can hold the old and the new
   key during a change. Key distribution (IEC 62351-9 GDOI) is the

@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/otfabric/go-iec61850/internal/goid"
 	"github.com/otfabric/go-iec61850/l2"
 )
 
@@ -98,7 +99,9 @@ type Config struct {
 
 	// OnReject, when non-nil, is called with every refused datagram's
 	// sender and the reason, for a security event log. It runs on the
-	// receive goroutine and must not block.
+	// receive goroutine and must not block. It may call
+	// [Transport.Close], which then returns without waiting for the
+	// receive goroutine: that goroutine ends when OnReject returns.
 	OnReject func(from netip.AddrPort, err error)
 
 	// Logger receives transport diagnostics. Nil disables logging.
@@ -154,6 +157,9 @@ type Transport struct {
 	closed    chan struct{}
 	closeOnce sync.Once
 	wg        sync.WaitGroup
+	// readID identifies the receive goroutine, which calls OnReject, so
+	// that a Close called from OnReject does not wait for itself.
+	readID atomic.Uint64
 }
 
 // Open validates cfg, binds the socket, joins the multicast groups and
@@ -444,19 +450,29 @@ func (t *Transport) RecvFrom(ctx context.Context) ([]byte, netip.AddrPort, error
 }
 
 // Close implements [l2.Transport]. Blocked Recv calls return
-// [ErrClosed]; Close is idempotent.
+// [ErrClosed]; the socket is closed and the receive goroutine has ended
+// when Close returns. Close is safe to call more than once and from
+// multiple goroutines.
+//
+// Close may be called from [Config.OnReject], which runs on the receive
+// goroutine. It then returns without waiting for that goroutine, which
+// ends when OnReject returns; a Close from another goroutine waits for
+// that.
 func (t *Transport) Close() error {
 	var err error
 	t.closeOnce.Do(func() {
 		close(t.closed)
 		err = t.conn.Close()
-		t.wg.Wait()
 	})
+	if goid.ID() != t.readID.Load() {
+		t.wg.Wait()
+	}
 	return err
 }
 
 func (t *Transport) readLoop() {
 	defer t.wg.Done()
+	t.readID.Store(goid.ID())
 	buf := make([]byte, 65536)
 	for {
 		n, from, err := t.conn.ReadFromUDPAddrPort(buf)

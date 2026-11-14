@@ -766,6 +766,13 @@ func (c *Client) SetReportControlBlock(ctx context.Context, ld, rcbItemID string
 	if err := c.checkOpen(); err != nil {
 		return err
 	}
+	return c.setRCB(ctx, ld, rcbItemID, update)
+}
+
+// setRCB is [Client.SetReportControlBlock] without the check that the
+// client is open: the remote cleanup of a subscription runs while the
+// client is closing.
+func (c *Client) setRCB(ctx context.Context, ld, rcbItemID string, update RCBUpdate) error {
 	if ld == "" {
 		return fmt.Errorf("iec61850: set RCB: %w: empty logical device name", ErrInvalidArgument)
 	}
@@ -933,7 +940,9 @@ func (ri *ReportIndication) clone() *ReportIndication {
 // InformationReport's values. The values follow the standard report
 // field order defined in IEC 61850-7-2. Optional fields that are
 // present but fail type extraction are logged at debug level and
-// treated as zero-valued rather than failing the entire decode.
+// treated as zero-valued rather than failing the entire decode. An
+// inclusion bitmap with more members than the values that follow can hold
+// is a *ReportError before any member list is sized.
 func decodeReportIndication(values []*mms.Value, logger *slog.Logger) (*ReportIndication, error) {
 	if len(values) == 0 {
 		return nil, &ReportError{Message: "empty report values"}
@@ -1069,6 +1078,12 @@ func decodeReportIndication(values []*mms.Value, logger *slog.Logger) (*ReportIn
 					inclusionCount++
 				}
 			}
+		}
+	}
+	if !membersFit(inclusionCount, len(values)-idx, ri.OptFlds) {
+		return nil, &ReportError{
+			Message: fmt.Sprintf("inclusion bitmap has %d members but %d values follow",
+				inclusionCount, len(values)-idx),
 		}
 	}
 
@@ -1224,9 +1239,35 @@ func (c *Client) ReleaseURCB(ctx context.Context, ld, rcbItemID string) error {
 //   - [OverflowDropNewest]: default. Safe for all uses. Report loss is
 //     visible in SeqNum gaps.
 //   - [OverflowDropOldest]: prefer fresher data; older values are discarded.
-//   - [OverflowBlock]: zero-loss delivery. Blocks report dispatch for all
-//     subscriptions on this connection if the channel is full.
+//   - [OverflowBlock]: zero-loss delivery. While the channel is full it
+//     blocks the whole association, not only report dispatch: see below.
 //   - [OverflowCallback]: custom handling (e.g., metrics, reconnect trigger).
+//
+// # What OverflowBlock blocks
+//
+// Reports are dispatched on the goroutine that reads the association,
+// which is also the one that reads the response to every confirmed
+// request. While an [OverflowBlock] subscription's channel is full, that
+// goroutine waits for the consumer, so:
+//
+//   - no report of any subscription of this client is delivered, and
+//   - no confirmed service of this client completes (Read, Write, a
+//     control, [Client.GetReportControlBlock], [Client.TriggerGI], ...):
+//     each waits until the consumer has read a report, until its own
+//     context ends, or until the subscription or the client is closed.
+//
+// Therefore, with OverflowBlock:
+//
+//   - read the Reports channel from a goroutine that issues no request on
+//     this client, and give every request a context with a deadline;
+//   - do not combine it with AutoEnable and GIOnSubscribe on an RCB that
+//     can send more than QueueSize reports before
+//     [Client.SubscribeReport] returns (a BRCB that replays a backlog
+//     when it is enabled): the subscription is registered before the RCB
+//     is enabled, the queue fills while the caller has no channel to
+//     read yet, and the GI request then waits until the context ends.
+//     Subscribe with AutoEnable only, start reading, then call
+//     [Client.TriggerGI].
 type OverflowPolicy int
 
 const (
@@ -1239,7 +1280,10 @@ const (
 	OverflowDropOldest
 
 	// OverflowBlock blocks the dispatcher until space is available.
-	// Use with caution: this can block all report delivery.
+	// Use with caution: the dispatcher is the goroutine that reads the
+	// association, so this blocks all report delivery and the response
+	// of every confirmed request of the client until the consumer reads
+	// (see "What OverflowBlock blocks" on [OverflowPolicy]).
 	OverflowBlock
 
 	// OverflowCallback invokes the OnOverflow callback (if set)
@@ -1290,21 +1334,52 @@ func (s *ReportSubscription) Reports() <-chan *ReportIndication {
 	return s.ch
 }
 
+// subscriptionCleanupTimeout bounds the remote cleanup of closing
+// subscriptions (RptEna=false, release of the URCB reservation): the
+// requests of one [ReportSubscription.Close], and of all subscriptions
+// together in [Client.Close], which also ends at its context. When the
+// server does not answer, Close returns after at most this long.
+const subscriptionCleanupTimeout = 5 * time.Second
+
 // Close terminates the report subscription. It is idempotent and safe
 // to call from any goroutine.
 //
-// If the subscription was created with lifecycle options (AutoEnable,
-// ReserveURCB), Close performs best-effort remote cleanup: disable the
-// RCB (RptEna=false), then release the URCB reservation. Remote
-// cleanup errors are logged but never prevent local shutdown.
+// Close shuts the subscription down locally first: it is removed from the
+// client's dispatch and the [Reports] channel is closed, so no further
+// report is delivered. This part never waits for the peer.
 //
-// After Close, the [Reports] channel is closed and no further reports
-// are delivered.
+// If the subscription was created with lifecycle options (AutoEnable,
+// ReserveURCB), Close then performs best-effort remote cleanup: disable
+// the RCB (RptEna=false), then release the URCB reservation. The cleanup
+// is bounded: its requests are given up after 5 seconds in total, so
+// Close returns also when the server does not answer.
+// Remote cleanup errors are logged and never returned.
+//
+// The remote cleanup needs the answers of the peer, which the client
+// reads on the goroutine that also calls
+// [SubscribeReportOptions.OnOverflow]: a Close called from that callback
+// on a subscription with lifecycle options returns only when the cleanup
+// is given up. Close such a subscription from another goroutine.
 func (s *ReportSubscription) Close() error {
+	if !s.closeLocal() {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), subscriptionCleanupTimeout)
+	defer cancel()
+	s.remoteCleanup(ctx)
+	return nil
+}
+
+// closeLocal is the local half of Close: it marks the subscription
+// closed, removes it from the client's dispatch table, closes the Reports
+// channel and ends the subscription's context. It sends nothing and does
+// not wait for the peer. It reports whether this call closed the
+// subscription (false when it was closed already).
+func (s *ReportSubscription) closeLocal() bool {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
-		return nil
+		return false
 	}
 	s.closed = true
 	close(s.done)
@@ -1315,34 +1390,29 @@ func (s *ReportSubscription) Close() error {
 	// after this point.
 	s.client.unregisterSubscription(s)
 
-	// Best-effort remote cleanup: disable, then release reservation.
-	s.remoteCleanup()
-
 	// Wait for any in-flight OverflowBlock sends to exit the select
-	// before closing the channel.
+	// before closing the channel (done is closed, so they return).
 	s.delivering.Wait()
 	close(s.ch)
 
 	if s.cancelFn != nil {
 		s.cancelFn()
 	}
-
-	return nil
+	return true
 }
 
-// remoteCleanup performs best-effort remote RCB cleanup. Errors are
-// logged and never propagated.
+// remoteCleanup performs best-effort remote RCB cleanup, bounded by ctx.
+// Errors are logged and never propagated. It is called once, by the call
+// that closed the subscription locally.
 //
-// When the parent client is already closed/aborted, cleanup errors
-// are expected (the connection may be gone) and are logged at Debug
-// level rather than Warn to avoid noisy failure logs during normal
-// shutdown.
-func (s *ReportSubscription) remoteCleanup() {
+// When the parent client is closing, cleanup errors are expected (the
+// connection may be gone) and are logged at Debug level rather than Warn
+// to avoid noisy failure logs during normal shutdown.
+func (s *ReportSubscription) remoteCleanup(ctx context.Context) {
 	if s.lifecycleLD == "" || s.lifecycleID == "" {
 		return
 	}
 
-	ctx := context.Background()
 	logLevel := slog.LevelWarn
 	if s.client.isClosing() {
 		logLevel = slog.LevelDebug
@@ -1352,7 +1422,7 @@ func (s *ReportSubscription) remoteCleanup() {
 	didEnable := s.didEnable
 	s.mu.Unlock()
 	if didEnable {
-		if err := s.client.SetReportControlBlock(ctx, s.lifecycleLD, s.lifecycleID, RCBUpdate{
+		if err := s.client.setRCB(ctx, s.lifecycleLD, s.lifecycleID, RCBUpdate{
 			Fields: RCBFieldRptEna,
 			RptEna: false,
 		}); err != nil {
@@ -1362,7 +1432,10 @@ func (s *ReportSubscription) remoteCleanup() {
 	}
 
 	if s.didReserve {
-		if err := s.client.ReleaseURCB(ctx, s.lifecycleLD, s.lifecycleID); err != nil {
+		if err := s.client.setRCB(ctx, s.lifecycleLD, s.lifecycleID, RCBUpdate{
+			Fields: RCBFieldResv,
+			Resv:   false,
+		}); err != nil {
 			s.client.logger.Log(ctx, logLevel, "iec61850: subscription close: failed to release URCB",
 				"ld", s.lifecycleLD, "rcb", s.lifecycleID, "error", err)
 		}
@@ -1394,7 +1467,16 @@ type SubscribeReportOptions struct {
 
 	// OnOverflow is called when a report is dropped due to overflow
 	// (only used with [OverflowCallback]). Called from the dispatch
-	// goroutine — must not block.
+	// goroutine — must not block: that goroutine reads the association,
+	// so no report is delivered and no confirmed request of the client
+	// completes until the callback returns, and a request the callback
+	// issues on the client waits for its own context to end.
+	//
+	// The callback runs without the subscription's lock held. It may
+	// call [ReportSubscription.Close] on its subscription: the
+	// subscription is closed locally at once (see Close for a
+	// subscription with lifecycle options). A callback that ends
+	// abnormally is recovered and logged, and delivery goes on.
 	OnOverflow func(*ReportIndication)
 
 	// MatchMode selects how the RptID is matched. Default is exact.
@@ -1445,6 +1527,15 @@ type SubscribeReportOptions struct {
 //
 // Call [ReportSubscription.Close] when done. The subscription is also
 // closed when the client is closed.
+//
+// The context is the lifetime of the subscription, not only of this
+// call: it bounds the setup requests (reserve, enable, GI), and when it
+// ends afterwards, by cancellation or by its deadline, the subscription
+// is closed as by [ReportSubscription.Close], including the remote
+// cleanup. Pass a context that lives as long as the subscription
+// should; with a timeout context around the call
+// (context.WithTimeout followed by defer cancel()) the subscription
+// closes when the calling function returns or when the timeout passes.
 //
 // Lifecycle operations are not atomic. If subscription setup fails
 // partway through, some RCB state (e.g., Resv, DatSet) may already
@@ -1690,7 +1781,8 @@ func (c *Client) findSubscriptions(rptID string) []*ReportSubscription {
 // configured overflow policy.
 //
 // For [OverflowBlock], the lock is released before the blocking send
-// to avoid stalling Close/shutdown while the channel is full.
+// to avoid stalling Close/shutdown while the channel is full. For
+// [OverflowCallback], the lock is released before OnOverflow is called.
 func (s *ReportSubscription) deliver(ri *ReportIndication, logger interface{ Warn(string, ...any) }) {
 	s.mu.Lock()
 	if s.closed {
@@ -1737,21 +1829,27 @@ func (s *ReportSubscription) deliver(ri *ReportIndication, logger interface{ War
 	case OverflowCallback:
 		select {
 		case s.ch <- ri:
+			s.mu.Unlock()
+			return
 		default:
-			if s.onOverflow != nil {
-				func() {
-					defer func() {
-						if r := recover(); r != nil {
-							logger.Warn("iec61850: OnOverflow callback panicked", "panic", r, "rptID", ri.RptID)
-						}
-					}()
-					s.onOverflow(ri)
-				}()
-			} else {
-				logger.Warn("iec61850: report dropped (queue full, no callback)", "rptID", ri.RptID)
-			}
 		}
+		// The queue is full: the decision is taken under the lock, the
+		// callback runs without it, so it may call Close and the other
+		// methods of the subscription.
+		onOverflow := s.onOverflow
 		s.mu.Unlock()
+		if onOverflow == nil {
+			logger.Warn("iec61850: report dropped (queue full, no callback)", "rptID", ri.RptID)
+			return
+		}
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Warn("iec61850: OnOverflow callback panicked", "panic", r, "rptID", ri.RptID)
+				}
+			}()
+			onOverflow(ri)
+		}()
 	}
 }
 

@@ -76,8 +76,10 @@ Lifecycle:
 - `Close` stops the report, GOOSE and SV engines. It does not close
   listeners or connections.
 - `Shutdown(ctx)` closes the listeners, lets in-flight requests finish,
-  concludes every association and then calls `Close`. If `ctx` ends first the
-  remaining connections are aborted. `ListenAndServe` then returns
+  concludes every association, waits for the connection goroutines of
+  `ListenAndServe` (their `OnDisconnect` included) and then calls `Close`. If
+  `ctx` ends first the remaining connections are aborted and `Shutdown`
+  returns the context's error. `ListenAndServe` then returns
   `mms.ErrServerClosed`.
 
 The model is immutable after construction.

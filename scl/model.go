@@ -53,11 +53,14 @@ type DocumentMetadata struct {
 }
 
 // Private represents a vendor-specific Private element in SCL.
-// These are preserved during parsing so that roundtrip or
-// inspection tooling can access vendor extensions.
+// Parsing keeps its type and source attributes, so that inspection
+// tooling can see which vendor extensions a document uses.
 type Private struct {
-	Type     string
-	Source   string
+	Type   string
+	Source string
+	// InnerXML is meant for the content of the element; the parser does
+	// not fill it (it is empty after parsing), and Generate does not write
+	// Private elements.
 	InnerXML string
 }
 

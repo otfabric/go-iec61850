@@ -20,10 +20,11 @@ import (
 // It is for reports a caller did not receive through a subscription, such
 // as those of a passive capture decoded with go-mms (mms.DecodeTSDU), and it
 // is strict: a missing or nil value, a field of the wrong MMS type, an
-// OptFlds or inclusion bit string that is not one, and values left over
-// after the last member are a *ReportError. It keeps no state and sends
-// nothing. A Client decoding the reports it subscribed to stays lenient
-// about field types, as before.
+// OptFlds or inclusion bit string that is not one, an inclusion bit string
+// with more members than the values that follow can hold (checked before
+// any member is decoded), and values left over after the last member are
+// a *ReportError. It keeps no state and sends nothing. A Client decoding
+// the reports it subscribed to stays lenient about field types, as before.
 func DecodeReport(values []*mms.Value) (*ReportIndication, error) {
 	ri := &ReportIndication{}
 	idx := 0
@@ -148,6 +149,9 @@ func DecodeReport(values []*mms.Value) (*ReportIndication, error) {
 			included++
 		}
 	}
+	if !membersFit(included, len(values)-idx, ri.OptFlds) {
+		return nil, fail("Inclusion (value %d) announces %d members but %d values follow", idx, included, len(values)-idx)
+	}
 
 	if ri.OptFlds.Has(OptFldDataRef) {
 		ri.DataReferences = make([]string, 0, included)
@@ -185,4 +189,20 @@ func DecodeReport(values []*mms.Value) (*ReportIndication, error) {
 		return nil, fail("%d values left over after the last member", len(values)-idx)
 	}
 	return ri, nil
+}
+
+// membersFit reports whether included members fit in the remaining report
+// values: each member takes one value, one data reference more with
+// OptFldDataRef and one reason code more with OptFldReasonCode. The
+// decoders check it before they size the member lists, so that their size
+// follows the values received.
+func membersFit(included, remaining int, o OptFlds) bool {
+	per := 1
+	if o.Has(OptFldDataRef) {
+		per++
+	}
+	if o.Has(OptFldReasonCode) {
+		per++
+	}
+	return included <= remaining/per
 }
