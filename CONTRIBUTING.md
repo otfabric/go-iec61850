@@ -31,7 +31,7 @@ Add a fuzz target for any new decoder of untrusted input.
 
 ## Submitting changes
 
-1. Work on a branch and open a pull request against `main`.
+1. Work on a branch and open a pull request against `main`. Pushing the branch runs no CI; the pull request runs `pr.yml`, and `OT Fabric Required Checks` must pass ([TESTING.md](TESTING.md#when-ci-runs)).
 2. Add tests, including error paths.
 3. Update the documents the change touches ([API.md](API.md), [ERRORS.md](ERRORS.md), [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md)) and add a section to [RELEASE.md](RELEASE.md) for user-visible changes.
 
