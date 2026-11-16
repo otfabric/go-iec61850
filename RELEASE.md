@@ -1,5 +1,19 @@
 # go-iec61850 Releases
 
+## v1.23.1
+
+**Date:** 2026-11-16
+**Previous release:** v1.23.0
+
+No library code changes.
+
+### Changed
+
+- Built on go-mms v1.11.1 (was v1.11.0), go-cotp v1.4.2 (was v1.4.1) and go-tpkt v1.2.2 (was v1.2.1) (go-mms RELEASE.md, v1.11.1; go-cotp RELEASE.md, v1.4.2; go-tpkt RELEASE.md, v1.2.2). With them fewer allocations per COTP data segment and TPKT packet (a segment of at most 8192 octets and a packet of at most 8196 octets reuse the buffer of the previous one, and a TSDU of one segment is returned without a copy); nothing changes on the wire or in the API.
+- CI: the documentation check runs docsync v0.4.0 (was v0.3.x).
+
+---
+
 ## v1.23.0
 
 **Date:** 2026-11-14
